@@ -278,4 +278,32 @@ public class AddFeatureTests
         Assert.Equal(manifestBefore, app.Read(app.Manifest));
         Assert.Equal(apiBefore, app.Read(app.ApiProject));
     }
+
+    /// <summary>
+    /// Six features ride the jobs runtime — archival, approvals, bulk, campaign, fileexchange,
+    /// notification — and every one of their recipes asks for Goldpath.Jobs. Adding a second one
+    /// to an app that already has the first must not reference the package again: NuGet refuses a
+    /// duplicate PackageReference (NU1504), and the generated apps treat warnings as errors, so
+    /// the app stops restoring.
+    ///
+    /// The insertion guard looked only at the FIRST line of a recipe's block. Every jobs recipe
+    /// leads with its own package, so the guard never saw that Goldpath.Jobs was already there.
+    /// The nightly GmGrownRest shape carried four copies from 2026-09-08 until this test.
+    /// </summary>
+    [Fact]
+    public void A_second_jobs_riding_feature_does_not_reference_jobs_twice()
+    {
+        using var app = new FakeApp();
+
+        Assert.Equal(0, Add("archival", app, new FakeProcessRunner()));
+        Assert.Equal(0, Add("approvals", app, new FakeProcessRunner()));
+
+        var project = app.Read(app.ApiProject);
+        var jobs = project.Split('\n').Count(l => l.Contains("<PackageReference Include=\"Goldpath.Jobs\" />", StringComparison.Ordinal));
+        Assert.Equal(1, jobs);
+
+        // And the guard did not swallow the second feature's OWN package along with the duplicate.
+        Assert.Contains("<PackageReference Include=\"Goldpath.Archival\" />", project, StringComparison.Ordinal);
+        Assert.Contains("<PackageReference Include=\"Goldpath.Approvals\" />", project, StringComparison.Ordinal);
+    }
 }

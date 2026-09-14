@@ -95,17 +95,8 @@ public static class AddFeatureCommand
             File.WriteAllText(propsPath, PackagePins.AddMissing(File.ReadAllText(propsPath), plan.PackageVersions));
         }
 
-        if (plan.ApiPackages.Count > 0)
-        {
-            var references = plan.ApiPackages.Select(p => $"    <PackageReference Include=\"{p}\" />").ToList();
-            File.WriteAllText(files.PackagesProject, TextEdits.InsertAfterAnchor(File.ReadAllText(files.PackagesProject), Anchors.Packages, references));
-        }
-
-        if (plan.AppHostPackages.Count > 0)
-        {
-            var references = plan.AppHostPackages.Select(p => $"    <PackageReference Include=\"{p}\" />").ToList();
-            File.WriteAllText(files.AppHostProject, TextEdits.InsertAfterAnchor(File.ReadAllText(files.AppHostProject), Anchors.Packages, references));
-        }
+        AddMissingReferences(files.PackagesProject, plan.ApiPackages);
+        AddMissingReferences(files.AppHostProject, plan.AppHostPackages);
 
         var program = File.ReadAllText(files.ProgramFile);
         foreach (var marker in plan.RemoveFromProgram)
@@ -189,6 +180,35 @@ public static class AddFeatureCommand
         foreach (var (path, content) in snapshot)
         {
             File.WriteAllText(path, content);
+        }
+    }
+
+    /// <summary>
+    /// Adds a PackageReference for each package the project does not already reference, and
+    /// only those. Checked PER PACKAGE, against the whole project file: the anchor insertion's
+    /// own guard looks only at the first line of the block it is given, and six recipes ride the
+    /// jobs runtime — each leads with its own package and then asks for Goldpath.Jobs, so the
+    /// guard never saw Goldpath.Jobs was already there and every second jobs feature referenced
+    /// it again (NU1504, which the generated apps treat as an error). The anchor guard is left
+    /// as it is: it also inserts Program.cs blocks, where lines like "{" repeat legitimately.
+    /// </summary>
+    private static void AddMissingReferences(string projectPath, IReadOnlyCollection<string> packages)
+    {
+        if (packages.Count == 0)
+        {
+            return;
+        }
+
+        var project = File.ReadAllText(projectPath);
+        var missing = packages
+            .Distinct(StringComparer.Ordinal)
+            .Where(p => !project.Contains($"<PackageReference Include=\"{p}\"", StringComparison.Ordinal))
+            .Select(p => $"    <PackageReference Include=\"{p}\" />")
+            .ToList();
+
+        if (missing.Count > 0)
+        {
+            File.WriteAllText(projectPath, TextEdits.InsertAfterAnchor(project, Anchors.Packages, missing));
         }
     }
 }
