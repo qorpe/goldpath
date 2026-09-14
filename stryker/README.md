@@ -16,33 +16,39 @@ paths changed"; until 2026-09-05 no score was written down anywhere, so the gate
 checked only by the person who ran it. This table is that record. A score here is a FULL
 run (`scripts/mutation-gate.sh <Package>`), never a `--since` diff run.
 
-**Measured 2026-09-05**, full runs on the hosted-fit sixteen (macOS, 10 cores; the last
-eight at `GOLDPATH_MUTATION_CONCURRENCY=9`, which roughly halved their wall clock).
+**Measured 2026-09-14**, full runs (`scripts/mutation-gate.sh`) on the self-hosted runner, in
+nightly run 34890001568 on the preview.9 release candidate — all four of its CLI fixes in. The
+2026-09-05 local measurements this replaces are in git history.
 
 | Package | Score | Margin over break (70) |
 |---|---:|---:|
 | Abstractions | 95.24 % | 25.24 |
-| Cli | 93.19 % | 23.19 |
 | SoftDelete | 91.67 % | 21.67 |
 | Locking | 91.67 % | 21.67 |
-| Messaging | 84.34 % | 14.34 |
+| Cli | 91.09 % | 21.09 |
 | AuditTrail | 81.97 % | 11.97 |
+| Messaging | 80.72 % | 10.72 |
 | DataProtection | 78.95 % | 8.95 |
 | Data | 77.38 % | 7.38 |
 | FileExchange | 76.92 % | 6.92 |
-| Approvals | 75.82 % | 5.82 |
+| Approvals | 76.47 % | 6.47 |
 | Console | 75.00 % | 5.00 |
-| MultiTenancy | 74.42 % | 4.42 |
 | Idempotency | 73.58 % | 3.58 |
-| Analyzers | 72.67 % | 2.67 |
+| Analyzers | 72.55 % | 2.55 |
 | ServiceDefaults | 72.15 % | 2.15 |
+| MultiTenancy | 72.09 % | 2.09 |
 | Auth | 70.65 % | **0.65** |
 
-Read the margin column, not the score. Four packages clear the break by less than four
-points — **Auth by 0.65**, ServiceDefaults by 2.15, Analyzers by 2.67 and Idempotency by
-3.58 — so in those four a single deleted or weakened test turns the gate red. That fact was invisible until
-this table existed: the checklist asked for scores and nothing recorded one. Treat a
-margin under 2 as a standing invitation to add facts, not as a passing grade.
+Read the margin column, not the score. Five packages clear the break by less than four
+points — **Auth by 0.65**, MultiTenancy by 2.09, ServiceDefaults by 2.15, Analyzers by 2.55 and
+Idempotency by 3.58 — so in those five a single deleted or weakened test turns the gate red. That
+fact was invisible until this table existed: the checklist asked for scores and nothing recorded
+one. Treat a margin under 2 as a standing invitation to add facts, not as a passing grade.
+
+Against 2026-09-05: Cli fell 2.10 to 91.09 — new recipe code in preview.9, still 21 points clear.
+Messaging fell 3.62 — it gained the consume seam (ADR-0013) in the same window, so its scored
+code is not the code measured on 2026-09-05. MultiTenancy fell 2.33. The two measurements ran on
+different machines, so those drops are recorded here, not explained.
 
 The six long-running packages (Jobs, Archival, Bulk, Notification, Campaign, Caching) run
 in `mutation-heavy.yml` (dispatch-only) and are measured locally before a release; their

@@ -41,14 +41,14 @@ jobs:
           # the command attribute land in Domain and Application, but only the Api csproj
           # carried the feature-conditional package references.
           #
-          # `audittrail` is NOT in this list yet, and that is deliberate rather than an
-          # oversight. Its half of the fix moves IAuditLogged into Goldpath.Abstractions,
-          # and a generated app consumes the PUBLISHED Abstractions — so the shape would be
-          # red here until the train carrying the move ships. The release checklist owns
-          # adding it; see docs/ops/release-checklist.md, next-train adoptions. A nightly
-          # shape known to be red teaches the team to ignore a red nightly.
+          # `audittrail` joined at the preview.9 release. It had been held back on the claim
+          # that a generated app consumes the PUBLISHED Abstractions — which is wrong for this
+          # lane: validate-gm.sh packs the repository into a local feed that shadows nuget.org
+          # at the same version, so every shape here builds against the SOURCE. The deferral
+          # cost the shape a few days of coverage and nothing else; the reasoning is kept so
+          # nobody repeats it.
           - name: GmCleanFeatures
-            args: "--broker none --layout clean-architecture --features idempotency --features dataprotection --features locking"
+            args: "--broker none --layout clean-architecture --features audittrail --features idempotency --features dataprotection --features locking"
           # GM-6's realizable half: a service head (own db, own manifest) + the YARP
           # gateway — built by the SAME verbs an adopter runs, with the ROUTED probe in
           # the generated smoke (gateway /api/health/ready answers through the chain).

@@ -5,7 +5,82 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 
+## [0.1.0-preview.9] - 2026-10-19
+
+The repair train — and the security train. preview.8 shipped four ways for a generated or grown
+app to fail — `fileexchange` on its first build, a second jobs feature added with the CLI, `add
+feature idempotency`, and `add feature multitenancy` failing the app's own smoke test — and the
+clean-architecture layout did not build with `audittrail` or `idempotency`. All five are fixed,
+and the release checklist now demands the matrix green on the release's own head. Four .NET
+advisories published 2026-10-13/15 made every app generated on preview.8 fail its first restore;
+this train carries the lifts in both templates. One type moved between packages: recompile. Read
+the [upgrade guide](docs/upgrades/0.1.0-preview.9.md) — each section says whether it touches
+you.
+
+### Fixed
+- **Every build and every generated app failed restore on four .NET advisories published
+  2026-10-13/15.** `System.Security.Cryptography.Pkcs` (GHSA-846f-f764-76mx, GHSA-2fmv-
+  rv2c-59x7) and `System.Security.Cryptography.Xml` (GHSA-c399-9853-6jmj, GHSA-7hqp-7c5m-4vq6)
+  arrive transitively through SqlClient, MimeKit, Roslyn workspaces and Aspire; `MessagePack`
+  (GHSA-qhrr-8q5h-9q3h) through Aspire's StreamJsonRpc. Under TreatWarningsAsErrors
+  NU1902/NU1903 is a restore failure, so the nightly (every GM shape, every mutation scope,
+  corpay, the console smoke) and every pull request went red at once. The repository lifts Pkcs
+  to 10.0.13 on both target frameworks (MimeKit 4.18 already demands >= 10.0.0 on net8.0, so an
+  8.0.x pin is a downgrade) with a direct reference in the three projects whose graphs carry it,
+  the pattern the solution template already used for Xml; a repository-wide transitive pin was
+  tried and rejected, because it turns every central version into a ceiling and collides with
+  the deliberate per-TFM EF Core pins. The two templates and CorPay enable
+  `CentralPackageTransitivePinningEnabled` and pin Pkcs 10.0.13, Xml 10.0.13 and MessagePack
+  2.5.307 — a generated app is one TFM, so the pin is the lift wherever the package lands,
+  including the projects an adopter adds later. An app already generated on preview.8 needs the
+  same three pins until it regenerates.
+- **`goldpath add feature multitenancy` failed the app's own smoke test** (#261). Tenancy is
+  fail-closed and refuses a request without the tenant header before auth runs; the template's
+  smoke sends it under `--features multitenancy`, and the recipe left the smoke alone. The
+  recipe now adds the template's line, its `using` and the `Goldpath.Abstractions` reference.
+- **`goldpath add feature idempotency` left an app that did not build** (#260). GP1001 fails
+  the build while idempotency is composed and a command is unmarked; the template marks its
+  sample `CreateOrderCommand` under `--features idempotency` and the recipe did not. It now
+  emits the template's four lines (a test reads them from the template), and in
+  clean-architecture adds `Mediant.Behaviors` with its pin to the project that compiles the
+  sample. The published preview.8 CLI has the gap; the upgrade guide gives the one-line fix.
+- **Every app generated with `fileexchange` failed its first build on preview.8** (#259).
+  FileExchange is composed with no rail by design, GP2102 says so, and the generated apps
+  promote warnings to errors. The templates keep GP2102 a warning (`WarningsNotAsErrors`); it
+  still shows until the first `AddRail`.
+- **A second jobs-riding `add feature` referenced `Goldpath.Jobs` twice** (#258) — NU1504,
+  and the app stopped restoring. References are now checked per package against the whole
+  project file.
+- **The clean-architecture layout did not build with `audittrail` or `idempotency`** (#254).
+  `IAuditLogged` moved to `Goldpath.Abstractions` (see Changed), and the `Application` project
+  references `Mediant.Behaviors` under `UseIdempotency`. Found by `qorpe/coexist`; the nightly
+  `GmCleanFeatures` shape now generates exactly that layout with those features.
+- **The migration runbook's verify step could never pass** (#245): it demanded no occurrence
+  of the old repository slug, which the runbook itself and `SECURITY.md` name on purpose. It
+  now says what a clean result looks like.
+- **`docs-freshness.sh` reported two of its three checks and then forgave them.** The script
+  had `set -uo pipefail` but no `-e` and two separate blocks, so only the LAST block's exit
+  code survived: a broken relative link and a retired tool name were printed and the gate
+  exited 0 — while the file's own header claimed a broken link fails CI. Both checks now
+  gate, and both were verified to fail on planted drift. Found by the maintainer stop-gate on
+  the day it was written, which is the argument for the hook in one sentence.
+
 ### Changed
+- **`IAuditLogged` moved from `Goldpath.AuditTrail` to `Goldpath.Abstractions`** (#254),
+  beside the markers it belongs with. Same namespace — recompile, no source edits. A binary
+  compiled against preview.8's `Goldpath.AuditTrail` must be rebuilt; the upgrade guide says
+  why a type forward was withdrawn.
+- **Every repository URL points at `qorpe/goldpath`** (#240), including the two that ship
+  inside packages: `HelpBase`, the help link of all forty-nine analyzer rules, and
+  `RepositoryUrl`, the Source Link target and nuget.org source link.
+- **The release checklist requires the golden-manifest matrix green on the release PR's own
+  head.** preview.8 was tagged against a green nightly that ran on the commit before its own
+  template changes, which is how GP2102 shipped. The nightly `GmCleanFeatures` shape also gains
+  `audittrail`, now that the templates consume `IAuditLogged` from the train.
+- **The analyzer release ledger is true.** GP1901, GP1902, GP2101 and GP2102 shipped on
+  preview.8 but were still listed as unshipped; they now sit in the shipped ledger.
+- **T27 closes for the library repositories and T28 opens** (#253): the delivery cycle reached
+  every named repository, and the sweep's one gap has its own thread.
 - **The cycle's sixth step is stack-neutral**, because it was not. It named `spec_validate`,
   `spec_drift` and `specs/` — true for a generated .NET application and meaningless for an npm
   library, which is the next repository due to carry this text. The step now says: run THIS
@@ -13,9 +88,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   built, and get it clean. Each repository's skill names its own; the sequence does not change
   between them. `skills-parity.sh` now also holds goldpath's own copy of `cycle.md` identical
   to the one the templates ship, while leaving its maintainer-shaped skills and hook alone.
-
-
-### Changed
 - **The migration product module is `qorpe.coexist`, not `qorpe.sync`.** Two reasons, and the
   first decided it: an internal asset of the same name was under review in the same week by the
   same reviewer who owns this module, and a module sharing its name would have been read as a
@@ -25,29 +97,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   but not guaranteed, live in the description. Thirteen documents, the manifest schema's example
   and two corpus fixtures moved; nothing had been published under the old name, so this is the
   cheapest the rename would ever have been.
-
-### Fixed
-- **Every build and every generated app failed restore on four .NET advisories published
-  2026-10-13/15.** `System.Security.Cryptography.Pkcs` (GHSA-846f-f764-76mx, GHSA-2fmv-rv2c-59x7)
-  and `System.Security.Cryptography.Xml` (GHSA-c399-9853-6jmj, GHSA-7hqp-7c5m-4vq6) arrive
-  transitively through SqlClient, MimeKit, Roslyn workspaces and Aspire; `MessagePack`
-  (GHSA-qhrr-8q5h-9q3h) through Aspire's StreamJsonRpc. Under TreatWarningsAsErrors NU1902/NU1903
-  is a restore failure, so the nightly (every GM shape, every mutation scope, corpay, the console
-  smoke) and every pull request went red at once. The repository lifts Pkcs to 10.0.13 on both target frameworks (MimeKit 4.18 already
-  demands >= 10.0.0 on net8.0, so an 8.0.x pin is a downgrade) with a direct reference in the three projects whose graphs carry it, the pattern the
-  solution template already used for Xml; a repository-wide transitive pin was tried and
-  rejected, because it turns every central version into a ceiling and collides with the
-  deliberate per-TFM EF Core pins. The two templates and CorPay enable
-  `CentralPackageTransitivePinningEnabled` and pin Pkcs 10.0.13, Xml 10.0.13 and MessagePack
-  2.5.307 — a generated app is one TFM, so the pin is the lift wherever the package lands,
-  including the projects an adopter adds later. An app already generated on preview.8 needs the
-  same three pins until it regenerates.
-- **`docs-freshness.sh` reported two of its three checks and then forgave them.** The script
-  had `set -uo pipefail` but no `-e` and two separate blocks, so only the LAST block's exit
-  code survived: a broken relative link and a retired tool name were printed and the gate
-  exited 0 — while the file's own header claimed a broken link fails CI. Both checks now
-  gate, and both were verified to fail on planted drift. Found by the maintainer stop-gate on
-  the day it was written, which is the argument for the hook in one sentence.
+- **CorPay consumes through the seam.** The sample took 0.1.0-preview.8 the day it
+  published: three handlers instead of `IConsumer<T>` (`OrderPlacedHandler`,
+  `PaymentExecutedHandler`, `WorkItemQueuedHandler`), twenty-one pins moved, queue names
+  unchanged. It was the last line under the release checklist's next-train adoptions, and
+  the messaging-exit RFC's CorPay box closes with it.
 
 ### Added
 - **goldpath runs the discipline it ships** (delivery-cycle RFC D4). The repository carries
@@ -57,9 +111,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   run. Copying the app-shaped hook would have meant a 23-package build on every turn end,
   which is slow enough that the hook would be deleted — and a deleted gate is worse than an
   absent one.
-
-
-### Added
 - **One delivery cycle, shipped with the templates** ([RFC](docs/rfc/goldpath-delivery-cycle-v1.md)).
   `.claude/cycle.md` carries nine steps in which a defect and a feature differ only in the
   first, and it deliberately holds no rules of its own — every rule stays in the document that
@@ -75,14 +126,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 - The `goldpath-defect` eval, whose acceptance **reverts the fix and requires the new test to
   go red** — the cycle's own rule, checked rather than trusted.
 
-
-### Changed
-- **CorPay consumes through the seam.** The sample took 0.1.0-preview.8 the day it
-  published: three handlers instead of `IConsumer<T>` (`OrderPlacedHandler`,
-  `PaymentExecutedHandler`, `WorkItemQueuedHandler`), twenty-one pins moved, queue names
-  unchanged. It was the last line under the release checklist's next-train adoptions, and
-  the messaging-exit RFC's CorPay box closes with it.
-
+### Dependencies
+- .NET 10.0.12 patch line across the Microsoft.Extensions and EF Core packages, Quartz 3.21.0
+  (via 3.20.1), Testcontainers 4.15.0 (#244, #255); `Microsoft.Extensions.Http.Resilience`
+  10.9.0 (#247) and `Microsoft.Extensions.ServiceDiscovery` 10.9.0 (#256), both off the 9.x line;
+  console dev dependencies (#241). 33 NuGet updates (#268) — among them MailKit 4.18.1 and
+  **MassTransit 8.5.11**, a patch on the 8.x OSS line the messaging-exit RFC keeps; the CLI's
+  `KnownVersions`, both templates and CorPay move with it — and 13 console dependencies (#270).
 
 ## [0.1.0-preview.8] - 2026-09-07
 
