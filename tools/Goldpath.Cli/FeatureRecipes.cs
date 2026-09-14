@@ -73,6 +73,19 @@ public sealed class RecipePlan
     /// <summary>Namespaces Program.cs must import for the emitted lines to compile (idempotent).</summary>
     public List<string> Usings { get; } = [];
 
+    /// <summary>
+    /// Lines placed directly above the template's sample command (<see cref="AppFiles.SampleCommandFile"/>),
+    /// exactly as the template emits them under the same feature. Template-owned code only —
+    /// the team's own commands are <see cref="NextSteps"/>. Skipped when the sample is gone.
+    /// </summary>
+    public List<string> SampleCommandLines { get; } = [];
+
+    /// <summary>
+    /// Package references for the project that compiles the sample command, when that is NOT
+    /// the packages project (clean-architecture's Application project).
+    /// </summary>
+    public List<string> SampleCommandPackages { get; } = [];
+
     /// <summary>Domain opt-ins the team decides — printed, never guessed.</summary>
     public List<string> NextSteps { get; } = [];
 }
@@ -131,6 +144,16 @@ public sealed class AppFacts
     /// <summary>The Goldpath train the app pins (from <c>Goldpath.Abstractions</c>), or null without central pins.</summary>
     public string? TrainVersion { get; init; }
 
+    /// <summary>The Mediant line the app pins (from <c>Mediant.AspNetCore</c>), or null without central pins.</summary>
+    public string? MediantVersion { get; init; }
+
+    /// <summary>
+    /// Whether the template's sample command compiles in a project OTHER than the packages
+    /// project — clean-architecture's Application project, which does not reach
+    /// <c>Mediant.Behaviors</c> through <c>Goldpath.Idempotency</c> the way the Api project does.
+    /// </summary>
+    public bool SampleCommandInOwnProject { get; init; }
+
     /// <summary>Reads the context facts from the located files.</summary>
     public static AppFacts Read(AppFiles files)
     {
@@ -169,6 +192,9 @@ public sealed class AppFacts
             LockingWired = program.Contains("builder.AddGoldpathLocking(", StringComparison.Ordinal) || program.Contains("builder.AddGoldpathSqlServerLocking(", StringComparison.Ordinal),
             AspireVersion = PackagePins.Read(props, "Aspire.Hosting.AppHost"),
             TrainVersion = PackagePins.Read(props, "Goldpath.Abstractions"),
+            MediantVersion = PackagePins.Read(props, "Mediant.AspNetCore"),
+            SampleCommandInOwnProject = files.SampleCommandProject is { } owner
+                && !string.Equals(Path.GetFullPath(owner), Path.GetFullPath(files.PackagesProject), StringComparison.Ordinal),
         };
     }
 }
@@ -348,7 +374,27 @@ public static class FeatureRecipes
 
                     plan.Registrations.Add("builder.AddGoldpathIdempotency();");
                     plan.ManifestLines.Add("  idempotency: true");
-                    plan.NextSteps.Add("mark retry-sensitive commands with [Idempotent]; clients send the Idempotency-Key header");
+
+                    // The template marks its own sample command under UseIdempotency, and GP1001
+                    // fails the build while any command is unmarked. Without these lines an app
+                    // grown with this verb stopped building on its first `dotnet build` — the
+                    // nightly GmGrownRest shape, 2026-09-14. Same four lines as the template.
+                    plan.SampleCommandLines.AddRange(
+                    [
+                        "// The golden path marks every write-performing command (GP1001 holds the composition to",
+                        "// it): a client retry replays the stored answer instead of creating a second order, and",
+                        "// the business reference — not the whole payload — is the key.",
+                        "[Mediant.Behaviors.Attributes.Idempotent(KeyProperty = nameof(CreateOrderCommand.Reference))]",
+                    ]);
+                    if (app.SampleCommandInOwnProject)
+                    {
+                        var mediant = app.MediantVersion
+                            ?? throw new CliFailureException("no central pin for Mediant.AspNetCore found in Directory.Packages.props — the sample command's project needs Mediant.Behaviors on the app's Mediant line.");
+                        plan.SampleCommandPackages.Add("Mediant.Behaviors");
+                        plan.PackageVersions.Add(("Mediant.Behaviors", mediant));
+                    }
+
+                    plan.NextSteps.Add("mark every other write-performing command [Idempotent] — GP1001 fails the build until each one is (the template's sample CreateOrderCommand is marked for you); clients send the Idempotency-Key header");
                     return plan;
                 }
 

@@ -39,7 +39,8 @@ public static class AddFeatureCommand
         // engine means the app must come back byte-identical.
         // Deduped once here: ApiProject and PackagesProject are the SAME file in the
         // vertical-slice layout, two files in clean-architecture.
-        var touched = new[] { files.ManifestFile, files.ApiProject, files.PackagesProject, files.AppHostProject, files.ProgramFile, files.ModelFile, files.AppHostFile, files.PackagesProps ?? files.ManifestFile }.Distinct(StringComparer.Ordinal).ToArray();
+        var touched = new[] { files.ManifestFile, files.ApiProject, files.PackagesProject, files.AppHostProject, files.ProgramFile, files.ModelFile, files.AppHostFile, files.PackagesProps, files.SampleCommandFile, files.SampleCommandProject }
+            .OfType<string>().Distinct(StringComparer.Ordinal).ToArray();
         var snapshot = touched.ToDictionary(path => path, File.ReadAllText, StringComparer.Ordinal);
 
         try
@@ -173,6 +174,34 @@ public static class AddFeatureCommand
 
             File.WriteAllText(files.AppHostFile, appHost);
         }
+
+        if (plan.SampleCommandLines.Count > 0 && files.SampleCommandFile is { } sample)
+        {
+            MarkSampleCommand(sample, plan.SampleCommandLines);
+            if (files.SampleCommandProject is { } owner)
+            {
+                AddMissingReferences(owner, plan.SampleCommandPackages);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Places the recipe's lines directly above the sample command's declaration, where the
+    /// template puts them. A sample that already carries <c>[Idempotent]</c> — the team got
+    /// there first — is left exactly as it is.
+    /// </summary>
+    private static void MarkSampleCommand(string path, IReadOnlyList<string> lines)
+    {
+        var text = File.ReadAllText(path);
+        if (text.Contains("Idempotent]", StringComparison.Ordinal) || text.Contains("Idempotent(", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var at = text.IndexOf(AppFiles.SampleCommandDeclaration, StringComparison.Ordinal);
+        var lineStart = at <= 0 ? 0 : text.LastIndexOf('\n', at - 1) + 1;
+        var newline = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        File.WriteAllText(path, text.Insert(lineStart, string.Join(newline, lines) + newline));
     }
 
     private static void Restore(Dictionary<string, string> snapshot)
@@ -191,6 +220,9 @@ public static class AddFeatureCommand
     /// guard never saw Goldpath.Jobs was already there and every second jobs feature referenced
     /// it again (NU1504, which the generated apps treat as an error). The anchor guard is left
     /// as it is: it also inserts Program.cs blocks, where lines like "{" repeat legitimately.
+    ///
+    /// A project without the packages anchor — clean-architecture's Application project, which
+    /// the template never meant goldpath add to grow — takes the reference after its last one.
     /// </summary>
     private static void AddMissingReferences(string projectPath, IReadOnlyCollection<string> packages)
     {
@@ -206,9 +238,26 @@ public static class AddFeatureCommand
             .Select(p => $"    <PackageReference Include=\"{p}\" />")
             .ToList();
 
-        if (missing.Count > 0)
+        if (missing.Count == 0)
+        {
+            return;
+        }
+
+        if (project.Contains(Anchors.Packages, StringComparison.Ordinal))
         {
             File.WriteAllText(projectPath, TextEdits.InsertAfterAnchor(project, Anchors.Packages, missing));
+            return;
         }
+
+        var last = project.LastIndexOf("<PackageReference ", StringComparison.Ordinal);
+        if (last < 0)
+        {
+            throw new CliFailureException($"{projectPath} carries neither the '{Anchors.Packages}' anchor nor a PackageReference to add {string.Join(", ", packages)} beside — add it by hand.");
+        }
+
+        var newline = project.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        var lineEnd = project.IndexOf('\n', last);
+        var block = string.Join(newline, missing) + newline;
+        File.WriteAllText(projectPath, lineEnd < 0 ? project + newline + block : project.Insert(lineEnd + 1, block));
     }
 }
