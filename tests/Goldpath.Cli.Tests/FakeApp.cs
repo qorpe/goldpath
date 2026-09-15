@@ -44,7 +44,8 @@ public sealed class FakeApp : IDisposable
     /// null (none — the team deleted it), <c>"api"</c> (vertical-slice) or <c>"application"</c>
     /// (clean-architecture, its own project with no packages anchor).
     /// </param>
-    public FakeApp(bool sqlServer = false, bool cachingWired = false, string kind = "solution", bool jobsWired = false, bool messagingWired = false, bool authWired = false, bool apiKey = false, bool auditTrailWired = false, bool softDeleteWired = false, bool multiTenancyWired = false, bool dataProtectionWired = false, bool lockingWired = false, string? sampleCommand = null)
+    /// <param name="smokeTest">Whether the app carries the template's smoke test, generated WITHOUT multitenancy.</param>
+    public FakeApp(bool sqlServer = false, bool cachingWired = false, string kind = "solution", bool jobsWired = false, bool messagingWired = false, bool authWired = false, bool apiKey = false, bool auditTrailWired = false, bool softDeleteWired = false, bool multiTenancyWired = false, bool dataProtectionWired = false, bool lockingWired = false, string? sampleCommand = null, bool smokeTest = false)
     {
         Root = Path.Combine(Path.GetTempPath(), $"goldpath-cli-test-{Guid.NewGuid():N}");
         Directory.CreateDirectory(Path.Combine(Root, ".goldpath"));
@@ -204,7 +205,45 @@ public sealed class FakeApp : IDisposable
                 }
                 """);
         }
+
+        if (smokeTest)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(SmokeTest)!);
+            File.WriteAllText(SmokeProject, """
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <ItemGroup>
+                    <PackageReference Include="Aspire.Hosting.Testing" />
+                    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+                    <PackageReference Include="xunit" />
+                  </ItemGroup>
+                </Project>
+                """);
+            File.WriteAllText(SmokeTest, """
+                using System.Net.Http.Json;
+                using Aspire.Hosting.Testing;
+                using Xunit;
+
+                namespace Shop.SmokeTests;
+
+                public class SmokeTests
+                {
+                    [Fact]
+                    public async Task Order_flow_end_to_end()
+                    {
+                        var client = app.CreateHttpClient("api");
+
+                        // Readiness (containers + schema + bus).
+                    }
+                }
+                """);
+        }
     }
+
+    /// <summary>Path of the smoke test file (smokeTest: true).</summary>
+    public string SmokeTest => Path.Combine(Root, "tests/Shop.SmokeTests/SmokeTests.cs");
+
+    /// <summary>Path of the smoke test csproj (smokeTest: true).</summary>
+    public string SmokeProject => Path.Combine(Root, "tests/Shop.SmokeTests/Shop.SmokeTests.csproj");
 
     /// <summary>Path of the template's sample command file, when the fixture has one.</summary>
     public string? SampleCommand { get; }
