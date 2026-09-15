@@ -39,7 +39,12 @@ public sealed class FakeApp : IDisposable
     public string Root { get; }
 
     /// <summary>Creates the fixture; flags mirror common generation shapes.</summary>
-    public FakeApp(bool sqlServer = false, bool cachingWired = false, string kind = "solution", bool jobsWired = false, bool messagingWired = false, bool authWired = false, bool apiKey = false, bool auditTrailWired = false, bool softDeleteWired = false, bool multiTenancyWired = false, bool dataProtectionWired = false, bool lockingWired = false)
+    /// <param name="sampleCommand">
+    /// Where the template's sample <c>CreateOrderCommand</c> lives, generated WITHOUT idempotency:
+    /// null (none — the team deleted it), <c>"api"</c> (vertical-slice) or <c>"application"</c>
+    /// (clean-architecture, its own project with no packages anchor).
+    /// </param>
+    public FakeApp(bool sqlServer = false, bool cachingWired = false, string kind = "solution", bool jobsWired = false, bool messagingWired = false, bool authWired = false, bool apiKey = false, bool auditTrailWired = false, bool softDeleteWired = false, bool multiTenancyWired = false, bool dataProtectionWired = false, bool lockingWired = false, string? sampleCommand = null)
     {
         Root = Path.Combine(Path.GetTempPath(), $"goldpath-cli-test-{Guid.NewGuid():N}");
         Directory.CreateDirectory(Path.Combine(Root, ".goldpath"));
@@ -92,6 +97,7 @@ public sealed class FakeApp : IDisposable
               <ItemGroup>
                 <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.4.6" />
                 <PackageVersion Include="Goldpath.Abstractions" Version="0.1.0-preview.7" />
+                <PackageVersion Include="Mediant.AspNetCore" Version="1.4.1" />
               </ItemGroup>
             </Project>
             """);
@@ -167,7 +173,44 @@ public sealed class FakeApp : IDisposable
 
             builder.Build().Run();
             """);
+
+        if (sampleCommand is not null)
+        {
+            var project = sampleCommand == "application" ? "Shop.Application" : "Shop.Api";
+            if (sampleCommand == "application")
+            {
+                Directory.CreateDirectory(Path.Combine(Root, "src/Shop.Application"));
+                File.WriteAllText(ApplicationProject, """
+                    <Project Sdk="Microsoft.NET.Sdk">
+                      <ItemGroup>
+                        <PackageReference Include="Mediant.AspNetCore" />
+                        <PackageReference Include="Goldpath.Data" />
+                      </ItemGroup>
+                    </Project>
+                    """);
+            }
+
+            SampleCommand = Path.Combine(Root, $"src/{project}/Orders/Features/CreateOrder.cs");
+            Directory.CreateDirectory(Path.GetDirectoryName(SampleCommand)!);
+            File.WriteAllText(SampleCommand, $$"""
+                namespace {{project}}.Orders.Features;
+
+                [HttpEndpoint("POST", "/api/v1/orders")]
+                public record CreateOrderCommand(string Reference, decimal Amount) : ICommand<Result<long>>;
+
+                public class CreateOrderHandler(ShopDbContext db)
+                    : ICommandHandler<CreateOrderCommand, Result<long>>
+                {
+                }
+                """);
+        }
     }
+
+    /// <summary>Path of the template's sample command file, when the fixture has one.</summary>
+    public string? SampleCommand { get; }
+
+    /// <summary>Path of the clean-architecture Application csproj (sampleCommand: "application").</summary>
+    public string ApplicationProject => Path.Combine(Root, "src/Shop.Application/Shop.Application.csproj");
 
     /// <summary>Path of the manifest.</summary>
     public string Manifest => Path.Combine(Root, ".goldpath/manifest.yaml");

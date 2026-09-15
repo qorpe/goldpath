@@ -38,6 +38,19 @@ public sealed class AppFiles
     /// </summary>
     public string? PackagesProps { get; init; }
 
+    /// <summary>What declares the template's sample command — found by content, like the anchors.</summary>
+    public const string SampleCommandDeclaration = "public record CreateOrderCommand(";
+
+    /// <summary>
+    /// The file declaring the template's sample command, or null when the team deleted it (or
+    /// two files declare one — goldpath does not choose). Not an anchor: an app without the
+    /// sample is a normal app, so nothing fails for its absence.
+    /// </summary>
+    public string? SampleCommandFile { get; init; }
+
+    /// <summary>The csproj that compiles <see cref="SampleCommandFile"/> — the nearest one above it.</summary>
+    public string? SampleCommandProject { get; init; }
+
     /// <summary>Scans the app root and resolves every anchored file.</summary>
     public static AppFiles Locate(string appRoot)
     {
@@ -57,6 +70,8 @@ public sealed class AppFiles
         // (the DbContext's model calls must compile there), so anchor-bearing and web are
         // different files — in vertical-slice they are the same one.
         var webProjects = FindByContent(appRoot, "*.csproj", "Microsoft.NET.Sdk.Web");
+        var samples = FindByContent(appRoot, "*.cs", SampleCommandDeclaration);
+        var sample = samples.Count == 1 ? samples[0] : null;
 
         return new AppFiles
         {
@@ -79,7 +94,24 @@ public sealed class AppFiles
             AppHostFile = Single(hosts, "AppHost.cs", Anchors.Resources),
             ManifestFile = manifest,
             PackagesProps = File.Exists(Path.Combine(appRoot, "Directory.Packages.props")) ? Path.Combine(appRoot, "Directory.Packages.props") : null,
+            SampleCommandFile = sample,
+            SampleCommandProject = sample is null ? null : OwningProject(sample, appRoot),
         };
+    }
+
+    private static string? OwningProject(string file, string appRoot)
+    {
+        var rootLength = appRoot.TrimEnd(Path.DirectorySeparatorChar).Length;
+        for (var directory = Path.GetDirectoryName(file); directory is not null && directory.Length >= rootLength; directory = Path.GetDirectoryName(directory))
+        {
+            var project = Directory.EnumerateFiles(directory, "*.csproj").OrderBy(p => p, StringComparer.Ordinal).FirstOrDefault();
+            if (project is not null)
+            {
+                return project;
+            }
+        }
+
+        return null;
     }
 
     private static List<string> FindByContent(string appRoot, string pattern, string anchor)
