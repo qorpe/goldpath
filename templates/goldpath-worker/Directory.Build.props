@@ -5,6 +5,11 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- GP2102 stays a WARNING. When this app composes FileExchange, it starts with no rail —
+         by design, since goldpath never guesses a counterparty format — and the analyzer says
+         so on every build until the first AddRail. As an error it broke the FIRST build of
+         every app generated with fileexchange on preview.8. Inert without FileExchange. -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);GP2102</WarningsNotAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
