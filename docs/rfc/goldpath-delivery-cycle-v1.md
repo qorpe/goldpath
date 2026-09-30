@@ -42,7 +42,7 @@ hooks, one of which refuses to let an agent end its turn on a red build.
 
 So the accelerator holds its customers to a discipline it does not run on itself. That is the
 gap, and it is also why the cycle has drifted into three different shapes: the goldpath
-template's, praxis's, and one hand-written for qorpe.coexist.
+template's, an internal application's, and one hand-written for qorpe.coexist.
 
 ## 3. The cycle
 
@@ -217,7 +217,7 @@ The test-layer table the cycle's step 5 refers to:
 - **D1 — One cycle, two audiences.** Not two methodologies. The steps are identical; only the
   first differs between a defect and a feature.
 - **D2 — The skill enforces the sequence and carries no rules of its own.** Rules live in the
-  documents that own them. This is the anti-drift rule praxis proved: a skill that restates a
+  documents that own them. This is the anti-drift rule an earlier project proved: a skill that restates a
   rule is a second source of truth waiting to disagree. **Refinement:** a skill defers to the
   documents that EXIST in its repository. A library repository has ADRs, ledgers and a
   contributing document to defer to; a generated application has almost none, so there the
