@@ -86,6 +86,22 @@ public sealed class RecipePlan
     /// </summary>
     public List<string> SampleCommandPackages { get; } = [];
 
+    /// <summary>
+    /// Lines placed directly after the template's smoke-test client (<see cref="AppFiles.SmokeTestFile"/>),
+    /// exactly as the template emits them under the same feature — the smoke is template-owned
+    /// and must keep passing in a grown app. Skipped when the smoke is gone.
+    /// </summary>
+    public List<string> SmokeClientLines { get; } = [];
+
+    /// <summary>Namespaces the smoke test must import for <see cref="SmokeClientLines"/> to compile.</summary>
+    public List<string> SmokeUsings { get; } = [];
+
+    /// <summary>Package references the smoke-test project needs for <see cref="SmokeClientLines"/>.</summary>
+    public List<string> SmokePackages { get; } = [];
+
+    /// <summary>Text whose presence in the smoke means the team already did it — nothing is touched then.</summary>
+    public string? SmokeDoneMarker { get; set; }
+
     /// <summary>Domain opt-ins the team decides — printed, never guessed.</summary>
     public List<string> NextSteps { get; } = [];
 }
@@ -336,6 +352,15 @@ public static class FeatureRecipes
                     plan.Middleware.Add("app.UseGoldpathMultiTenancy();                      // resolve the tenant BEFORE auth binds to it");
                     plan.ModelCalls.Add("        modelBuilder.ApplyGoldpathMultiTenancy(this);   // context-rooted ON PURPOSE — keeps the filter live");
                     plan.ManifestLines.Add("  multiTenancy: true");
+
+                    // Fail-closed tenancy refuses a request without the header (400) before auth
+                    // runs, so the template's own smoke sends it under UseMultiTenancy. Without it
+                    // an app grown with this verb failed its own smoke — the nightly GmGrownRest
+                    // shape, 2026-09-14. Same line, same using, same reference as the template.
+                    plan.SmokeClientLines.Add("        client.DefaultRequestHeaders.Add(GoldpathHeaders.TenantId, \"smoke-tenant\");   // fail-closed tenancy");
+                    plan.SmokeUsings.Add("Goldpath");
+                    plan.SmokePackages.Add("Goldpath.Abstractions");
+                    plan.SmokeDoneMarker = "GoldpathHeaders.TenantId";
                     plan.NextSteps.Add("mark tenant-owned entities: partial class X : IMultiTenant (TenantId is filtered + write-guarded)");
                     plan.NextSteps.Add("fail-closed from now on: every request (and test) must send the Goldpath-Tenant-Id header (GoldpathHeaders.TenantId)");
                     return plan;

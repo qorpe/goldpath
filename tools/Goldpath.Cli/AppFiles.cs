@@ -51,6 +51,18 @@ public sealed class AppFiles
     /// <summary>The csproj that compiles <see cref="SampleCommandFile"/> — the nearest one above it.</summary>
     public string? SampleCommandProject { get; init; }
 
+    /// <summary>What identifies the template's smoke test: the client it creates for the Api resource.</summary>
+    public const string SmokeClientLine = "app.CreateHttpClient(\"api\");";
+
+    /// <summary>
+    /// The template's smoke test, or null when the team deleted it (or two files match —
+    /// goldpath does not choose). Like the sample command, not an anchor: nothing fails for its absence.
+    /// </summary>
+    public string? SmokeTestFile { get; init; }
+
+    /// <summary>The csproj that compiles <see cref="SmokeTestFile"/> — the nearest one above it.</summary>
+    public string? SmokeTestProject { get; init; }
+
     /// <summary>Scans the app root and resolves every anchored file.</summary>
     public static AppFiles Locate(string appRoot)
     {
@@ -72,6 +84,8 @@ public sealed class AppFiles
         var webProjects = FindByContent(appRoot, "*.csproj", "Microsoft.NET.Sdk.Web");
         var samples = FindByContent(appRoot, "*.cs", SampleCommandDeclaration);
         var sample = samples.Count == 1 ? samples[0] : null;
+        var smokes = FindByContent(appRoot, "*.cs", SmokeClientLine);
+        var smoke = smokes.Count == 1 ? smokes[0] : null;
 
         return new AppFiles
         {
@@ -96,6 +110,8 @@ public sealed class AppFiles
             PackagesProps = File.Exists(Path.Combine(appRoot, "Directory.Packages.props")) ? Path.Combine(appRoot, "Directory.Packages.props") : null,
             SampleCommandFile = sample,
             SampleCommandProject = sample is null ? null : OwningProject(sample, appRoot),
+            SmokeTestFile = smoke,
+            SmokeTestProject = smoke is null ? null : OwningProject(smoke, appRoot),
         };
     }
 
