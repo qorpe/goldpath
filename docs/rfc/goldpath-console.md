@@ -4,7 +4,7 @@ Status: **ACCEPTED** (2026-07-14) — D1 (React+Tailwind, dist-shipped; supersed
 RCL wording), D2 (triage-first home) and D3 (component tests + the GmConsole nightly
 shape) approved by the owner. U1 (kit) is live.
 Visual contract: `docs/strategy/ui-standard-v1.md` (adopted). Locked antecedents:
-ONE run console; the UI knows CAPABILITIES, not levels; products (Mockifyr, Praxis)
+ONE run console; the UI knows CAPABILITIES, not levels; products (such as Mockifyr)
 own their UI — the console links, never embeds; UI is written ONCE against the full,
 sample-proven capability set.
 
@@ -80,7 +80,7 @@ custom-develop ON, with the same kit, the same way they add features to the back
 ## 4. Decisions
 
 - **D1 — Stack: React + Tailwind, dist-shipped (supersedes the earlier RCL wording).**
-  One design system and one stack across the product family (Mockifyr/Praxis lineage);
+  One design system and one stack across the product family (the Mockifyr lineage);
   adopters NEVER run Node — CI builds the dist, `Goldpath.Console` ships it as embedded
   static assets served by `MapGoldpathConsole()` on the management head. SHIPPED (U4,
   2026-07-27): the package refuses to PACK without a built console; the registry comes
