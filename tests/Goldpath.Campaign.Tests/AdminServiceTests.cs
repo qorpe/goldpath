@@ -216,7 +216,7 @@ public class AdminServiceTests
         var id = fixture.Query(db => db.Set<GoldpathCampaign>().Single()).Id;
         Assert.Equal($"Campaign 'july' created as {id:N} (winback).", result.Message);
         var audit = fixture.Query(db => db.Set<GoldpathCampaignAudit>().Single());
-        Assert.Equal("type=winback policy=(tps=7 quota=42 maxInFlight=1000 window=09:00-18:00 Europe/Istanbul excludedDays=none endDate=open maxAttempts=1)", audit.Detail);
+        Assert.Equal("type=winback policy=(tps=7 quota=42 maxInFlight=1000 window=09:00-18:00 Europe/Istanbul excludedDays=none endDate=open maxAttempts=1 priority=Normal)", audit.Detail);
     }
 
     [Fact]
@@ -227,7 +227,7 @@ public class AdminServiceTests
         var throttled = await fixture.Admin().ThrottleAsync(campaign.Id, new GoldpathCampaignThrottle(Tps: 50), "op", CancellationToken.None);
         Assert.True(throttled.Ok);
         Assert.Equal(
-            "throttled by op: tps=200 quota=none maxInFlight=1000 window=always excludedDays=none endDate=open maxAttempts=1 -> tps=50 quota=none maxInFlight=1000 window=always excludedDays=none endDate=open maxAttempts=1",
+            "throttled by op: tps=200 quota=none maxInFlight=1000 window=always excludedDays=none endDate=open maxAttempts=1 priority=Normal -> tps=50 quota=none maxInFlight=1000 window=always excludedDays=none endDate=open maxAttempts=1 priority=Normal",
             fixture.Reload(campaign.Id).LastVerb);
         Assert.Equal("throttle: 'test run' is now Created.", throttled.Message);
     }

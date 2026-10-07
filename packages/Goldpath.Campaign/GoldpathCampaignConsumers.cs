@@ -9,6 +9,8 @@ namespace Goldpath;
 /// the handler's external call — a broker redelivery or a rebalance replay claims zero
 /// rows and drops silently; a double-send is structurally impossible (constraint 2).
 /// Outcomes are PUBLISHED, not written — the sink batches durable truth (constraint 4).
+/// R2.1: the handler's typed result decides the outcome's shape (terminal, retryable or
+/// accepted-pending-callback); a thrown exception is still a retryable failure.
 /// </summary>
 public sealed class GoldpathCampaignItemConsumer<TContext> : IConsumer<GoldpathCampaignItemMessage>
     where TContext : DbContext
@@ -36,24 +38,31 @@ public sealed class GoldpathCampaignItemConsumer<TContext> : IConsumer<GoldpathC
         var item = await _engine.ClaimAsync(_db, message.CampaignId, message.Seq, context.CancellationToken);
         if (item is null)
         {
-            return;   // duplicate delivery — someone owns it; dropping IS the correctness
+            return;   // duplicate delivery, or a paused campaign — someone owns it, or nobody should; dropping IS the correctness
         }
 
         var campaign = await _db.Set<GoldpathCampaign>().AsNoTracking()
             .SingleAsync(c => c.Id == message.CampaignId, context.CancellationToken);
+        GoldpathCampaignOutcomeMessage outcome;
         try
         {
-            await _engine.ExecuteItemAsync(
+            var result = await _engine.ExecuteItemAsync(
                 _services, message.Type, message.CampaignId, message.Seq, item.TargetJson,
-                campaign.Tenant, replay: false, context.CancellationToken);
-            await context.Publish(new GoldpathCampaignOutcomeMessage(message.CampaignId, message.Seq, true, null), context.CancellationToken);
+                campaign.Tenant, attempt: item.Attempts + 1, replay: false, context.CancellationToken);
+            outcome = _engine.OutcomeFor(message.CampaignId, message.Seq, result);
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
             _logger.LogWarning(e, "Campaign item {CampaignId}#{Seq} failed in its handler.", message.CampaignId, message.Seq);
-            await context.Publish(new GoldpathCampaignOutcomeMessage(
-                message.CampaignId, message.Seq, false, e.Message.Length > 1000 ? e.Message[..1000] : e.Message), context.CancellationToken);
+            outcome = new GoldpathCampaignOutcomeMessage(
+                message.CampaignId, message.Seq, false, e.Message.Length > 1000 ? e.Message[..1000] : e.Message)
+            {
+                ErrorCode = "HANDLER_EXCEPTION",
+                Retryable = true,
+            };
         }
+
+        await context.Publish(outcome, context.CancellationToken);
     }
 }
 

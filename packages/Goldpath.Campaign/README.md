@@ -48,6 +48,43 @@ builder.AddGoldpathMessaging<WebApplicationBuilder>(bus =>    // campaign REQUIR
 // DbContext: modelBuilder.AddGoldpathCampaign();  modelBuilder.AddGoldpathJobs();
 ```
 
+## R2: a target that answers later, a shared ceiling, a keyset takeover
+
+```csharp
+// Typed results — the R1 handler (return = success, throw = retryable) still works unchanged.
+public sealed class ConfigPushHandler : IGoldpathCampaignActionHandler<DeviceTarget>
+{
+    public async Task<GoldpathCampaignActionResult> ExecuteAsync(DeviceTarget target, GoldpathCampaignItemContext context, CancellationToken ct)
+    {
+        var answer = await _core.PushAsync(target.DeviceId, idempotencyKey: context.IdempotencyKey, ct);
+        return answer switch
+        {
+            PushAnswer.Done => GoldpathCampaignActionResult.Succeeded(),
+            PushAnswer.Queued q => GoldpathCampaignActionResult.Accepted(q.CorrelationId, ackTimeout: TimeSpan.FromHours(6)),
+            PushAnswer.Unsupported => GoldpathCampaignActionResult.Failed("UNSUPPORTED_DEVICE", "no management client", retryable: false),
+            _ => GoldpathCampaignActionResult.Failed("CORE_TIMEOUT", "no answer in 30s", retryable: true),
+        };
+    }
+}
+
+app.MapGoldpathCampaignCallbacks<OrdersDbContext>();   // the target system's answer: POST {prefix}/{type}/{correlationId}
+
+campaign.AddCampaign<DeviceTarget>("config-push", c => c
+    .MaxTargets(50_000_000)
+    .MaxTps(200)                                        // shared by EVERY config-push campaign — the target system's rate
+    .TargetsAfter((services, parameters, afterKey) =>   // keyset: a takeover reopens AFTER the last key, no skip read
+        services.GetRequiredService<OrdersDbContext>().Devices.AsNoTracking()
+            .Where(d => afterKey == null || d.Id.CompareTo(afterKey) > 0)
+            .OrderBy(d => d.Id)
+            .Select(d => new DeviceTarget(d.Id, d.PushToken))
+            .AsAsyncEnumerable(),
+        target => target.DeviceId));
+```
+
+An operator sets `Priority` (High · Normal · Low) on the policy — live, through the throttle
+verb — and a contended ceiling (`GlobalTps`, a type's `MaxTps`) splits 3 : 2 : 1 by weighted
+fair share; alone under its own policy a campaign runs at its own TPS whatever its priority.
+
 ## The guarantees
 
 - **The ceiling is mandatory:** a type without `MaxTargets` refuses to bake (GP1701);
@@ -64,7 +101,14 @@ builder.AddGoldpathMessaging<WebApplicationBuilder>(bus =>    // campaign REQUIR
 - **Repair, not requeue:** every failed item lands in the jobs repair queue with its
   coordinate (`{campaign}#{seq}`); `replay-items` re-executes through your handler.
 - **Takeover-safe:** enumeration and release advance durable watermarks; a new leader
-  resumes exactly where the dead one stopped.
+  resumes exactly where the dead one stopped — after the last KEY for a keyset type, by
+  count otherwise.
+- **An acceptance is not a success:** an item a target system accepted waits in
+  `AwaitingAck` until its callback or its deadline; a missed deadline is a retryable
+  failure, and the callback surface is idempotent (a repeated webhook publishes nothing).
+- **Pause means now:** a message that reaches a consumer after the pause claims nothing;
+  a release the broker lost is published again after `OrphanReleaseAfter`, and resume
+  brings every unclaimed release back on the next tick.
 
 Ops surface (create/pause/resume/abort/throttle admin API, per-campaign panel, runbooks)
 ships in S2; run views live in the JOBS console today — the pacer IS a jobs run.

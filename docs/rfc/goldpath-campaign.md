@@ -41,7 +41,10 @@ throttle), progress/ETA that an operator can trust, admin API + ops pack.
   campaigns, which needs per-provider accounting and a fairness policy. R1.4's
   `GlobalTps` is the other direction: protecting OUR OWN platform with one blunt total
   across everything the pacer releases. Same word, different owner of the limit; the
-  non-goal's trigger stands untouched.
+  non-goal's trigger stands untouched. *R2 (2026-10-07): the trigger fired — a
+  device-fleet adopter running several campaigns against one target system — and R2.4's
+  per-type `MaxTps` with R2.5's weighted fair share is the per-provider accounting this
+  bullet asked for. Closed.*
 - Audience/segmentation tooling (the app's selector answers "who"; marketing segmentation
   is a product, not a module).
 - A/B testing, multi-step journeys (drip sequences) — campaign orchestration products
@@ -165,6 +168,14 @@ operator's single screen per campaign (progress, rate governor, failure rate, ET
    the drill that proves constraint 3).
 6. Abort semantics (drain in-flight claims, terminal-state the remainder as Aborted —
    evidence of what was NOT sent is evidence too).
+7. Acceptances piling up (R2.1: `AwaitingAck` growing, `goldpath_campaign_ack_timeouts_total`
+   climbing) — the callback surface is unreachable or the target system stopped answering.
+   Check the surface first; the sweep turns every missed deadline into a retryable failure,
+   and the ladder exhausts into the repair queue, never into a silent success.
+8. `goldpath_campaign_orphans_rereleased_total` climbing with no pause in sight (R2.6) —
+   consumers are refusing claims or the broker is losing messages: a half-stopped host whose
+   consumers hold prefetched messages, a purged queue. The sweep keeps the campaign moving;
+   the number says a host needs looking at.
 
 ## 9. Test Plan
 
@@ -268,3 +279,98 @@ columns + one small retry-bookkeeping column on items.
    live and the pacer honors it on the next tick.
 3. Console: the governor grows the fields; the smoke drives an excluded-day flip and an
    end-date expiry against a real campaign.
+
+## Revision R2 — asynchronous targets, shared ceilings, keyset takeover (ACCEPTED 2026-10-07; **IMPLEMENTED 2026-10-07** — model+engine+pacer+sink+admin+callbacks+console; proofs: 30 unit cases (typed results, the ack sweep and the callback resolution, the configurable jittered ladder, the fair-share math, the type ceiling and priority on the pacer, the pause guard and orphaned releases, the keyset resume) and two real-broker integrations (acceptances settled over HTTP callbacks with two never-answered items walking the ladder; an ungraceful leader stop mid-enumeration resumed by key on a second host with nothing lost or doubled). Ships to adopters with preview.9 — one `goldpath db add CampaignR2` migration: two campaign columns, five item columns, one index replaced by three)
+
+**Finding.** A design review for a device-management-class adopter (tens of millions of
+targets, several target systems behind one platform, pushes that run for days) compared
+the module with the adopter's own architecture line by line. In four places the two
+disagreed and the design was right:
+
+1. A handler's whole vocabulary was *return* or *throw*. A target system that ACCEPTS a
+   request and answers minutes later had no honest state — the handler either claimed
+   success before the answer or held a consumer slot for the wait — and a permanent
+   refusal (an unsupported device, a closed account) walked the retry ladder like a timeout.
+2. Several campaigns against ONE target system shared nothing but the platform total
+   (`GlobalTps`), and under that total the campaign created first drank first.
+3. A message already sitting in the queue when the operator pressed *pause* was still
+   executed: pause latency was the queue depth, not one message.
+4. A takeover re-read every materialized row of the selector to skip it — seconds at a
+   hundred thousand targets, minutes at thirty million.
+
+Every addition is a handler contract, a policy field or a pacer rule; no new module, no
+new screen concept.
+
+| # | Addition | The sentence for it |
+|---|---|---|
+| R2.1 | Typed results: `IGoldpathCampaignActionHandler<T>` answers `Succeeded()`, `Failed(code, message, retryable)` or `Accepted(correlationId, ackTimeout)`. An acceptance parks the item in `AwaitingAck` (still in flight); the target system's answer arrives on `MapGoldpathCampaignCallbacks` (`POST {prefix}/{type}/{correlationId}`, idempotent, a machine surface with its own policy parameter); an acceptance nobody answered becomes a RETRYABLE failure (`ACK_TIMEOUT`) at its deadline, never a success. A non-retryable failure is terminal at once with its code kept for the report. The R1 handler keeps its contract untouched. | "the device answers when it wakes up — wait for it, but not forever" / "this one is permanently unsupported, do not retry it" |
+| R2.2 | An idempotency key per attempt on the item context (`{campaign}#{seq}#{attempt}`) | "the gateway dedupes on a key — give me one that changes only when the retry is deliberate" |
+| R2.3 | The ladder is configurable and jittered: `RetryBackoff` (default 30s, 2m, 10m), `RetryJitter` (default ±20%); the ripe instant is persisted per item (`NextAttemptAt`) and released off one indexed range | "a thousand items that failed in the same second must not come back in the same second" |
+| R2.4 | A per-TYPE ceiling: `.MaxTps(n)` on the type, shared by every campaign of that type — the target system's protection, as `GlobalTps` is the platform's | "the gateway takes two hundred a second, whatever we run against it" |
+| R2.5 | `Priority` (High 3 · Normal 2 · Low 1) on the policy, live through the throttle verb and the console; a contended shared ceiling splits by weighted max-min fair share — a claimant never gets more than it asked for, what it leaves is shared by weight, nobody starves, and a one-unit tick rotates among equals | "the security patch goes ahead of the marketing push, but the push still moves" |
+| R2.6 | The claim guard reads the CAMPAIGN too: a message reaching a consumer after a pause or abort claims nothing. Released rows carry `ReleasedAt`; a row unclaimed past `OrphanReleaseAfter` (default 5m) is published again under the same allowance, and *resume* marks every Released row due at once | "pause means now" / "a message the broker lost is not an item lost" |
+| R2.7 | A keyset selector: `.TargetsAfter((services, parameters, afterKey) => …, keyOf)`; the campaign row carries `EnumeratedKey` in the same write as the items it covers; a takeover reopens the selector after the key | "a new leader must not re-read thirty million rows to find its place" |
+
+### Deliberately NOT in this revision
+
+- **Target sources as data** (a filter, a group, an uploaded list picked from the
+  console). Unchanged from R1: a selector is code, shipped through a PR; a console that
+  turns operator text into a thirty-million-row query is ADR-0001's breach wearing a
+  different hat. An adopter's catalogue of sources is one `AddCampaign` per source kind,
+  each with its own ceiling.
+- **A campaign whose items are themselves bulk batches** (a Bulk bridge). The two ladders
+  meet at the handler: an item handler that enqueues a bulk batch is three lines of app
+  code; a module seam would freeze a shape no second adopter has asked for.
+- **Four-eyes on *create*** (an Approvals binding). Trigger: the first adopter whose policy
+  requires a second person on a campaign start. The verb is already audited and the
+  Approvals module already exists, so the binding is a day's work when the trigger fires.
+- **Finer roles than the ops floor; exports of item outcomes.** The admin surface stays one
+  policy; exports ride the failed-items drill-down and the app's own reporting.
+- **A distributed limiter, the Kafka rider, Oracle:** unchanged (R1, D4, T16).
+
+### Compatibility
+
+Additive for adopters on the R1 handler: `IGoldpathCampaignItemHandler<T>` keeps
+return-is-success / throw-is-retryable; the outcome message keeps its positional shape
+(the new init-only members default to R1 behaviour); `RetryBackoff` defaults reproduce the
+R1 pair plus one rung; `Priority` defaults to Normal; `OrphanReleaseAfter` defaults to five
+minutes; no route of the frozen admin contract moves. Two source-level changes for code
+that calls the engine or constructs the admin records directly:
+`GoldpathCampaignEngine<TContext>.ExecuteItemAsync` gains an `attempt` parameter and returns
+the typed result; `GoldpathCampaignInfo` gains `Priority` (positional) and
+`GoldpathCampaignThrottle` gains an optional `Priority`. One migration:
+`goldpath db add CampaignR2`.
+
+### Test plan (DoD) — met
+
+1. Unit: the three result shapes land in three item states and a non-retryable failure is
+   terminal at once; the idempotency key names the attempt; a callback settles an accepted
+   item and a repeated callback publishes nothing; a failed callback walks the ladder with
+   the provider's code; a passed ack deadline is a retryable failure and then exhausts; the
+   ladder reads its rungs from options and jitters within the bound; a ripe retry claims
+   while an unripe one does not; the fair-share math (small demands first, weights, no
+   starvation, rotation among equals); two campaigns of one type share its ceiling evenly
+   when equal and four-to-one under priority; priority alone never throttles; priority is
+   live through the throttle verb; a message arriving after the pause claims nothing and
+   resume brings it back; a fresh release is not an orphan until its age passes; the pacer
+   publishes orphans again under the same allowance; an aborted campaign refuses the claim;
+   a takeover reopens a keyset selector after the last key with no skip read.
+2. Integration (real broker + pg): forty customers, odd ones accepted and settled over the
+   HTTP callback surface (202 on a pending acceptance, 200 on a repeat, 404 on an unknown
+   id), two never answered — ack timeout, rung one, second attempt succeeded, every
+   customer exactly once; a keyset campaign whose first host is stopped ungracefully
+   mid-enumeration and taken over by a second host — the selector reopened after a key at
+   or past the stop, the sequence dense, every customer exactly once.
+3. Console: the governor shows priority and the throttle patches it.
+
+### What the real broker taught (kept as evidence)
+
+- **Publish-before-mark and the retry.** On RabbitMQ the retry's message reached a consumer
+  before the AwaitingRetry→Released mark landed, and the claim guard — which had only ever
+  seen Pending and Released — dropped every retry as a duplicate. R1's ladder had unit proof
+  only, so the race had never been seen. A ripe `AwaitingRetry` row now claims; an unripe one
+  still does not. This is why the DoD names a real broker.
+- **A half-stopped host is a zombie.** Its consumers hold prefetched messages and its outcome
+  sink swallows the live host's outcomes. The sweeps are the answer on their own clocks
+  (`StaleClaimAfter`, `OrphanReleaseAfter`, runbook items 7–8); the takeover test stops the
+  dead host's bus the way a killed process drops its connection.

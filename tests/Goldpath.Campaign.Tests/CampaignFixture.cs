@@ -97,7 +97,7 @@ public sealed class CampaignFixture : IDisposable
 {
     private readonly SqliteConnection _connection;
 
-    public CampaignFixture(Action<GoldpathCampaignOptions>? configure = null, int sourceSize = 10)
+    public CampaignFixture(Action<GoldpathCampaignOptions>? configure = null, int sourceSize = 10, Action<IServiceCollection>? extraServices = null)
     {
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
@@ -120,6 +120,7 @@ public sealed class CampaignFixture : IDisposable
                 Options, TimeProvider.System, NullLogger<GoldpathCampaignEngine<CampaignTestContext>>.Instance));
         services.AddScoped<IGoldpathCampaignItemHandler<TestTarget>>(_ => new TestHandler(this));
         services.AddLogging();
+        extraServices?.Invoke(services);
         Services = services.BuildServiceProvider();
 
         using var scope = Services.CreateScope();
@@ -190,9 +191,9 @@ public sealed class CampaignFixture : IDisposable
 
             try
             {
-                await Engine.ExecuteItemAsync(scope.ServiceProvider, message.Type,
-                    message.CampaignId, message.Seq, item.TargetJson, null, replay: false, CancellationToken.None);
-                outcomes.Add(new GoldpathCampaignOutcomeMessage(message.CampaignId, message.Seq, true, null));
+                var result = await Engine.ExecuteItemAsync(scope.ServiceProvider, message.Type,
+                    message.CampaignId, message.Seq, item.TargetJson, null, attempt: item.Attempts + 1, replay: false, CancellationToken.None);
+                outcomes.Add(Engine.OutcomeFor(message.CampaignId, message.Seq, result));
             }
             catch (Exception e)
             {

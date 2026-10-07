@@ -33,6 +33,24 @@ public enum GoldpathCampaignState
     ExpiredIncomplete = 7,
 }
 
+/// <summary>
+/// How much of a SHARED ceiling a campaign is entitled to when several campaigns compete
+/// for it (campaign RFC R2.5). Only a shared bucket (GlobalTps, a type's MaxTps) reads it;
+/// a campaign alone under its own policy releases at its own Tps whatever its priority.
+/// Normal is 0 on purpose: every row that predates the column is Normal.
+/// </summary>
+public enum GoldpathCampaignPriority
+{
+    /// <summary>The default: weight 2.</summary>
+    Normal = 0,
+
+    /// <summary>Weight 3 — an urgent campaign takes one and a half times a normal one's share under contention.</summary>
+    High = 1,
+
+    /// <summary>Weight 1 — bulk work that yields to everything else, never to zero.</summary>
+    Low = 2,
+}
+
 /// <summary>One item's journey (lean ON PURPOSE — this table reaches 30M rows).</summary>
 public enum GoldpathCampaignItemState
 {
@@ -60,6 +78,13 @@ public enum GoldpathCampaignItemState
     /// which is honest backpressure.
     /// </summary>
     AwaitingRetry = 6,
+
+    /// <summary>
+    /// The target system ACCEPTED the request and will answer through the callback surface
+    /// (R2.1). NOT terminal — it occupies an in-flight slot until the callback or the ack
+    /// deadline settles it; the deadline turns it into a retryable failure, never a success.
+    /// </summary>
+    AwaitingAck = 7,
 }
 
 /// <summary>A campaign INSTANCE: created at runtime over a code-registered type (D1).</summary>
@@ -109,6 +134,9 @@ public class GoldpathCampaign
     /// <summary>Attempts per item before it lands in the repair queue (R1.3); 1 = no auto-retry.</summary>
     public int MaxAttempts { get; set; } = 1;
 
+    /// <summary>Share of a contended shared ceiling (R2.5); live-adjustable like the rest of the policy.</summary>
+    public GoldpathCampaignPriority Priority { get; set; }
+
     // ---- watermarks & durable truth (D3) ----
 
     /// <summary>Items materialized so far (enumeration watermark = the next Seq).</summary>
@@ -116,6 +144,13 @@ public class GoldpathCampaign
 
     /// <summary>True when the selector stream is exhausted (TotalItems is final).</summary>
     public bool EnumerationComplete { get; set; }
+
+    /// <summary>
+    /// The key of the last materialized target when the type resumes by KEY (R2.7); null
+    /// for count-resumed types. A takeover reopens the selector AFTER this key instead of
+    /// re-reading <see cref="EnumeratedThrough"/> rows to skip them.
+    /// </summary>
+    public string? EnumeratedKey { get; set; }
 
     /// <summary>Items released to the broker so far (release watermark = the next Seq).</summary>
     public long ReleasedThrough { get; set; }
@@ -165,6 +200,14 @@ public class GoldpathCampaignItem
     /// <summary>Item state (guarded updates; no concurrency token at this scale).</summary>
     public GoldpathCampaignItemState State { get; set; }
 
+    /// <summary>
+    /// When the leader last published this item (R2.6). A Released item still unclaimed
+    /// after <see cref="GoldpathCampaignOptions.OrphanReleaseAfter"/> is an orphan — its
+    /// message was dropped (a pause, a broker purge, a consumer that refused the claim) —
+    /// and the pacer publishes it again. Null = due now (a resume stamps it so).
+    /// </summary>
+    public DateTimeOffset? ReleasedAt { get; set; }
+
     /// <summary>Stamped by the CONSUMER's claim, before any external call (constraint 2).</summary>
     public DateTimeOffset? ClaimedAt { get; set; }
 
@@ -176,6 +219,18 @@ public class GoldpathCampaignItem
 
     /// <summary>Delivery attempts consumed (R1.3) — the ladder's bookkeeping, one small column.</summary>
     public int Attempts { get; set; }
+
+    /// <summary>When an <see cref="GoldpathCampaignItemState.AwaitingRetry"/> item may be re-released (R2.3; jittered).</summary>
+    public DateTimeOffset? NextAttemptAt { get; set; }
+
+    /// <summary>When an <see cref="GoldpathCampaignItemState.AwaitingAck"/> item stops waiting for its callback (R2.1).</summary>
+    public DateTimeOffset? AckDeadline { get; set; }
+
+    /// <summary>The id the target system's callback names (R2.1; acceptances only).</summary>
+    public string? CorrelationId { get; set; }
+
+    /// <summary>The provider's short, stable error code (R2.1; reports group by it).</summary>
+    public string? ErrorCode { get; set; }
 }
 
 /// <summary>
@@ -221,6 +276,7 @@ public static class GoldpathCampaignModel
             campaign.Property(c => c.CreatedBy).HasMaxLength(256);
             campaign.Property(c => c.LastVerb).HasMaxLength(512);
             campaign.Property(c => c.Tenant).HasMaxLength(128);
+            campaign.Property(c => c.EnumeratedKey).HasMaxLength(256);
             campaign.Property(c => c.ParametersJson).HasMaxLength(-1);   // caller's selector parameters — a DOCUMENT (#198)
             campaign.Property(c => c.State).IsConcurrencyToken();
             campaign.HasIndex(c => new { c.State, c.CreatedAt });
@@ -232,7 +288,14 @@ public static class GoldpathCampaignModel
             item.HasKey(i => new { i.CampaignId, i.Seq });
             item.Property(i => i.TargetJson).HasMaxLength(-1);   // the serialized target — a DOCUMENT (#198); truncation corrupts every wide row of the 30M-row table
             item.Property(i => i.Error).HasMaxLength(1024);
-            item.HasIndex(i => new { i.CampaignId, i.State });
+            item.Property(i => i.ErrorCode).HasMaxLength(64);
+            item.Property(i => i.CorrelationId).HasMaxLength(128);
+            // R2: the ripeness query (State + NextAttemptAt) and the callback lookup (CorrelationId)
+            // each get the index they walk; the old (CampaignId, State) prefix survives inside the first.
+            item.HasIndex(i => new { i.CampaignId, i.State, i.NextAttemptAt });
+            item.HasIndex(i => new { i.CampaignId, i.CorrelationId });
+            // R2.6: the orphan sweep walks Released items by age.
+            item.HasIndex(i => new { i.CampaignId, i.State, i.ReleasedAt });
         });
 
         modelBuilder.Entity<GoldpathCampaignAudit>(audit =>

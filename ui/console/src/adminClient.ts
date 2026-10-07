@@ -285,6 +285,8 @@ export interface CampaignInfo {
   excludedDays: string[];
   endDate?: string | null;
   maxAttempts: number;
+  /** R2.5: "Normal" | "High" | "Low" — the share of a contended shared ceiling (GlobalTps, a type's MaxTps). */
+  priority: string;
   windowOpenNow: boolean;
   etaSecondsAtCurrentTps?: number | null;
   createdAt: string;
@@ -333,6 +335,8 @@ export interface CampaignThrottle {
   maxAttempts?: number;
   clearExcludedDays?: boolean;
   clearEndDate?: boolean;
+  /** R2.5: the share of a contended shared ceiling (High 3 · Normal 2 · Low 1); omitted = keep. */
+  priority?: "Normal" | "High" | "Low";
 }
 
 /** One template with its live queue numbers and its retention promise. */
