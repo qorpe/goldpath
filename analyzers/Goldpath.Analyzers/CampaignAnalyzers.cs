@@ -48,9 +48,15 @@ internal static class CampaignMatching
             return false;
         }
 
-        var handlerInterface = context.Compilation.GetTypeByMetadataName("Goldpath.IGoldpathCampaignItemHandler`1");
-        if (handlerInterface is null || !type.AllInterfaces.Any(i =>
-            SymbolEqualityComparer.Default.Equals(i.OriginalDefinition, handlerInterface)))
+        // R2.1: both execution hooks are item handlers for GP1702/GP1703 — the typed-result
+        // one must not SaveChanges or bypass the notification seam any more than the R1 one.
+        var handlerInterfaces = new[]
+        {
+            context.Compilation.GetTypeByMetadataName("Goldpath.IGoldpathCampaignItemHandler`1"),
+            context.Compilation.GetTypeByMetadataName("Goldpath.IGoldpathCampaignActionHandler`1"),
+        };
+        if (!type.AllInterfaces.Any(i => handlerInterfaces.Any(handlerInterface =>
+            handlerInterface is not null && SymbolEqualityComparer.Default.Equals(i.OriginalDefinition, handlerInterface))))
         {
             return false;
         }

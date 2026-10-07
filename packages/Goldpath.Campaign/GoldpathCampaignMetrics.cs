@@ -23,6 +23,12 @@ public static class GoldpathCampaignMetrics
     private static readonly Counter<long> WindowClosedTicks = Meter.CreateCounter<long>(
         "goldpath_campaign_window_closed_ticks_total", description: "Leader ticks skipped because the send window was closed.");
 
+    private static readonly Counter<long> AckTimeoutsTotal = Meter.CreateCounter<long>(
+        "goldpath_campaign_ack_timeouts_total", description: "Accepted items whose callback never came before the deadline (R2.1).");
+
+    private static readonly Counter<long> OrphansTotal = Meter.CreateCounter<long>(
+        "goldpath_campaign_orphans_rereleased_total", description: "Released items published again because no consumer claimed them in time (R2.6).");
+
     private static readonly object SnapshotLock = new();
     private static readonly Dictionary<Guid, (string Type, long Remaining, long InFlight)> Snapshots = [];
 
@@ -36,6 +42,12 @@ public static class GoldpathCampaignMetrics
 
     internal static void Released(string type, int count)
         => ReleasedTotal.Add(count, new KeyValuePair<string, object?>("type", type));
+
+    internal static void Orphans(string type, int count)
+        => OrphansTotal.Add(count, new KeyValuePair<string, object?>("type", type));
+
+    internal static void AckTimeouts(string type, int count)
+        => AckTimeoutsTotal.Add(count, new KeyValuePair<string, object?>("type", type));
 
     internal static void Outcomes(Guid campaignId, int succeeded, int failed)
     {

@@ -46,13 +46,17 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
         // R1.4: ONE bucket over every campaign in the slice — per-campaign limits cannot
         // see each other, and five campaigns at once must not melt the platform.
         var globalBudget = 0d;
+        // R2.4: one bucket per campaign TYPE that declares a ceiling — the target system's rate.
+        var typeBudgets = new Dictionary<string, double>(StringComparer.Ordinal);
         var streams = new Dictionary<Guid, LeaderStream>();
+        var tick = 0;
         try
         {
             while (_time.GetUtcNow() < sliceEnd)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var tickStart = _time.GetTimestamp();
+                tick++;
                 // Each tick gets its OWN scope: the runner tracks its checkpoint entities
                 // in the fire's scope, and the engine's tracker hygiene must never detach
                 // them (a cleared checkpoint = a run that resumes forever).
@@ -65,11 +69,39 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
                     globalBudget = Math.Min(globalBudget + globalTps * _options.LeaderTick.TotalSeconds, globalTps);
                 }
 
-                foreach (var campaign in campaigns)
+                foreach (var type in _options.Types)
                 {
-                    var spent = await WorkOneTickAsync(tickScope.ServiceProvider, campaign, tpsBudgets,
-                        _options.GlobalTps is null ? null : globalBudget, streams, chunk, cancellationToken);
+                    if (type.MaxTps is { } maxTps)
+                    {
+                        typeBudgets[type.Key] = Math.Min(
+                            typeBudgets.GetValueOrDefault(type.Key) + maxTps * _options.LeaderTick.TotalSeconds, maxTps);
+                    }
+                }
+
+                // Phase 1 — each campaign's OWN allowance this tick (policy, window, quota, in-flight).
+                var demands = new int[campaigns.Count];
+                for (var i = 0; i < campaigns.Count; i++)
+                {
+                    demands[i] = await PrepareTickAsync(tickScope.ServiceProvider, campaigns[i], tpsBudgets, streams, cancellationToken);
+                }
+
+                // Phase 2 — the shared ceilings, split by weighted fair share (R2.4 + R2.5).
+                var grants = Allocate(campaigns, demands, typeBudgets, _options.GlobalTps is null ? null : globalBudget, tick);
+
+                // Phase 3 — release under the grant, then the sweeps and the completion math.
+                for (var i = 0; i < campaigns.Count; i++)
+                {
+                    if (demands[i] < 0)
+                    {
+                        continue;   // not releasing this tick (paused, enumerating, closed window, expired)
+                    }
+
+                    var spent = await ReleaseTickAsync(tickScope.ServiceProvider, campaigns[i], grants[i], tpsBudgets, chunk, cancellationToken);
                     globalBudget -= spent;
+                    if (typeBudgets.ContainsKey(campaigns[i].Type))
+                    {
+                        typeBudgets[campaigns[i].Type] -= spent;
+                    }
                 }
 
                 var elapsed = _time.GetElapsedTime(tickStart);
@@ -89,6 +121,49 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
     }
 
     /// <summary>
+    /// Caps each campaign's own allowance by the shared ceilings: first the type bucket
+    /// among the campaigns of that type, then the global bucket among everyone — each a
+    /// weighted max-min split, so a High campaign cannot be starved by a Low one that
+    /// happened to be created first (R2.5).
+    /// </summary>
+    private static int[] Allocate(List<GoldpathCampaign> campaigns, int[] demands, Dictionary<string, double> typeBudgets, double? globalBudget, int tick)
+    {
+        var capped = new int[campaigns.Count];
+        for (var i = 0; i < campaigns.Count; i++)
+        {
+            capped[i] = Math.Max(0, demands[i]);
+        }
+
+        foreach (var group in campaigns.Select((campaign, index) => (campaign, index)).GroupBy(x => x.campaign.Type, StringComparer.Ordinal))
+        {
+            if (!typeBudgets.TryGetValue(group.Key, out var budget))
+            {
+                continue;
+            }
+
+            var members = group.ToArray();
+            var claims = members
+                .Select(m => new GoldpathCampaignFairShareClaim(GoldpathCampaignFairShare.WeightOf(m.campaign.Priority), capped[m.index]))
+                .ToArray();
+            var granted = GoldpathCampaignFairShare.Allocate(claims, (int)Math.Floor(Math.Max(0, budget)), tick % Math.Max(1, members.Length));
+            for (var k = 0; k < members.Length; k++)
+            {
+                capped[members[k].index] = granted[k];
+            }
+        }
+
+        if (globalBudget is { } shared)
+        {
+            var claims = campaigns
+                .Select((campaign, index) => new GoldpathCampaignFairShareClaim(GoldpathCampaignFairShare.WeightOf(campaign.Priority), capped[index]))
+                .ToArray();
+            capped = GoldpathCampaignFairShare.Allocate(claims, (int)Math.Floor(Math.Max(0, shared)), tick % Math.Max(1, campaigns.Count));
+        }
+
+        return capped;
+    }
+
+    /// <summary>
     /// One open target stream + the scope it reads through. The stream MUST NOT share the
     /// tick's DbContext: enumeration keeps a data reader open across ticks, and the item
     /// writes would collide with it on the same connection.
@@ -104,10 +179,14 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
         }
     }
 
-    private async Task<int> WorkOneTickAsync(
+    /// <summary>
+    /// Phase 1 of a tick: expiry, enumeration, and the campaign's OWN allowance from the
+    /// live policy. Returns -1 when the campaign releases nothing this tick (and needs no
+    /// sweep), otherwise the allowance before the shared ceilings cap it.
+    /// </summary>
+    private async Task<int> PrepareTickAsync(
         IServiceProvider services, GoldpathCampaign campaign,
-        Dictionary<Guid, double> tpsBudgets, double? globalBudget, Dictionary<Guid, LeaderStream> streams,
-        GoldpathJobChunk chunk, CancellationToken cancellationToken)
+        Dictionary<Guid, double> tpsBudgets, Dictionary<Guid, LeaderStream> streams, CancellationToken cancellationToken)
     {
         var db = services.GetRequiredService<TContext>();
 
@@ -122,7 +201,7 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
                 await open.DisposeAsync();
             }
 
-            return 0;
+            return -1;
         }
 
         // 1) Enumerate ahead (streaming, ceilinged) while the source has more.
@@ -154,7 +233,7 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
 
         if (campaign.State != GoldpathCampaignState.Running)
         {
-            return 0;   // paused / ceiling-paused / still enumerating first batch
+            return -1;   // paused / ceiling-paused / still enumerating first batch
         }
 
         // 2) Policy math on the LIVE row values (throttle takes effect within one tick).
@@ -167,43 +246,57 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
             // R1.1: an excluded day releases nothing — and the day AFTER resumes
             // without a human. In-flight items still drain; the sink still applies.
             GoldpathCampaignMetrics.WindowClosed(campaign.Type);
-            return 0;
+            return -1;
         }
 
         if (!policy.IsWindowOpen(now))
         {
             GoldpathCampaignMetrics.WindowClosed(campaign.Type);
-            return 0;
+            return -1;
         }
 
         var budget = tpsBudgets.GetValueOrDefault(campaign.Id)
             + policy.Tps * _options.LeaderTick.TotalSeconds;
         budget = Math.Min(budget, policy.Tps);   // never bank more than one second of tokens
+        tpsBudgets[campaign.Id] = budget;
         var inFlight = campaign.ReleasedThrough - campaign.SucceededCount - campaign.FailedCount;
-        var allowance = (int)Math.Floor(Math.Min(budget, Math.Max(0,
+        return (int)Math.Floor(Math.Min(budget, Math.Max(0,
             Math.Min(policy.MaxInFlight - inFlight,
                 policy.DailyQuota is { } quota ? quota - campaign.ReleasedToday : long.MaxValue))));
-        if (globalBudget is { } shared)
-        {
-            // R1.4: the global gate caps the ALLOWANCE — window, quota and in-flight math
-            // stay per-campaign; only the release rate is shared.
-            allowance = Math.Min(allowance, (int)Math.Floor(Math.Max(0, shared)));
-        }
+    }
+
+    /// <summary>
+    /// Phase 3 of a tick: release under the granted allowance (ripe retries first, then
+    /// orphans, then fresh items — all three ride the same grant), then the sweeps and
+    /// the completion math. Returns what was spent.
+    /// </summary>
+    private async Task<int> ReleaseTickAsync(
+        IServiceProvider services, GoldpathCampaign campaign, int grant,
+        Dictionary<Guid, double> tpsBudgets, GoldpathJobChunk chunk, CancellationToken cancellationToken)
+    {
+        var db = services.GetRequiredService<TContext>();
+        var now = _time.GetUtcNow();
+        var inFlight = campaign.ReleasedThrough - campaign.SucceededCount - campaign.FailedCount;
 
         var spent = 0;
-        if (allowance > 0)
+        if (grant > 0)
         {
             // R1.3: ripe retries ride the SAME allowance as fresh releases — a retry storm
-            // must not out-run the policy any more than a first send may.
-            var retried = await _engine.ReleaseRipeRetriesAsync(services, campaign, allowance, cancellationToken);
-            var released = retried >= allowance
+            // must not out-run the policy any more than a first send may. R2.6: so do
+            // orphaned releases — a re-publish is a send.
+            var retried = await _engine.ReleaseRipeRetriesAsync(services, campaign, grant, cancellationToken);
+            var orphans = retried >= grant
                 ? 0
-                : await _engine.ReleaseBatchAsync(services, campaign, allowance - retried, cancellationToken);
-            spent = retried + released;
-            budget -= spent;
+                : await _engine.ReleaseOrphansAsync(services, campaign, grant - retried, cancellationToken);
+            var released = retried + orphans >= grant
+                ? 0
+                : await _engine.ReleaseBatchAsync(services, campaign, grant - retried - orphans, cancellationToken);
+            spent = retried + orphans + released;
+            tpsBudgets[campaign.Id] = tpsBudgets.GetValueOrDefault(campaign.Id) - spent;
         }
 
-        tpsBudgets[campaign.Id] = budget;
+        // 3a) Ack sweep (R2.1): accepted items whose callback never came walk the ladder.
+        await _engine.SweepAckTimeoutsAsync(db, campaign, cancellationToken);
 
         // 3) Stale-claim sweep: a consumer died between claim and outcome — repair, never resend.
         var staleBefore = now - _options.StaleClaimAfter;

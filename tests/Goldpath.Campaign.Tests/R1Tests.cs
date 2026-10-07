@@ -22,6 +22,7 @@ public class R1Tests
             o.LeadershipSlice = TimeSpan.FromMilliseconds(400);
             o.LeaderTick = TimeSpan.FromMilliseconds(20);
             o.EnumerationBatchSize = 4;
+            o.RetryJitter = 0;   // these tests count the R1 ladder's exact seconds; R2's jitter has its own test
             extra?.Invoke(o);
         };
 

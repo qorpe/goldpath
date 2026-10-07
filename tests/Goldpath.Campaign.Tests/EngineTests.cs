@@ -193,7 +193,7 @@ public class EngineTests
         var campaign = await fixture.CreateAsync();
         using var scope = fixture.Services.CreateScope();
         await fixture.Engine.ExecuteItemAsync(scope.ServiceProvider, "winback", campaign.Id, 5,
-            """{"Id":3,"Email":"user3@example.test"}""", "acme", replay: true, CancellationToken.None);
+            """{"Id":3,"Email":"user3@example.test"}""", "acme", attempt: 1, replay: true, CancellationToken.None);
 
         var (target, context) = Assert.Single(fixture.Executed);
         Assert.Equal(new TestTarget(3, "user3@example.test"), target);

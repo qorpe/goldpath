@@ -41,6 +41,7 @@ interface ThrottleDraft {
   maxAttempts: string;
   clearExcludedDays: boolean;
   clearEndDate: boolean;
+  priority: string;
 }
 
 const EMPTY_DRAFT: ThrottleDraft = {
@@ -57,6 +58,7 @@ const EMPTY_DRAFT: ThrottleDraft = {
   maxAttempts: "",
   clearExcludedDays: false,
   clearEndDate: false,
+  priority: "",
 };
 
 /**
@@ -81,6 +83,7 @@ export function toThrottle(draft: ThrottleDraft): CampaignThrottle {
   if (number(draft.maxAttempts) !== undefined) patch.maxAttempts = number(draft.maxAttempts);
   if (draft.clearExcludedDays) patch.clearExcludedDays = true;
   if (draft.clearEndDate) patch.clearEndDate = true;
+  if (text(draft.priority)) patch.priority = text(draft.priority) as CampaignThrottle["priority"];
   return patch;
 }
 
@@ -99,6 +102,7 @@ export function describeThrottle(patch: CampaignThrottle): string {
   if (patch.maxAttempts !== undefined) parts.push(`${patch.maxAttempts} attempts per item`);
   if (patch.clearExcludedDays) parts.push("no excluded days");
   if (patch.clearEndDate) parts.push("no end date");
+  if (patch.priority) parts.push(`priority ${patch.priority}`);
   return parts.join(", ");
 }
 
@@ -347,7 +351,8 @@ export function CampaignPanel({ client }: CampaignPanelProps) {
                 { key: "Daily quota", value: selected.dailyQuota == null ? "none" : `${selected.releasedToday} of ${selected.dailyQuota} today` },
                 { key: "Excluded days", value: selected.excludedDays.length === 0 ? "none" : selected.excludedDays.join(", ") },
                 { key: "End date", value: selected.endDate ?? "open-ended" },
-                { key: "Retry", value: selected.maxAttempts <= 1 ? "no auto-retry" : `${selected.maxAttempts} attempts per item (30s → 2m → repair queue)` },
+                { key: "Retry", value: selected.maxAttempts <= 1 ? "no auto-retry" : `${selected.maxAttempts} attempts per item (the configured ladder, then the repair queue)` },
+                { key: "Priority", value: `${selected.priority} — its share of a contended ceiling (High 3 · Normal 2 · Low 1)` },
                 {
                   key: "Window",
                   value: (
@@ -419,6 +424,20 @@ export function CampaignPanel({ client }: CampaignPanelProps) {
                     value={draft.timeZoneId}
                     onChange={(event) => setDraft({ ...draft, timeZoneId: event.target.value })}
                   />
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                  priority <span className="text-faint">(now {selected.priority})</span>
+                  <select
+                    aria-label="priority"
+                    className="control w-28"
+                    value={draft.priority}
+                    onChange={(event) => setDraft({ ...draft, priority: event.target.value })}
+                  >
+                    <option value="">keep</option>
+                    <option value="High">High</option>
+                    <option value="Normal">Normal</option>
+                    <option value="Low">Low</option>
+                  </select>
                 </label>
                 <label className="flex flex-col gap-1 text-xs text-muted-foreground">
                   end date <span className="text-faint">(now {selected.endDate ?? "open"})</span>

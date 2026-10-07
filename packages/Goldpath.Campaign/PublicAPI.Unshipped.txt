@@ -1,1 +1,103 @@
 #nullable enable
+*REMOVED*Goldpath.GoldpathCampaignEngine<TContext>.ExecuteItemAsync(System.IServiceProvider! services, string! typeKey, System.Guid campaignId, long seq, string! targetJson, string? tenant, bool replay, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+Goldpath.GoldpathCampaignActionAccepted
+Goldpath.GoldpathCampaignActionAccepted.AckTimeout.get -> System.TimeSpan
+Goldpath.GoldpathCampaignActionAccepted.CorrelationId.get -> string!
+Goldpath.GoldpathCampaignActionAccepted.GoldpathCampaignActionAccepted(string! correlationId, System.TimeSpan ackTimeout) -> void
+Goldpath.GoldpathCampaignActionFailed
+Goldpath.GoldpathCampaignActionFailed.ErrorCode.get -> string!
+Goldpath.GoldpathCampaignActionFailed.GoldpathCampaignActionFailed(string! errorCode, string! message, bool retryable) -> void
+Goldpath.GoldpathCampaignActionFailed.Message.get -> string!
+Goldpath.GoldpathCampaignActionFailed.Retryable.get -> bool
+Goldpath.GoldpathCampaignActionResult
+Goldpath.GoldpathCampaignActionSucceeded
+Goldpath.GoldpathCampaignCallbackEndpoints
+Goldpath.GoldpathCampaignCallbackRequest
+Goldpath.GoldpathCampaignCallbackRequest.Error.get -> string?
+Goldpath.GoldpathCampaignCallbackRequest.Error.init -> void
+Goldpath.GoldpathCampaignCallbackRequest.ErrorCode.get -> string?
+Goldpath.GoldpathCampaignCallbackRequest.ErrorCode.init -> void
+Goldpath.GoldpathCampaignCallbackRequest.GoldpathCampaignCallbackRequest(bool Succeeded, string? ErrorCode = null, string? Error = null, bool Retryable = true) -> void
+Goldpath.GoldpathCampaignCallbackRequest.Retryable.get -> bool
+Goldpath.GoldpathCampaignCallbackRequest.Retryable.init -> void
+Goldpath.GoldpathCampaignCallbackRequest.Succeeded.get -> bool
+Goldpath.GoldpathCampaignCallbackRequest.Succeeded.init -> void
+Goldpath.GoldpathCampaignCallbackResolution
+Goldpath.GoldpathCampaignCallbackResolution.Found.get -> bool
+Goldpath.GoldpathCampaignCallbackResolution.Found.init -> void
+Goldpath.GoldpathCampaignCallbackResolution.GoldpathCampaignCallbackResolution(bool Found, Goldpath.GoldpathCampaignOutcomeMessage? Outcome) -> void
+Goldpath.GoldpathCampaignCallbackResolution.Outcome.get -> Goldpath.GoldpathCampaignOutcomeMessage?
+Goldpath.GoldpathCampaignCallbackResolution.Outcome.init -> void
+Goldpath.GoldpathCampaignEngine<TContext>.ExecuteItemAsync(System.IServiceProvider! services, string! typeKey, System.Guid campaignId, long seq, string! targetJson, string? tenant, int attempt, bool replay, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathCampaignActionResult!>!
+Goldpath.GoldpathCampaignEngine<TContext>.OutcomeFor(System.Guid campaignId, long seq, Goldpath.GoldpathCampaignActionResult! result) -> Goldpath.GoldpathCampaignOutcomeMessage!
+Goldpath.GoldpathCampaignEngine<TContext>.ResolveCallbackAsync(TContext! db, string! type, string! correlationId, Goldpath.GoldpathCampaignCallbackRequest! request, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathCampaignCallbackResolution!>!
+Goldpath.GoldpathCampaignEngine<TContext>.SweepAckTimeoutsAsync(TContext! db, Goldpath.GoldpathCampaign! campaign, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<int>!
+Goldpath.GoldpathCampaignItem.AckDeadline.get -> System.DateTimeOffset?
+Goldpath.GoldpathCampaignItem.AckDeadline.set -> void
+Goldpath.GoldpathCampaignItem.CorrelationId.get -> string?
+Goldpath.GoldpathCampaignItem.CorrelationId.set -> void
+Goldpath.GoldpathCampaignItem.ErrorCode.get -> string?
+Goldpath.GoldpathCampaignItem.ErrorCode.set -> void
+Goldpath.GoldpathCampaignItem.NextAttemptAt.get -> System.DateTimeOffset?
+Goldpath.GoldpathCampaignItem.NextAttemptAt.set -> void
+Goldpath.GoldpathCampaignItemContext.Attempt.get -> int
+Goldpath.GoldpathCampaignItemContext.IdempotencyKey.get -> string!
+Goldpath.GoldpathCampaignItemState.AwaitingAck = 7 -> Goldpath.GoldpathCampaignItemState
+Goldpath.GoldpathCampaignOptions.NextRetryDelay(int attemptsSoFar) -> System.TimeSpan
+Goldpath.GoldpathCampaignOptions.RetryBackoff.get -> System.Collections.Generic.IReadOnlyList<System.TimeSpan>!
+Goldpath.GoldpathCampaignOptions.RetryBackoff.set -> void
+Goldpath.GoldpathCampaignOptions.RetryJitter.get -> double
+Goldpath.GoldpathCampaignOptions.RetryJitter.set -> void
+Goldpath.GoldpathCampaignOutcomeMessage.Accepted.get -> bool
+Goldpath.GoldpathCampaignOutcomeMessage.Accepted.init -> void
+Goldpath.GoldpathCampaignOutcomeMessage.AckDeadline.get -> System.DateTimeOffset?
+Goldpath.GoldpathCampaignOutcomeMessage.AckDeadline.init -> void
+Goldpath.GoldpathCampaignOutcomeMessage.CorrelationId.get -> string?
+Goldpath.GoldpathCampaignOutcomeMessage.CorrelationId.init -> void
+Goldpath.GoldpathCampaignOutcomeMessage.ErrorCode.get -> string?
+Goldpath.GoldpathCampaignOutcomeMessage.ErrorCode.init -> void
+Goldpath.GoldpathCampaignOutcomeMessage.Retryable.get -> bool
+Goldpath.GoldpathCampaignOutcomeMessage.Retryable.init -> void
+Goldpath.IGoldpathCampaignActionHandler<TTarget>
+Goldpath.IGoldpathCampaignActionHandler<TTarget>.ExecuteAsync(TTarget! target, Goldpath.GoldpathCampaignItemContext! context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathCampaignActionResult!>!
+static Goldpath.GoldpathCampaignActionResult.Accepted(string! correlationId, System.TimeSpan ackTimeout) -> Goldpath.GoldpathCampaignActionResult!
+static Goldpath.GoldpathCampaignActionResult.Failed(string! errorCode, string! message, bool retryable) -> Goldpath.GoldpathCampaignActionResult!
+static Goldpath.GoldpathCampaignActionResult.Succeeded() -> Goldpath.GoldpathCampaignActionResult!
+static Goldpath.GoldpathCampaignCallbackEndpoints.MapGoldpathCampaignCallbacks<TContext>(this Microsoft.AspNetCore.Routing.IEndpointRouteBuilder! endpoints, string! prefix = "/goldpath/campaign/callbacks", string! policy = "goldpath-ops", bool exposeUnsecured = false) -> Microsoft.AspNetCore.Routing.IEndpointRouteBuilder!
+*REMOVED*Goldpath.GoldpathCampaignInfo.GoldpathCampaignInfo(System.Guid Id, string! Type, string! Name, string! State, long EnumeratedThrough, bool EnumerationComplete, long ReleasedThrough, long SucceededCount, long FailedCount, long InFlight, long Remaining, int Tps, int? DailyQuota, long ReleasedToday, int MaxInFlight, System.TimeOnly? WindowStart, System.TimeOnly? WindowEnd, string! TimeZoneId, System.Collections.Generic.IReadOnlyList<string!>! ExcludedDays, System.DateOnly? EndDate, int MaxAttempts, bool WindowOpenNow, double? EtaSecondsAtCurrentTps, System.DateTimeOffset CreatedAt, string! CreatedBy, System.DateTimeOffset? CompletedAt, string? LastVerb, string? Tenant) -> void
+*REMOVED*Goldpath.GoldpathCampaignThrottle.GoldpathCampaignThrottle(int? Tps = null, int? DailyQuota = null, int? MaxInFlight = null, System.TimeOnly? WindowStart = null, System.TimeOnly? WindowEnd = null, string? TimeZoneId = null, bool ClearDailyQuota = false, bool ClearWindow = false, System.Collections.Generic.IReadOnlyList<string!>? ExcludedDays = null, System.DateOnly? EndDate = null, int? MaxAttempts = null, bool ClearExcludedDays = false, bool ClearEndDate = false) -> void
+Goldpath.GoldpathCampaign.Priority.get -> Goldpath.GoldpathCampaignPriority
+Goldpath.GoldpathCampaign.Priority.set -> void
+Goldpath.GoldpathCampaignEngine<TContext>.ReleaseOrphansAsync(System.IServiceProvider! services, Goldpath.GoldpathCampaign! campaign, int allowance, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<int>!
+Goldpath.GoldpathCampaignFairShare
+Goldpath.GoldpathCampaignFairShareClaim
+Goldpath.GoldpathCampaignFairShareClaim.Demand.get -> int
+Goldpath.GoldpathCampaignFairShareClaim.Demand.init -> void
+Goldpath.GoldpathCampaignFairShareClaim.GoldpathCampaignFairShareClaim() -> void
+Goldpath.GoldpathCampaignFairShareClaim.GoldpathCampaignFairShareClaim(int Weight, int Demand) -> void
+Goldpath.GoldpathCampaignFairShareClaim.Weight.get -> int
+Goldpath.GoldpathCampaignFairShareClaim.Weight.init -> void
+Goldpath.GoldpathCampaignInfo.GoldpathCampaignInfo(System.Guid Id, string! Type, string! Name, string! State, long EnumeratedThrough, bool EnumerationComplete, long ReleasedThrough, long SucceededCount, long FailedCount, long InFlight, long Remaining, int Tps, int? DailyQuota, long ReleasedToday, int MaxInFlight, System.TimeOnly? WindowStart, System.TimeOnly? WindowEnd, string! TimeZoneId, System.Collections.Generic.IReadOnlyList<string!>! ExcludedDays, System.DateOnly? EndDate, int MaxAttempts, Goldpath.GoldpathCampaignPriority Priority, bool WindowOpenNow, double? EtaSecondsAtCurrentTps, System.DateTimeOffset CreatedAt, string! CreatedBy, System.DateTimeOffset? CompletedAt, string? LastVerb, string? Tenant) -> void
+Goldpath.GoldpathCampaignInfo.Priority.get -> Goldpath.GoldpathCampaignPriority
+Goldpath.GoldpathCampaignInfo.Priority.init -> void
+Goldpath.GoldpathCampaignItem.ReleasedAt.get -> System.DateTimeOffset?
+Goldpath.GoldpathCampaignItem.ReleasedAt.set -> void
+Goldpath.GoldpathCampaignOptions.OrphanReleaseAfter.get -> System.TimeSpan
+Goldpath.GoldpathCampaignOptions.OrphanReleaseAfter.set -> void
+Goldpath.GoldpathCampaignPolicy.Priority.get -> Goldpath.GoldpathCampaignPriority
+Goldpath.GoldpathCampaignPolicy.Priority.init -> void
+Goldpath.GoldpathCampaignPriority
+Goldpath.GoldpathCampaignPriority.High = 1 -> Goldpath.GoldpathCampaignPriority
+Goldpath.GoldpathCampaignPriority.Low = 2 -> Goldpath.GoldpathCampaignPriority
+Goldpath.GoldpathCampaignPriority.Normal = 0 -> Goldpath.GoldpathCampaignPriority
+Goldpath.GoldpathCampaignThrottle.GoldpathCampaignThrottle(int? Tps = null, int? DailyQuota = null, int? MaxInFlight = null, System.TimeOnly? WindowStart = null, System.TimeOnly? WindowEnd = null, string? TimeZoneId = null, bool ClearDailyQuota = false, bool ClearWindow = false, System.Collections.Generic.IReadOnlyList<string!>? ExcludedDays = null, System.DateOnly? EndDate = null, int? MaxAttempts = null, bool ClearExcludedDays = false, bool ClearEndDate = false, Goldpath.GoldpathCampaignPriority? Priority = null) -> void
+Goldpath.GoldpathCampaignThrottle.Priority.get -> Goldpath.GoldpathCampaignPriority?
+Goldpath.GoldpathCampaignThrottle.Priority.init -> void
+Goldpath.GoldpathCampaignType.MaxTps.get -> int?
+Goldpath.GoldpathCampaignTypeBuilder<TTarget>.MaxTps(int maxTps) -> Goldpath.GoldpathCampaignTypeBuilder<TTarget!>!
+static Goldpath.GoldpathCampaignFairShare.Allocate(System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathCampaignFairShareClaim>! claims, int total, int tieBreakStart = 0) -> int[]!
+static Goldpath.GoldpathCampaignFairShare.WeightOf(Goldpath.GoldpathCampaignPriority priority) -> int
+Goldpath.GoldpathCampaign.EnumeratedKey.get -> string?
+Goldpath.GoldpathCampaign.EnumeratedKey.set -> void
+Goldpath.GoldpathCampaignType.ResumesByKey.get -> bool
+Goldpath.GoldpathCampaignTypeBuilder<TTarget>.TargetsAfter(System.Func<System.IServiceProvider!, System.Collections.Generic.IReadOnlyDictionary<string!, string!>!, string?, System.Collections.Generic.IAsyncEnumerable<TTarget!>!>! targets, System.Func<TTarget!, string!>! keyOf) -> Goldpath.GoldpathCampaignTypeBuilder<TTarget!>!

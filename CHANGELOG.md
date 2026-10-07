@@ -5,6 +5,36 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 
+### Added
+- **Campaign revision R2 — asynchronous targets, shared ceilings, keyset takeover**
+  ([RFC](docs/rfc/goldpath-campaign.md), revision R2). A design review for a device-fleet
+  adopter found four places where the module and the adopter's architecture disagreed and
+  the architecture was right. Typed handler results (`IGoldpathCampaignActionHandler<T>`:
+  Succeeded / Failed with a code and a retryable flag / Accepted with a correlation id and an
+  ack deadline), an `AwaitingAck` item state, an idempotent HTTP callback surface
+  (`MapGoldpathCampaignCallbacks`) and an ack sweep that turns a missed deadline into a
+  retryable failure; an idempotency key per attempt; a configurable, jittered retry ladder
+  with the ripe instant persisted per item; a per-type `MaxTps` ceiling; a `Priority`
+  (High 3 · Normal 2 · Low 1) that splits a contended shared ceiling by weighted max-min
+  fair share; a claim guard that reads the campaign state (pause means now) plus orphaned
+  releases published again after `OrphanReleaseAfter`; and a keyset selector
+  (`TargetsAfter`) so a takeover reopens the stream after the last key instead of
+  re-reading every row. One migration: `goldpath db add CampaignR2`. The R1 handler
+  contract is untouched.
+
+### Changed
+- `GoldpathCampaignEngine<TContext>.ExecuteItemAsync` takes the attempt number and returns
+  the typed result; `GoldpathCampaignInfo` carries `Priority`; `GoldpathCampaignThrottle`
+  accepts an optional `Priority`. Source-level only, for code that calls the engine or
+  constructs the admin records directly.
+
+### Fixed
+- A retry re-released on a real broker could be dropped by the consumer's claim guard: the
+  leader publishes before it marks (crash safety), and the retry's message reached a
+  consumer while the row still said `AwaitingRetry`. A ripe `AwaitingRetry` row now claims;
+  an unripe one still refuses. R1's ladder had unit proof only; the R2 real-broker
+  integration is what found it.
+
 ### Changed
 - **The cycle's sixth step is stack-neutral**, because it was not. It named `spec_validate`,
   `spec_drift` and `specs/` — true for a generated .NET application and meaningless for an npm

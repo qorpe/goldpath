@@ -67,3 +67,24 @@ the pacer's run health lives on the goldpath-jobs dashboard. This board owns the
   an inconvenience.
 - Narrow the selector parameters (create a new campaign) or raise the type's ceiling in
   CODE (PR review — the ceiling is a decision) — then resume or abort this instance.
+
+## 8. Acceptances piling up (R2.1)
+
+- `AwaitingAck` growing on the items drill-down, `goldpath_campaign_ack_timeouts_total`
+  climbing — the target system accepted and never answered, or its answers cannot reach
+  `MapGoldpathCampaignCallbacks`. Check the surface first (reachability, the policy or the
+  mTLS boundary it sits behind, the correlation id the callback names — `404` means the id
+  is unknown to the type, `200` means the item already settled).
+- Nothing is lost while you look: the sweep turns every missed deadline into a RETRYABLE
+  failure (`ACK_TIMEOUT`), the ladder re-releases it, and exhaustion lands in the repair
+  queue — never in a silent success. A second attempt gets a fresh correlation id.
+
+## 9. Orphaned releases being published again (R2.6)
+
+- `goldpath_campaign_orphans_rereleased_total` climbing with no pause or resume in the audit
+  trail — consumers are refusing claims or the broker is losing messages: a half-stopped
+  host whose consumers still hold prefetched messages, a purged queue, a consumer fleet
+  scaled to zero. The sweep keeps the campaign moving under its own allowance; the number
+  says a host needs looking at.
+- After a resume the counter jumps once by design: every Released row is marked due so the
+  messages consumers refused during the pause come back on the next tick.
