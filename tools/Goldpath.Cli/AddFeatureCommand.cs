@@ -39,7 +39,7 @@ public static class AddFeatureCommand
         // engine means the app must come back byte-identical.
         // Deduped once here: ApiProject and PackagesProject are the SAME file in the
         // vertical-slice layout, two files in clean-architecture.
-        var touched = new[] { files.ManifestFile, files.ApiProject, files.PackagesProject, files.AppHostProject, files.ProgramFile, files.ModelFile, files.AppHostFile, files.PackagesProps, files.SampleCommandFile, files.SampleCommandProject }
+        var touched = new[] { files.ManifestFile, files.ApiProject, files.PackagesProject, files.AppHostProject, files.ProgramFile, files.ModelFile, files.AppHostFile, files.PackagesProps, files.SampleCommandFile, files.SampleCommandProject, files.SmokeTestFile, files.SmokeTestProject }
             .OfType<string>().Distinct(StringComparer.Ordinal).ToArray();
         var snapshot = touched.ToDictionary(path => path, File.ReadAllText, StringComparer.Ordinal);
 
@@ -181,6 +181,24 @@ public static class AddFeatureCommand
             if (files.SampleCommandProject is { } owner)
             {
                 AddMissingReferences(owner, plan.SampleCommandPackages);
+            }
+        }
+
+        if (plan.SmokeClientLines.Count > 0 && files.SmokeTestFile is { } smokePath)
+        {
+            var smoke = File.ReadAllText(smokePath);
+            if (plan.SmokeDoneMarker is null || !smoke.Contains(plan.SmokeDoneMarker, StringComparison.Ordinal))
+            {
+                foreach (var ns in plan.SmokeUsings)
+                {
+                    smoke = TextEdits.EnsureUsing(smoke, ns);
+                }
+
+                File.WriteAllText(smokePath, TextEdits.InsertAfterAnchor(smoke, AppFiles.SmokeClientLine, plan.SmokeClientLines));
+                if (files.SmokeTestProject is { } smokeProject)
+                {
+                    AddMissingReferences(smokeProject, plan.SmokePackages);
+                }
             }
         }
     }
