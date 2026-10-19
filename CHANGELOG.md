@@ -33,8 +33,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   transitively through SqlClient, MimeKit, Roslyn workspaces and Aspire; `MessagePack`
   (GHSA-qhrr-8q5h-9q3h) through Aspire's StreamJsonRpc. Under TreatWarningsAsErrors NU1902/NU1903
   is a restore failure, so the nightly (every GM shape, every mutation scope, corpay, the console
-  smoke) and every pull request went red at once. The repository lifts Pkcs per LTS line (8.0.2 /
-  10.0.13) with a direct reference in the three projects whose graphs carry it, the pattern the
+  smoke) and every pull request went red at once. The repository lifts Pkcs to 10.0.13 on both target frameworks (MimeKit 4.18 already
+  demands >= 10.0.0 on net8.0, so an 8.0.x pin is a downgrade) with a direct reference in the three projects whose graphs carry it, the pattern the
   solution template already used for Xml; a repository-wide transitive pin was tried and
   rejected, because it turns every central version into a ceiling and collides with the
   deliberate per-TFM EF Core pins. The two templates and CorPay enable

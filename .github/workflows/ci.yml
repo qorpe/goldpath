@@ -77,7 +77,7 @@ jobs:
           dotnet test tests/Goldpath.IntegrationTests/Goldpath.IntegrationTests.csproj \
             --filter "Category!=Bench" --nologo
           # The bus conformance suite (ADR-0013 §3): the facts a bus must hold for Goldpath,
-          # on real RabbitMQ + PostgreSQL through the seam — the oracle is MassTransit 8.5.10.
+          # on real RabbitMQ + PostgreSQL through the seam — the oracle is MassTransit 8.5.11.
           dotnet test tests/Goldpath.Messaging.Conformance/Goldpath.Messaging.Conformance.csproj --nologo
         timeout-minutes: 45
 

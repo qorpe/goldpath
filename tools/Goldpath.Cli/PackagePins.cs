@@ -53,5 +53,5 @@ public static class PackagePins
 public static class KnownVersions
 {
     /// <summary>The RabbitMQ transport of the 8.x OSS line (messaging-exit RFC option A).</summary>
-    public const string MassTransitRabbitMq = "8.5.10";
+    public const string MassTransitRabbitMq = "8.5.11";
 }

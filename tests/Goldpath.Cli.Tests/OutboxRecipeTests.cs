@@ -106,7 +106,7 @@ public class OutboxRecipeTests
         Assert.Contains("  outbox: true", app.Read(app.Manifest), StringComparison.Ordinal);
         Assert.Contains("  broker: rabbitmq", app.Read(app.Manifest), StringComparison.Ordinal);
         var props = File.ReadAllText(Path.Combine(app.Root, "Directory.Packages.props"));
-        Assert.Contains("<PackageVersion Include=\"MassTransit.RabbitMQ\" Version=\"8.5.10\" />", props, StringComparison.Ordinal);
+        Assert.Contains("<PackageVersion Include=\"MassTransit.RabbitMQ\" Version=\"8.5.11\" />", props, StringComparison.Ordinal);
         Assert.Contains("<PackageVersion Include=\"Goldpath.Messaging\" Version=\"0.1.0-preview.7\" />", props, StringComparison.Ordinal);
         Assert.Contains("<PackageVersion Include=\"Aspire.Hosting.RabbitMQ\" Version=\"13.4.6\" />", props, StringComparison.Ordinal);
 

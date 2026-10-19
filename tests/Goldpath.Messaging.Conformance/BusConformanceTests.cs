@@ -9,7 +9,7 @@ namespace Goldpath.Messaging.Conformance;
 /// <summary>
 /// The bus conformance suite — the facts a bus must hold for Goldpath, proven on real
 /// RabbitMQ + PostgreSQL THROUGH THE SEAM (ADR-0013 §3; messaging-exit RFC §7.1 S2). The
-/// oracle is MassTransit 8.5.10; a second engine must pass every fact here unchanged before
+/// oracle is MassTransit 8.5.11; a second engine must pass every fact here unchanged before
 /// it can become the default (S3 is the same list run on both).
 /// </summary>
 [Collection("conformance")]
