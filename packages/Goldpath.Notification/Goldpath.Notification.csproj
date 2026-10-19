@@ -21,6 +21,9 @@
 
   <ItemGroup>
     <PackageReference Include="MailKit" />
+    <!-- NU1903 lift (see Directory.Packages.props): MailKit's MimeKit carries a vulnerable
+         System.Security.Cryptography.Pkcs; referenced only to raise it to the patched line. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
     <AdditionalFiles Include="PublicAPI.Shipped.txt" />
     <AdditionalFiles Include="PublicAPI.Unshipped.txt" />

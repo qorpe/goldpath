@@ -9,6 +9,9 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Analyzer.Testing" />
     <!-- Lift the testing package's ancient Roslyn floor (NU1701). -->
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" />
+    <!-- NU1903 lift (see Directory.Packages.props): the Roslyn workspaces graph carries a vulnerable
+         System.Security.Cryptography.Pkcs; referenced only to raise it to the patched line. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />

@@ -27,6 +27,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   cheapest the rename would ever have been.
 
 ### Fixed
+- **Every build and every generated app failed restore on four .NET advisories published
+  2026-10-13/15.** `System.Security.Cryptography.Pkcs` (GHSA-846f-f764-76mx, GHSA-2fmv-rv2c-59x7)
+  and `System.Security.Cryptography.Xml` (GHSA-c399-9853-6jmj, GHSA-7hqp-7c5m-4vq6) arrive
+  transitively through SqlClient, MimeKit, Roslyn workspaces and Aspire; `MessagePack`
+  (GHSA-qhrr-8q5h-9q3h) through Aspire's StreamJsonRpc. Under TreatWarningsAsErrors NU1902/NU1903
+  is a restore failure, so the nightly (every GM shape, every mutation scope, corpay, the console
+  smoke) and every pull request went red at once. The repository lifts Pkcs per LTS line (8.0.2 /
+  10.0.13) with a direct reference in the three projects whose graphs carry it, the pattern the
+  solution template already used for Xml; a repository-wide transitive pin was tried and
+  rejected, because it turns every central version into a ceiling and collides with the
+  deliberate per-TFM EF Core pins. The two templates and CorPay enable
+  `CentralPackageTransitivePinningEnabled` and pin Pkcs 10.0.13, Xml 10.0.13 and MessagePack
+  2.5.307 — a generated app is one TFM, so the pin is the lift wherever the package lands,
+  including the projects an adopter adds later. An app already generated on preview.8 needs the
+  same three pins until it regenerates.
 - **`docs-freshness.sh` reported two of its three checks and then forgave them.** The script
   had `set -uo pipefail` but no `-e` and two separate blocks, so only the LAST block's exit
   code survived: a broken relative link and a retired tool name were printed and the gate
