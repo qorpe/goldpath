@@ -58,6 +58,11 @@
   <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.28" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.28" />
+    <!-- Advisory lift, per LTS line (NU1902/NU1903 under TreatWarningsAsErrors, 2026-10-13):
+         System.Security.Cryptography.Pkcs GHSA-846f-f764-76mx + GHSA-2fmv-rv2c-59x7, dragged in by
+         SqlClient (Locking.SqlServer), MimeKit (Notification) and Roslyn workspaces (analyzer
+         tests). The projects that carry it reference it directly — no code uses it. -->
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="8.0.2" />
   </ItemGroup>
   <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.9" />
@@ -65,5 +70,7 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.12" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
     <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
+    <!-- Advisory lift — see the net8.0 group. -->
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
   </ItemGroup>
 </Project>
