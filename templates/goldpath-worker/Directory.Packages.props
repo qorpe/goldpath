@@ -13,7 +13,7 @@
     <!--#endif -->
     <!--#if (UseQueue) -->
     <PackageVersion Include="Aspire.Hosting.RabbitMQ" Version="13.4.6" />
-    <PackageVersion Include="MassTransit.RabbitMQ" Version="8.5.10" />
+    <PackageVersion Include="MassTransit.RabbitMQ" Version="8.5.11" />
     <PackageVersion Include="Goldpath.Messaging" Version="0.1.0-preview.8" />
     <!--#endif -->
     <PackageVersion Include="Aspire.Hosting.Testing" Version="13.4.6" />

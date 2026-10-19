@@ -5,7 +5,7 @@
     <IsPackable>false</IsPackable>
     <!-- The bus conformance suite (ADR-0013 §3, messaging-exit RFC §7.1 S2/S3): what a bus
          must do for Goldpath, proven on real RabbitMQ + PostgreSQL through the seam. The
-         oracle today is MassTransit 8.5.10; a second engine runs the SAME facts. -->
+         oracle today is MassTransit 8.5.11; a second engine runs the SAME facts. -->
   </PropertyGroup>
 
   <ItemGroup>
