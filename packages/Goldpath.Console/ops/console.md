@@ -28,6 +28,44 @@ Served next to the console; adding a service is a config change. A registry that
 read falls back to same-origin AND says so in the shell — an operator who configured four
 services and sees one has found the outage, not a bug in the console.
 
+### Product console links (`AddLink`, `links`)
+`AddLink(name, url)` puts a tile on Today (and "Open {name}" in the ⌘K palette) that leads to a
+product's OWN console. A tile asserts an ADDRESS, never health: the console never probes a link,
+needs no CORS for it and never makes it a triage row — whether the product is well is shown on
+its own console.
+
+| Configured | `console.config.json` answers |
+|---|---|
+| nothing | `404` — "this service only", silently |
+| services only | `{"services":[…]}` |
+| services and links | `{"services":[…],"links":[…]}` |
+| links only | `{"links":[…]}` — **no `services` key**: an empty list would read as a broken registry |
+
+**The app refuses to start on a bad link** (`InvalidOperationException`, thrown by `AddLink`
+and again by `MapGoldpathConsole` over the whole list). The message names the link, never its
+address (a refused one may carry a credential):
+- `has no name` — give the tile the operator's word for the product.
+- `is configured twice` — two names that differ only in case or spaces; name each product once.
+- `its address is empty` / `contains whitespace or a control character` / `contains a backslash`.
+- `is protocol-relative (//host)` — write the scheme: `https://host/`.
+- `is neither root-relative nor an absolute http(s) address` — `javascript:`, `data:`, `file:`,
+  `console/` and `../x` all land here. Use `/product/console/` (same origin) or
+  `https://product.internal/` (another origin).
+- `carries credentials (user:password@)` — a credential never rides a link.
+
+**"The tile is missing" + a warning banner naming "a product console"**: the registry file
+was written by hand (a dist hosted elsewhere) and the console's own re-check dropped an entry
+— no name, a repeated name, or an address it will not open. Fix the file; the banner counts
+what was skipped.
+
+**"The tile leads to 401 / a sign-in page"**: that is the PRODUCT's floor, not the console's —
+a link grants nothing, and a cross-origin console asks for its own sign-in (a token the
+console would carry across is open-threads T10). Same-origin products ride the session the
+console already has.
+
+The registry sits behind the ops floor, so link addresses (often internal hostnames) are
+disclosed only to principals who passed it.
+
 ## Signals
 - `LogWarning "{Prefix} is mapped WITHOUT the ops policy"` at startup: the opt-out is in
   effect on that prefix (`Goldpath.Sdk` guard). Acceptable only behind an authenticating

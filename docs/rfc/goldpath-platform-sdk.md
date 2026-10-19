@@ -82,6 +82,12 @@ console is one more service entry, not a plugin panel. The core console's five-m
 surface stays frozen; new CATALOG modules keep joining it at compile time as today.
 Per-product deep links ride T9 (client-side routes) when its trigger fires.
 
+**Clarification (owner, 2026-10-19 — #257, [goldpath-console-link-tiles.md](goldpath-console-link-tiles.md)).**
+"One more service entry" reads as "one more REGISTRY entry": a **link** (`AddLink`) when the
+product has no core admin surface, and a **service plus a link** when it has one. A link is
+never probed, so a product with no Goldpath admin surface joins the operators' view without a
+false UNREACHABLE row. This clarifies the decision; it does not reverse it.
+
 ### D4 — Private distribution: closed modules on the open core
 
 **Decision:** the core stays Apache-2.0 on nuget.org, one train (versioning D1). A

@@ -4,7 +4,7 @@ import type { CommandGroup, ShellNavItem } from "@qorpe/ui";
 import { AdminClient, type ModuleName } from "./adminClient";
 import { composedSections, isUnreachable, SECTION_GROUP, SECTION_ICON, SECTION_LABEL, SECTION_PURPOSE, ServicePanels, type Capabilities } from "./sections";
 import { TriageHome } from "./TriageHome";
-import { loadRegistry, SAME_ORIGIN, type ServiceEntry } from "./registry";
+import { loadRegistry, SAME_ORIGIN, type LinkEntry, type ServiceEntry } from "./registry";
 
 export interface ConsoleAppProps {
   title?: string;
@@ -12,6 +12,8 @@ export interface ConsoleAppProps {
   /** Injected in tests; defaults to the browser's own query string. */
   search?: string;
   now?: Date;
+  /** How a palette command leaves for a product console; the browser's own by default. */
+  navigate?: (url: string) => void;
 }
 
 /** The landing section is the estate, not a module — hence its own id. */
@@ -25,9 +27,16 @@ type Section = typeof TODAY | ModuleName;
  * exist (config, not discovery), which one the operator is looking at, and the triage home
  * that answers "is anything wrong" across all of them before any of them is opened.
  */
-export function ConsoleApp({ title = "Goldpath Console", fetcher, search, now }: ConsoleAppProps) {
+export function ConsoleApp({
+  title = "Goldpath Console",
+  fetcher,
+  search,
+  now,
+  navigate = (url) => globalThis.location.assign(url),
+}: ConsoleAppProps) {
   const [services, setServices] = useState<ServiceEntry[] | null>(null);
-  const [problem, setProblem] = useState<{ text: string; fellBack: boolean } | null>(null);
+  const [links, setLinks] = useState<LinkEntry[]>([]);
+  const [problem, setProblem] = useState<{ text: string; fellBack: boolean; missing: string } | null>(null);
   const [active, setActive] = useState<string | null>(null);
   const [section, setSection] = useState<Section>(TODAY);
   const [collapsed, setCollapsed] = useState(initialCollapsed);
@@ -39,7 +48,12 @@ export function ConsoleApp({ title = "Goldpath Console", fetcher, search, now }:
     void loadRegistry(fetcher, search).then((result) => {
       if (!live) return;
       setServices(result.services);
-      setProblem(result.problem ? { text: result.problem, fellBack: result.fellBack === true } : null);
+      setLinks(result.links);
+      setProblem(
+        result.problem
+          ? { text: result.problem, fellBack: result.fellBack === true, missing: result.missing ?? "a service" }
+          : null,
+      );
       setActive((current) => current ?? result.services[0]?.name ?? null);
     });
     return () => {
@@ -115,6 +129,14 @@ export function ConsoleApp({ title = "Goldpath Console", fetcher, search, now }:
           items: services.map((entry) => ({ id: `service-${entry.name}`, label: `Open ${entry.name}`, run: () => setActive(entry.name) })),
         }]
       : []),
+    // A product console is a place too, so it is a command — and the only address it can
+    // go to is one the registry reader already resolved and approved (resolveLink).
+    ...(links.length > 0
+      ? [{
+          heading: "Consoles",
+          items: links.map((link) => ({ id: `link-${link.name}`, label: `Open ${link.name}`, run: () => navigate(link.url) })),
+        }]
+      : []),
   ];
 
   return (
@@ -138,7 +160,7 @@ export function ConsoleApp({ title = "Goldpath Console", fetcher, search, now }:
         // four services and sees one is looking at the wrong console.
         <Banner tone="warning" live="alert">
           {problem.text}
-          {problem.fellBack ? " — showing this service only." : " — the console is missing a service you configured."}
+          {problem.fellBack ? " — showing this service only." : ` — the console is missing ${problem.missing} you configured.`}
         </Banner>
       )}
 
@@ -151,6 +173,7 @@ export function ConsoleApp({ title = "Goldpath Console", fetcher, search, now }:
           }))}
           onOpen={open}
           now={now}
+          links={links}
         />
       ) : (
         <>

@@ -62,8 +62,15 @@ project ran ([nightly 39297981494](https://github.com/qorpe/goldpath/actions/run
 that scores all twenty-two packages (the long-running six at concurrency 2) and once in
 [mutation-heavy 39420917618](https://github.com/qorpe/goldpath/actions/runs/39420917618) at
 concurrency 1. Both runs gave the same three scores; their rows below carry them, the old
-number in brackets. The other nineteen rows stand at f459fe2 — their code and tests did not
-change, and the same nightly re-scored them within the noise band below.
+number in brackets. The other eighteen rows, all but Console (below), stand at f459fe2 — their
+code and tests did not change, and the same nightly re-scored them within the noise band below.
+
+**Console was re-measured 2026-10-19**, a full run on the #272 branch, after the product
+console link tiles (#257) put the package's first real decision logic in it — the link URL
+rule and the registry's links-only shape. 75.00 % → 91.46 % (75 killed, 6 survived, 1 without
+coverage, of 82 scored mutants); the rule's branches are each pinned by a fact that a planted
+fault turns red. That run predates #275's scope fix, but Console scored the same in both modes
+at f459fe2, so its row carries it (minutes not recorded).
 
 | Package | Score | Margin over break (70) | Minutes | Solution mode (score, minutes) |
 |---|---:|---:|---:|---|
@@ -73,6 +80,7 @@ change, and the same nightly re-scored them within the noise band below.
 | SoftDelete | 91.67 % | 21.67 | 1.4 | 91.67 %, 3.7 |
 | Locking | 91.67 % | 21.67 | 7.1 | 91.67 %, 59.5 |
 | Cli | 91.48 % | 21.48 | 7.6 | 91.44 %, 8.6 |
+| Console | 91.46 % (75.00) | 21.46 | — | 75.00 %, 24.3 |
 | Bulk | 88.38 % (70.09) | 18.38 | 15.2 | never finished (timeout) |
 | AuditTrail | 81.97 % | 11.97 | 5.1 | 81.97 %, 5.7 |
 | Notification | 81.23 % | 11.23 | 5.9 | never finished (OOM) |
@@ -81,7 +89,6 @@ change, and the same nightly re-scored them within the noise band below.
 | Data | 77.38 % | 7.38 | 2.3 | 77.38 %, 38.0 |
 | FileExchange | 76.92 % | 6.92 | 3.6 | 76.92 %, 31.8 |
 | Campaign | 75.13 % | 5.13 | 28.5 | never finished (OOM) |
-| Console | 75.00 % | 5.00 | 1.1 | 75.00 %, 24.3 |
 | Approvals | 74.84 % | 4.84 | 3.5 | 74.84 %, 217.7 |
 | Archival | 74.49 % | 4.49 | 10.6 | never finished (OOM) |
 | Idempotency | 73.58 % | 3.58 | 2.2 | 73.58 %, 3.3 |

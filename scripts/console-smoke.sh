@@ -72,8 +72,13 @@ docker exec "$MQ_NAME" rabbitmq-diagnostics -q check_port_connectivity >/dev/nul
 }
 
 echo "── the app (real packages, real Quartz, real broker, the FROZEN admin surface)"
+# Product console link tiles (#257): one same-origin product (a stand-in page the host
+# mounts at /product/console/, the Coexist shape) and one on ANOTHER origin (the auth-floored
+# app's console, the Mockifyr shape). A second, links-only console rides /linked/console/.
 GOLDPATH_CONSOLE_ORIGIN="$CONSOLE_URL" \
   GOLDPATH_CONSOLE_SERVICES="open=$SERVICE_URL;auth-floored=$SECURED_URL;tenant-scoped=$TENANT_URL" \
+  GOLDPATH_CONSOLE_LINKS="Product=/product/console/;Floored console=$SECURED_URL/goldpath/console/" \
+  GOLDPATH_LINKS_ONLY_CONSOLE="Product=/product/console/" \
   dotnet run --project "$ROOT/tests/Goldpath.Jobs.TestHost" -- "$CONNECTION" --console "$SERVICE_URL" --broker "$BROKER" --fleet console-smoke > /tmp/console-smoke-host.log 2>&1 &
 HOST_PID=$!
 for _ in $(seq 1 60); do
@@ -129,5 +134,6 @@ echo "── playwright"
 cd "$ROOT/ui/console"
 GOLDPATH_CONSOLE_URL="$CONSOLE_URL" GOLDPATH_SERVICE_URL="$SERVICE_URL" \
   GOLDPATH_SERVED_CONSOLE_URL="$SERVICE_URL/goldpath/console/" \
+  GOLDPATH_LINKED_CONSOLE_URL="$SERVICE_URL/linked/console/" \
   GOLDPATH_SECURED_URL="$SECURED_URL" GOLDPATH_TENANT_URL="$TENANT_URL" \
   pnpm exec playwright test

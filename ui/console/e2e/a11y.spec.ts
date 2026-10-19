@@ -11,6 +11,7 @@ import { expect, test } from "@playwright/test";
  * on advice gets muted, which costs the real findings too.
  */
 const service = process.env.GOLDPATH_SERVICE_URL ?? "http://localhost:5310";
+const served = process.env.GOLDPATH_SERVED_CONSOLE_URL ?? `${service}/goldpath/console/`;
 
 const PANELS = [
   // The landing screen is checked too: it is the one an operator sees first, at 3am.
@@ -37,7 +38,9 @@ test.describe("the console is operable without a mouse or a perfect screen", () 
   for (const panel of PANELS) {
     test(`${panel.nav} has no serious accessibility violation`, async ({ page }) => {
       await page.goto(`/?base=${encodeURIComponent(service)}`);
-      await page.getByRole("button", { name: panel.nav }).click();
+      // EXACT: Today's "Failed runs" stat card is a button too, and a substring match on
+      // "Runs" hits both whenever the cards render before the click (seen red 2026-10-19).
+      await page.getByRole("button", { name: panel.nav, exact: true }).click();
       await expect(page.getByTestId(panel.ready)).toBeVisible();
 
       expect(await violations(page)).toEqual([]);
@@ -56,6 +59,39 @@ test.describe("the console is operable without a mouse or a perfect screen", () 
       expect(await violations(page)).toEqual([]);
     });
   }
+
+  // Product console link tiles (#257). The scans above drive `?base=`, which skips the
+  // registry — so they never see a tile. This one scans the page the APP serves, registry
+  // and tiles included.
+  test("the SERVED Today, product console tiles included, has no serious accessibility violation", async ({ page }) => {
+    await page.goto(served);
+    await expect(page.getByRole("navigation", { name: "Product consoles" }).getByRole("link")).toHaveCount(2);
+    await expect(page.getByTestId("triage-home")).toBeVisible();
+
+    expect(await violations(page)).toEqual([]);
+  });
+
+  test("the tiles are reached by Tab, in order, and Enter goes where the tile says", async ({ page }) => {
+    await page.goto(served);
+    const tiles = page.getByRole("navigation", { name: "Product consoles" }).getByRole("link");
+    await expect(tiles).toHaveCount(2);
+
+    // From the top of the page, by Tab alone — no focus() shortcut onto the tile.
+    let reached = false;
+    for (let press = 0; press < 80 && !reached; press++) {
+      await page.keyboard.press("Tab");
+      reached = await tiles.first().evaluate((tile) => tile === document.activeElement);
+    }
+    expect(reached, "Tab never reached the first product console tile").toBe(true);
+
+    await page.keyboard.press("Tab");
+    await expect(tiles.nth(1)).toBeFocused();
+
+    await page.keyboard.press("Shift+Tab");
+    await expect(tiles.first()).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("heading", { name: "Product console" })).toBeVisible();
+  });
 
   test("the tab strip is walkable by arrow keys, with focus following the panel", async ({ page }) => {
     await page.goto(`/?base=${encodeURIComponent(service)}`);

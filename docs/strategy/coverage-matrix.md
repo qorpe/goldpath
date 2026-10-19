@@ -86,6 +86,7 @@ this file to the full package list.
 | Notification evidence | — | 🔷 | 🔷 |
 | Archival holds/erasure | 🟡 (with the archive slice) | 🔷 litigation hold | 🔷 tier view |
 | Tenant-switcher / login-gate | 🔷 | 🔷 elevated scope | 🔷 MVNO |
+| Product console link tiles (#257) | 🟡 pending the train (CorPay binds published packages; the smoke host proves it on `main` ✅) | 🟡 pending the train | 🟡 pending the train |
 
 ## Open planning decisions (the 🟡 owners)
 
