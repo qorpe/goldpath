@@ -11,6 +11,9 @@
   <ItemGroup>
     <ProjectReference Include="../Goldpath.Locking/Goldpath.Locking.csproj" />
     <PackageReference Include="DistributedLock.SqlServer" />
+    <!-- NU1903 lift (see Directory.Packages.props): DistributedLock.SqlServer's SqlClient carries a vulnerable
+         System.Security.Cryptography.Pkcs; referenced only to raise it to the patched line. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
   </ItemGroup>
 
   <ItemGroup>

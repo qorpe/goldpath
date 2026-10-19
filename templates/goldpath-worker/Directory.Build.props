@@ -12,5 +12,8 @@
     <WarningsNotAsErrors>$(WarningsNotAsErrors);GP2102</WarningsNotAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- A central pin also governs TRANSITIVE resolution: the advisory lifts below reach
+         every project whose graph carries the package, not only the ones that name it. -->
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
 </Project>
