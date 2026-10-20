@@ -324,7 +324,7 @@ new screen concept.
 - **Four-eyes on *create*** (an Approvals binding). Trigger: the first adopter whose policy
   requires a second person on a campaign start. The verb is already audited and the
   Approvals module already exists, so the binding is a day's work when the trigger fires
-  (open-threads T34).
+  (open-threads T37).
 - **Finer roles than the ops floor; exports of item outcomes.** The admin surface stays one
   policy; exports ride the failed-items drill-down and the app's own reporting.
 - **A distributed limiter, the Kafka rider, Oracle:** unchanged (R1, D4, T16).
