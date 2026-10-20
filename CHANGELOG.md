@@ -13,13 +13,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   built, and get it clean. Each repository's skill names its own; the sequence does not change
   between them. `skills-parity.sh` now also holds goldpath's own copy of `cycle.md` identical
   to the one the templates ship, while leaving its maintainer-shaped skills and hook alone.
-- **The golden-manifest lane builds the generated app before `goldpath db init`** (#279), so a
-  compile or analyzer error fails with the compiler's own diagnostic instead of `dotnet ef`'s
-  bare "Build failed". In the T30 proof (#273) a planted defect — GP2102 dropped from the
-  template's `WarningsNotAsErrors` — turned two shapes red and the log never named GP2102;
-  replanted, `validate-gm.sh` now stops at `Program.cs(10,1): error GP2102`. The build after
-  `db init` stays, since the post-generation verbs and the migrations change the app; on a
-  warm green run the extra step costs about six seconds (56.8 s → 62.1 s for one shape).
+- **The golden-manifest lane builds the generated app before `goldpath db init` and before
+  every `db` post-generation verb** (#279), so a compile or analyzer error fails with the
+  compiler's own diagnostic instead of `dotnet ef`'s bare "Build failed". In the T30 proof
+  (#273) a planted defect — GP2102 dropped from the template's `WarningsNotAsErrors` — turned
+  two shapes red and neither log named GP2102: GmEverything failed at `db init`, GmGrownRest
+  (whose FileExchange only arrives through `add feature fileexchange`) at its later
+  `db add GrownRest`. Replanted, `validate-gm.sh` now stops at `error GP2102` in both. The
+  build after the post verbs stays, since they and the migrations change the app; on a warm
+  green run the extra step costs about six seconds (56.8 s → 62.1 s for one shape).
 
 
 ### Changed

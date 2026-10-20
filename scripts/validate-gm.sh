@@ -98,10 +98,11 @@ export GOLDPATH_SPECDRIFT="$SPECDRIFT"
 # Build BEFORE `db init`, not only after it (#279). `db init` is the first thing to compile
 # the generated app, through `dotnet ef`, and `dotnet ef` reports a compile failure as the
 # two words "Build failed" and nothing else. In the T30 proof (#273) a planted template
-# defect — GP2102 dropped from WarningsNotAsErrors — turned two shapes red at that step, and
-# the log never named GP2102: the cause had to be read off the diff. Built here, the same
-# failure fails with the compiler's own diagnostic (rule id, file:line). The build step
-# below stays, because the post-generation verbs add heads and `db init` adds the
+# defect — GP2102 dropped from WarningsNotAsErrors — turned GmEverything red at that step,
+# and the log never named GP2102: the cause had to be read off the diff. Built here, the
+# same failure fails with the compiler's own diagnostic (rule id, file:line). The same
+# holds for every `db` verb in the post loop below (GmGrownRest's case). The build step
+# after the loop stays, because the post-generation verbs add heads and `db init` adds the
 # migrations; on the happy path it is incremental. -m:1 for the reason given there.
 echo "── build (before db init, so a compile error names its rule)"
 dotnet build "$APP" --nologo -v q -m:1
@@ -114,6 +115,14 @@ echo "── initial migration (goldpath db init — Development migrates, Ensur
 if [ -n "${GOLDPATH_GM_POST:-}" ]; then
   IFS=';' read -ra GM_POSTS <<< "$GOLDPATH_GM_POST"
   for post in "${GM_POSTS[@]}"; do
+    # A `db` verb compiles through `dotnet ef` too (#279): in the T30 proof GmGrownRest only
+    # met the planted defect after `add feature fileexchange`, and its `db add GrownRest`
+    # said "Build failed" and nothing more. Build first so the rule is named here as well.
+    case "$post" in
+      db\ *)
+        echo "── build (before goldpath $post, so a compile error names its rule)"
+        dotnet build "$APP" --nologo -v q -m:1 ;;
+    esac
     echo "── goldpath $post"
     (cd "$APP" && dotnet run --project "$ROOT/tools/Goldpath.Cli" -- $post --path .)
   done
