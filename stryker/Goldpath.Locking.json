@@ -5,6 +5,7 @@
       "../../tests/Goldpath.Locking.Tests/Goldpath.Locking.Tests.csproj",
       "../../tests/Goldpath.IntegrationTests/Goldpath.IntegrationTests.csproj"
     ],
+    "test-case-filter": "FullyQualifiedName!~Goldpath.Tests.Integration.|FullyQualifiedName~Goldpath.Tests.Integration.LockContractTests.",
     "target-framework": "net10.0",
     "reporters": [
       "progress",

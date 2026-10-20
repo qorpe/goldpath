@@ -21,6 +21,10 @@ checks that every listed test project exists.
 
 A test project other than the package's own raises the package's score, so each one is
 justified here the way an exclusion is. A borrowed suite without a row is a finding.
+Where the borrowed project is `Goldpath.IntegrationTests`, the config's `test-case-filter`
+admits only the named class (`FullyQualifiedName!~Goldpath.Tests.Integration.|FullyQualifiedName~Goldpath.Tests.Integration.<Class>.`):
+the row names the tests that assert the package's contract, and the filter makes the config
+borrow exactly those — not every container-backed story that happens to pass through.
 
 | Package | Borrowed test project | Why it counts |
 |---|---|---|
@@ -31,7 +35,7 @@ justified here the way an exclusion is. A borrowed suite without a row is a find
 | Data | `Goldpath.SoftDelete.Tests` | Asserts the stamped-update rewrite through `QueryFilters` and the contributor ordering in `SaveContributors` — Data's composition seam, exercised by the module that plugs into it (2 mutants). |
 | Data | `Goldpath.MultiTenancy.Tests` | The tenant guard's ordering (`Guard_messages_teach_the_fix_and_the_contributor_runs_first`) asserts `SaveContributors` and the filter composition in `QueryFilters` (2 mutants). |
 | MultiTenancy | `Goldpath.Auth.Tests` | `Binding_can_be_disabled_for_gateway_owned_tenancy` / `Binding_rejection_body_names_the_problem` assert the tenant-to-principal binding MultiTenancy registers (1 mutant). |
-| MultiTenancy | `Goldpath.IntegrationTests` | `Http_tenant_survives_middleware_stamp_outbox_broker_and_consumer_stamp` is the tenant's journey through the outbox and a real broker, which no unit suite can host (2 mutants). The same suite also kills 3 header-name string mutants in `MultiTenancy.cs` INCIDENTALLY, through the campaign pacer bench — real detections, but not a test written for them; without them the package would score 72.09 %, not 75.58 %. |
+| MultiTenancy | `Goldpath.IntegrationTests` | `Http_tenant_survives_middleware_stamp_outbox_broker_and_consumer_stamp` is the tenant's journey through the outbox and a real broker, which no unit suite can host (2 mutants). The rest of the suite is filtered out: under solution mode it also killed 3 header-name string mutants INCIDENTALLY, through the campaign pacer bench (75.58 %); the deliberate tests alone score 72.09 %, and a whole-suite borrow cost 130 min a night for those 3. |
 | Messaging | `Goldpath.Messaging.Conformance` | The seam's own conformance suite (ADR-0013): `S2_1_exactly_once_…` is the outbox's exactly-once contract (1 mutant). |
 | Messaging | `Goldpath.IntegrationTests` | `Committed_transaction_delivers_exactly_once` and `Rolled_back_transaction_publishes_nothing` prove the outbox registration against real Postgres + RabbitMQ (3 mutants). |
 | Locking | `Goldpath.IntegrationTests` | `Exactly_one_competitor_holds_the_lock_and_release_hands_it_over` and `Tenant_scoped_names_do_not_contend_across_tenants` contend for a real lock; the unit suite has no second holder (1 mutant). |
