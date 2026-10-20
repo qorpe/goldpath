@@ -7,7 +7,9 @@
   [goldpath-ga-readiness](goldpath-ga-readiness.md) §8.3 (Q1, Q2): **S4 wire compatibility is
   mandatory** for any engine switch (the drained-cutover escape is removed); **Wolverine** (D) is
   the 1.0 insurance and must pass S1–S4 and S6 by 2026-12-31 (GA gate G5); the **family bus**
-  is committed on a written timeline (§7.1, T40) and becomes the default only in 2.0
+  is committed on a written timeline (§7.1, T40) and becomes the default only in 2.0. The
+  constitution records it as [ADR-0015](../adr/ADR-0015-messaging-engines-zero-adopter-impact.md),
+  a scoped amendment of ADR-0013
 - Supersedes the recommendation in [goldpath-messaging](goldpath-messaging.md) §9 D1
 - Ledger: issue [#11](https://github.com/qorpe/goldpath/issues/11) (owner-prioritized),
   master plan "Open, with an owner" item 10
@@ -166,7 +168,8 @@ The owner's question was *"will the switch really be a flip, with nothing breaki
 The seam (S1) and the suite (S2/S3) are September 2026 work on the accelerator; S4–S6 are
 the library's own DoD and cannot start before it exists.
 
-**2026-10-21 — owner decision: zero adopter impact, for every engine.** S1 (apps compile
+**2026-10-21 — owner decision: zero adopter impact, for every engine**
+([ADR-0015](../adr/ADR-0015-messaging-engines-zero-adopter-impact.md)). S1 (apps compile
 unchanged), S4 (wire compatibility, now mandatory) and S6 (rollback both ways) bind ANY engine
 switch, not only the default flip. Two adapters are now on a written clock:
 
@@ -223,7 +226,7 @@ lines, open until each proof runs:
       eight facts through the seam, green against MassTransit 8.5.10 on real containers, in the
       CI integration job) — its scenario list grows with §7.1's gaps; owner review pending.
 - [ ] The Wolverine adapter passes §7.1 S1, S2, S3, S4 and S6 by **2026-12-31** (GA gate G5,
-      owner decision 2026-10-21); SECURITY.md states the engine posture.
+      owner decision 2026-10-21, ADR-0015); SECURITY.md states the engine posture.
 - [ ] The family bus has its own RFC and repository (qorpe organisation, open source,
       clean-room per ADR-0013) in **December 2026**; its first adapter enters the suite in
       January–February 2027 (T40, milestone `family-bus`).

@@ -21,3 +21,4 @@ Statuses: `proposed | accepted | superseded-by-XXXX`.
 | [0012](ADR-0012-goldpath-is-a-platform.md) | Goldpath is a platform — product modules ride the published core | accepted |
 | [0013](ADR-0013-messaging-bus-is-a-swappable-engine.md) | The message bus is a swappable engine behind a Goldpath-owned seam (scoped amendment of 0003) | accepted |
 | [0014](ADR-0014-agent-verified-changes-merge-automatically.md) | Agent-verified changes merge automatically — except decisions, releases and the gates (scoped amendment of 0010) | proposed |
+| [0015](ADR-0015-messaging-engines-zero-adopter-impact.md) | Messaging engines — more than two adapters, zero adopter impact for any switch, the default locked for 1.x (scoped amendment of 0013) | accepted |
