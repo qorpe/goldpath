@@ -56,7 +56,9 @@ public sealed class ConfigPushHandler : IGoldpathCampaignActionHandler<DeviceTar
 {
     public async Task<GoldpathCampaignActionResult> ExecuteAsync(DeviceTarget target, GoldpathCampaignItemContext context, CancellationToken ct)
     {
-        var answer = await _core.PushAsync(target.DeviceId, idempotencyKey: context.IdempotencyKey, ct);
+        // The callback path names the campaign; the core fills in its own correlation id and signs its answer.
+        var callback = $"/goldpath/campaign/callbacks/{context.Type}/{context.CampaignId:N}/{{correlationId}}";
+        var answer = await _core.PushAsync(target.DeviceId, idempotencyKey: context.IdempotencyKey, callback, ct);
         return answer switch
         {
             PushAnswer.Done => GoldpathCampaignActionResult.Succeeded(),
@@ -67,11 +69,12 @@ public sealed class ConfigPushHandler : IGoldpathCampaignActionHandler<DeviceTar
     }
 }
 
-app.MapGoldpathCampaignCallbacks<OrdersDbContext>();   // the target system's answer: POST {prefix}/{type}/{correlationId}
+app.MapGoldpathCampaignCallbacks<OrdersDbContext>();   // the answer: POST {prefix}/{type}/{campaignId}/{correlationId}, signed
 
 campaign.AddCampaign<DeviceTarget>("config-push", c => c
     .MaxTargets(50_000_000)
     .MaxTps(200)                                        // shared by EVERY config-push campaign — the target system's rate
+    .SignedCallbacks(builder.Configuration["Campaign:ConfigPush:CallbackSecret"]!)   // HMAC key, >= 32 bytes, never in source
     .TargetsAfter((services, parameters, afterKey) =>   // keyset: a takeover reopens AFTER the last key, no skip read
         services.GetRequiredService<OrdersDbContext>().Devices.AsNoTracking()
             .Where(d => afterKey == null || d.Id.CompareTo(afterKey) > 0)
@@ -81,9 +84,20 @@ campaign.AddCampaign<DeviceTarget>("config-push", c => c
         target => target.DeviceId));
 ```
 
+Every callback carries `X-Goldpath-Timestamp` (unix seconds) and `X-Goldpath-Signature:
+v1=<hex>` — HMAC-SHA256 with the type's secret over `{timestamp}\n{METHOD}\n{path}\n{body}`
+(`GoldpathCampaignCallbackSignature.Sign` computes it). The target system holds that secret
+and nothing else — no ops credential. Unsigned, stale (more than five minutes off) or forged
+is `401`; mapping the surface with no signing type refuses to start (GP1704 at build time).
+A callback that arrives before its acceptance is visible is parked (`202`) and settles when
+the acceptance lands. An accepted item holds an in-flight slot until its answer or its
+deadline, so size `MaxInFlight` for the acceptances a campaign keeps outstanding.
+
 An operator sets `Priority` (High · Normal · Low) on the policy — live, through the throttle
 verb — and a contended ceiling (`GlobalTps`, a type's `MaxTps`) splits 3 : 2 : 1 by weighted
-fair share; alone under its own policy a campaign runs at its own TPS whatever its priority.
+fair share, the fractional part carried from tick to tick so a Low campaign on a small
+ceiling still moves; alone under its own policy a campaign runs at its own TPS whatever its
+priority.
 
 ## The guarantees
 
@@ -106,6 +120,10 @@ fair share; alone under its own policy a campaign runs at its own TPS whatever i
 - **An acceptance is not a success:** an item a target system accepted waits in
   `AwaitingAck` until its callback or its deadline; a missed deadline is a retryable
   failure, and the callback surface is idempotent (a repeated webhook publishes nothing).
+  The sweep reaches every campaign with work in flight — paused, aborted, finished — so
+  nothing accepted waits forever.
+- **A callback is signed or it is nothing:** HMAC with the type's secret, a timestamp
+  window against replay, two secrets during a rotation; there is no unsigned path.
 - **Pause means now:** a message that reaches a consumer after the pause claims nothing;
   a release the broker lost is published again after `OrphanReleaseAfter`, and resume
   brings every unclaimed release back on the next tick.

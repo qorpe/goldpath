@@ -121,26 +121,46 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ### Added
 - **Campaign revision R2 — asynchronous targets, shared ceilings, keyset takeover**
-  ([RFC](docs/rfc/goldpath-campaign.md), revision R2). A design review for a device-fleet
+  ([RFC](docs/rfc/goldpath-campaign.md), revision R2 with its 2026-10-20 amendments;
+  [upgrade guide](docs/upgrades/0.1.0-preview.10.md)). A design review for a device-fleet
   adopter found four places where the module and the adopter's architecture disagreed and
   the architecture was right. Typed handler results (`IGoldpathCampaignActionHandler<T>`:
   Succeeded / Failed with a code and a retryable flag / Accepted with a correlation id and an
   ack deadline), an `AwaitingAck` item state, an idempotent HTTP callback surface
-  (`MapGoldpathCampaignCallbacks`) and an ack sweep that turns a missed deadline into a
-  retryable failure; an idempotency key per attempt; a configurable, jittered retry ladder
-  with the ripe instant persisted per item; a per-type `MaxTps` ceiling; a `Priority`
-  (High 3 · Normal 2 · Low 1) that splits a contended shared ceiling by weighted max-min
-  fair share; a claim guard that reads the campaign state (pause means now) plus orphaned
-  releases published again after `OrphanReleaseAfter`; and a keyset selector
-  (`TargetsAfter`) so a takeover reopens the stream after the last key instead of
-  re-reading every row. One migration: `goldpath db add CampaignR2`. The R1 handler
-  contract is untouched.
+  (`MapGoldpathCampaignCallbacks`, `POST {prefix}/{type}/{campaignId}/{correlationId}`) and an
+  ack sweep that turns a missed deadline into a retryable failure; an idempotency key per
+  attempt; a configurable, jittered retry ladder with the ripe instant persisted per item; a
+  per-type `MaxTps` ceiling; a `Priority` (High 3 · Normal 2 · Low 1) that splits a contended
+  shared ceiling by weighted max-min fair share, the fractional share carried tick to tick so
+  nobody starves; a claim guard that reads the campaign state (pause means now) plus orphaned
+  releases published again after `OrphanReleaseAfter`; and a keyset selector (`TargetsAfter`)
+  so a takeover reopens the stream after the last key instead of re-reading every row. The R1
+  handler contract is untouched.
+- **Signed campaign callbacks** (campaign RFC R2.8). A target system authenticates each
+  callback with an HMAC-SHA256 signature keyed by the campaign type's secret
+  (`SignedCallbacks(secret, previousSecret)` — two active during a rotation), over the
+  timestamp, method, path and body, inside `CallbackTimestampTolerance`; it needs no ops
+  credential, and an unsigned callback is not possible. A callback that arrives before its
+  acceptance is visible is parked and settles when the acceptance lands. New rule **GP1704**
+  (Error): the callback surface mapped while no campaign type signs.
+- **[schema]** Campaign R2: two columns on `GoldpathCampaigns`, five nullable columns on
+  `GoldpathCampaignItems`, the `GoldpathCampaignParkedCallbacks` table, and the items'
+  `(CampaignId, State)` index replaced by three. `goldpath db add CampaignR2`, then one line —
+  `migrationBuilder.GoldpathCampaignR2Backfill()` — stamps the retries R1 left waiting. The
+  three `CREATE INDEX` statements block writes on a large items table: apply between
+  campaigns, or build them concurrently (the upgrade guide has both providers' statements).
 
 ### Changed
-- `GoldpathCampaignEngine<TContext>.ExecuteItemAsync` takes the attempt number and returns
-  the typed result; `GoldpathCampaignInfo` carries `Priority`; `GoldpathCampaignThrottle`
-  accepts an optional `Priority`. Source-level only, for code that calls the engine or
-  constructs the admin records directly.
+- **Three removed public members** in `Goldpath.Campaign`, all shipped in preview.8:
+  `GoldpathCampaignEngine<TContext>.ExecuteItemAsync` takes the attempt number and returns
+  the typed result (source- and binary-breaking); the positional `GoldpathCampaignInfo`
+  constructor gains `Priority` before `WindowOpenNow` (source- and binary-breaking); the
+  `GoldpathCampaignThrottle` constructor gains an optional trailing `Priority`
+  (source-compatible, **binary-breaking** — recompile). Only code that drives the engine or
+  builds the admin records directly is affected.
+- **The campaign retry ladder's default changed**: 30 s, 2 min, then **10 min** for every
+  later attempt (R1: 2 min), with **±20% jitter** on every rung (R1: exact). Pin R1 with
+  `RetryBackoff = [30s, 2m]` and `RetryJitter = 0`.
 
 ### Fixed
 - A retry re-released on a real broker could be dropped by the consumer's claim guard: the
@@ -148,6 +168,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   consumer while the row still said `AwaitingRetry`. A ripe `AwaitingRetry` row now claims;
   an unripe one still refuses. R1's ladder had unit proof only; the R2 real-broker
   integration is what found it.
+- Aborting a campaign left its retries waiting on a rung forever (`AwaitingRetry`, never
+  released again); abort now stamps them `Aborted` with the rest of the unsent work.
+- A consumer that died mid-call on a paused, closed-window, aborted, expired or finished
+  campaign stayed `Processing` forever — the stale-claim sweep visited only campaigns
+  releasing that tick. It now reaches every campaign with work in flight.
 
 ## [0.1.0-preview.9] - 2026-10-19
 

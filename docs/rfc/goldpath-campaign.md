@@ -280,7 +280,7 @@ columns + one small retry-bookkeeping column on items.
 3. Console: the governor grows the fields; the smoke drives an excluded-day flip and an
    end-date expiry against a real campaign.
 
-## Revision R2 — asynchronous targets, shared ceilings, keyset takeover (ACCEPTED 2026-10-07; **IMPLEMENTED 2026-10-07** — model+engine+pacer+sink+admin+callbacks+console; proofs: 30 unit cases (typed results, the ack sweep and the callback resolution, the configurable jittered ladder, the fair-share math, the type ceiling and priority on the pacer, the pause guard and orphaned releases, the keyset resume) and two real-broker integrations (acceptances settled over HTTP callbacks with two never-answered items walking the ladder; an ungraceful leader stop mid-enumeration resumed by key on a second host with nothing lost or doubled). Ships to adopters with preview.9 — one `goldpath db add CampaignR2` migration: two campaign columns, five item columns, one index replaced by three)
+## Revision R2 — asynchronous targets, shared ceilings, keyset takeover (ACCEPTED 2026-10-07; **IMPLEMENTED 2026-10-07** — model+engine+pacer+sink+admin+callbacks+console; proofs: 30 unit cases (typed results, the ack sweep and the callback resolution, the configurable jittered ladder, the fair-share math, the type ceiling and priority on the pacer, the pause guard and orphaned releases, the keyset resume) and two real-broker integrations (acceptances settled over HTTP callbacks with two never-answered items walking the ladder; an ungraceful leader stop mid-enumeration resumed by key on a second host with nothing lost or doubled). Ships to adopters with preview.10 — one `goldpath db add CampaignR2` migration plus its one-line data step (`GoldpathCampaignR2Backfill`): two campaign columns, five item columns, one table (parked callbacks), one index replaced by three. **Amended 2026-10-20** after a review of the implementation — see *Amendments* at the end of this revision, R2.8 among them)
 
 **Finding.** A design review for a device-management-class adopter (tens of millions of
 targets, several target systems behind one platform, pushes that run for days) compared
@@ -303,7 +303,7 @@ new screen concept.
 
 | # | Addition | The sentence for it |
 |---|---|---|
-| R2.1 | Typed results: `IGoldpathCampaignActionHandler<T>` answers `Succeeded()`, `Failed(code, message, retryable)` or `Accepted(correlationId, ackTimeout)`. An acceptance parks the item in `AwaitingAck` (still in flight); the target system's answer arrives on `MapGoldpathCampaignCallbacks` (`POST {prefix}/{type}/{correlationId}`, idempotent, a machine surface with its own policy parameter); an acceptance nobody answered becomes a RETRYABLE failure (`ACK_TIMEOUT`) at its deadline, never a success. A non-retryable failure is terminal at once with its code kept for the report. The R1 handler keeps its contract untouched. | "the device answers when it wakes up — wait for it, but not forever" / "this one is permanently unsupported, do not retry it" |
+| R2.1 | Typed results: `IGoldpathCampaignActionHandler<T>` answers `Succeeded()`, `Failed(code, message, retryable)` or `Accepted(correlationId, ackTimeout)`. An acceptance parks the item in `AwaitingAck` (still in flight); the target system's answer arrives on `MapGoldpathCampaignCallbacks` (`POST {prefix}/{type}/{campaignId}/{correlationId}` — amended A1 — idempotent, a machine surface authenticated by its signature, R2.8); an acceptance nobody answered becomes a RETRYABLE failure (`ACK_TIMEOUT`) at its deadline, never a success. A non-retryable failure is terminal at once with its code kept for the report. The R1 handler keeps its contract untouched. | "the device answers when it wakes up — wait for it, but not forever" / "this one is permanently unsupported, do not retry it" |
 | R2.2 | An idempotency key per attempt on the item context (`{campaign}#{seq}#{attempt}`) | "the gateway dedupes on a key — give me one that changes only when the retry is deliberate" |
 | R2.3 | The ladder is configurable and jittered: `RetryBackoff` (default 30s, 2m, 10m), `RetryJitter` (default ±20%); the ripe instant is persisted per item (`NextAttemptAt`) and released off one indexed range | "a thousand items that failed in the same second must not come back in the same second" |
 | R2.4 | A per-TYPE ceiling: `.MaxTps(n)` on the type, shared by every campaign of that type — the target system's protection, as `GlobalTps` is the platform's | "the gateway takes two hundred a second, whatever we run against it" |
@@ -323,23 +323,37 @@ new screen concept.
   code; a module seam would freeze a shape no second adopter has asked for.
 - **Four-eyes on *create*** (an Approvals binding). Trigger: the first adopter whose policy
   requires a second person on a campaign start. The verb is already audited and the
-  Approvals module already exists, so the binding is a day's work when the trigger fires.
+  Approvals module already exists, so the binding is a day's work when the trigger fires
+  (open-threads T34).
 - **Finer roles than the ops floor; exports of item outcomes.** The admin surface stays one
   policy; exports ride the failed-items drill-down and the app's own reporting.
 - **A distributed limiter, the Kafka rider, Oracle:** unchanged (R1, D4, T16).
 
 ### Compatibility
 
+*Rewritten 2026-10-20 (amendment A9): the first text said "two source-level changes" and
+"every default reproduces R1"; neither was true.*
+
 Additive for adopters on the R1 handler: `IGoldpathCampaignItemHandler<T>` keeps
-return-is-success / throw-is-retryable; the outcome message keeps its positional shape
-(the new init-only members default to R1 behaviour); `RetryBackoff` defaults reproduce the
-R1 pair plus one rung; `Priority` defaults to Normal; `OrphanReleaseAfter` defaults to five
-minutes; no route of the frozen admin contract moves. Two source-level changes for code
-that calls the engine or constructs the admin records directly:
-`GoldpathCampaignEngine<TContext>.ExecuteItemAsync` gains an `attempt` parameter and returns
-the typed result; `GoldpathCampaignInfo` gains `Priority` (positional) and
-`GoldpathCampaignThrottle` gains an optional `Priority`. One migration:
-`goldpath db add CampaignR2`.
+return-is-success / throw-is-retryable; the outcome message keeps its positional shape (the
+new init-only members default to R1 behaviour); `Priority` defaults to Normal; no type has a
+ceiling; no route of the frozen admin contract moves. Three things are not additive, and the
+preview.10 upgrade guide carries each with its step:
+
+- **Three removed public members**, all shipped in preview.8:
+  `GoldpathCampaignEngine<TContext>.ExecuteItemAsync` gains `attempt` and returns the typed
+  result (source- and binary-breaking); the positional `GoldpathCampaignInfo` constructor
+  gains `Priority` before `WindowOpenNow` (source- and binary-breaking);
+  `GoldpathCampaignThrottle` gains an optional trailing `Priority` (source-compatible,
+  binary-breaking — recompile). Justified under the versioning RFC's D2 (0.x may break, never
+  silently).
+- **A default changed**: the ladder is 30s, 2m, **10m** with **±20% jitter**, where R1 waited
+  2m before every attempt after the second, exactly. `RetryBackoff = [30s, 2m]`,
+  `RetryJitter = 0` pins R1.
+- **One migration with a data step**: `goldpath db add CampaignR2`, then
+  `migrationBuilder.GoldpathCampaignR2Backfill()` at the end of `Up` (A4). Its three
+  `CREATE INDEX` statements block writes on a large items table — apply between campaigns, or
+  build them concurrently (the guide gives both providers' statements).
 
 ### Test plan (DoD) — met
 
@@ -356,9 +370,11 @@ the typed result; `GoldpathCampaignInfo` gains `Priority` (positional) and
    publishes orphans again under the same allowance; an aborted campaign refuses the claim;
    a takeover reopens a keyset selector after the last key with no skip read.
 2. Integration (real broker + pg): forty customers, odd ones accepted and settled over the
-   HTTP callback surface (202 on a pending acceptance, 200 on a repeat, 404 on an unknown
-   id), two never answered — ack timeout, rung one, second attempt succeeded, every
-   customer exactly once; a keyset campaign whose first host is stopped ungracefully
+   SIGNED HTTP callback surface — half of them answering from inside the handler, before the
+   acceptance exists (202 parked), half after it lands (202 published); 200 on a repeat, 404
+   on an unknown id, 401 unsigned, forged or stale — two never answered — ack timeout, rung
+   one, second attempt succeeded, every customer exactly once; the R2 backfill on real
+   PostgreSQL; a keyset campaign whose first host is stopped ungracefully
    mid-enumeration and taken over by a second host — the selector reopened after a key at
    or past the stop, the sequence dense, every customer exactly once.
 3. Console: the governor shows priority and the throttle patches it.
@@ -374,3 +390,58 @@ the typed result; `GoldpathCampaignInfo` gains `Priority` (positional) and
   sink swallows the live host's outcomes. The sweeps are the answer on their own clocks
   (`StaleClaimAfter`, `OrphanReleaseAfter`, runbook items 7–8); the takeover test stops the
   dead host's bus the way a killed process drops its connection.
+
+### Amendments — the review of the implementation (ACCEPTED 2026-10-20 by the owner)
+
+A review of the R2 implementation (2026-10-20) found nine places where the code or its
+documents did not do what this revision says; six were proven by tests that asserted the
+defect and passed. The owner decided all nine on 2026-10-20. R2 itself stays ACCEPTED as
+written on 2026-10-07; these amend it.
+
+| # | Finding | The amendment |
+|---|---|---|
+| A1 | A callback could find its item only after the sink wrote the correlation id, and the lookup spanned every campaign of the type: a prompt answer got 404 and the ladder executed the action again under a new idempotency key; a shared id could settle the wrong campaign | The route names the campaign (`{type}/{campaignId}/{correlationId}`) and the lookup stays inside it. A callback that outruns its acceptance — before the sink flushes, or before the handler has even returned — is **parked** (202) and the sink settles it in the flush that writes the acceptance; park-then-look-again closes the interleaving. Writing the acceptance synchronously was rejected: it closes only the first window, not the device that answers while our call to the target system is still returning. A spent acceptance keeps its id, so a repeat of a failure webhook is the idempotent 200 this revision promised |
+| A2 | Outcomes were not bound to their attempt: a redelivered failure of attempt N moved attempt N+1 back onto the ladder and its success was lost | The outcome carries `Attempt`; every item update requires the row to still be on it (`Attempts == Attempt - 1`) |
+| A3 | A keyset type resuming a row with no key (enumerated before R2, or while count-based) reopened from the start and sent every materialized target twice | The takeover derives the key from the target materialized last; a row that cannot name its key refuses with teaching text |
+| A4 | `AwaitingRetry` rows written by R1 have no ripe instant, so they were never retried and their campaigns never completed; abort did not stamp them | `GoldpathCampaignR2Backfill()` — the migration's data step — stamps the R1 rung; the engine reads a missing instant as ripe (the net, not the plan); abort stamps waiting retries `Aborted` |
+| A5 | A replay decremented the failed count before its handler ran; a throwing replay drifted the ledger below zero | The replay claims only a Failed row, and a throw puts it back, counted |
+| A6 | The rounding unit always went to the heaviest claimant and nothing carried between ticks: on a small budget the lighter campaign got zero forever, contradicting R2.5's "nobody starves" | The exact fractional share is carried tick to tick as a credit; over any run every hungry claimant is within one unit of its weighted share (proven over every priority mix × MaxTps 1–25 × three ticks) |
+| A7 | The callback surface defaulted to the ops policy (a target system needed an ops credential) and `exposeUnsecured` left forged successes one guessable id away | **R2.8** below |
+| A8 | The ack and stale-claim sweeps ran only for campaigns releasing that tick: after an abort, during a closed window, on a paused or finished campaign, work in flight never drained | A drain sweep visits every campaign with work in flight; on a campaign the pacer no longer releases a retryable failure is terminal at once and filed for repair |
+| A9 | The upgrade note and the CHANGELOG said two source-level removals and "every default reproduces R1" | Three removals, one binary-only; the ladder default change named with its pin; the `[schema]` marker; the index-build warning — *Compatibility* above, rewritten; R2 ships with preview.10 |
+
+#### R2.8 — signed callbacks (ACCEPTED 2026-10-20 by the owner)
+
+A target system's callback settles an item as succeeded or failed. Unauthenticated, anyone
+who learns a correlation id records a send that never happened — the silent success R2.1
+forbids. Behind the ops policy, the machine that posts device results could also abort,
+throttle and replay every campaign. The callback is authenticated by what the target system
+already has to hold anyway — a secret — and nothing more:
+
+- **The secret is per campaign type**: `.SignedCallbacks(secret, previousSecret)` on the
+  type, at least 32 bytes, read from configuration. A type without one has no callback
+  surface.
+- **The signature**: HMAC-SHA256 with that secret over `{unix seconds}\n{METHOD}\n{path}\n`
+  followed by the raw body; `X-Goldpath-Timestamp` carries the seconds, `X-Goldpath-Signature`
+  carries `v1=<lowercase hex>`. `path` is the request path exactly as sent, without the query.
+  Compared in constant time against every active secret.
+- **Replay is bounded twice**: a timestamp outside `CallbackTimestampTolerance` (5 minutes,
+  either way) is refused, and inside the window a repeat is idempotent — the attempt-bound
+  settle (A2) applies it at most once.
+- **Rotation**: during a rotation two secrets are active (`previousSecret`); the runbook
+  carries the order (deploy both, move the sender, drop the old one).
+- **Unsigned is impossible, not discouraged**: `exposeUnsecured` is gone; mapping the surface
+  with no signing type refuses to start; **GP1704** (Error, compilation-end) says so at build
+  time — the standard ships with its verifier (ADR-0005). An authorization policy on top of
+  the signature stays available, only when the adopter passes one explicitly; by default the
+  signature alone authenticates and the app's fallback policy does not apply.
+- **Not in this amendment**: mTLS (a deployment boundary, not a module feature — composes on
+  top), per-campaign secrets (a type is the target system; one secret per sender), and
+  asymmetric signatures (the trigger is the first target system that can only sign with a
+  key pair).
+
+Proofs: the signed path settles and a signed repeat is 200; seven unauthentic variants
+(unsigned, another secret, body or path changed after signing, stale, future, garbage) are
+401 and reach nothing; both secrets verify during a rotation; the refusal to start and GP1704
+each have a red-then-green test; the recipe is pinned by a vector; the integration suite
+signs every callback on real infrastructure and refuses unsigned, forged and stale ones.

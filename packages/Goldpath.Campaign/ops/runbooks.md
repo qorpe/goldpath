@@ -72,12 +72,26 @@ the pacer's run health lives on the goldpath-jobs dashboard. This board owns the
 
 - `AwaitingAck` growing on the items drill-down, `goldpath_campaign_ack_timeouts_total`
   climbing — the target system accepted and never answered, or its answers cannot reach
-  `MapGoldpathCampaignCallbacks`. Check the surface first (reachability, the policy or the
-  mTLS boundary it sits behind, the correlation id the callback names — `404` means the id
-  is unknown to the type, `200` means the item already settled).
+  `MapGoldpathCampaignCallbacks`. Check the surface first: reachability, then what it
+  answers the target system —
+  - `401` — the signature is missing, stale or wrong (`goldpath_campaign_callbacks_rejected_total`
+    climbs with it): the sender's secret is not one of the type's active secrets (a rotation
+    half done — §10), it signs a different path than it sends (a proxy that rewrites the
+    prefix), or its clock is more than `CallbackTimestampTolerance` (5 minutes) off;
+  - `404` — the campaign in the path is not of that type, or no item of it carries the
+    correlation id and none is in flight that could;
+  - `202` — published, or PARKED: the answer outran its acceptance and settles when the
+    acceptance lands (`goldpath_campaign_callbacks_parked_total`). Parks nobody claims expire
+    after `StaleClaimAfter`;
+  - `200` — the item already settled; the repeat changed nothing.
 - Nothing is lost while you look: the sweep turns every missed deadline into a RETRYABLE
   failure (`ACK_TIMEOUT`), the ladder re-releases it, and exhaustion lands in the repair
-  queue — never in a silent success. A second attempt gets a fresh correlation id.
+  queue — never in a silent success. On a campaign the pacer no longer releases (aborted,
+  expired, finished — a replay) the timeout is terminal at once and filed for repair. A
+  second attempt is a new acceptance with a new correlation id.
+- A campaign that stalls with `AwaitingAck` at `MaxInFlight`: every acceptance holds an
+  in-flight slot until its answer or its deadline. Raise `MaxInFlight` toward Tps × the ack
+  timeout the handler declares, or shorten the timeout.
 
 ## 9. Orphaned releases being published again (R2.6)
 
@@ -88,3 +102,19 @@ the pacer's run health lives on the goldpath-jobs dashboard. This board owns the
   says a host needs looking at.
 - After a resume the counter jumps once by design: every Released row is marked due so the
   messages consumers refused during the pause come back on the next tick.
+
+## 10. Rotating a callback secret (R2.8)
+
+The secret is per campaign type and comes from configuration. Rotation never drops a
+callback, because for its duration two secrets verify:
+
+1. Generate the next secret (`openssl rand -base64 32`) and store it beside the current one.
+2. Deploy with `.SignedCallbacks(next, previousSecret: current)` — both verify.
+3. Move the target system to `next`. Watch `goldpath_campaign_callbacks_rejected_total`: it
+   must stay flat.
+4. Deploy with `.SignedCallbacks(next)` — the old secret stops verifying.
+
+For a LEAKED secret, skip the overlap: deploy `.SignedCallbacks(next)` alone and move the
+target system to it at once. Callbacks still signed with the leaked secret are `401` from
+that deploy on, and the items they would have settled time out into the ladder rather than
+settle on a forged word.
