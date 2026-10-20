@@ -35,11 +35,14 @@ Out of scope: an adopter's own application code, and the infrastructure an adopt
 
 ## Supported versions
 
-Goldpath is at `0.1.0-preview.6`. **While the version is below 1.0, only the newest preview
-train receives fixes** — the versioning contract calls this out
-([docs/rfc/goldpath-versioning.md](docs/rfc/goldpath-versioning.md)), and the upgrade notes
-in `docs/upgrades/` carry every train-to-train change. At 1.0 the support window becomes the
-stated one in that contract, not this line.
+Goldpath is pre-1.0 and ships as `0.1.0-preview.N` trains. The newest train is the top
+released entry of [CHANGELOG.md](CHANGELOG.md), and the same version is on nuget.org. This line
+deliberately names no version number, because a pinned number goes stale one train later.
+**While the version is below 1.0, only the newest preview train receives fixes.** The
+versioning contract says so ([docs/rfc/goldpath-versioning.md](docs/rfc/goldpath-versioning.md)),
+and the upgrade notes in `docs/upgrades/` carry every train-to-train change. At 1.0 the support
+window becomes the one stated in that contract. What 1.0 must prove before it ships is
+proposed in [docs/rfc/goldpath-ga-readiness.md](docs/rfc/goldpath-ga-readiness.md).
 
 An adopter who cannot move trains quickly should say so in an issue: a backport is a
 decision we can make, but not one we can guess.
@@ -53,7 +56,7 @@ decision we can make, but not one we can guess.
   which commit, which workflow and which run produced the package. Verify with:
 
   ```bash
-  gh attestation verify Goldpath.Data.0.1.0-preview.6.nupkg --repo qorpe/goldpath
+  gh attestation verify Goldpath.Data.<version>.nupkg --repo qorpe/goldpath
   ```
 
   A package that fails this check did not come from this pipeline, whatever the registry
