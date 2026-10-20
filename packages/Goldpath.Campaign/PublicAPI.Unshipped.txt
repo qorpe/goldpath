@@ -95,7 +95,6 @@ Goldpath.GoldpathCampaignThrottle.Priority.get -> Goldpath.GoldpathCampaignPrior
 Goldpath.GoldpathCampaignThrottle.Priority.init -> void
 Goldpath.GoldpathCampaignType.MaxTps.get -> int?
 Goldpath.GoldpathCampaignTypeBuilder<TTarget>.MaxTps(int maxTps) -> Goldpath.GoldpathCampaignTypeBuilder<TTarget!>!
-static Goldpath.GoldpathCampaignFairShare.Allocate(System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathCampaignFairShareClaim>! claims, int total, int tieBreakStart = 0) -> int[]!
 static Goldpath.GoldpathCampaignFairShare.WeightOf(Goldpath.GoldpathCampaignPriority priority) -> int
 Goldpath.GoldpathCampaign.EnumeratedKey.get -> string?
 Goldpath.GoldpathCampaign.EnumeratedKey.set -> void
@@ -105,3 +104,4 @@ Goldpath.GoldpathCampaignMigrations
 static Goldpath.GoldpathCampaignMigrations.GoldpathCampaignR2Backfill(this Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder! migrationBuilder, string? schema = null) -> Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder!
 Goldpath.GoldpathCampaignOutcomeMessage.Attempt.get -> int
 Goldpath.GoldpathCampaignOutcomeMessage.Attempt.init -> void
+static Goldpath.GoldpathCampaignFairShare.Allocate(System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathCampaignFairShareClaim>! claims, int total, double[]? credit = null, int tieBreakStart = 0) -> int[]!

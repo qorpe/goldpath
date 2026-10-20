@@ -270,7 +270,143 @@ public class R2ReviewTests
         await Task.CompletedTask;
     }
 
+    // ---- finding 6: nobody starves under a shared ceiling (R2.5 "the push still moves") ----
+
+    public static TheoryData<GoldpathCampaignPriority[]> PriorityMixes()
+    {
+        var all = new[] { GoldpathCampaignPriority.High, GoldpathCampaignPriority.Normal, GoldpathCampaignPriority.Low };
+        var data = new TheoryData<GoldpathCampaignPriority[]>();
+        for (var a = 0; a < 3; a++)
+        {
+            for (var b = a; b < 3; b++)
+            {
+                data.Add([all[a], all[b]]);
+                for (var c = b; c < 3; c++)
+                {
+                    data.Add([all[a], all[b], all[c]]);
+                }
+            }
+        }
+
+        return data;
+    }
+
+    /// <summary>
+    /// Finding 6 / R2.5 ("nobody starves"; the XML's "guaranteed its weighted share"): for
+    /// every mix of priorities, every type ceiling from 1 to 25 per second (most of which do
+    /// not divide the tick evenly) and three leader ticks, a hungry campaign is never more
+    /// than one fair turn from its next unit, and its long-run share is its weight's share —
+    /// within one unit per claimant. The bucket is simulated exactly as the pacer banks it.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(PriorityMixes))]
+    public void UnderASharedCeiling_EveryPriorityMixGetsItsWeightedShare_AndNobodyStarves(GoldpathCampaignPriority[] mix)
+    {
+        var weights = mix.Select(GoldpathCampaignFairShare.WeightOf).ToArray();
+        var weightSum = weights.Sum();
+        foreach (var tick in new[] { TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(250), TimeSpan.FromSeconds(1) })
+        {
+            for (var maxTps = 1; maxTps <= 25; maxTps++)
+            {
+                var claims = weights.Select(w => new GoldpathCampaignFairShareClaim(w, 1_000)).ToArray();
+                var credit = new double[claims.Length];
+                var granted = new long[claims.Length];
+                var handedSinceLast = new long[claims.Length];
+                var budget = 0d;
+                long handed = 0;
+                for (var t = 1; t <= 2_000; t++)
+                {
+                    budget = Math.Min(budget + maxTps * tick.TotalSeconds, maxTps);
+                    var grants = GoldpathCampaignFairShare.Allocate(claims, (int)Math.Floor(budget), credit, t % claims.Length);
+                    var units = grants.Sum();
+                    budget -= units;
+                    handed += units;
+                    for (var i = 0; i < claims.Length; i++)
+                    {
+                        handedSinceLast[i] += units;
+                        granted[i] += grants[i];
+                        if (grants[i] > 0)
+                        {
+                            handedSinceLast[i] = 0;
+                        }
+
+                        // Nobody starves: between two of its units, no more than one fair
+                        // turn (the units it takes for its weight to come round) plus one per rival.
+                        Assert.True(handedSinceLast[i] <= (weightSum / weights[i]) + claims.Length,
+                            $"{string.Join("/", mix)} at MaxTps {maxTps}, tick {tick.TotalMilliseconds}ms: claimant {i} waited {handedSinceLast[i]} units");
+                    }
+                }
+
+                for (var i = 0; i < claims.Length; i++)
+                {
+                    var exact = (double)handed * weights[i] / weightSum;
+                    Assert.True(Math.Abs(granted[i] - exact) <= 1.0,
+                        $"{string.Join("/", mix)} at MaxTps {maxTps}, tick {tick.TotalMilliseconds}ms: claimant {i} got {granted[i]}, its share is {exact:F2}");
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Finding 6 / R2.5: the reviewer's two cases on ONE tick — High(3) vs Low(1) on three
+    /// units and High(3) vs Normal(2) on two — each give the lighter campaign a unit.
+    /// </summary>
+    [Fact]
+    public void TheLighterCampaignGetsAUnit_EvenOnASmallTick()
+    {
+        Assert.Equal([2, 1], GoldpathCampaignFairShare.Allocate([new(3, 100), new(1, 100)], 3));
+        Assert.Equal([1, 1], GoldpathCampaignFairShare.Allocate([new(3, 100), new(2, 100)], 2));
+    }
+
+    /// <summary>
+    /// Finding 6 / R2.5 on the real pacer: a type ceiling of three units per tick, High
+    /// against Low. The Low campaign moves, and the pacer carries the fair-share credit from
+    /// tick to tick, so the split is 3:1 — not 3:0 (the bug) and not 2:1 (credit forgotten).
+    /// </summary>
+    [Fact]
+    public async Task OnTheRealPacer_ALowCampaignUnderAThreeUnitCeiling_MovesAtItsShare()
+    {
+        // MaxTps 150 at a 20 ms tick = three units a tick, the shape of MaxTps 12 at the default 250 ms.
+        using var fixture = new CampaignFixture(R2Tests.FastTicks(o =>
+        {
+            o.EnumerationBatchSize = 500;
+            o.AddCampaign<TestTarget>("device", c => c.MaxTargets(10_000).MaxTps(150).Targets((_, _) => Targets(2_000)));
+        }));
+        var high = await CreateEnumeratedAsync(fixture, "device", GoldpathCampaignPriority.High);
+        var low = await CreateEnumeratedAsync(fixture, "device", GoldpathCampaignPriority.Low);
+        await fixture.RunPacerSliceAsync();
+
+        var releasedHigh = fixture.Reload(high).ReleasedThrough;
+        var releasedLow = fixture.Reload(low).ReleasedThrough;
+        var total = releasedHigh + releasedLow;
+        Assert.True(total >= 24, $"expected at least eight ticks of three units, saw {total}");
+        Assert.InRange(releasedLow, (total / 4.0) - 1.5, (total / 4.0) + 1.5);
+    }
+
     // ---- helpers ----
+
+    private static async Task<Guid> CreateEnumeratedAsync(CampaignFixture fixture, string type, GoldpathCampaignPriority priority)
+    {
+        GoldpathCampaign campaign;
+        using (var scope = fixture.Services.CreateScope())
+        {
+            campaign = await fixture.Engine.CreateAsync(scope.ServiceProvider, type, priority.ToString(), new Dictionary<string, string>(),
+                new GoldpathCampaignPolicy(10_000, null, 100_000, null, null, "UTC") { Priority = priority }, tenant: null, actor: "tester", CancellationToken.None);
+        }
+
+        await fixture.EnumerateAllAsync(campaign);
+        return campaign.Id;
+    }
+
+    private static async IAsyncEnumerable<TestTarget> Targets(int count)
+    {
+        for (var i = 1; i <= count; i++)
+        {
+            yield return new TestTarget(i, $"device{i}@example.test");
+        }
+
+        await Task.CompletedTask;
+    }
 
     private static Action<GoldpathCampaignOptions> Keyed(int count, List<string?> openings)
         => o =>

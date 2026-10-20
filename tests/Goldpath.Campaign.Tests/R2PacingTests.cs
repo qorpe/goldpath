@@ -271,6 +271,10 @@ public class R2PacingTests
             new Dictionary<string, string>(), Generous(first), tenant: null, actor: "tester", CancellationToken.None);
         var b = await fixture.Engine.CreateAsync(scope.ServiceProvider, "bulk", "second",
             new Dictionary<string, string>(), Generous(second), tenant: null, actor: "tester", CancellationToken.None);
+        // Enumerated BEFORE the slice: the assertions are about release shares, and a slice
+        // that spends its ticks materializing 4,000 rows on a loaded machine released nothing.
+        await fixture.EnumerateAllAsync(a);
+        await fixture.EnumerateAllAsync(b);
         return (a.Id, b.Id);
     }
 

@@ -48,6 +48,9 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
         var globalBudget = 0d;
         // R2.4: one bucket per campaign TYPE that declares a ceiling — the target system's rate.
         var typeBudgets = new Dictionary<string, double>(StringComparer.Ordinal);
+        // R2.5: each shared bucket's fair-share credit, per campaign, carried tick to tick —
+        // the fractional part of a share that a whole unit could not pay this tick.
+        var fairCredit = new Dictionary<string, Dictionary<Guid, double>>(StringComparer.Ordinal);
         var streams = new Dictionary<Guid, LeaderStream>();
         var tick = 0;
         try
@@ -86,7 +89,7 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
                 }
 
                 // Phase 2 — the shared ceilings, split by weighted fair share (R2.4 + R2.5).
-                var grants = Allocate(campaigns, demands, typeBudgets, _options.GlobalTps is null ? null : globalBudget, tick);
+                var grants = Allocate(campaigns, demands, typeBudgets, _options.GlobalTps is null ? null : globalBudget, tick, fairCredit);
 
                 // Phase 3 — release under the grant, then the sweeps and the completion math.
                 for (var i = 0; i < campaigns.Count; i++)
@@ -124,9 +127,12 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
     /// Caps each campaign's own allowance by the shared ceilings: first the type bucket
     /// among the campaigns of that type, then the global bucket among everyone — each a
     /// weighted max-min split, so a High campaign cannot be starved by a Low one that
-    /// happened to be created first (R2.5).
+    /// happened to be created first, and a Low one still moves on a small budget (R2.5:
+    /// the bucket's credit carries what a whole unit could not pay).
     /// </summary>
-    private static int[] Allocate(List<GoldpathCampaign> campaigns, int[] demands, Dictionary<string, double> typeBudgets, double? globalBudget, int tick)
+    private static int[] Allocate(
+        List<GoldpathCampaign> campaigns, int[] demands, Dictionary<string, double> typeBudgets, double? globalBudget, int tick,
+        Dictionary<string, Dictionary<Guid, double>> fairCredit)
     {
         var capped = new int[campaigns.Count];
         for (var i = 0; i < campaigns.Count; i++)
@@ -145,7 +151,7 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
             var claims = members
                 .Select(m => new GoldpathCampaignFairShareClaim(GoldpathCampaignFairShare.WeightOf(m.campaign.Priority), capped[m.index]))
                 .ToArray();
-            var granted = GoldpathCampaignFairShare.Allocate(claims, (int)Math.Floor(Math.Max(0, budget)), tick % Math.Max(1, members.Length));
+            var granted = Share("type:" + group.Key, members.Select(m => m.campaign.Id).ToArray(), claims, budget, tick, fairCredit);
             for (var k = 0; k < members.Length; k++)
             {
                 capped[members[k].index] = granted[k];
@@ -157,10 +163,30 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
             var claims = campaigns
                 .Select((campaign, index) => new GoldpathCampaignFairShareClaim(GoldpathCampaignFairShare.WeightOf(campaign.Priority), capped[index]))
                 .ToArray();
-            capped = GoldpathCampaignFairShare.Allocate(claims, (int)Math.Floor(Math.Max(0, shared)), tick % Math.Max(1, campaigns.Count));
+            capped = Share("global", campaigns.Select(c => c.Id).ToArray(), claims, shared, tick, fairCredit);
         }
 
         return capped;
+    }
+
+    /// <summary>One bucket's split this tick, its credit read from and written back to the slice's ledger.</summary>
+    private static int[] Share(
+        string bucket, Guid[] ids, GoldpathCampaignFairShareClaim[] claims, double budget, int tick,
+        Dictionary<string, Dictionary<Guid, double>> fairCredit)
+    {
+        var ledger = fairCredit.TryGetValue(bucket, out var known) ? known : [];
+        var credit = ids.Select(id => ledger.GetValueOrDefault(id)).ToArray();
+        var granted = GoldpathCampaignFairShare.Allocate(
+            claims, (int)Math.Floor(Math.Max(0, budget)), credit, tieBreakStart: tick % Math.Max(1, ids.Length));
+        // Rebuilt every tick: a campaign that left the bucket (finished, paused) leaves its credit behind.
+        var next = new Dictionary<Guid, double>(ids.Length);
+        for (var k = 0; k < ids.Length; k++)
+        {
+            next[ids[k]] = credit[k];
+        }
+
+        fairCredit[bucket] = next;
+        return granted;
     }
 
     /// <summary>
