@@ -10,6 +10,13 @@ planned to proven with the PR that proves them.
 Legend: ✅ proven today · 🔷 defined on the card, lands with its sample · 🟡 gap/decision
 for planning · — deliberately absent (the card does not trigger it).
 
+**A third sector sample, Factoring, joins the exam** (owner decision 2026-10-21,
+[GA readiness](../rfc/goldpath-ga-readiness.md) Q6/G12): built from scratch and nightly-proven
+against the published train like the others, as a GENERIC clean-room domain sample — public
+domain knowledge only, no client or engagement content. Its column enters these tables with
+its sample card, cell by cell; until the card exists it has no cells to claim, and 1.0 needs
+every one of them ✅.
+
 ## Core set (every sample)
 
 | Capability | CorPay (finance) | Insurance | Telco |
@@ -97,3 +104,5 @@ this file to the full package list.
 4. Telco doubles as the VARIANT sample (sqlserver/apikey/subdomain/redis-lock).
 5. Campaign single-sector proof: accept, or revise the insurance card with winback.
 6. `db bundle` production story lands in Telco.
+7. The Factoring sample card (G12): which core cells it proves with a real business use, and
+   which card-triggered modules its most popular scenario genuinely demands.

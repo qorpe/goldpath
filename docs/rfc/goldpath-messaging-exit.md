@@ -3,6 +3,11 @@
 - Status: **ACCEPTED** — option **A** (stay pinned on the 8.x line), owner-decided 2026-08-10,
   with **D** as the named fallback and the triggers below as the only things that move us
 - Date: 2026-08-09 (decided and §5 implemented 2026-08-10)
+- Amended 2026-10-21 by owner decision, recorded with the acceptance of
+  [goldpath-ga-readiness](goldpath-ga-readiness.md) §8.3 (Q1, Q2): **S4 wire compatibility is
+  mandatory** for any engine switch (the drained-cutover escape is removed); **Wolverine** (D) is
+  the 1.0 insurance and must pass S1–S4 and S6 by 2026-12-31 (GA gate G5); the **family bus**
+  is committed on a written timeline (§7.1, T40) and becomes the default only in 2.0
 - Supersedes the recommendation in [goldpath-messaging](goldpath-messaging.md) §9 D1
 - Ledger: issue [#11](https://github.com/qorpe/goldpath/issues/11) (owner-prioritized),
   master plan "Open, with an owner" item 10
@@ -154,12 +159,24 @@ The owner's question was *"will the switch really be a flip, with nothing breaki
 | S1 | **Seam completeness** — the analyzer bans the library's namespaces in application code; a generated app (every GM broker-bearing shape), CorPay and api-portal compile UNCHANGED against either adapter | a "flip" that is secretly a code change in every consumer |
 | S2 | **Conformance suite green on both adapters** — publish/consume, retry + error queue, outbox atomicity INCLUDING crash between commit and publish, inbox de-duplication, tenant/correlation headers, per-queue ordering, concurrency/prefetch, poison messages, broker restart recovery, graceful shutdown drain, large payloads, message versioning (added property, renamed type), OTel spans | the long tail the library's decade of fixes covers and a rewrite forgets |
 | S3 | **Differential run** — the same scenarios on both adapters with observable outcomes compared, mock-engine style (oracle = MassTransit 8.5.10) | "passes our tests" meaning "passes tests we wrote around our own behaviour" |
-| S4 | **Mixed-fleet wire compatibility** — old publisher → new consumer and the reverse, on the 8.x envelope and topology; outbox rows written under the old adapter delivered by the new. If the library chooses NOT to be wire-compatible, the flip becomes a drained cutover with a maintenance window, and the upgrade guide must say so in its first line | a rolling deployment that strands in-flight messages |
+| S4 | **Mixed-fleet wire compatibility — MANDATORY** — old publisher → new consumer and the reverse, on the 8.x envelope and topology; outbox rows written under the old adapter delivered by the new. An adapter that is not wire-compatible does not ship: there is no drained-cutover alternative (owner decision 2026-10-21 — this row as written on 2026-09-03 allowed a drained cutover with a maintenance window; that escape is removed, because zero adopter impact is a hard requirement for any engine switch) | a rolling deployment that strands in-flight messages, and a "switch" that needs a maintenance window |
 | S5 | **Shadow lane** — the GM broker shapes, CorPay and api-portal run nightly on the new adapter for ≥4 weeks before the default flips; the library carries its own mutation gate (break 70, like every package) | a default flip on a green afternoon |
 | S6 | **Rollback proven** — the flip back to the MassTransit adapter passes S1–S4 the other way, and the upgrade guide carries both directions | a one-way door presented as a switch |
 
 The seam (S1) and the suite (S2/S3) are September 2026 work on the accelerator; S4–S6 are
 the library's own DoD and cannot start before it exists.
+
+**2026-10-21 — owner decision: zero adopter impact, for every engine.** S1 (apps compile
+unchanged), S4 (wire compatibility, now mandatory) and S6 (rollback both ways) bind ANY engine
+switch, not only the default flip. Two adapters are now on a written clock:
+
+| Adapter | Role | Must pass | By |
+|---|---|---|---|
+| **Wolverine** (option D, MIT) | The 1.0 insurance against the 8.x window ([GA readiness](goldpath-ga-readiness.md) G5) | S1, S2 (widened, incl. the four gaps below), S3 against MassTransit 8.5.11, **S4**, S6. It is not the default in 1.x, so S5 and a flip are not owed | **2026-12-31** (train 0.1.0-preview.11) |
+| **Goldpath-family bus** (option F) | The committed long-term engine (T40) | S1–S6 in full | RFC + qorpe repository **December 2026** → first adapter **January–February 2027** → ≥4-week shadow lane (S5) → **opt-in in a 1.x minor** → **default only in 2.0** (D2 counts a default flip as breaking, so 1.0 locks the default for 1.x) |
+
+S4 for the family bus means the clean-room library reads and writes the 8.x envelope and
+topology on the wire; that is a requirement on its RFC, not a later discovery.
 
 **2026-09-05 — the suite exists:** `tests/Goldpath.Messaging.Conformance` runs in the CI
 integration job on real RabbitMQ + PostgreSQL, THROUGH the seam (handlers, the publisher,
@@ -205,6 +222,10 @@ lines, open until each proof runs:
 - [x] The bus conformance suite exists in this repo (2026-09-05, `tests/Goldpath.Messaging.Conformance`,
       eight facts through the seam, green against MassTransit 8.5.10 on real containers, in the
       CI integration job) — its scenario list grows with §7.1's gaps; owner review pending.
+- [ ] The Wolverine adapter passes §7.1 S1, S2, S3, S4 and S6 by **2026-12-31** (GA gate G5,
+      owner decision 2026-10-21); SECURITY.md states the engine posture.
 - [ ] The family bus has its own RFC and repository (qorpe organisation, open source,
-      clean-room per ADR-0013); its adapter enters the suite.
-- [ ] §7.1 S1–S6 pass; the default flips at a train boundary; T18 closes.
+      clean-room per ADR-0013) in **December 2026**; its first adapter enters the suite in
+      January–February 2027 (T40, milestone `family-bus`).
+- [ ] §7.1 S1–S6 pass for the family bus; it ships opt-in in a 1.x minor and becomes the
+      default only at 2.0, at a train boundary; T18 and T40 close.
