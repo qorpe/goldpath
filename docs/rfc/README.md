@@ -8,7 +8,8 @@ Template = the eight fixed sections of [goldpath-idempotency.md](goldpath-idempo
 
 This table is COMPLETE by rule: every file in this folder has a row, and the row tells the
 truth (the freshness gate keeps links alive; the review agent's R1 class polices claims).
-All "implemented" modules are published on nuget.org at `0.1.0-preview.6` (the current train).
+All "implemented" modules are published on nuget.org on the current preview train. The top released
+entry of `CHANGELOG.md` names that train; this line names no version because a pinned number goes stale.
 
 | RFC | Module / Topic | Status |
 |---|---|---|
@@ -52,3 +53,4 @@ All "implemented" modules are published on nuget.org at `0.1.0-preview.6` (the c
 | [goldpath-approvals-v2](goldpath-approvals-v2.md) | The product-proven ladder deltas: withdraw, quorum rungs, distinct-eyes, mandatory rejection reason, reject→resubmit chain — additive, non-breaking | **accepted** (owner, 2026-08-26) — implemented 2026-08-27: withdraw, quorum rungs, chain-wide distinct-eyes, mandatory rejection reason, resubmit chain; 17 new facts + the package's own mutation gate |
 | [goldpath-fileexchange](goldpath-fileexchange.md) | Goldpath.FileExchange — file-based integration rails as a unit: scheduled pick-up/drop, format contracts, idempotent `(file,line)` ingestion, quarantine, reprocessing, archival, outbound | **accepted** (owner, 2026-08-18) — build started same day by owner decision; core + 9 tests (planted-fault rig + EF ledger) + manifest/CLI/template wiring landed; transports, console federation and the adopter proof stay open (T22) |
 | [specanchor-composition](specanchor-composition.md) | specanchor (separate repo) — the transformation package's deterministic core, composed per foundation §9/§5.1 | **ACCEPTED** (2026-08-16, #165) — the toolchain is real ([qorpe/specanchor](https://github.com/qorpe/specanchor), Apache-2.0; 74 tests, mutation 94.8%, first skill eval 7/7); the composition proof it owes is `open-threads.md` T20 (the rehearsal) |
+| [goldpath-ga-readiness](goldpath-ga-readiness.md) | 1.0 / GA readiness — what GA promises an enterprise adopter, the measurable gate table (G1–G20: proof · status · owner · effort · order), non-goals, train sequence to 1.0 | **PROPOSED** (2026-10-20, owner-requested: "enterprise ready" as a gate, not a feeling) — documents only; twelve owner questions open (§8.3); the gate set rides `open-threads.md` T35 |
