@@ -383,6 +383,36 @@ public class R2ReviewTests
         Assert.InRange(releasedLow, (total / 4.0) - 1.5, (total / 4.0) + 1.5);
     }
 
+    /// <summary>R2.5: on an exact tie in "how far behind", the heavier claimant goes first — then the rotation.</summary>
+    [Fact]
+    public void OnAnExactTie_TheHeavierClaimantGoesFirst()
+    {
+        // Shares 1/3 and 2/3 of one unit; the light one carries 1/3 — both are exactly 2/3 behind.
+        var credit = new[] { 1.0 / 3, 0 };
+        Assert.Equal([0, 1], GoldpathCampaignFairShare.Allocate([new(1, 9), new(2, 9)], 1, credit, tieBreakStart: 0));
+    }
+
+    /// <summary>R2.5: nothing is banked while not asking, nor when the budget covers everyone — not even at exactly the budget.</summary>
+    [Fact]
+    public void CreditResetsWhenIdle_AndWhenTheBudgetCoversEveryDemand()
+    {
+        var idle = new[] { 0.0, 1.5 };
+        GoldpathCampaignFairShare.Allocate([new(2, 9), new(2, 0)], 1, idle);
+        Assert.Equal(0, idle[1]);
+
+        var covered = new[] { 0.7, -0.7 };
+        Assert.Equal([2, 3], GoldpathCampaignFairShare.Allocate([new(2, 2), new(1, 3)], 5, covered));   // demand == budget
+        Assert.Equal([0.0, 0.0], covered);
+    }
+
+    /// <summary>R2.5: a claimant that asks for nothing needs no weight; a credit array of the wrong length is refused.</summary>
+    [Fact]
+    public void AnIdleClaimNeedsNoWeight_AndCreditMustMatchTheClaims()
+    {
+        Assert.Equal([0, 3], GoldpathCampaignFairShare.Allocate([new(0, 0), new(2, 9)], 3));
+        Assert.Throws<ArgumentException>(() => GoldpathCampaignFairShare.Allocate([new(2, 9)], 3, new double[2]));
+    }
+
     // ---- finding 8: what is in flight drains, whatever the campaign's state (RFC §6 abort, R2.1 ack sweep) ----
 
     /// <summary>

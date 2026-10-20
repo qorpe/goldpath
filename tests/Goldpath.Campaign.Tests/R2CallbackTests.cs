@@ -317,7 +317,176 @@ public class R2CallbackTests
         Assert.Equal("v1=" + expected, signature);
     }
 
+    // ---- what each answer says (the target system reads these; R2.1 / R2.8) ----
+
+    /// <summary>R2.1: every answer carries ok/false and words that say what happened — the target system's operator reads them.</summary>
+    [Fact]
+    public async Task EveryAnswerSaysWhatHappened()
+    {
+        using var fixture = R2Tests.ActionFixture(sourceSize: 1);
+        fixture.Script[1] = GoldpathCampaignActionResult.Accepted("fota-1", TimeSpan.FromMinutes(5));
+        var campaign = await AcceptAsync(fixture);
+        await using var host = await CallbackHost.StartAsync(fixture);
+        var path = $"/goldpath/campaign/callbacks/winback/{campaign:N}/fota-1";
+
+        var published = await Body(await host.PostAsync(path, """{"succeeded":false,"errorCode":"BUSY"}"""));
+        Assert.True(published.Ok);
+        Assert.Contains("published (failed)", published.Message, StringComparison.Ordinal);
+        await fixture.Engine.ApplyOutcomesAsync(fixture.Services.CreateScope().ServiceProvider.GetRequiredService<CampaignTestContext>(),
+            campaign, [Assert.Single(fixture.Publisher.Published.OfType<GoldpathCampaignOutcomeMessage>())], CancellationToken.None);
+
+        var repeat = await Body(await host.PostAsync(path, """{"succeeded":false,"errorCode":"BUSY"}"""));
+        Assert.True(repeat.Ok);
+        Assert.Contains("already settled", repeat.Message, StringComparison.Ordinal);
+
+        var unknown = await Body(await host.PostAsync($"/goldpath/campaign/callbacks/winback/{campaign:N}/nobody", """{"succeeded":true}"""));
+        Assert.False(unknown.Ok);
+        Assert.Contains("'nobody'", unknown.Message, StringComparison.Ordinal);
+
+        var noSurface = await Body(await host.PostAsync($"/goldpath/campaign/callbacks/nosuch/{campaign:N}/fota-1", """{"succeeded":true}"""));
+        Assert.False(noSurface.Ok);
+        Assert.Contains("'nosuch'", noSurface.Message, StringComparison.Ordinal);
+
+        var refused = await Body(await host.PostRawAsync(path, """{"succeeded":true}""", timestamp: null, signature: null));
+        Assert.False(refused.Ok);
+        Assert.Contains("signature", refused.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>R2.1: a successful answer says so in its words, and an early one says it was parked.</summary>
+    [Fact]
+    public async Task ASuccessSaysSucceeded_AndAParkSaysParked()
+    {
+        using var fixture = R2Tests.ActionFixture(sourceSize: 1);
+        fixture.Script[1] = GoldpathCampaignActionResult.Accepted("fota-1", TimeSpan.FromMinutes(5));
+        var campaign = await AcceptAsync(fixture);
+        await using var host = await CallbackHost.StartAsync(fixture);
+        var ok = await Body(await host.PostAsync($"/goldpath/campaign/callbacks/winback/{campaign:N}/fota-1", """{"succeeded":true}"""));
+        Assert.Contains("published (succeeded)", ok.Message, StringComparison.Ordinal);
+
+        // A claim in flight, an id nobody carries yet: parked.
+        var second = await fixture.CreateAsync(R2Tests.Generous());
+        await fixture.EnumerateAllAsync(second);
+        using var scope = fixture.Services.CreateScope();
+        await fixture.Engine.ReleaseBatchAsync(scope.ServiceProvider, fixture.Reload(second.Id), 1, CancellationToken.None);
+        Assert.NotNull(await fixture.Engine.ClaimAsync(scope.ServiceProvider.GetRequiredService<CampaignTestContext>(), second.Id, 1, CancellationToken.None));
+        var parked = await Body(await host.PostAsync($"/goldpath/campaign/callbacks/winback/{second.Id:N}/early", """{"succeeded":true}"""));
+        Assert.True(parked.Ok);
+        Assert.Contains("parked", parked.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>R2.8: a body over 16 KiB is 413 whether it declares its length or streams it; exactly 16 KiB is read.</summary>
+    [Fact]
+    public async Task ABodyOverTheLimitIs413_AndOneAtTheLimitIsRead()
+    {
+        using var fixture = R2Tests.ActionFixture(sourceSize: 1);
+        await using var host = await CallbackHost.StartAsync(fixture);
+        var path = $"/goldpath/campaign/callbacks/winback/{Guid.NewGuid():N}/x";
+        static string Sized(int bytes)
+        {
+            const string head = "{\"succeeded\":true,\"error\":\"";
+            const string tail = "\"}";
+            return head + new string('x', bytes - head.Length - tail.Length) + tail;
+        }
+
+        Assert.Equal(HttpStatusCode.NotFound, (await host.PostAsync(path, Sized(16 * 1024))).StatusCode);   // read, verified, unknown campaign
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, (await host.PostAsync(path, Sized((16 * 1024) + 1))).StatusCode);
+
+        // Streamed without a Content-Length: the reader stops at the limit.
+        var streamed = new HttpRequestMessage(HttpMethod.Post, path)
+        {
+            Content = new StreamContent(new UnseekableStream(Encoding.UTF8.GetBytes(Sized((16 * 1024) + 1)))),
+        };
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, (await host.Client.SendAsync(streamed)).StatusCode);
+    }
+
+    /// <summary>R2.8: a signed body that is not a callback is 400 — after the signature, so nobody unsigned learns the shape.</summary>
+    [Theory]
+    [InlineData("not json")]
+    [InlineData("null")]
+    public async Task ASignedBodyThatIsNotACallbackIs400(string body)
+    {
+        using var fixture = R2Tests.ActionFixture(sourceSize: 1);
+        await using var host = await CallbackHost.StartAsync(fixture);
+        var response = await host.PostAsync($"/goldpath/campaign/callbacks/winback/{Guid.NewGuid():N}/x", body);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.False((await Body(response)).Ok);
+    }
+
+    /// <summary>R2.8: the signature covers the path without its query string, so a tracking parameter does not break it.</summary>
+    [Fact]
+    public async Task TheQueryStringIsNotPartOfTheSignedPath()
+    {
+        using var fixture = R2Tests.ActionFixture(sourceSize: 1);
+        await using var host = await CallbackHost.StartAsync(fixture);
+        var path = $"/goldpath/campaign/callbacks/winback/{Guid.NewGuid():N}/x";
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var signature = GoldpathCampaignCallbackSignature.Sign(CampaignFixture.CallbackSecret, "POST", path, now, Encoding.UTF8.GetBytes("""{"succeeded":true}"""));
+        Assert.Equal(HttpStatusCode.NotFound, (await host.PostRawAsync(path + "?trace=abc", """{"succeeded":true}""", now, signature)).StatusCode);
+    }
+
+    /// <summary>R2.8: the window is inclusive — exactly the tolerance away verifies, one second more does not; the host's clock decides.</summary>
+    [Fact]
+    public async Task TheTimestampWindowIsExactlyTheTolerance_OnTheHostsClock()
+    {
+        using var fixture = R2Tests.ActionFixture(sourceSize: 1);
+        var clock = new ManualClock(DateTimeOffset.UtcNow.AddDays(-3));   // the host's clock, not the machine's
+        await using var host = await CallbackHost.StartAsync(fixture, clock);
+        var path = $"/goldpath/campaign/callbacks/winback/{Guid.NewGuid():N}/x";
+        var at = clock.Now.ToUnixTimeSeconds();
+        Assert.Equal(HttpStatusCode.NotFound, (await host.PostAsync(path, "{\"succeeded\":true}", timestamp: at - 300)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await host.PostAsync(path, "{\"succeeded\":true}", timestamp: at + 300)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await host.PostAsync(path, "{\"succeeded\":true}", timestamp: at - 301)).StatusCode);
+    }
+
+    /// <summary>R2.8: only the v1 scheme verifies — the right MAC under another scheme name, or a truncated one, is refused.</summary>
+    [Fact]
+    public async Task OnlyTheV1SchemeVerifies()
+    {
+        using var fixture = R2Tests.ActionFixture(sourceSize: 1);
+        await using var host = await CallbackHost.StartAsync(fixture);
+        var path = $"/goldpath/campaign/callbacks/winback/{Guid.NewGuid():N}/x";
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var v1 = GoldpathCampaignCallbackSignature.Sign(CampaignFixture.CallbackSecret, "POST", path, now, Encoding.UTF8.GetBytes("{\"succeeded\":true}"));
+        Assert.Equal(HttpStatusCode.Unauthorized, (await host.PostRawAsync(path, "{\"succeeded\":true}", now, "v2=" + v1[3..])).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await host.PostRawAsync(path, "{\"succeeded\":true}", now, v1[..^2])).StatusCode);
+        Assert.Throws<ArgumentException>(() => GoldpathCampaignCallbackSignature.Sign("", "POST", path, now, []));
+    }
+
+    /// <summary>R2.8 / runbook §8: a refused callback is counted — the number that says a rotation is half done.</summary>
+    [Fact]
+    public async Task ARefusedCallbackIsCounted()
+    {
+        long rejected = 0;
+        using var listener = new System.Diagnostics.Metrics.MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Name == "goldpath_campaign_callbacks_rejected_total")
+            {
+                l.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, value, _, _) => Interlocked.Add(ref rejected, value));
+        listener.Start();
+
+        using var fixture = R2Tests.ActionFixture(sourceSize: 1);
+        await using var host = await CallbackHost.StartAsync(fixture);
+        var before = Interlocked.Read(ref rejected);
+        await host.PostRawAsync($"/goldpath/campaign/callbacks/winback/{Guid.NewGuid():N}/x", "{\"succeeded\":true}", timestamp: null, signature: null);
+        Assert.True(Interlocked.Read(ref rejected) > before);
+    }
+
     // ---- helpers ----
+
+    private static async Task<GoldpathAdminResult> Body(HttpResponseMessage response)
+        => (await System.Net.Http.Json.HttpContentJsonExtensions.ReadFromJsonAsync<GoldpathAdminResult>(response.Content))!;
+
+    /// <summary>A body with no length to declare: the server has to read it to know.</summary>
+    private sealed class UnseekableStream(byte[] bytes) : MemoryStream(bytes)
+    {
+        public override bool CanSeek => false;
+
+        public override long Length => throw new NotSupportedException();
+    }
 
     private static async Task<Guid> AcceptAsync(CampaignFixture fixture)
     {
@@ -374,10 +543,15 @@ public class R2CallbackTests
 
         public HttpClient Client { get; }
 
-        public static async Task<CallbackHost> StartAsync(CampaignFixture fixture)
+        public static async Task<CallbackHost> StartAsync(CampaignFixture fixture, TimeProvider? clock = null)
         {
             var builder = WebApplication.CreateBuilder();
             builder.WebHost.UseTestServer();
+            if (clock is not null)
+            {
+                builder.Services.AddSingleton(clock);
+            }
+
             builder.Services.AddDbContext<CampaignTestContext>(o => o.UseSqlite(fixture.Connection));
             builder.Services.AddSingleton(fixture.Options);
             builder.Services.AddSingleton(fixture.Engine);
