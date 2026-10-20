@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://specanchor.dev/schemas/rule/v1.json",
+  "title": "specanchor rule v1",
+  "description": "A single business rule extracted from a legacy system. Invariants enforced by the producing skill: no rule without at least one resolvable source_ref; confidence 'evidenced' only when evidence names a test that actually ran and passed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["rule_id", "version", "schemaVersion", "context", "statement", "source_ref", "confidence"],
+  "properties": {
+    "rule_id": {
+      "type": "string",
+      "pattern": "^RULE-[0-9]{4}$",
+      "description": "Stable identity. Travels to spec, test, commit. Immutable, never reused."
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Bumped when the rule's meaning changes."
+    },
+    "schemaVersion": { "const": 1 },
+    "context": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Bounded context name, e.g. Factoring.Pricing."
+    },
+    "statement": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 400,
+      "description": "One sentence, domain language, no code identifiers. Checked against the ledger's aliases_in_code by the statement-quality gate."
+    },
+    "source_ref": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/sourceRef" },
+      "description": "Where the rule lives in the legacy system. A rule without a resolvable source_ref is rejected, not flagged."
+    },
+    "confidence": {
+      "enum": ["evidenced", "inferred", "disputed"],
+      "description": "evidenced = a characterization test proved it against the running legacy system."
+    },
+    "evidence": {
+      "type": "string",
+      "description": "test_id (CHAR-nnnn) that proves the rule, or the reason it could not be proven."
+    },
+    "open_questions": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "What a domain expert must answer. Each independently closable. The most valuable field in the artefact — never cleaned up."
+    },
+    "disposition": {
+      "enum": [null, "keep", "change", "retire"],
+      "description": "Set by a human in the validation workshop, never by a tool."
+    },
+    "decided_by": {
+      "type": "string",
+      "description": "Person; required when disposition is set."
+    },
+    "supersedes": {
+      "type": "string",
+      "pattern": "^RULE-[0-9]{4}$",
+      "description": "Set when this rule replaces another."
+    }
+  },
+  "if": { "properties": { "confidence": { "const": "evidenced" } } },
+  "then": { "required": ["evidence"] },
+  "$defs": {
+    "sourceRef": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["file", "line_start", "line_end"],
+          "properties": {
+            "file": { "type": "string", "minLength": 1 },
+            "line_start": { "type": "integer", "minimum": 1 },
+            "line_end": { "type": "integer", "minimum": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["object", "kind"],
+          "properties": {
+            "object": { "type": "string", "minLength": 1 },
+            "kind": { "enum": ["procedure", "trigger", "job"] },
+            "line_start": { "type": "integer", "minimum": 1 },
+            "line_end": { "type": "integer", "minimum": 1 }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,8 @@
+# expect: required member 'source_ref' is missing
+# A rule without a source is an invention (RFC §4 hard step 2).
+rule_id: RULE-0003
+version: 1
+schemaVersion: 1
+context: Payments.Approvals
+statement: High amounts need two approvers.
+confidence: inferred

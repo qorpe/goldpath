@@ -22,7 +22,7 @@ Spec Engine — it invents no semantics of its own. Exit codes mirror specdrift:
 
 | Verb | What it does |
 |---|---|
-| `goldpath add feature <name> [--path <dir>]` | Wires a Ring B capability into an existing app: package reference, registration, model, manifest — an anchor-driven textual transform, specdrift-verified, rolled back whole if the engine refuses. Features: multitenancy, audittrail, softdelete, idempotency, dataprotection, caching, locking, archival, bulk, notification, campaign, approvals, fileexchange, outbox. `outbox` births the bus with its broker resource when the app has none, and joins the existing bus when it has one. `idempotency` marks the template's sample `CreateOrderCommand` exactly as `--features idempotency` would; your own commands are yours to mark, and GP1001 fails the build until they are. `multitenancy` makes the template's smoke test send the tenant header, as the template does — fail-closed tenancy refuses a request without it. |
+| `goldpath add feature <name> [--plan] [--path <dir>]` | Wires a Ring B capability into an existing app: package reference, registration, model, manifest — an anchor-driven textual transform, specdrift-verified, rolled back whole if the engine refuses. Features: multitenancy, audittrail, softdelete, idempotency, dataprotection, caching, locking, archival, bulk, notification, campaign, approvals, fileexchange, outbox. `outbox` births the bus with its broker resource when the app has none, and joins the existing bus when it has one. `idempotency` marks the template's sample `CreateOrderCommand` exactly as `--features idempotency` would; your own commands are yours to mark, and GP1001 fails the build until they are. `multitenancy` makes the template's smoke test send the tenant header, as the template does — fail-closed tenancy refuses a request without it.  **`--plan`** prints what the verb would do, as JSON, and writes nothing and runs no engine: the manifest lines, packages and provider edits, whether the model grows, and `decisions`, the domain opt-ins the team must take, word for word as the real run prints them after it succeeds. Authoring turns each decision into a question or a sourced answer ([goldpath-authoring](../rfc/goldpath-authoring.md) §3). |
 | `goldpath add worker <name> [--trigger queue\|schedule\|jobs] [--path <dir>]` | Adds a worker PROJECT to an existing solution, wired into the AppHost with the trigger you chose. |
 
 ## Database
@@ -46,6 +46,7 @@ Spec Engine — it invents no semantics of its own. Exit codes mirror specdrift:
 | Verb | What it does |
 |---|---|
 | `goldpath check [--path <dir>]` | The one gate an adopter runs: `specdrift validate` + `drift` + db status + build. This is what CI runs per manifest. |
+| `goldpath spec ready [--gate <SPEC-nnnn> --author <who>] [--next-id rule\|spec] [--path <dir>]` | Checks the authoring artefacts: the rule and term cards under `docs/domain/<context>/` and the proposals under `specs/proposals/SPEC-nnnn/`. **V1:** every card's shape, judged by `specdrift validate` against the schemas the CLI carries (specanchor's pinned rule/ledger-term/spec, Goldpath's `decisions`). **V2:** every `manifest.proposed.yaml`, judged like the real manifest (schema plus the app's `.specdrift/rules.yaml`). **V3:** ids unique across the repository, every source pointing at lines that exist inside it, every spec's rules present, every question a decision names declared, and the open-bracket count matching the body. `--gate` adds gate #1 for the named spec: `approved_by` set, by someone other than `--author`, with no open bracket left. `--next-id rule\|spec` prints the next free id; ids are never picked by hand or by a model. Read-only, and it calls no LLM ([goldpath-authoring](../rfc/goldpath-authoring.md) §5). |
 | `goldpath discover [--path <dir>]` | Lists every Goldpath manifest under a tree, with what each DECLARES (kind, name, products). The unit Goldpath binds to is the manifest, never the repo — so a monorepo, a workspace of product repos, or a laptop full of clones is inventoried without anyone keeping a list by hand. Read-only: no engine call, no network, no write. Line-oriented so a CI matrix can be built from it. |
 
 ```console
@@ -58,7 +59,9 @@ goldpath/templates/goldpath-worker  kind=worker  name=GoldpathWorker
 
 ## What the CLI deliberately does NOT do
 
-- It never invents semantics the templates and the drift profile do not already have.
+- It never invents semantics the templates and the drift profile do not already have. The one
+  verb with checks of its own, `spec ready`, takes them from the authoring RFC (§5) and leaves
+  every shape check to the engine.
 - It never edits what the engine would reject: every transform is validated, and a refusal
   rolls the change back whole.
 - It calls no LLM. The AI skills call the CLI and the engine, never the reverse (ADR-0004).

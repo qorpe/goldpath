@@ -1,0 +1,11 @@
+# expect: schema/oneOf
+# A source is a file span OR a database object, never a blend of the two.
+rule_id: RULE-0005
+version: 1
+schemaVersion: 1
+context: Payments.Approvals
+statement: High amounts need two approvers.
+source_ref:
+  - file: docs/scenarios/finance-payments.md
+    kind: procedure
+confidence: inferred

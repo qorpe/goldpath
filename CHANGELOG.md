@@ -46,6 +46,43 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   the six on demand.
 
 ### Added
+- **The deterministic floor under authoring** (Slice 0 of the
+  [goldpath-authoring](docs/rfc/goldpath-authoring.md) RFC, which landed PROPOSED; no LLM
+  anywhere in it). Before a business sentence can become an approved spec, the artefacts that
+  carry it need a shape, a check and a place to live:
+  - **specanchor's rule, ledger-term and spec schemas are pinned** in `schemas/specanchor/v1/`
+    as byte copies of an immutable upstream commit. specanchor has published no release yet, so
+    there is no tag to pin to. `scripts/specanchor-freshness.sh` (CI) proves three things: the
+    copies were not edited in place, the recorded commit really serves those bytes, and upstream
+    has not moved past them. It also turns red the day specanchor publishes a tag while the pin
+    is still a commit. Air-gapped runs keep the offline check and skip the rest honestly.
+  - **`schemas/authoring/v1/decisions.schema.json`** is the one new artefact: what a proposal
+    decides about the manifest, the source of each decision, and every domain opt-in resolved
+    into a question or a sourced answer. There is no `disable`. Providers, architecture,
+    external systems and products are questions only.
+  - **`corpus-check.sh` gates three schema families** (manifest, specanchor, decisions) with 34
+    entries. It is also stricter. An invalid entry now counts as rejected only when specdrift
+    returns findings (exit 1). Before, any non-zero exit counted, so a schema keyword the engine
+    cannot evaluate (exit 2) made the whole negative half pass. That was proven by planting
+    one. Each YAML invalid entry names its planted defect on a `# expect:` line, and the
+    rejection must be for that reason.
+  - **`goldpath spec ready`**: V1, every card's shape through `specdrift validate` against the
+    schemas the CLI now carries. V2, every `manifest.proposed.yaml` against the app's own
+    rules; an outbox proposed with `broker: none` gets SPEC0101. V3, ids unique across the
+    repository, sources that resolve to existing lines inside it, spec→rule links, declared
+    questions, and an honest open-bracket count. `--gate SPEC-nnnn --author <who>` adds
+    ADR-0010's gate #1, which refuses an unapproved spec, a spec with open brackets, or a spec
+    approved by its own author. `--next-id rule|spec` allocates ids, so nobody picks them by
+    hand. The CLI reads the cards with the engine's own YAML parser and version (YamlDotNet
+    18.1.0, now pinned here), so the two cannot read a file differently.
+  - **`goldpath add feature <x> --plan`** prints the recipe as JSON: manifest lines, packages,
+    provider edits, whether the model grows, and the decisions the team must take. It writes
+    nothing and runs no engine. The decisions are word for word what the real run prints after
+    it succeeds, because both now come from one method. A test pins this for all fourteen
+    recipes against a twin app really grown.
+  - **An empty `docs/domain/` skeleton** in the solution template and CorPay, held identical by
+    `skills-parity.sh`. This changes what `dotnet new goldpath-solution` generates, so it rides
+    the next train.
 - **The golden-manifest matrix runs at PR time** (open-threads T30). ADR-0008 asks for it on
   every template or core package change; CI ran it only nightly, which is how preview.8 shipped
   GP2102 and how pull requests kept merging for days while the nightly was red. A pull request

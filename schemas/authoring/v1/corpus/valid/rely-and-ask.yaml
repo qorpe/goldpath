@@ -1,0 +1,26 @@
+# F1/F2's shapes: features already on are relied on with a sourced reason; a feature that is
+# off and the sentence only hints at is a question, never an enable (the S3 bait).
+schemaVersion: 1
+spec_id: SPEC-0001
+decisions:
+  - path: features.softDelete
+    change: rely
+    source:
+      file: docs/scenarios/finance-payments.md
+      line_start: 33
+      line_end: 33
+  - path: features.approvals
+    change: ask
+    question: Q-001
+    source:
+      quote: four-eyes on high amounts
+  - path: providers.broker
+    change: ask
+    question: Q-002
+    source:
+      quote: notify the beneficiary
+questions:
+  - id: Q-001
+    text: Is four-eyes approval in scope for this change, and what amount is high?
+  - id: Q-002
+    text: Is a notification an event to another service, or a message to a person?

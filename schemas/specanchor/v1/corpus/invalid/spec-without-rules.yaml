@@ -1,0 +1,8 @@
+# expect: schema/minItems
+# A spec derives from at least one rule; a spec with none has no business source.
+spec_id: SPEC-0005
+rule_ids: []
+notation: ears
+body: The system shall do something.
+open_brackets: 0
+schemaVersion: 1

@@ -461,7 +461,9 @@ public class CliRunnerMutationTests
         Assert.Equal(0, exit);
         Assert.Empty(error);
         Assert.StartsWith("goldpath — the Goldpath golden-path CLI (thin and deterministic)\n", output, StringComparison.Ordinal);
-        Assert.Contains("  goldpath add feature <name> [--path <dir>]          wire a Ring B feature into an existing app\n", output, StringComparison.Ordinal);
+        Assert.Contains("  goldpath add feature <name> [--plan] [--path <dir>] wire a Ring B feature into an existing app\n", output, StringComparison.Ordinal);
+        Assert.Contains("(--plan: print what it would do and decide, as JSON; write nothing)\n", output, StringComparison.Ordinal);
+        Assert.Contains("  goldpath spec ready [--gate <SPEC-nnnn> --author <who>] [--next-id rule|spec] [--path <dir>]\n", output, StringComparison.Ordinal);
         Assert.Contains("  goldpath --help | --version\n", output, StringComparison.Ordinal);
         Assert.EndsWith("features: multitenancy, audittrail, softdelete, idempotency, dataprotection, caching, locking, approvals, fileexchange, archival, bulk, notification, campaign\nadd feature also accepts: outbox (births the bus in an app generated without one)\n", output, StringComparison.Ordinal);
         // Every name the verb accepts is named in the usage — the 13 template features plus outbox.

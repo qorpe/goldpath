@@ -1,0 +1,13 @@
+# Not ready for gate #1: one [OPEN …] bracket and no approver yet.
+spec_id: SPEC-0001
+rule_ids: [RULE-0001]
+notation: gherkin
+body: |
+  Scenario: a removed beneficiary is hidden but not forgotten
+    Given a beneficiary referenced by an executed payment
+    When the treasurer removes the beneficiary
+    Then the beneficiary list no longer shows it
+    And the payment still shows the beneficiary it was sent to
+    And a restore is [OPEN — pending expert decision: who may restore]
+open_brackets: 1
+schemaVersion: 1

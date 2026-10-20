@@ -1,0 +1,18 @@
+# A value is set only when the sentence states it ("within 300 ms").
+schemaVersion: 1
+spec_id: SPEC-0004
+decisions:
+  - path: nfr.latencyP95Ms
+    change: set
+    value: 300
+    source:
+      quote: the list answers within 300 ms
+  - path: features.multiTenancy
+    change: rely
+    source:
+      quote: each corporate customer sees only its own beneficiaries
+    opt_ins:
+      - opt_in: "mark tenant-owned entities: partial class X : IMultiTenant (TenantId is filtered + write-guarded)"
+        answer: Beneficiary is tenant-owned.
+        source:
+          quote: each corporate customer sees only its own beneficiaries

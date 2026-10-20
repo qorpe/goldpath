@@ -1,0 +1,8 @@
+# expect: schema/enum
+term: Beneficiary
+context: Payments.Beneficiaries
+definition: A party a corporate customer has saved.
+aliases_in_code: [Beneficiary]
+source_ref: ["docs/requests/2026-10-20-beneficiary-removal.md:3"]
+status: approved
+schemaVersion: 1

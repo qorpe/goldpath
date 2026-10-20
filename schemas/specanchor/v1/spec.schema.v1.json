@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://specanchor.dev/schemas/spec/v1.json",
+  "title": "specanchor spec v1",
+  "description": "A specification derived from one or more approved rules. open_brackets counts unresolved [OPEN — ...] placeholders in the body; it must be 0 before the spec is releasable, and a spec with open brackets cannot enter a sprint (Definition of Ready).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["spec_id", "rule_ids", "notation", "body", "open_brackets", "schemaVersion"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "spec_id": { "type": "string", "pattern": "^SPEC-[0-9]{4}$" },
+    "rule_ids": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "pattern": "^RULE-[0-9]{4}$" }
+    },
+    "notation": { "enum": ["ears", "gherkin", "dmn"] },
+    "body": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The acceptance criteria. One screen maximum — exceeding the limit is a generation-time failure."
+    },
+    "open_brackets": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Count of unresolved [OPEN — pending expert decision] placeholders in body. Must be 0 before release; kept visible, never silently resolved by a tool."
+    },
+    "approved_by": {
+      "type": "string",
+      "description": "Domain expert. Required before implementation starts (human gate #1)."
+    }
+  }
+}

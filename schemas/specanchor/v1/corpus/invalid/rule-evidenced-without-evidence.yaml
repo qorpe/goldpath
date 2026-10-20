@@ -1,0 +1,11 @@
+# expect: required member 'evidence' is missing
+rule_id: RULE-0004
+version: 1
+schemaVersion: 1
+context: Payments.Approvals
+statement: High amounts need two approvers.
+source_ref:
+  - file: docs/scenarios/finance-payments.md
+    line_start: 22
+    line_end: 22
+confidence: evidenced

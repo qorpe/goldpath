@@ -1,0 +1,7 @@
+# expect: required member 'source' is missing
+# A decision with no source is a guess (S3).
+schemaVersion: 1
+spec_id: SPEC-0009
+decisions:
+  - path: features.idempotency
+    change: enable

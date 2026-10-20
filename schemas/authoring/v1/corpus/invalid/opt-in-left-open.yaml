@@ -1,0 +1,11 @@
+# expect: schema/oneOf
+# An opt-in --plan printed must become a question or a sourced answer — never neither.
+schemaVersion: 1
+spec_id: SPEC-0010
+decisions:
+  - path: features.idempotency
+    change: enable
+    source:
+      quote: must never pay twice
+    opt_ins:
+      - opt_in: "mark every other write-performing command [Idempotent]"

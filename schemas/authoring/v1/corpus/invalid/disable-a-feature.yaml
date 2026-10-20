@@ -1,0 +1,9 @@
+# expect: schema/enum
+# There is no 'disable': a removal the sentence implies is a question (RFC §3).
+schemaVersion: 1
+spec_id: SPEC-0005
+decisions:
+  - path: features.softDelete
+    change: disable
+    source:
+      quote: removed beneficiaries are gone for good

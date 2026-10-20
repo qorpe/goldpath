@@ -17,8 +17,10 @@ jobs:
             10.0.x
       - name: pin the spec engine
         run: dotnet tool install -g specdrift --version 0.4.2
-      - name: corpus gate (valid must pass, invalid must fail)
+      - name: corpus gate (valid must pass, invalid must fail — manifest, specanchor, decisions)
         run: bash scripts/corpus-check.sh
+      - name: specanchor freshness (the pinned artefact schemas are unedited and not behind)
+        run: bash scripts/specanchor-freshness.sh
       - name: the agent layer has not drifted between its copies
         run: ./scripts/skills-parity.sh
       - name: ledger honesty (an issue a ledger references must have the state it claims)
