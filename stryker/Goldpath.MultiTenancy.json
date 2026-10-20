@@ -2,7 +2,7 @@
   "stryker-config": {
     "project": "Goldpath.MultiTenancy.csproj",
     "test-projects": [
-      "tests/Goldpath.MultiTenancy.Tests/Goldpath.MultiTenancy.Tests.csproj"
+      "../../tests/Goldpath.MultiTenancy.Tests/Goldpath.MultiTenancy.Tests.csproj"
     ],
     "target-framework": "net10.0",
     "reporters": [

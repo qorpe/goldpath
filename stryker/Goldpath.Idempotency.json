@@ -2,7 +2,7 @@
   "stryker-config": {
     "project": "Goldpath.Idempotency.csproj",
     "test-projects": [
-      "tests/Goldpath.Idempotency.Tests/Goldpath.Idempotency.Tests.csproj"
+      "../../tests/Goldpath.Idempotency.Tests/Goldpath.Idempotency.Tests.csproj"
     ],
     "target-framework": "net10.0",
     "reporters": [

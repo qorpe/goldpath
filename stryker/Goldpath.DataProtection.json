@@ -2,7 +2,7 @@
   "stryker-config": {
     "project": "Goldpath.DataProtection.csproj",
     "test-projects": [
-      "tests/Goldpath.DataProtection.Tests/Goldpath.DataProtection.Tests.csproj"
+      "../../tests/Goldpath.DataProtection.Tests/Goldpath.DataProtection.Tests.csproj"
     ],
     "target-framework": "net10.0",
     "reporters": [

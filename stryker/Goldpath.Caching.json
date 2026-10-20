@@ -2,7 +2,7 @@
   "stryker-config": {
     "project": "Goldpath.Caching.csproj",
     "test-projects": [
-      "tests/Goldpath.Caching.Tests/Goldpath.Caching.Tests.csproj"
+      "../../tests/Goldpath.Caching.Tests/Goldpath.Caching.Tests.csproj"
     ],
     "target-framework": "net10.0",
     "reporters": [

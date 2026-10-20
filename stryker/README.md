@@ -7,6 +7,27 @@ cannot carry comments, so every `mutate` exclusion and every `ignore-methods` en
 justified HERE (ADR-0005: suppression is visible and justified at every layer). An
 exclusion without a row below is a finding.
 
+## Which tests score a package
+
+A package is scored by the test projects its config names in `test-projects` — and by
+nothing else. That sentence was false until 2026-10-20: the gate ran Stryker from the
+repository root, where it finds `Goldpath.sln` and switches to **solution mode**, and solution
+mode ignores `test-projects` and runs every test project whose build references the package.
+Abstractions was scored by 702 tests, the integration host among them, instead of its own
+suite; every package was scored the same way. The gate now runs Stryker from the package's
+own directory (so `test-projects` are written `../../tests/...`), and it fails a run whose log
+shows solution mode or a test-project count other than the config's. `docs-freshness.sh`
+checks that every listed test project exists.
+
+A test project other than the package's own raises the package's score, so each one is
+justified here the way an exclusion is. A borrowed suite without a row is a finding.
+
+| Package | Borrowed test project | Why it counts |
+|---|---|---|
+| AuditTrail | `Goldpath.DataProtection.Tests` | `AuditMaskingTests` drives the audit interceptor with masked properties: what the audit log RECORDS for a protected column is AuditTrail behavior, asserted from the DataProtection side. |
+| AuditTrail | `Goldpath.SoftDelete.Tests` | The soft-delete/audit interplay (`Audit_sees_the_soft_delete_as_exactly_three_modified_fields`) asserts the audit entry a soft delete produces — AuditTrail's change capture under a second interceptor. |
+| SoftDelete | `Goldpath.MultiTenancy.Tests` | `SoftDelete_and_tenant_filters_combine_on_one_entity` and the contributor ordering assert SoftDelete's query filter composed with the tenant filter on one entity. |
+
 ## Excluded files
 
 ## Measured scores
