@@ -1,0 +1,9 @@
+# expect: schema/minItems
+# Without aliases_in_code the glossary is decoration (the schema's own description).
+term: Beneficiary
+context: Payments.Beneficiaries
+definition: A party a corporate customer has saved.
+aliases_in_code: []
+source_ref: ["docs/requests/2026-10-20-beneficiary-removal.md:3"]
+status: proposed
+schemaVersion: 1

@@ -1,0 +1,7 @@
+# expect: schema/enum
+spec_id: SPEC-0004
+rule_ids: [RULE-0001]
+notation: bdd
+body: "Scenario: x"
+open_brackets: 0
+schemaVersion: 1

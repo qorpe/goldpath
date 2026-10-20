@@ -1,0 +1,8 @@
+# expect: required member 'question' is missing
+schemaVersion: 1
+spec_id: SPEC-0008
+decisions:
+  - path: features.approvals
+    change: ask
+    source:
+      quote: four-eyes on high amounts

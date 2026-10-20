@@ -1,0 +1,13 @@
+# Once a test pins the rule, `evidenced` names that test (the if/then branch of the schema).
+rule_id: RULE-0002
+version: 2
+schemaVersion: 1
+context: Payments.Instructions
+statement: A resubmitted instruction with the same key is executed once and only once.
+source_ref:
+  - file: docs/scenarios/finance-payments.md
+    line_start: 34
+    line_end: 34
+confidence: evidenced
+evidence: Submit_twice_with_the_same_key_executes_once
+disposition: null

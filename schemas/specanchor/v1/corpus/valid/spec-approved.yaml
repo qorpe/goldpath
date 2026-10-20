@@ -1,0 +1,9 @@
+spec_id: SPEC-0002
+rule_ids: [RULE-0002]
+notation: ears
+body: |
+  When a client resubmits an instruction with an Idempotency-Key it has used before,
+  the system shall return the original instruction and shall not execute it again.
+open_brackets: 0
+approved_by: treasury-analyst
+schemaVersion: 1

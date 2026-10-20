@@ -1,0 +1,21 @@
+{
+  "$comment": "The specanchor artefact schemas Goldpath authoring writes against (goldpath-authoring RFC V1; delivery-cycle D6). The three files beside this one are BYTE COPIES of the upstream files at `ref` and are never edited here: a change arrives by re-pinning. scripts/specanchor-freshness.sh proves the bytes still match this record (offline), still match upstream at `ref`, and that upstream has not moved ahead of the pin. specanchor had published no release or tag on the pin date, so `ref` is an immutable commit of its default branch; the gate turns red the day a tag exists, so the pin moves to it.",
+  "repository": "qorpe/specanchor",
+  "ref": "1c5e53a3cbf1db4f3c287481997a570816975ffa",
+  "refKind": "commit",
+  "pinnedOn": "2026-10-20",
+  "files": {
+    "rule.schema.v1.json": {
+      "upstream": "core/schemas/rule.schema.v1.json",
+      "sha256": "f44702fb8e565745248455f46689bb1e6e7834f52fcd689330d24f49421c5876"
+    },
+    "ledger-term.schema.v1.json": {
+      "upstream": "core/schemas/ledger-term.schema.v1.json",
+      "sha256": "608fcf05c9f864e306a82b0f19b7fa5f4cb568060f2f563327d8d5e9651d10f0"
+    },
+    "spec.schema.v1.json": {
+      "upstream": "core/schemas/spec.schema.v1.json",
+      "sha256": "1e23ace9f212b9c0590eded2b67dab36ed4e8d4b39cecc3165bf89dc6b55208a"
+    }
+  }
+}

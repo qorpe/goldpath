@@ -1,0 +1,15 @@
+# F3's shape (RFC §7): the sentence states the need, so idempotency is enabled, and every
+# line `goldpath add feature idempotency --plan` printed is resolved — here as a question.
+schemaVersion: 1
+spec_id: SPEC-0003
+decisions:
+  - path: features.idempotency
+    change: enable
+    source:
+      quote: a resubmitted instruction must never pay twice
+    opt_ins:
+      - opt_in: "mark every other write-performing command [Idempotent] — GP1001 fails the build until each one is (the template's sample CreateOrderCommand is marked for you); clients send the Idempotency-Key header"
+        question: Q-001
+questions:
+  - id: Q-001
+    text: Which commands besides submit perform a write a client may retry?

@@ -1,0 +1,10 @@
+# expect: schema/pattern
+# `set` writes stated nfr values; features are enabled or relied on.
+schemaVersion: 1
+spec_id: SPEC-0007
+decisions:
+  - path: features.idempotency
+    change: set
+    value: true
+    source:
+      quote: must never pay twice

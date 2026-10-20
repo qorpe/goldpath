@@ -1,0 +1,16 @@
+# A forward-authored rule: its source is the committed request, its confidence stays
+# `inferred` until a test pins it (goldpath-authoring RFC §4).
+rule_id: RULE-0001
+version: 1
+schemaVersion: 1
+context: Payments.Beneficiaries
+statement: >
+  Removing a beneficiary hides it from the list, and every payment that already
+  references it keeps that reference.
+source_ref:
+  - file: docs/requests/2026-10-20-beneficiary-removal.md
+    line_start: 3
+    line_end: 4
+confidence: inferred
+open_questions:
+  - Can a removed beneficiary be restored, and by whom?

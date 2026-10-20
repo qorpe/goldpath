@@ -1,0 +1,8 @@
+term: Beneficiary
+context: Payments.Beneficiaries
+definition: A party a corporate customer has saved so that payments can be sent to it again.
+aliases_in_code: [Beneficiary, BeneficiaryId]
+not_to_be_confused_with: Payee on a single instruction, which is not saved.
+source_ref: ["docs/requests/2026-10-20-beneficiary-removal.md:3-4"]
+status: proposed
+schemaVersion: 1
