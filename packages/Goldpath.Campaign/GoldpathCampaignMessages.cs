@@ -29,4 +29,12 @@ public sealed record GoldpathCampaignOutcomeMessage(Guid CampaignId, long Seq, b
 
     /// <summary>The instant after which an unanswered acceptance is a retryable failure.</summary>
     public DateTimeOffset? AckDeadline { get; init; }
+
+    /// <summary>
+    /// The 1-based attempt this outcome describes (R2 review #2). The sink applies it only to
+    /// the row still ON that attempt, so a redelivered or duplicated outcome of attempt N can
+    /// never settle attempt N+1. 0 = unknown (an outcome published before R2): the state
+    /// guard alone applies, as it did in R1.
+    /// </summary>
+    public int Attempt { get; init; }
 }

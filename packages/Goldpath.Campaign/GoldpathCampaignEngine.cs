@@ -415,22 +415,24 @@ public sealed class GoldpathCampaignEngine<TContext>
         => _options.Type(typeKey).ExecuteItem(
             targetJson, new GoldpathCampaignItemContext(campaignId, seq, typeKey, tenant, attempt, replay, services), cancellationToken);
 
-    /// <summary>Turns a handler's typed result into the outcome the sink applies (R2.1).</summary>
-    public GoldpathCampaignOutcomeMessage OutcomeFor(Guid campaignId, long seq, GoldpathCampaignActionResult result)
+    /// <summary>Turns a handler's typed result for <paramref name="attempt"/> into the outcome the sink applies (R2.1).</summary>
+    public GoldpathCampaignOutcomeMessage OutcomeFor(Guid campaignId, long seq, int attempt, GoldpathCampaignActionResult result)
         => result switch
         {
-            GoldpathCampaignActionSucceeded => new GoldpathCampaignOutcomeMessage(campaignId, seq, true, null),
+            GoldpathCampaignActionSucceeded => new GoldpathCampaignOutcomeMessage(campaignId, seq, true, null) { Attempt = attempt },
             GoldpathCampaignActionFailed failed => new GoldpathCampaignOutcomeMessage(
                 campaignId, seq, false, failed.Message.Length > 1000 ? failed.Message[..1000] : failed.Message)
             {
                 ErrorCode = failed.ErrorCode,
                 Retryable = failed.Retryable,
+                Attempt = attempt,
             },
             GoldpathCampaignActionAccepted accepted => new GoldpathCampaignOutcomeMessage(campaignId, seq, false, null)
             {
                 Accepted = true,
                 CorrelationId = accepted.CorrelationId,
                 AckDeadline = _time.GetUtcNow() + accepted.AckTimeout,
+                Attempt = attempt,
             },
             _ => throw new InvalidOperationException($"Unknown action result '{result.GetType().Name}'."),
         };
@@ -448,7 +450,7 @@ public sealed class GoldpathCampaignEngine<TContext>
             join campaign in db.Set<GoldpathCampaign>().AsNoTracking() on item.CampaignId equals campaign.Id
             where campaign.Type == type && item.CorrelationId == correlationId
             orderby item.Seq descending
-            select new { item.CampaignId, item.Seq, item.State })
+            select new { item.CampaignId, item.Seq, item.State, item.Attempts })
             .FirstOrDefaultAsync(cancellationToken);
         if (hit is null)
         {
@@ -466,6 +468,7 @@ public sealed class GoldpathCampaignEngine<TContext>
             ErrorCode = request.ErrorCode,
             Retryable = request.Retryable,
             CorrelationId = correlationId,
+            Attempt = hit.Attempts + 1,
         });
     }
 
@@ -473,13 +476,15 @@ public sealed class GoldpathCampaignEngine<TContext>
     /// Applies one BATCH of outcomes (the sink's flush, constraint 4): set-based item
     /// updates + relative campaign counters — never a write per item. R2.1 adds the
     /// acceptance path (Processing → AwaitingAck) and the non-retryable short-circuit;
-    /// R2.3 stamps the jittered ripe instant on every retry.
+    /// R2.3 stamps the jittered ripe instant on every retry. Every update is bound to the
+    /// ATTEMPT its outcome describes (R2 review #2): the row must still be on that attempt
+    /// (<c>Attempts == Attempt - 1</c>), so a redelivered outcome of an earlier attempt is
+    /// a no-op instead of a verdict on the attempt now in flight.
     /// </summary>
     public async Task ApplyOutcomesAsync(
         TContext db, Guid campaignId, IReadOnlyList<GoldpathCampaignOutcomeMessage> outcomes, CancellationToken cancellationToken)
     {
         var now = _time.GetUtcNow();
-        var succeeded = outcomes.Where(o => o.Succeeded).Select(o => o.Seq).ToArray();
         var accepted = outcomes.Where(o => !o.Succeeded && o.Accepted).ToArray();
         var failed = outcomes.Where(o => !o.Succeeded && !o.Accepted).ToArray();
         var maxAttempts = failed.Length == 0
@@ -488,12 +493,17 @@ public sealed class GoldpathCampaignEngine<TContext>
                 .Where(c => c.Id == campaignId).Select(c => c.MaxAttempts).SingleAsync(cancellationToken);
 
         var settled = 0;
-        if (succeeded.Length > 0)
+        foreach (var attempt in outcomes.Where(o => o.Succeeded).GroupBy(o => o.Attempt))
         {
-            // A success settles a claimed item OR an accepted one (the callback said yes).
-            settled = await db.Set<GoldpathCampaignItem>()
-                .Where(i => i.CampaignId == campaignId && succeeded.Contains(i.Seq)
-                    && (i.State == GoldpathCampaignItemState.Processing || i.State == GoldpathCampaignItemState.AwaitingAck))
+            // A success settles a claimed item OR an accepted one (the callback said yes) —
+            // set-based per attempt number, and there are only ever a handful of those.
+            var seqs = attempt.Select(o => o.Seq).ToArray();
+            var anyAttempt = attempt.Key == 0;
+            var prior = attempt.Key - 1;
+            settled += await db.Set<GoldpathCampaignItem>()
+                .Where(i => i.CampaignId == campaignId && seqs.Contains(i.Seq)
+                    && (i.State == GoldpathCampaignItemState.Processing || i.State == GoldpathCampaignItemState.AwaitingAck)
+                    && (anyAttempt || i.Attempts == prior))
                 .ExecuteUpdateAsync(s => s
                     .SetProperty(i => i.State, GoldpathCampaignItemState.Succeeded)
                     .SetProperty(i => i.CompletedAt, now), cancellationToken);
@@ -503,8 +513,11 @@ public sealed class GoldpathCampaignEngine<TContext>
         {
             // R2.1: the target system took the request; the item parks until the callback
             // names the correlation id or the deadline passes. Still in flight.
+            var anyAttempt = acceptance.Attempt == 0;
+            var prior = acceptance.Attempt - 1;
             await db.Set<GoldpathCampaignItem>()
-                .Where(i => i.CampaignId == campaignId && i.Seq == acceptance.Seq && i.State == GoldpathCampaignItemState.Processing)
+                .Where(i => i.CampaignId == campaignId && i.Seq == acceptance.Seq && i.State == GoldpathCampaignItemState.Processing
+                    && (anyAttempt || i.Attempts == prior))
                 .ExecuteUpdateAsync(s => s
                     .SetProperty(i => i.State, GoldpathCampaignItemState.AwaitingAck)
                     .SetProperty(i => i.CorrelationId, acceptance.CorrelationId)
@@ -518,9 +531,12 @@ public sealed class GoldpathCampaignEngine<TContext>
             // ripe instant needs is affordable. Attempts is bumped here — the outcome is the
             // moment an attempt provably happened. Counted by ROWS TOUCHED: a stray or
             // duplicate outcome whose guard matches nothing must not inflate FailedCount.
+            var anyAttempt = failure.Attempt == 0;
+            var prior = failure.Attempt - 1;
             var current = await db.Set<GoldpathCampaignItem>().AsNoTracking()
                 .Where(i => i.CampaignId == campaignId && i.Seq == failure.Seq
-                    && (i.State == GoldpathCampaignItemState.Processing || i.State == GoldpathCampaignItemState.AwaitingAck))
+                    && (i.State == GoldpathCampaignItemState.Processing || i.State == GoldpathCampaignItemState.AwaitingAck)
+                    && (anyAttempt || i.Attempts == prior))
                 .Select(i => new { i.Attempts, i.State })
                 .SingleOrDefaultAsync(cancellationToken);
             if (current is null)
@@ -578,7 +594,7 @@ public sealed class GoldpathCampaignEngine<TContext>
         var overdue = await db.Set<GoldpathCampaignItem>().AsNoTracking()
             .Where(i => i.CampaignId == campaign.Id && i.State == GoldpathCampaignItemState.AwaitingAck && i.AckDeadline < now)
             .OrderBy(i => i.Seq)
-            .Select(i => i.Seq)
+            .Select(i => new { i.Seq, i.Attempts })
             .Take(100)
             .ToListAsync(cancellationToken);
         if (overdue.Count == 0)
@@ -587,10 +603,11 @@ public sealed class GoldpathCampaignEngine<TContext>
         }
 
         await ApplyOutcomesAsync(db, campaign.Id,
-            [.. overdue.Select(seq => new GoldpathCampaignOutcomeMessage(campaign.Id, seq, false, "no callback before the ack deadline")
+            [.. overdue.Select(item => new GoldpathCampaignOutcomeMessage(campaign.Id, item.Seq, false, "no callback before the ack deadline")
             {
                 ErrorCode = "ACK_TIMEOUT",
                 Retryable = true,
+                Attempt = item.Attempts + 1,   // the attempt that timed out — a callback racing the sweep settles it, or this does
             })], cancellationToken);
         GoldpathCampaignMetrics.AckTimeouts(campaign.Type, overdue.Count);
         _logger.LogWarning("Campaign {CampaignId}: {Count} accepted items passed their ack deadline without a callback.", campaign.Id, overdue.Count);
@@ -696,6 +713,6 @@ public sealed class GoldpathCampaignEngine<TContext>
             throw;
         }
 
-        await ApplyOutcomesAsync(db, campaignId, [OutcomeFor(campaignId, seq, result)], cancellationToken);
+        await ApplyOutcomesAsync(db, campaignId, [OutcomeFor(campaignId, seq, attempt, result)], cancellationToken);
     }
 }

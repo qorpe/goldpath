@@ -190,7 +190,7 @@ public class R2Tests
         Assert.NotNull(await engine.ClaimAsync(db, campaign.Id, 1, CancellationToken.None));
         var result = await engine.ExecuteItemAsync(scope.ServiceProvider, "winback", campaign.Id, 1,
             fixture.Query(d => d.Set<GoldpathCampaignItem>().AsNoTracking().Single()).TargetJson, null, attempt: 1, replay: false, CancellationToken.None);
-        await engine.ApplyOutcomesAsync(db, campaign.Id, [engine.OutcomeFor(campaign.Id, 1, result)], CancellationToken.None);
+        await engine.ApplyOutcomesAsync(db, campaign.Id, [engine.OutcomeFor(campaign.Id, 1, 1, result)], CancellationToken.None);
         Assert.Equal(GoldpathCampaignItemState.AwaitingAck, fixture.Query(d => d.Set<GoldpathCampaignItem>().AsNoTracking().Single()).State);
 
         // Before the deadline the sweep is silent; after it, attempt 1 is a RETRYABLE failure.
@@ -209,7 +209,7 @@ public class R2Tests
         clock.Now += TimeSpan.FromSeconds(31);
         Assert.Equal(1, await engine.ReleaseRipeRetriesAsync(scope.ServiceProvider, campaign, 10, CancellationToken.None));
         Assert.NotNull(await engine.ClaimAsync(db, campaign.Id, 1, CancellationToken.None));
-        await engine.ApplyOutcomesAsync(db, campaign.Id, [engine.OutcomeFor(campaign.Id, 1, result)], CancellationToken.None);
+        await engine.ApplyOutcomesAsync(db, campaign.Id, [engine.OutcomeFor(campaign.Id, 1, 2, result)], CancellationToken.None);
         clock.Now += TimeSpan.FromMinutes(2);
         Assert.Equal(1, await engine.SweepAckTimeoutsAsync(db, campaign, CancellationToken.None));
         item = fixture.Query(d => d.Set<GoldpathCampaignItem>().AsNoTracking().Single());

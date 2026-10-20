@@ -199,11 +199,11 @@ public sealed class CampaignFixture : IDisposable
             {
                 var result = await Engine.ExecuteItemAsync(scope.ServiceProvider, message.Type,
                     message.CampaignId, message.Seq, item.TargetJson, null, attempt: item.Attempts + 1, replay: false, CancellationToken.None);
-                outcomes.Add(Engine.OutcomeFor(message.CampaignId, message.Seq, result));
+                outcomes.Add(Engine.OutcomeFor(message.CampaignId, message.Seq, item.Attempts + 1, result));
             }
             catch (Exception e)
             {
-                outcomes.Add(new GoldpathCampaignOutcomeMessage(message.CampaignId, message.Seq, false, e.Message));
+                outcomes.Add(new GoldpathCampaignOutcomeMessage(message.CampaignId, message.Seq, false, e.Message) { Attempt = item.Attempts + 1 });
             }
         }
 

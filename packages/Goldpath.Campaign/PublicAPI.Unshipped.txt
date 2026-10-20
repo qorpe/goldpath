@@ -29,7 +29,7 @@ Goldpath.GoldpathCampaignCallbackResolution.GoldpathCampaignCallbackResolution(b
 Goldpath.GoldpathCampaignCallbackResolution.Outcome.get -> Goldpath.GoldpathCampaignOutcomeMessage?
 Goldpath.GoldpathCampaignCallbackResolution.Outcome.init -> void
 Goldpath.GoldpathCampaignEngine<TContext>.ExecuteItemAsync(System.IServiceProvider! services, string! typeKey, System.Guid campaignId, long seq, string! targetJson, string? tenant, int attempt, bool replay, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathCampaignActionResult!>!
-Goldpath.GoldpathCampaignEngine<TContext>.OutcomeFor(System.Guid campaignId, long seq, Goldpath.GoldpathCampaignActionResult! result) -> Goldpath.GoldpathCampaignOutcomeMessage!
+Goldpath.GoldpathCampaignEngine<TContext>.OutcomeFor(System.Guid campaignId, long seq, int attempt, Goldpath.GoldpathCampaignActionResult! result) -> Goldpath.GoldpathCampaignOutcomeMessage!
 Goldpath.GoldpathCampaignEngine<TContext>.ResolveCallbackAsync(TContext! db, string! type, string! correlationId, Goldpath.GoldpathCampaignCallbackRequest! request, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathCampaignCallbackResolution!>!
 Goldpath.GoldpathCampaignEngine<TContext>.SweepAckTimeoutsAsync(TContext! db, Goldpath.GoldpathCampaign! campaign, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<int>!
 Goldpath.GoldpathCampaignItem.AckDeadline.get -> System.DateTimeOffset?
@@ -103,3 +103,5 @@ Goldpath.GoldpathCampaignType.ResumesByKey.get -> bool
 Goldpath.GoldpathCampaignTypeBuilder<TTarget>.TargetsAfter(System.Func<System.IServiceProvider!, System.Collections.Generic.IReadOnlyDictionary<string!, string!>!, string?, System.Collections.Generic.IAsyncEnumerable<TTarget!>!>! targets, System.Func<TTarget!, string!>! keyOf) -> Goldpath.GoldpathCampaignTypeBuilder<TTarget!>!
 Goldpath.GoldpathCampaignMigrations
 static Goldpath.GoldpathCampaignMigrations.GoldpathCampaignR2Backfill(this Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder! migrationBuilder, string? schema = null) -> Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder!
+Goldpath.GoldpathCampaignOutcomeMessage.Attempt.get -> int
+Goldpath.GoldpathCampaignOutcomeMessage.Attempt.init -> void

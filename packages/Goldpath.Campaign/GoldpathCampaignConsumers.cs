@@ -44,12 +44,13 @@ public sealed class GoldpathCampaignItemConsumer<TContext> : IConsumer<GoldpathC
         var campaign = await _db.Set<GoldpathCampaign>().AsNoTracking()
             .SingleAsync(c => c.Id == message.CampaignId, context.CancellationToken);
         GoldpathCampaignOutcomeMessage outcome;
+        var attempt = item.Attempts + 1;
         try
         {
             var result = await _engine.ExecuteItemAsync(
                 _services, message.Type, message.CampaignId, message.Seq, item.TargetJson,
-                campaign.Tenant, attempt: item.Attempts + 1, replay: false, context.CancellationToken);
-            outcome = _engine.OutcomeFor(message.CampaignId, message.Seq, result);
+                campaign.Tenant, attempt, replay: false, context.CancellationToken);
+            outcome = _engine.OutcomeFor(message.CampaignId, message.Seq, attempt, result);
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
@@ -59,6 +60,7 @@ public sealed class GoldpathCampaignItemConsumer<TContext> : IConsumer<GoldpathC
             {
                 ErrorCode = "HANDLER_EXCEPTION",
                 Retryable = true,
+                Attempt = attempt,
             };
         }
 

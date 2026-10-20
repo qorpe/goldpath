@@ -214,6 +214,62 @@ public class R2ReviewTests
         Assert.Equal([null], openings);
     }
 
+    // ---- finding 2: an outcome is bound to the attempt it describes (constraint 2, R1.3 ladder) ----
+
+    /// <summary>
+    /// Finding 2 / constraint 2: a redelivered failure of attempt 1 that lands while attempt 2
+    /// is in flight must not touch attempt 2 — and attempt 2's success must settle the item.
+    /// </summary>
+    [Fact]
+    public async Task AStaleFailureOfAttemptOne_NeverReachesAttemptTwo()
+    {
+        using var fixture = new CampaignFixture(o => { o.RetryJitter = 0; o.RetryBackoff = [TimeSpan.Zero]; }, 1);
+        var campaign = await fixture.CreateAsync(R2Tests.Generous(maxAttempts: 5));
+        await fixture.EnumerateAllAsync(campaign);
+        using var scope = fixture.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<CampaignTestContext>();
+        await fixture.Engine.ReleaseBatchAsync(scope.ServiceProvider, fixture.Reload(campaign.Id), 1, CancellationToken.None);
+        Assert.NotNull(await fixture.Engine.ClaimAsync(db, campaign.Id, 1, CancellationToken.None));
+
+        var failure1 = new GoldpathCampaignOutcomeMessage(campaign.Id, 1, false, "attempt 1 timed out") { Retryable = true, Attempt = 1 };
+        await fixture.Engine.ApplyOutcomesAsync(db, campaign.Id, [failure1], CancellationToken.None);
+        await Task.Delay(10);
+        Assert.NotNull(await fixture.Engine.ClaimAsync(db, campaign.Id, 1, CancellationToken.None));   // attempt 2 in flight
+
+        // Broker redelivery of attempt 1's failure, and a stale acceptance of attempt 1 — both no-ops now.
+        await fixture.Engine.ApplyOutcomesAsync(db, campaign.Id, [failure1], CancellationToken.None);
+        await fixture.Engine.ApplyOutcomesAsync(db, campaign.Id,
+            [new GoldpathCampaignOutcomeMessage(campaign.Id, 1, false, null) { Accepted = true, CorrelationId = "old", AckDeadline = DateTimeOffset.UtcNow.AddHours(1), Attempt = 1 }],
+            CancellationToken.None);
+        var inFlight = SingleItem(fixture);
+        Assert.Equal(GoldpathCampaignItemState.Processing, inFlight.State);
+        Assert.Equal(1, inFlight.Attempts);
+        Assert.Null(inFlight.CorrelationId);
+
+        await fixture.Engine.ApplyOutcomesAsync(db, campaign.Id,
+            [new GoldpathCampaignOutcomeMessage(campaign.Id, 1, true, null) { Attempt = 2 }], CancellationToken.None);
+        var row = SingleItem(fixture);
+        Assert.Equal(GoldpathCampaignItemState.Succeeded, row.State);
+        Assert.Equal(1, row.Attempts);
+        Assert.Equal(1, fixture.Reload(campaign.Id).SucceededCount);
+    }
+
+    /// <summary>
+    /// Finding 2: the consumer's own outcomes carry the attempt they describe — success,
+    /// typed failure, acceptance and a handler throw alike.
+    /// </summary>
+    [Fact]
+    public async Task EveryOutcomeShapeNamesItsAttempt()
+    {
+        using var fixture = new CampaignFixture(sourceSize: 1);
+        var engine = fixture.Engine;
+        var id = Guid.NewGuid();
+        Assert.Equal(3, engine.OutcomeFor(id, 1, 3, GoldpathCampaignActionResult.Succeeded()).Attempt);
+        Assert.Equal(3, engine.OutcomeFor(id, 1, 3, GoldpathCampaignActionResult.Failed("X", "x", retryable: true)).Attempt);
+        Assert.Equal(3, engine.OutcomeFor(id, 1, 3, GoldpathCampaignActionResult.Accepted("c", TimeSpan.FromMinutes(1))).Attempt);
+        await Task.CompletedTask;
+    }
+
     // ---- helpers ----
 
     private static Action<GoldpathCampaignOptions> Keyed(int count, List<string?> openings)
