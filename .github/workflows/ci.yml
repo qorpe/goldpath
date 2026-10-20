@@ -104,3 +104,72 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm test
           pnpm typecheck
+
+  # The golden-manifest matrix at PR time (ADR-0008, open-threads T30). The nightly runs
+  # every shape; a pull request runs the covering subset (`pr: true` in gm-shapes.yml —
+  # golden-manifests-v1.md §6 says why each one) when it touches what a generated app is
+  # built from. The lane packs THIS checkout into a local feed that shadows nuget.org, so
+  # that is more than the templates: the packages, the analyzers, the CLI that writes into
+  # the app, the console bundle that ships inside Goldpath.Console, the manifest schema
+  # spec-lint validates against, the root build files every pack reads, and the lane itself.
+  # The filter lives in a job, not in `on.pull_request.paths`, so the check below always
+  # reports — a path-filtered workflow that does not run leaves a required check pending.
+  gm-scope:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run: ${{ steps.diff.outputs.run }}
+    steps:
+      - id: diff
+        name: does this PR touch what a generated app is built from?
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename' > files.txt
+          pattern='^(templates/|tools/Goldpath\.Cli/|analyzers/|packages/|ui/console/|schemas/manifest/|Directory\.(Build|Packages)\.props$|global\.json$|nuget\.config$|scripts/(validate-gm|build-console)\.sh$|\.github/gm-shapes\.yml$|\.github/workflows/(gm|ci)\.yml$)'
+          if grep -E "$pattern" files.txt > hits.txt; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "── the golden-manifest PR subset runs: $(wc -l < hits.txt) of $(wc -l < files.txt) changed files are on its path"
+            head -20 hits.txt
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "── none of the $(wc -l < files.txt) changed files can change a generated app; the nightly still runs every shape"
+          fi
+
+  gm:
+    needs: gm-scope
+    if: needs.gm-scope.outputs.run == 'true'
+    # A new push to the same PR supersedes the shapes still running for the old head.
+    concurrency:
+      group: gm-pr-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    uses: ./.github/workflows/gm.yml
+    with:
+      scope: pr
+
+  # The stable, required-able check: green when the subset passed OR when the PR touches
+  # nothing it covers; red when any shape failed, was cancelled, or the scope job failed.
+  gm-gate:
+    name: golden manifests (PR subset)
+    if: always()
+    needs: [gm-scope, gm]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          SCOPE: ${{ needs.gm-scope.result }}
+          RUN: ${{ needs.gm-scope.outputs.run }}
+          GM: ${{ needs.gm.result }}
+        run: |
+          echo "gm-scope: $SCOPE (run=$RUN) · gm: $GM"
+          case "$SCOPE" in success|skipped) ;; *) echo "::error::the scope job did not succeed ($SCOPE)"; exit 1 ;; esac
+          if [ "$RUN" = "true" ] && [ "$GM" != "success" ]; then
+            echo "::error::a golden-manifest shape is not green ($GM) — see the gm / <shape> jobs"; exit 1
+          fi
+          echo "golden manifests: OK"

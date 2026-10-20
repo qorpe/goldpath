@@ -71,9 +71,9 @@ for planning · — deliberately absent (the card does not trigger it).
 ## Foundational packages (no matrix row — they underpin EVERY cell)
 
 Abstractions · Sdk · ServiceDefaults · ApiDefaults · Data · Messaging — composed by every
-sample and every generated shape; their proof is the nightly golden-manifest matrix, not a
-sector story. Named here so the docs-freshness inventory can hold this file to the full
-package list.
+sample and every generated shape; their proof is the golden-manifest matrix (nightly, plus
+its PR-time subset), not a sector story. Named here so the docs-freshness inventory can hold
+this file to the full package list.
 
 ## Console panels (post-UI; eyes-on + Playwright per sample)
 

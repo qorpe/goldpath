@@ -28,7 +28,8 @@ dotnet test                                                     # smoke: POST �
 
 Local validation without any feed: `scripts/validate-gm.sh <Name> [--db sqlserver --broker none]` packs the repo, installs
 the template from source, generates the requested shape, builds it against the local feed,
-and runs the smoke suite. The proven shapes are the nightly matrix's, listed with what each one exists to prove in
+and runs the smoke suite. The proven shapes are the golden-manifest matrix's (`.github/gm-shapes.yml`: all of them
+nightly, the covering subset on every pull request that touches a template), listed with what each one exists to prove in
 `docs/strategy/golden-manifests-v1.md` §6 — a count restated here goes stale the day a
 shape is added, and this sentence claimed two long after there were twenty-two
 (preview.8 coverage audit, 2026-09-05).
