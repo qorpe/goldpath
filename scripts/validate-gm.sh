@@ -95,6 +95,17 @@ else
 fi
 export GOLDPATH_SPECDRIFT="$SPECDRIFT"
 
+# Build BEFORE `db init`, not only after it (#279). `db init` is the first thing to compile
+# the generated app, through `dotnet ef`, and `dotnet ef` reports a compile failure as the
+# two words "Build failed" and nothing else. In the T30 proof (#273) a planted template
+# defect — GP2102 dropped from WarningsNotAsErrors — turned two shapes red at that step, and
+# the log never named GP2102: the cause had to be read off the diff. Built here, the same
+# failure fails with the compiler's own diagnostic (rule id, file:line). The build step
+# below stays, because the post-generation verbs add heads and `db init` adds the
+# migrations; on the happy path it is incremental. -m:1 for the reason given there.
+echo "── build (before db init, so a compile error names its rule)"
+dotnet build "$APP" --nologo -v q -m:1
+
 echo "── initial migration (goldpath db init — Development migrates, EnsureCreated is gone)"
 (cd "$APP" && dotnet run --project "$ROOT/tools/Goldpath.Cli" -- db init --path .)
 
