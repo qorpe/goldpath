@@ -51,6 +51,7 @@ C:
   # workflow ever runs a script these rules leave below C.
   - 'scripts/corpus-check.sh'
   - 'scripts/kit-freshness.sh'
+  - 'scripts/specanchor-freshness.sh'  # the pinned specanchor schemas (#276)
   - 'scripts/train-freshness.sh'
   - 'scripts/product-guard.sh'
   - 'scripts/validate-*.sh'        # the GM matrix, the CLI and the migration proofs
