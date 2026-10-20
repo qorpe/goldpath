@@ -127,18 +127,22 @@ jobs:
           case "$TIER" in A|B|C) ;; *) echo "::error::unexpected tier '$TIER'"; exit 1 ;; esac
           describe() {
             case "$1" in
+              # GitHub refuses a label description over 100 characters (HTTP 422).
               A) echo "ADR-0014 Tier A: merges automatically once agent-verified and green" ;;
-              B) echo "ADR-0014 Tier B: public API/templates/dependencies/migrations; merges automatically once agent-verified and green" ;;
-              C) echo "ADR-0014 Tier C: decisions, releases, gates, policy, agent layer; the owner merges" ;;
+              B) echo "ADR-0014 Tier B: API, templates, deps, migrations; auto-merges once verified" ;;
+              C) echo "ADR-0014 Tier C: decisions, releases, gates, policy, agent layer; owner merges" ;;
             esac
           }
           colour() { case "$1" in A) echo 0e8a16 ;; B) echo fbca04 ;; C) echo b60205 ;; esac; }
           existing=$(gh api --paginate "repos/$REPO/labels?per_page=100" --jq '.[].name')
           for t in A B C; do
             if ! grep -qx "tier:$t" <<<"$existing"; then
-              # A concurrent run on another PR may create it first; the add below is the real check.
-              gh api "repos/$REPO/labels" -f name="tier:$t" -f color="$(colour "$t")" -f description="$(describe "$t")" > /dev/null \
-                || echo "tier:$t was created concurrently"
+              # A concurrent run on another PR may create it first — so a refused create is
+              # fine only if the label now EXISTS; anything else is a real error and fails.
+              if ! gh api "repos/$REPO/labels" -f name="tier:$t" -f color="$(colour "$t")" -f description="$(describe "$t")" > /dev/null; then
+                gh api "repos/$REPO/labels/tier%3A$t" > /dev/null || { echo "::error::could not create label tier:$t"; exit 1; }
+                echo "tier:$t was created concurrently"
+              fi
             fi
           done
           current=$(gh api "repos/$REPO/issues/$PR/labels" --jq '.[].name')
