@@ -7,8 +7,11 @@ only after that PR merges green.
 
 - [ ] Local full gates green: build, unit loop, `dotnet format --verify-no-changes`,
       license gate, integration suite.
-- [ ] Golden-manifest matrix green (nightly or a fresh dispatch — ADR-0008: no release
-      while GM is red).
+- [ ] Golden-manifest matrix green **on the release PR's own head** — a fresh `nightly.yml`
+      dispatch with `--ref` the release branch (ADR-0008: no release while GM is red). A
+      nightly that ran on an earlier commit does NOT count: preview.8 was tagged against a
+      green nightly that ran on the commit BEFORE its own template changes, and every app
+      generated with `fileexchange` on that train failed its first build (GP2102).
 - [ ] Mutation scores current for every package whose engine paths changed since the
       last release. The hosted-fit set (nightly matrix — sixteen packages since 2026-09-05): nightly. The big six (Jobs, Archival, Bulk,
       Notification, Campaign, Caching): `mutation-heavy.yml` dispatch when time allows,
@@ -40,13 +43,7 @@ only after that PR merges green.
       templates and CLI recipes may only consume once the pins move (the templates must
       generate apps on the PUBLISHED train, `template-pins.sh`; a CLI recipe writes into an
       adopter's app on that train too). Wire each in the release PR, then delete its line:
-      - **`GmCleanFeatures` gains `--features audittrail`** (`.github/workflows/nightly.yml`).
-        `IAuditLogged` moved from `Goldpath.AuditTrail` to `Goldpath.Abstractions` because
-        the clean-architecture layout puts the entity partial in `Domain`, and reaching the
-        marker meant referencing a package that pulls ASP.NET Core, EF and `Goldpath.Data` —
-        inverting the dependency direction that layout exists to teach. A generated app
-        consumes the PUBLISHED Abstractions, so the shape stays red until this train ships
-        the move. Add the flag in the release PR and delete this line.
+      - *(none open — preview.9's one adoption is wired: `GmCleanFeatures` carries `audittrail`.)*
 
 ## After the merge
 

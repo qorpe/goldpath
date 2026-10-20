@@ -14,24 +14,24 @@
     <!--#if (UseQueue) -->
     <PackageVersion Include="Aspire.Hosting.RabbitMQ" Version="13.4.6" />
     <PackageVersion Include="MassTransit.RabbitMQ" Version="8.5.11" />
-    <PackageVersion Include="Goldpath.Messaging" Version="0.1.0-preview.8" />
+    <PackageVersion Include="Goldpath.Messaging" Version="0.1.0-preview.9" />
     <!--#endif -->
     <PackageVersion Include="Aspire.Hosting.Testing" Version="13.4.6" />
-    <PackageVersion Include="Goldpath.Abstractions" Version="0.1.0-preview.8" />
-    <PackageVersion Include="Goldpath.Analyzers" Version="0.1.0-preview.8" />
-    <PackageVersion Include="Goldpath.ServiceDefaults" Version="0.1.0-preview.8" />
-    <PackageVersion Include="Goldpath.Auth" Version="0.1.0-preview.8" />
-    <PackageVersion Include="Goldpath.Data" Version="0.1.0-preview.8" />
-    <PackageVersion Include="Goldpath.Jobs" Version="0.1.0-preview.8" />
-    <PackageVersion Include="Goldpath.Console" Version="0.1.0-preview.8" />
-    <PackageVersion Include="Goldpath.MultiTenancy" Version="0.1.0-preview.8" />
-    <PackageVersion Include="Goldpath.AuditTrail" Version="0.1.0-preview.8" />
-    <PackageVersion Include="Goldpath.SoftDelete" Version="0.1.0-preview.8" />
-    <PackageVersion Include="Goldpath.DataProtection" Version="0.1.0-preview.8" />
-    <PackageVersion Include="Goldpath.Locking" Version="0.1.0-preview.8" />
-    <PackageVersion Include="Goldpath.Locking.SqlServer" Version="0.1.0-preview.8" />
-    <PackageVersion Include="Goldpath.Notification" Version="0.1.0-preview.8" />
-    <PackageVersion Include="Goldpath.FileExchange" Version="0.1.0-preview.8" />
+    <PackageVersion Include="Goldpath.Abstractions" Version="0.1.0-preview.9" />
+    <PackageVersion Include="Goldpath.Analyzers" Version="0.1.0-preview.9" />
+    <PackageVersion Include="Goldpath.ServiceDefaults" Version="0.1.0-preview.9" />
+    <PackageVersion Include="Goldpath.Auth" Version="0.1.0-preview.9" />
+    <PackageVersion Include="Goldpath.Data" Version="0.1.0-preview.9" />
+    <PackageVersion Include="Goldpath.Jobs" Version="0.1.0-preview.9" />
+    <PackageVersion Include="Goldpath.Console" Version="0.1.0-preview.9" />
+    <PackageVersion Include="Goldpath.MultiTenancy" Version="0.1.0-preview.9" />
+    <PackageVersion Include="Goldpath.AuditTrail" Version="0.1.0-preview.9" />
+    <PackageVersion Include="Goldpath.SoftDelete" Version="0.1.0-preview.9" />
+    <PackageVersion Include="Goldpath.DataProtection" Version="0.1.0-preview.9" />
+    <PackageVersion Include="Goldpath.Locking" Version="0.1.0-preview.9" />
+    <PackageVersion Include="Goldpath.Locking.SqlServer" Version="0.1.0-preview.9" />
+    <PackageVersion Include="Goldpath.Notification" Version="0.1.0-preview.9" />
+    <PackageVersion Include="Goldpath.FileExchange" Version="0.1.0-preview.9" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
