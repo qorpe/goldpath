@@ -161,7 +161,10 @@ public sealed class GoldpathCampaignEngine<TContext>
     /// <summary>
     /// Opens the type's target stream at the campaign's watermark (takeover resume): a
     /// keyset type (R2.7) reopens AFTER the last materialized key; a count type re-reads
-    /// and skips <see cref="GoldpathCampaign.EnumeratedThrough"/> rows.
+    /// and skips <see cref="GoldpathCampaign.EnumeratedThrough"/> rows. A keyset type
+    /// resuming a row that carries NO key — enumerated before R2, or while the type was
+    /// count-based — derives the key from the target it materialized last; reopening from
+    /// the start would materialize, and send, every one of those targets a second time.
     /// </summary>
     public async Task<IAsyncEnumerator<object>> OpenStreamAtWatermarkAsync(
         IServiceProvider services, GoldpathCampaign campaign, CancellationToken cancellationToken)
@@ -170,8 +173,10 @@ public sealed class GoldpathCampaignEngine<TContext>
         var parameters = JsonSerializer.Deserialize<Dictionary<string, string>>(campaign.ParametersJson) ?? [];
         if (type.EnumerateAfter is { } after)
         {
-            return after(services, parameters, campaign.EnumeratedThrough == 0 ? null : campaign.EnumeratedKey)
-                .GetAsyncEnumerator(cancellationToken);
+            var resumeKey = campaign.EnumeratedThrough == 0
+                ? null
+                : campaign.EnumeratedKey ?? await DeriveResumeKeyAsync(services, campaign, type, cancellationToken);
+            return after(services, parameters, resumeKey).GetAsyncEnumerator(cancellationToken);
         }
 
         var stream = type.Enumerate(services, parameters).GetAsyncEnumerator(cancellationToken);
@@ -184,6 +189,43 @@ public sealed class GoldpathCampaignEngine<TContext>
         }
 
         return stream;
+    }
+
+    /// <summary>
+    /// The resume key of a keyset campaign whose row carries none (R2 review #3): the key of
+    /// the target materialized LAST, read off its item row. Same stable order the selector
+    /// promises, so "after it" is exactly where enumeration stopped. A row that cannot name
+    /// its key refuses the takeover — a guess here is a double send.
+    /// </summary>
+    private async Task<string> DeriveResumeKeyAsync(
+        IServiceProvider services, GoldpathCampaign campaign, GoldpathCampaignType type, CancellationToken cancellationToken)
+    {
+        var db = services.GetRequiredService<TContext>();
+        var last = await db.Set<GoldpathCampaignItem>().AsNoTracking()
+            .Where(i => i.CampaignId == campaign.Id && i.Seq == campaign.EnumeratedThrough)
+            .Select(i => i.TargetJson)
+            .SingleOrDefaultAsync(cancellationToken);
+        string? key = null;
+        Exception? cause = null;
+        try
+        {
+            key = last is null ? null : type.KeyOfStoredTarget!(last);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            cause = e;
+        }
+
+        if (string.IsNullOrEmpty(key))
+        {
+            throw new InvalidOperationException(
+                $"goldpath: campaign {campaign.Id} ('{type.Key}') resumes by key but carries none, and item #{campaign.EnumeratedThrough} "
+                + "cannot name its resume key — reopening the selector from the start would send every materialized target twice. "
+                + "Set GoldpathCampaigns.EnumeratedKey to that target's key, or abort and recreate the campaign.", cause);
+        }
+
+        _logger.LogInformation("Campaign {CampaignId}: resume key derived from item #{Seq} (the row carried none).", campaign.Id, campaign.EnumeratedThrough);
+        return key;
     }
 
     /// <summary>

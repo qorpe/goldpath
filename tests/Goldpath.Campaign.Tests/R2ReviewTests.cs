@@ -165,7 +165,93 @@ public class R2ReviewTests
         Assert.Contains("NextAttemptAt", error.Message, StringComparison.Ordinal);
     }
 
+    // ---- finding 3: a keyset takeover of a row with no key re-sends nothing (R2.7, constraint 3) ----
+
+    /// <summary>
+    /// Finding 3 / R2.7: a campaign enumerated by count (before R2, or while its type was
+    /// count-based) carries no key. Switching the type to TargetsAfter must resume after the
+    /// target already materialized LAST — derived from that row — never from the beginning.
+    /// </summary>
+    [Fact]
+    public async Task AKeysetTakeoverOfAKeylessRow_ResumesAfterTheLastMaterializedTarget()
+    {
+        var openings = new List<string?>();
+        using var fixture = new CampaignFixture(Keyed(10, openings));
+        var campaign = await StepOnceAsync(fixture);
+
+        // The row as a count registration left it: four items, no key.
+        fixture.Mutate(db => db.Set<GoldpathCampaign>().Single(c => c.Id == campaign.Id).EnumeratedKey = null);
+        await fixture.EnumerateAllAsync(fixture.Reload(campaign.Id));
+
+        var items = fixture.Query(db => db.Set<GoldpathCampaignItem>().AsNoTracking().OrderBy(i => i.Seq).ToList());
+        Assert.Equal(10, items.Count);                                          // ten targets, ten items
+        Assert.Equal(10, items.Select(i => i.TargetJson).Distinct().Count());   // nobody twice
+        Assert.Equal([null, "4"], openings);                                    // reopened after the derived key
+        Assert.Equal("10", fixture.Reload(campaign.Id).EnumeratedKey);
+    }
+
+    /// <summary>
+    /// Finding 3 / R2.7: when the last materialized row cannot name its key, the takeover
+    /// refuses with teaching text rather than guess — and writes nothing.
+    /// </summary>
+    [Fact]
+    public async Task AKeysetTakeoverThatCannotDeriveItsKey_RefusesAndWritesNothing()
+    {
+        var openings = new List<string?>();
+        using var fixture = new CampaignFixture(Keyed(10, openings));
+        var campaign = await StepOnceAsync(fixture);
+        fixture.Mutate(db =>
+        {
+            db.Set<GoldpathCampaign>().Single(c => c.Id == campaign.Id).EnumeratedKey = null;
+            db.Set<GoldpathCampaignItem>().Single(i => i.Seq == 4).TargetJson = "null";
+        });
+
+        using var scope = fixture.Services.CreateScope();
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            fixture.Engine.OpenStreamAtWatermarkAsync(scope.ServiceProvider, fixture.Reload(campaign.Id), CancellationToken.None));
+        Assert.Contains("resume key", error.Message, StringComparison.Ordinal);
+        Assert.Equal(4, fixture.Query(db => db.Set<GoldpathCampaignItem>().Count()));
+        Assert.Equal([null], openings);
+    }
+
     // ---- helpers ----
+
+    private static Action<GoldpathCampaignOptions> Keyed(int count, List<string?> openings)
+        => o =>
+        {
+            o.EnumerationBatchSize = 4;
+            o.AddCampaign<TestTarget>("keyed", c => c
+                .MaxTargets(10_000)
+                .TargetsAfter((_, _, after) =>
+                {
+                    openings.Add(after);
+                    return After(count, after);
+                }, target => target.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        };
+
+    /// <summary>Creates a keyed campaign and materializes ONE step (4 items) through a leader that then dies.</summary>
+    private static async Task<GoldpathCampaign> StepOnceAsync(CampaignFixture fixture)
+    {
+        using var scope = fixture.Services.CreateScope();
+        var campaign = await fixture.Engine.CreateAsync(scope.ServiceProvider, "keyed", "keyed run", new Dictionary<string, string>(),
+            R2Tests.Generous(), tenant: null, actor: "tester", CancellationToken.None);
+        var stream = await fixture.Engine.OpenStreamAtWatermarkAsync(scope.ServiceProvider, campaign, CancellationToken.None);
+        await fixture.Engine.EnumerateStepAsync(scope.ServiceProvider, campaign, stream, CancellationToken.None);
+        await stream.DisposeAsync();
+        Assert.Equal(4, fixture.Reload(campaign.Id).EnumeratedThrough);
+        return campaign;
+    }
+
+    private static async IAsyncEnumerable<TestTarget> After(int count, string? after)
+    {
+        var from = after is null ? 1 : int.Parse(after, System.Globalization.CultureInfo.InvariantCulture) + 1;
+        for (var i = from; i <= count; i++)
+        {
+            yield return new TestTarget(i, $"keyed{i}@example.test");
+        }
+
+        await Task.CompletedTask;
+    }
 
     /// <summary>Writes the single item as R1 left a transient failure: AwaitingRetry, no NextAttemptAt.</summary>
     private static void StampAsR1Retry(CampaignFixture fixture)

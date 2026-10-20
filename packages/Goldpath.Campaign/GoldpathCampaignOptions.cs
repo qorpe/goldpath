@@ -161,6 +161,9 @@ public sealed class GoldpathCampaignType
 
     internal Func<object, string>? KeyOf { get; set; }
 
+    /// <summary>The key of a target as its item row stored it (R2 review #3: the resume key of a row that carries none).</summary>
+    internal Func<string, string?>? KeyOfStoredTarget { get; set; }
+
     internal Func<string, GoldpathCampaignItemContext, CancellationToken, Task<GoldpathCampaignActionResult>> ExecuteItem { get; set; } = null!;
 
     internal Func<object, string> SerializeTarget { get; set; } = null!;
@@ -256,6 +259,7 @@ public sealed class GoldpathCampaignTypeBuilder<TTarget>
             _type.Enumerate = (services, parameters) => Upcast(keyed(services, parameters, null));
             _type.EnumerateAfter = (services, parameters, after) => Upcast(keyed(services, parameters, after));
             _type.KeyOf = target => keyOf((TTarget)target);
+            _type.KeyOfStoredTarget = json => JsonSerializer.Deserialize<TTarget>(json) is { } stored ? keyOf(stored) : null;
         }
         else
         {
