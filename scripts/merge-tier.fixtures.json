@@ -1,0 +1,145 @@
+{
+  "_comment": "Fixtures for scripts/merge-tier.py selftest (ADR-0014). Each `classify` case is a pull request's file list in the shape the GitHub files API returns; `because` (optional) names exactly the files that must put it at that tier. Each `decide` case is a tier plus labels and whether `merge-policy` must pass. Changing this file is Tier C.",
+  "classify": [
+    {
+      "name": "an ADR change is Tier C",
+      "files": [{"filename": "docs/adr/ADR-0015-example.md", "status": "added", "patch": "@@ -0,0 +1 @@\n+# ADR-0015"}],
+      "expect": "C",
+      "because": ["docs/adr/ADR-0015-example.md"]
+    },
+    {
+      "name": "a workflow change is Tier C",
+      "files": [{"filename": ".github/workflows/ci.yml", "status": "modified", "patch": "@@ -1 +1 @@\n-name: ci\n+name: ci2"}],
+      "expect": "C"
+    },
+    {
+      "name": "a package change is Tier B",
+      "files": [{"filename": "packages/Goldpath.Jobs/JobRunner.cs", "status": "modified", "patch": "@@ -1 +1 @@\n-var a = 1;\n+var a = 2;"}],
+      "expect": "B"
+    },
+    {
+      "name": "a tests-only change is Tier A",
+      "files": [
+        {"filename": "tests/Goldpath.Jobs.Tests/JobRunnerTests.cs", "status": "modified", "patch": "@@ -1 +1,2 @@\n+[Fact]\n+public void Runs() { }"},
+        {"filename": "tests/Goldpath.Bulk.Tests/BulkTests.cs", "status": "added", "patch": "@@ -0,0 +1 @@\n+// new"}
+      ],
+      "expect": "A"
+    },
+    {
+      "name": "a mixed change takes the highest tier (A + B + C = C)",
+      "files": [
+        {"filename": "tests/Goldpath.Jobs.Tests/JobRunnerTests.cs", "status": "modified", "patch": "@@ -1 +1 @@\n+// t"},
+        {"filename": "packages/Goldpath.Jobs/JobRunner.cs", "status": "modified", "patch": "@@ -1 +1 @@\n+// p"},
+        {"filename": "docs/rfc/goldpath-jobs.md", "status": "modified", "patch": "@@ -1 +1 @@\n+text"}
+      ],
+      "expect": "C",
+      "because": ["docs/rfc/goldpath-jobs.md"]
+    },
+    {
+      "name": "a mixed change takes the highest tier (A + B = B)",
+      "files": [
+        {"filename": "docs/guide/concepts.md", "status": "modified", "patch": "@@ -1 +1 @@\n+text"},
+        {"filename": "packages/Goldpath.Jobs/JobRunner.cs", "status": "modified", "patch": "@@ -1 +1 @@\n+// p"}
+      ],
+      "expect": "B",
+      "because": ["packages/Goldpath.Jobs/JobRunner.cs"]
+    },
+    {
+      "name": "the train version is Tier C",
+      "files": [{"filename": "Directory.Build.props", "status": "modified", "patch": "@@ -13,2 +13,2 @@\n     <VersionPrefix>0.1.0</VersionPrefix>\n-    <VersionSuffix>preview.9</VersionSuffix>\n+    <VersionSuffix>preview.10</VersionSuffix>"}],
+      "expect": "C"
+    },
+    {
+      "name": "any other Directory.Build.props change is Tier B",
+      "files": [{"filename": "Directory.Build.props", "status": "modified", "patch": "@@ -3 +3 @@\n-    <Nullable>enable</Nullable>\n+    <Nullable>enable</Nullable> \n     <VersionSuffix>preview.9</VersionSuffix>"}],
+      "expect": "B"
+    },
+    {
+      "name": "a template's Goldpath pin is Tier C",
+      "files": [{"filename": "templates/goldpath-solution/Directory.Packages.props", "status": "modified", "patch": "@@ -5 +5 @@\n-    <PackageVersion Include=\"Goldpath.Jobs\" Version=\"0.1.0-preview.9\" />\n+    <PackageVersion Include=\"Goldpath.Jobs\" Version=\"0.1.0-preview.10\" />"}],
+      "expect": "C"
+    },
+    {
+      "name": "a template's third-party pin is Tier B",
+      "files": [{"filename": "templates/goldpath-solution/Directory.Packages.props", "status": "modified", "patch": "@@ -9 +9 @@\n-    <PackageVersion Include=\"Polly\" Version=\"8.5.0\" />\n+    <PackageVersion Include=\"Polly\" Version=\"8.5.2\" />"}],
+      "expect": "B"
+    },
+    {
+      "name": "a CHANGELOG version heading is Tier C",
+      "files": [{"filename": "CHANGELOG.md", "status": "modified", "patch": "@@ -6,2 +6,4 @@\n ## [Unreleased]\n+\n+## [0.1.0-preview.10] - 2026-11-01"}],
+      "expect": "C"
+    },
+    {
+      "name": "an [Unreleased] CHANGELOG entry is Tier A",
+      "files": [{"filename": "CHANGELOG.md", "status": "modified", "patch": "@@ -6,2 +6,4 @@\n ## [Unreleased]\n+### Fixed\n+- a thing"}],
+      "expect": "A"
+    },
+    {
+      "name": "a file renamed OUT of docs/adr is still Tier C",
+      "files": [{"filename": "docs/archive/ADR-0010.md", "previous_filename": "docs/adr/ADR-0010-human-gates-are-fixed.md", "status": "renamed"}],
+      "expect": "C",
+      "because": ["docs/adr/ADR-0010-human-gates-are-fixed.md"]
+    },
+    {
+      "name": "a content rule with no patch (binary/too large) is judged Tier C",
+      "files": [{"filename": "Directory.Build.props", "status": "modified"}],
+      "expect": "C"
+    },
+    {
+      "name": "an incomplete file list is judged Tier C",
+      "files": [{"filename": "tests/a.cs", "status": "modified", "patch": "@@ -1 +1 @@\n+x"}],
+      "expected_count": 3001,
+      "expect": "C",
+      "because": ["(file list)"]
+    },
+    {
+      "name": "the agent layer in a template is Tier C",
+      "files": [{"filename": "templates/goldpath-worker/.claude/skills/goldpath-feature/SKILL.md", "status": "modified", "patch": "@@ -1 +1 @@\n+x"}],
+      "expect": "C"
+    },
+    {
+      "name": "template code is Tier B",
+      "files": [{"filename": "templates/goldpath-worker/src/Worker/Program.cs", "status": "modified", "patch": "@@ -1 +1 @@\n+// x"}],
+      "expect": "B"
+    },
+    {
+      "name": "an added warning suppression is Tier C",
+      "files": [{"filename": "packages/Goldpath.Jobs/JobRunner.cs", "status": "modified", "patch": "@@ -1 +1,2 @@\n+#pragma warning disable CA2000\n var a = 1;"}],
+      "expect": "C"
+    },
+    {
+      "name": "a skipped test is Tier C",
+      "files": [{"filename": "tests/Goldpath.Jobs.Tests/JobRunnerTests.cs", "status": "modified", "patch": "@@ -1 +1 @@\n-    [Fact]\n+    [Fact(Skip = \"flaky\")]"}],
+      "expect": "C"
+    },
+    {
+      "name": "a migration is Tier B",
+      "files": [{"filename": "samples/corpay/src/CorPay.Api/Migrations/20261020_Init.cs", "status": "added", "patch": "@@ -0,0 +1 @@\n+// m"}],
+      "expect": "B"
+    },
+    {
+      "name": "the merge rules themselves are Tier C",
+      "files": [{"filename": ".github/merge-tiers.yml", "status": "modified", "patch": "@@ -1 +1 @@\n-x\n+y"}],
+      "expect": "C"
+    },
+    {
+      "name": "a guide page is Tier A",
+      "files": [{"filename": "docs/guide/concepts.md", "status": "modified", "patch": "@@ -1 +1 @@\n+text"}],
+      "expect": "A"
+    },
+    {
+      "name": "an empty file list is Tier A",
+      "files": [],
+      "expect": "A"
+    }
+  ],
+  "decide": [
+    {"name": "Tier C from the agent without owner-approved fails", "tier": "C", "labels": ["agent-pr", "agent-verified"], "passes": false},
+    {"name": "Tier C from the agent with owner-approved passes", "tier": "C", "labels": ["agent-pr", "agent-verified", "owner-approved"], "passes": true},
+    {"name": "Tier C opened by a human passes (the human merges it)", "tier": "C", "labels": [], "passes": true},
+    {"name": "Tier B from the agent passes", "tier": "B", "labels": ["agent-pr", "agent-verified"], "passes": true},
+    {"name": "Tier A from the agent passes", "tier": "A", "labels": ["agent-pr"], "passes": true},
+    {"name": "hold fails an agent pull request", "tier": "B", "labels": ["agent-pr", "agent-verified", "hold"], "passes": false},
+    {"name": "hold fails any pull request", "tier": "A", "labels": ["hold"], "passes": false}
+  ]
+}
