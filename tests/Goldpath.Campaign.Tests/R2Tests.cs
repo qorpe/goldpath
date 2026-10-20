@@ -194,9 +194,9 @@ public class R2Tests
         Assert.Equal(GoldpathCampaignItemState.AwaitingAck, fixture.Query(d => d.Set<GoldpathCampaignItem>().AsNoTracking().Single()).State);
 
         // Before the deadline the sweep is silent; after it, attempt 1 is a RETRYABLE failure.
-        Assert.Equal(0, await engine.SweepAckTimeoutsAsync(db, campaign, CancellationToken.None));
+        Assert.Empty(await engine.SweepAckTimeoutsAsync(db, campaign, CancellationToken.None));
         clock.Now += TimeSpan.FromMinutes(1) + TimeSpan.FromSeconds(1);
-        Assert.Equal(1, await engine.SweepAckTimeoutsAsync(db, campaign, CancellationToken.None));
+        Assert.Single(await engine.SweepAckTimeoutsAsync(db, campaign, CancellationToken.None));
         var item = fixture.Query(d => d.Set<GoldpathCampaignItem>().AsNoTracking().Single());
         Assert.Equal(GoldpathCampaignItemState.AwaitingRetry, item.State);
         Assert.Equal("ACK_TIMEOUT", item.ErrorCode);
@@ -211,7 +211,7 @@ public class R2Tests
         Assert.NotNull(await engine.ClaimAsync(db, campaign.Id, 1, CancellationToken.None));
         await engine.ApplyOutcomesAsync(db, campaign.Id, [engine.OutcomeFor(campaign.Id, 1, 2, result)], CancellationToken.None);
         clock.Now += TimeSpan.FromMinutes(2);
-        Assert.Equal(1, await engine.SweepAckTimeoutsAsync(db, campaign, CancellationToken.None));
+        Assert.Single(await engine.SweepAckTimeoutsAsync(db, campaign, CancellationToken.None));
         item = fixture.Query(d => d.Set<GoldpathCampaignItem>().AsNoTracking().Single());
         Assert.Equal(GoldpathCampaignItemState.Failed, item.State);
         Assert.Equal(2, item.Attempts);

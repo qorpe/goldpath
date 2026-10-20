@@ -487,10 +487,20 @@ public sealed class GoldpathCampaignEngine<TContext>
         var now = _time.GetUtcNow();
         var accepted = outcomes.Where(o => !o.Succeeded && o.Accepted).ToArray();
         var failed = outcomes.Where(o => !o.Succeeded && !o.Accepted).ToArray();
-        var maxAttempts = failed.Length == 0
-            ? 1
+        var policy = failed.Length == 0
+            ? null
             : await db.Set<GoldpathCampaign>().AsNoTracking()
-                .Where(c => c.Id == campaignId).Select(c => c.MaxAttempts).SingleAsync(cancellationToken);
+                .Where(c => c.Id == campaignId).Select(c => new { c.MaxAttempts, c.State }).SingleAsync(cancellationToken);
+        // The ladder runs only while the pacer still releases this campaign (or will after a
+        // resume). On a finished, aborted or expired campaign a retryable failure — an ack
+        // timeout, a replay that failed again — is terminal: AwaitingRetry there would wait
+        // for a release that never comes (R2 review #8).
+        var maxAttempts = policy is null
+            ? 1
+            : policy.State is GoldpathCampaignState.Created or GoldpathCampaignState.Enumerating
+                or GoldpathCampaignState.Running or GoldpathCampaignState.Paused
+                ? policy.MaxAttempts
+                : 0;
 
         var settled = 0;
         foreach (var attempt in outcomes.Where(o => o.Succeeded).GroupBy(o => o.Attempt))
@@ -586,9 +596,10 @@ public sealed class GoldpathCampaignEngine<TContext>
     /// <summary>
     /// The ack sweep (R2.1): an accepted item whose deadline passed without a callback is a
     /// RETRYABLE failure — the ladder applies, exhaustion lands in the repair queue. Never a
-    /// silent success. Bounded per tick; returns how many were swept.
+    /// silent success. On a campaign the pacer no longer releases (finished, aborted,
+    /// expired) the timeout is terminal at once. Bounded per call; returns the swept items.
     /// </summary>
-    public async Task<int> SweepAckTimeoutsAsync(TContext db, GoldpathCampaign campaign, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<long>> SweepAckTimeoutsAsync(TContext db, GoldpathCampaign campaign, CancellationToken cancellationToken)
     {
         var now = _time.GetUtcNow();
         var overdue = await db.Set<GoldpathCampaignItem>().AsNoTracking()
@@ -599,7 +610,7 @@ public sealed class GoldpathCampaignEngine<TContext>
             .ToListAsync(cancellationToken);
         if (overdue.Count == 0)
         {
-            return 0;
+            return [];
         }
 
         await ApplyOutcomesAsync(db, campaign.Id,
@@ -611,7 +622,7 @@ public sealed class GoldpathCampaignEngine<TContext>
             })], cancellationToken);
         GoldpathCampaignMetrics.AckTimeouts(campaign.Type, overdue.Count);
         _logger.LogWarning("Campaign {CampaignId}: {Count} accepted items passed their ack deadline without a callback.", campaign.Id, overdue.Count);
-        return overdue.Count;
+        return [.. overdue.Select(item => item.Seq)];
     }
 
     /// <summary>

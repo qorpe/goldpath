@@ -31,7 +31,7 @@ Goldpath.GoldpathCampaignCallbackResolution.Outcome.init -> void
 Goldpath.GoldpathCampaignEngine<TContext>.ExecuteItemAsync(System.IServiceProvider! services, string! typeKey, System.Guid campaignId, long seq, string! targetJson, string? tenant, int attempt, bool replay, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathCampaignActionResult!>!
 Goldpath.GoldpathCampaignEngine<TContext>.OutcomeFor(System.Guid campaignId, long seq, int attempt, Goldpath.GoldpathCampaignActionResult! result) -> Goldpath.GoldpathCampaignOutcomeMessage!
 Goldpath.GoldpathCampaignEngine<TContext>.ResolveCallbackAsync(TContext! db, string! type, string! correlationId, Goldpath.GoldpathCampaignCallbackRequest! request, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathCampaignCallbackResolution!>!
-Goldpath.GoldpathCampaignEngine<TContext>.SweepAckTimeoutsAsync(TContext! db, Goldpath.GoldpathCampaign! campaign, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<int>!
+Goldpath.GoldpathCampaignEngine<TContext>.SweepAckTimeoutsAsync(TContext! db, Goldpath.GoldpathCampaign! campaign, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<long>!>!
 Goldpath.GoldpathCampaignItem.AckDeadline.get -> System.DateTimeOffset?
 Goldpath.GoldpathCampaignItem.AckDeadline.set -> void
 Goldpath.GoldpathCampaignItem.CorrelationId.get -> string?

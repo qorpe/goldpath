@@ -53,6 +53,7 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
         var fairCredit = new Dictionary<string, Dictionary<Guid, double>>(StringComparer.Ordinal);
         var streams = new Dictionary<Guid, LeaderStream>();
         var tick = 0;
+        var nextDrainSweep = DateTimeOffset.MinValue;
         try
         {
             while (_time.GetUtcNow() < sliceEnd)
@@ -92,6 +93,7 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
                 var grants = Allocate(campaigns, demands, typeBudgets, _options.GlobalTps is null ? null : globalBudget, tick, fairCredit);
 
                 // Phase 3 — release under the grant, then the sweeps and the completion math.
+                var swept = new HashSet<Guid>();
                 for (var i = 0; i < campaigns.Count; i++)
                 {
                     if (demands[i] < 0)
@@ -100,11 +102,19 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
                     }
 
                     var spent = await ReleaseTickAsync(tickScope.ServiceProvider, campaigns[i], grants[i], tpsBudgets, chunk, cancellationToken);
+                    swept.Add(campaigns[i].Id);
                     globalBudget -= spent;
                     if (typeBudgets.ContainsKey(campaigns[i].Type))
                     {
                         typeBudgets[campaigns[i].Type] -= spent;
                     }
+                }
+
+                // Phase 4 — what is in flight drains whatever the campaign's state (R2 review #8).
+                if (_time.GetUtcNow() >= nextDrainSweep)
+                {
+                    await DrainSweepAsync(db, swept, chunk, cancellationToken);
+                    nextDrainSweep = _time.GetUtcNow() + DrainSweepEvery;
                 }
 
                 var elapsed = _time.GetElapsedTime(tickStart);
@@ -325,31 +335,7 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
         await _engine.SweepAckTimeoutsAsync(db, campaign, cancellationToken);
 
         // 3) Stale-claim sweep: a consumer died between claim and outcome — repair, never resend.
-        var staleBefore = now - _options.StaleClaimAfter;
-        var stale = await db.Set<GoldpathCampaignItem>()
-            .Where(i => i.CampaignId == campaign.Id && i.State == GoldpathCampaignItemState.Processing && i.ClaimedAt < staleBefore)
-            .Select(i => i.Seq)
-            .Take(100)
-            .ToListAsync(cancellationToken);
-        if (stale.Count > 0)
-        {
-            await db.Set<GoldpathCampaignItem>()
-                .Where(i => i.CampaignId == campaign.Id && stale.Contains(i.Seq) && i.State == GoldpathCampaignItemState.Processing)
-                .ExecuteUpdateAsync(s => s
-                    .SetProperty(i => i.State, GoldpathCampaignItemState.Failed)
-                    .SetProperty(i => i.CompletedAt, now)
-                    .SetProperty(i => i.Error, "interrupted mid-flight — confirm the provider, then replay"), cancellationToken);
-            await db.Set<GoldpathCampaign>().Where(c => c.Id == campaign.Id)
-                .ExecuteUpdateAsync(s => s.SetProperty(c => c.FailedCount, c => c.FailedCount + stale.Count), cancellationToken);
-            foreach (var seq in stale)
-            {
-                chunk.ReportItemFailure(
-                    string.Create(CultureInfo.InvariantCulture, $"{campaign.Id:N}#{seq}"),
-                    "interrupted mid-flight — confirm the provider, then replay");
-            }
-
-            _logger.LogWarning("Campaign {CampaignId}: {Count} stale claims swept to the repair queue.", campaign.Id, stale.Count);
-        }
+        await SweepStaleClaimsAsync(db, campaign.Id, now, chunk, cancellationToken);
 
         // 4) Completion math (fresh row — the sink may have flushed since we loaded).
         // On the FAILURE flip (token-guarded, so it fires exactly once) the whole failed
@@ -373,6 +359,76 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
         db.ChangeTracker.Clear();
         GoldpathCampaignMetrics.Snapshot(campaign, inFlight);
         return spent;
+    }
+
+    /// <summary>How often the drain sweep visits campaigns the release loop skipped (cheap, indexed, bounded).</summary>
+    private static readonly TimeSpan DrainSweepEvery = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// The drain sweep (R2 review #8): the release loop sweeps only the campaigns it releases
+    /// this tick, but a paused, closed-window, excluded-day, aborted, expired or finished
+    /// campaign can still hold work in flight — an acceptance waiting for a callback that
+    /// never comes, a claim whose consumer died, a replay. Every campaign whose ledger says
+    /// something is still in flight gets the same two sweeps here. On a campaign the pacer no
+    /// longer releases an ack timeout is terminal at once, and it is filed for repair.
+    /// </summary>
+    private async Task DrainSweepAsync(TContext db, HashSet<Guid> alreadySwept, GoldpathJobChunk chunk, CancellationToken cancellationToken)
+    {
+        var inFlight = await db.Set<GoldpathCampaign>().AsNoTracking()
+            .Where(c => c.ReleasedThrough > c.SucceededCount + c.FailedCount)
+            .OrderBy(c => c.CreatedAt)
+            .ToListAsync(cancellationToken);
+        var now = _time.GetUtcNow();
+        foreach (var campaign in inFlight.Where(c => !alreadySwept.Contains(c.Id)))
+        {
+            var timedOut = await _engine.SweepAckTimeoutsAsync(db, campaign, cancellationToken);
+            if (timedOut.Count > 0 && campaign.State is not (GoldpathCampaignState.Created or GoldpathCampaignState.Enumerating
+                or GoldpathCampaignState.Running or GoldpathCampaignState.Paused))
+            {
+                foreach (var seq in timedOut)
+                {
+                    chunk.ReportItemFailure(
+                        string.Create(CultureInfo.InvariantCulture, $"{campaign.Id:N}#{seq}"),
+                        "no callback before the ack deadline — confirm with the target system, then replay");
+                }
+            }
+
+            await SweepStaleClaimsAsync(db, campaign.Id, now, chunk, cancellationToken);
+        }
+
+        db.ChangeTracker.Clear();
+    }
+
+    /// <summary>A Processing claim older than <see cref="GoldpathCampaignOptions.StaleClaimAfter"/>: its consumer died mid-call — repair, never resend.</summary>
+    private async Task SweepStaleClaimsAsync(TContext db, Guid campaignId, DateTimeOffset now, GoldpathJobChunk chunk, CancellationToken cancellationToken)
+    {
+        var staleBefore = now - _options.StaleClaimAfter;
+        var stale = await db.Set<GoldpathCampaignItem>()
+            .Where(i => i.CampaignId == campaignId && i.State == GoldpathCampaignItemState.Processing && i.ClaimedAt < staleBefore)
+            .Select(i => i.Seq)
+            .Take(100)
+            .ToListAsync(cancellationToken);
+        if (stale.Count == 0)
+        {
+            return;
+        }
+
+        var swept = await db.Set<GoldpathCampaignItem>()
+            .Where(i => i.CampaignId == campaignId && stale.Contains(i.Seq) && i.State == GoldpathCampaignItemState.Processing)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(i => i.State, GoldpathCampaignItemState.Failed)
+                .SetProperty(i => i.CompletedAt, now)
+                .SetProperty(i => i.Error, "interrupted mid-flight — confirm the provider, then replay"), cancellationToken);
+        await db.Set<GoldpathCampaign>().Where(c => c.Id == campaignId)
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.FailedCount, c => c.FailedCount + swept), cancellationToken);
+        foreach (var seq in stale)
+        {
+            chunk.ReportItemFailure(
+                string.Create(CultureInfo.InvariantCulture, $"{campaignId:N}#{seq}"),
+                "interrupted mid-flight — confirm the provider, then replay");
+        }
+
+        _logger.LogWarning("Campaign {CampaignId}: {Count} stale claims swept to the repair queue.", campaignId, swept);
     }
 
     /// <summary>

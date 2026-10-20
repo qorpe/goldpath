@@ -383,7 +383,128 @@ public class R2ReviewTests
         Assert.InRange(releasedLow, (total / 4.0) - 1.5, (total / 4.0) + 1.5);
     }
 
+    // ---- finding 8: what is in flight drains, whatever the campaign's state (RFC §6 abort, R2.1 ack sweep) ----
+
+    /// <summary>
+    /// Finding 8 / RFC §6 ("claimed items drain") + R2.1 ("wait for it, but not forever"): an
+    /// acceptance nobody answers on an ABORTED campaign still meets its deadline — as a
+    /// terminal ACK_TIMEOUT failure filed for repair, never re-laddered and never stuck.
+    /// </summary>
+    [Fact]
+    public async Task AnAbortedCampaignsUnansweredAcceptance_FailsAtItsDeadline_AndIsFiledForRepair()
+    {
+        using var fixture = R2Tests.ActionFixture(sourceSize: 1);
+        fixture.Script[1] = GoldpathCampaignActionResult.Accepted("never-1", TimeSpan.FromMilliseconds(50));
+        var campaign = await AcceptOneAsync(fixture, maxAttempts: 3);
+        Assert.True((await fixture.Admin().AbortAsync(campaign.Id, "wrong list", "op", CancellationToken.None)).Ok);
+        await Task.Delay(100);
+
+        var filed = await fixture.RunPacerSliceAsync();
+
+        var item = SingleItem(fixture);
+        Assert.Equal(GoldpathCampaignItemState.Failed, item.State);
+        Assert.Equal("ACK_TIMEOUT", item.ErrorCode);
+        Assert.Equal(1, fixture.Reload(campaign.Id).FailedCount);
+        Assert.Contains(filed, f => f.ItemKey == $"{campaign.Id:N}#1");
+    }
+
+    /// <summary>
+    /// Finding 8 / RFC D5 stale-claim repair: a consumer that died mid-call on a PAUSED
+    /// campaign is swept to the repair queue too — a pause must not hide an interrupted claim.
+    /// </summary>
+    [Fact]
+    public async Task APausedCampaignsStaleClaim_IsSweptForRepair()
+    {
+        using var fixture = new CampaignFixture(R2Tests.FastTicks(o => o.StaleClaimAfter = TimeSpan.Zero), sourceSize: 1);
+        var campaign = await fixture.CreateAsync(R2Tests.Generous());
+        await fixture.EnumerateAllAsync(campaign);
+        using (var scope = fixture.Services.CreateScope())
+        {
+            await fixture.Engine.ReleaseBatchAsync(scope.ServiceProvider, fixture.Reload(campaign.Id), 1, CancellationToken.None);
+            Assert.NotNull(await fixture.Engine.ClaimAsync(scope.ServiceProvider.GetRequiredService<CampaignTestContext>(), campaign.Id, 1, CancellationToken.None));
+        }
+
+        Assert.True((await fixture.Admin().PauseAsync(campaign.Id, "op", CancellationToken.None)).Ok);
+        await Task.Delay(20);
+        var filed = await fixture.RunPacerSliceAsync();
+
+        Assert.Equal(GoldpathCampaignItemState.Failed, SingleItem(fixture).State);
+        Assert.Equal(1, fixture.Reload(campaign.Id).FailedCount);
+        Assert.Contains(filed, f => f.ItemKey == $"{campaign.Id:N}#1");
+    }
+
+    /// <summary>
+    /// Finding 8 / R2.1 + the repair story: a replay on a FINISHED campaign whose handler
+    /// answers Accepted, never called back, ends Failed(ACK_TIMEOUT) — the ladder only runs
+    /// for a campaign the pacer still releases, so it must not park the item there forever.
+    /// </summary>
+    [Fact]
+    public async Task AnAcceptedReplayOnAFinishedCampaign_TimesOutIntoFailed_NotTheLadder()
+    {
+        using var fixture = R2Tests.ActionFixture(sourceSize: 1);
+        fixture.Script[1] = GoldpathCampaignActionResult.Failed("UNSUPPORTED_DEVICE", "no client", retryable: false);
+        var campaign = await fixture.CreateAsync(R2Tests.Generous(maxAttempts: 3));
+        await fixture.RunPacerSliceAsync();
+        await fixture.ConsumeAllPublishedAsync();
+        await fixture.RunPacerSliceAsync();
+        Assert.Equal(GoldpathCampaignState.CompletedWithFailures, fixture.Reload(campaign.Id).State);
+
+        fixture.Script[1] = GoldpathCampaignActionResult.Accepted("replay-1", TimeSpan.FromMilliseconds(50));
+        using (var scope = fixture.Services.CreateScope())
+        {
+            await fixture.Engine.ReplayItemAsync(scope.ServiceProvider, $"{campaign.Id:N}#1", CancellationToken.None);
+        }
+
+        Assert.Equal(GoldpathCampaignItemState.AwaitingAck, SingleItem(fixture).State);
+        Assert.Equal(0, fixture.Reload(campaign.Id).FailedCount);
+        await Task.Delay(100);
+        await fixture.RunPacerSliceAsync();
+
+        var item = SingleItem(fixture);
+        Assert.Equal(GoldpathCampaignItemState.Failed, item.State);
+        Assert.Equal("ACK_TIMEOUT", item.ErrorCode);
+        Assert.Equal(1, fixture.Reload(campaign.Id).FailedCount);
+    }
+
+    /// <summary>
+    /// Finding 8 / R1.1 ("in-flight items still drain"): a closed window stops RELEASES, not
+    /// the ack sweep — an overdue acceptance walks its ladder overnight instead of holding
+    /// an in-flight slot until morning.
+    /// </summary>
+    [Fact]
+    public async Task AClosedWindow_StillSweepsOverdueAcceptances()
+    {
+        using var fixture = R2Tests.ActionFixture(o => o.RetryJitter = 0, sourceSize: 1);
+        fixture.Script[1] = GoldpathCampaignActionResult.Accepted("night-1", TimeSpan.FromMilliseconds(50));
+        var campaign = await AcceptOneAsync(fixture, maxAttempts: 3);
+        var hour = DateTime.UtcNow.Hour;
+        Assert.True((await fixture.Admin().ThrottleAsync(campaign.Id, new GoldpathCampaignThrottle(
+            WindowStart: new TimeOnly((hour + 2) % 24, 0), WindowEnd: new TimeOnly((hour + 3) % 24, 0), TimeZoneId: "UTC"), "op", CancellationToken.None)).Ok);
+        await Task.Delay(100);
+
+        await fixture.RunPacerSliceAsync();
+
+        var item = SingleItem(fixture);
+        Assert.Equal(GoldpathCampaignItemState.AwaitingRetry, item.State);   // still Running: the ladder applies
+        Assert.Equal("ACK_TIMEOUT", item.ErrorCode);
+    }
+
     // ---- helpers ----
+
+    /// <summary>Creates, enumerates, releases and consumes one item whose scripted handler answers Accepted.</summary>
+    private static async Task<GoldpathCampaign> AcceptOneAsync(CampaignFixture fixture, int maxAttempts)
+    {
+        var campaign = await fixture.CreateAsync(R2Tests.Generous(maxAttempts));
+        await fixture.EnumerateAllAsync(campaign);
+        using (var scope = fixture.Services.CreateScope())
+        {
+            await fixture.Engine.ReleaseBatchAsync(scope.ServiceProvider, fixture.Reload(campaign.Id), 1, CancellationToken.None);
+        }
+
+        await fixture.ConsumeAllPublishedAsync();
+        Assert.Equal(GoldpathCampaignItemState.AwaitingAck, SingleItem(fixture).State);
+        return campaign;
+    }
 
     private static async Task<Guid> CreateEnumeratedAsync(CampaignFixture fixture, string type, GoldpathCampaignPriority priority)
     {
