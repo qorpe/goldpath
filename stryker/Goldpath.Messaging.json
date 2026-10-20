@@ -2,7 +2,9 @@
   "stryker-config": {
     "project": "Goldpath.Messaging.csproj",
     "test-projects": [
-      "../../tests/Goldpath.Messaging.Tests/Goldpath.Messaging.Tests.csproj"
+      "../../tests/Goldpath.Messaging.Tests/Goldpath.Messaging.Tests.csproj",
+      "../../tests/Goldpath.Messaging.Conformance/Goldpath.Messaging.Conformance.csproj",
+      "../../tests/Goldpath.IntegrationTests/Goldpath.IntegrationTests.csproj"
     ],
     "target-framework": "net10.0",
     "reporters": [
