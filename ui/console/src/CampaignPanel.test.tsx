@@ -6,7 +6,7 @@ import { CampaignPanel, describeThrottle, toThrottle } from "./CampaignPanel";
 const emptyDraft = {
   tps: "", dailyQuota: "", maxInFlight: "", windowStart: "", windowEnd: "", timeZoneId: "",
   clearDailyQuota: false, clearWindow: false,
-  excludedDays: [] as string[], endDate: "", maxAttempts: "", clearExcludedDays: false, clearEndDate: false,
+  excludedDays: [] as string[], endDate: "", maxAttempts: "", clearExcludedDays: false, clearEndDate: false, priority: "",
 };
 
 const campaign = (over: Partial<CampaignInfo> = {}): CampaignInfo => ({
@@ -31,6 +31,7 @@ const campaign = (over: Partial<CampaignInfo> = {}): CampaignInfo => ({
   excludedDays: [],
   endDate: null,
   maxAttempts: 1,
+  priority: "Normal",
   windowOpenNow: true,
   etaSecondsAtCurrentTps: 300,
   createdAt: "2026-07-27T06:00:00Z",
@@ -84,6 +85,11 @@ describe("the throttle patch (a null field KEEPS the server's current value)", (
 
   it("sends nothing for an untouched form", () => {
     expect(toThrottle(draft)).toEqual({});
+  });
+
+  it("R2.5: priority travels only when chosen, and the confirm line names it", () => {
+    expect(toThrottle({ ...draft, priority: "High" })).toEqual({ priority: "High" });
+    expect(describeThrottle({ priority: "Low", tps: 5 })).toBe("5 tps, priority Low");
   });
 
   it("sends only what the operator typed", () => {
@@ -209,16 +215,17 @@ describe("the campaign governor panel", () => {
     await open();
     await userEvent.type(await screen.findByLabelText("tps"), "40");
     await userEvent.click(screen.getByLabelText("clear daily quota"));
+    await userEvent.selectOptions(screen.getByLabelText("priority"), "High");
 
     await userEvent.click(screen.getByRole("button", { name: "throttle" }));
     const dialog = screen.getByRole("alertdialog", { name: "confirm throttle" });
-    expect(dialog).toHaveTextContent("40 tps, no daily quota");
+    expect(dialog).toHaveTextContent("40 tps, no daily quota, priority High");
     await userEvent.click(within(dialog).getByRole("button", { name: "throttle" }));
 
     await waitFor(() => expect(posted).toHaveLength(1));
     expect(posted[0].url).toContain(`/goldpath/admin/campaign/${campaign().id}/throttle`);
     // maxInFlight and the window are untouched, so they are ABSENT — the server keeps them.
-    expect(JSON.parse(String(posted[0].body))).toEqual({ tps: 40, clearDailyQuota: true });
+    expect(JSON.parse(String(posted[0].body))).toEqual({ tps: 40, clearDailyQuota: true, priority: "High" });
   });
 
   it("the verb's answer OUTLIVES the buttons that produced it", async () => {

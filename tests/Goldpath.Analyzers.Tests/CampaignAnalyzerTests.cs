@@ -19,9 +19,14 @@ public class CampaignAnalyzerTests
             public sealed class GoldpathCampaignTypeBuilder<TTarget>
             {
                 public GoldpathCampaignTypeBuilder<TTarget> MaxTargets(long maxTargets) => this;
+                public GoldpathCampaignTypeBuilder<TTarget> SignedCallbacks(string secret, string previousSecret = null) => this;
                 public GoldpathCampaignTypeBuilder<TTarget> Targets(System.Func<System.IServiceProvider, System.Collections.Generic.IReadOnlyDictionary<string, string>, System.Collections.Generic.IAsyncEnumerable<TTarget>> targets) => this;
             }
             public sealed class GoldpathCampaignItemContext { }
+            public static class GoldpathCampaignCallbackEndpoints
+            {
+                public static object MapGoldpathCampaignCallbacks<TContext>(this object endpoints, string prefix = "/goldpath/campaign/callbacks", string policy = null) => endpoints;
+            }
             public interface IGoldpathCampaignItemHandler<in TTarget> where TTarget : class
             {
                 System.Threading.Tasks.Task ExecuteAsync(TTarget target, GoldpathCampaignItemContext context, System.Threading.CancellationToken cancellationToken);
@@ -115,6 +120,43 @@ public class CampaignAnalyzerTests
             public sealed class MailService
             {
                 public object Make() => new MailKit.Net.Smtp.SmtpClient();
+            }
+            """);
+    // ── GP1704: callbacks nobody can sign ─────────────────────────────────────────────
+    [Fact]
+    public Task GOLDPATH1704_flags_callbacks_mapped_with_no_signing_type()
+        => Verify<CampaignCallbackSigningAnalyzer>("""
+            public static class Composition
+            {
+                public static void Wire(Goldpath.GoldpathCampaignOptions options, object app)
+                {
+                    options.AddCampaign<WinbackTarget>("winback", c => c.MaxTargets(2000000).Targets((sp, p) => null!));
+                    {|#0:Goldpath.GoldpathCampaignCallbackEndpoints.MapGoldpathCampaignCallbacks<FakeDb>(app)|};
+                }
+            }
+            """,
+            new DiagnosticResult(Descriptors.CampaignCallbacksWithoutSigning).WithLocation(0));
+
+    [Fact]
+    public Task GOLDPATH1704_is_silent_once_a_type_signs()
+        => Verify<CampaignCallbackSigningAnalyzer>("""
+            public static class Composition
+            {
+                public static void Wire(Goldpath.GoldpathCampaignOptions options, object app, string secret)
+                {
+                    options.AddCampaign<WinbackTarget>("winback", c => c.MaxTargets(2000000).SignedCallbacks(secret).Targets((sp, p) => null!));
+                    Goldpath.GoldpathCampaignCallbackEndpoints.MapGoldpathCampaignCallbacks<FakeDb>(app);
+                }
+            }
+            """);
+
+    [Fact]
+    public Task GOLDPATH1704_is_silent_when_callbacks_are_not_mapped()
+        => Verify<CampaignCallbackSigningAnalyzer>("""
+            public static class Composition
+            {
+                public static void Wire(Goldpath.GoldpathCampaignOptions options)
+                    => options.AddCampaign<WinbackTarget>("winback", c => c.MaxTargets(2000000).Targets((sp, p) => null!));
             }
             """);
 }

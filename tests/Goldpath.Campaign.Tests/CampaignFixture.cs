@@ -95,9 +95,12 @@ public sealed class CampaignTestContext(DbContextOptions<CampaignTestContext> op
 
 public sealed class CampaignFixture : IDisposable
 {
+    /// <summary>The winback type's callback secret (a test value, 47 bytes).</summary>
+    public const string CallbackSecret = "test-only-callback-secret-not-for-any-real-host";
+
     private readonly SqliteConnection _connection;
 
-    public CampaignFixture(Action<GoldpathCampaignOptions>? configure = null, int sourceSize = 10)
+    public CampaignFixture(Action<GoldpathCampaignOptions>? configure = null, int sourceSize = 10, Action<IServiceCollection>? extraServices = null)
     {
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
@@ -106,6 +109,7 @@ public sealed class CampaignFixture : IDisposable
         Options = new GoldpathCampaignOptions();
         Options.AddCampaign<TestTarget>("winback", c => c
             .MaxTargets(1_000)
+            .SignedCallbacks(CallbackSecret)
             .Targets((_, _) => Stream(Source)));
         configure?.Invoke(Options);
 
@@ -120,6 +124,7 @@ public sealed class CampaignFixture : IDisposable
                 Options, TimeProvider.System, NullLogger<GoldpathCampaignEngine<CampaignTestContext>>.Instance));
         services.AddScoped<IGoldpathCampaignItemHandler<TestTarget>>(_ => new TestHandler(this));
         services.AddLogging();
+        extraServices?.Invoke(services);
         Services = services.BuildServiceProvider();
 
         using var scope = Services.CreateScope();
@@ -129,6 +134,12 @@ public sealed class CampaignFixture : IDisposable
     public List<TestTarget> Source { get; }
 
     public HashSet<int> FailIds { get; } = [];
+
+    /// <summary>Typed results the scripted action handler answers per target id (unscripted ids succeed).</summary>
+    public Dictionary<int, GoldpathCampaignActionResult> Script { get; } = [];
+
+    /// <summary>The fixture's in-memory database connection (a test host can share it).</summary>
+    public SqliteConnection Connection => _connection;
 
     public List<(TestTarget Target, GoldpathCampaignItemContext Context)> Executed { get; } = [];
 
@@ -190,13 +201,13 @@ public sealed class CampaignFixture : IDisposable
 
             try
             {
-                await Engine.ExecuteItemAsync(scope.ServiceProvider, message.Type,
-                    message.CampaignId, message.Seq, item.TargetJson, null, replay: false, CancellationToken.None);
-                outcomes.Add(new GoldpathCampaignOutcomeMessage(message.CampaignId, message.Seq, true, null));
+                var result = await Engine.ExecuteItemAsync(scope.ServiceProvider, message.Type,
+                    message.CampaignId, message.Seq, item.TargetJson, null, attempt: item.Attempts + 1, replay: false, CancellationToken.None);
+                outcomes.Add(Engine.OutcomeFor(message.CampaignId, message.Seq, item.Attempts + 1, result));
             }
             catch (Exception e)
             {
-                outcomes.Add(new GoldpathCampaignOutcomeMessage(message.CampaignId, message.Seq, false, e.Message));
+                outcomes.Add(new GoldpathCampaignOutcomeMessage(message.CampaignId, message.Seq, false, e.Message) { Attempt = item.Attempts + 1 });
             }
         }
 

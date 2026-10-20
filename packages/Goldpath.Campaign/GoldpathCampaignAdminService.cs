@@ -28,6 +28,7 @@ public sealed record GoldpathCampaignInfo(
     IReadOnlyList<string> ExcludedDays,
     DateOnly? EndDate,
     int MaxAttempts,
+    GoldpathCampaignPriority Priority,
     bool WindowOpenNow,
     double? EtaSecondsAtCurrentTps,
     DateTimeOffset CreatedAt,
@@ -53,7 +54,8 @@ public sealed record GoldpathCampaignThrottle(
     DateOnly? EndDate = null,
     int? MaxAttempts = null,
     bool ClearExcludedDays = false,
-    bool ClearEndDate = false);
+    bool ClearEndDate = false,
+    GoldpathCampaignPriority? Priority = null);
 
 /// <summary>
 /// The campaign admin verbs (campaign RFC §4: create/pause/resume/abort/throttle — EVERY
@@ -173,9 +175,15 @@ public sealed class GoldpathCampaignAdminService<TContext>
             return null;
         }, ct);
 
-    /// <summary>Resumes a paused campaign (back to enumeration when the stream never finished).</summary>
-    public Task<GoldpathAdminResult> ResumeAsync(Guid id, string actor, CancellationToken ct)
-        => MutateAsync(id, "resume", actor, detail: null, campaign =>
+    /// <summary>
+    /// Resumes a paused campaign (back to enumeration when the stream never finished).
+    /// R2.6: every Released item is marked due for the orphan sweep at once — the messages
+    /// consumers refused during the pause come back on the next tick, not after
+    /// <see cref="GoldpathCampaignOptions.OrphanReleaseAfter"/>.
+    /// </summary>
+    public async Task<GoldpathAdminResult> ResumeAsync(Guid id, string actor, CancellationToken ct)
+    {
+        var result = await MutateAsync(id, "resume", actor, detail: null, campaign =>
         {
             if (campaign.State != GoldpathCampaignState.Paused)
             {
@@ -186,10 +194,23 @@ public sealed class GoldpathCampaignAdminService<TContext>
             campaign.LastVerb = $"resumed by {actor}";
             return null;
         }, ct);
+        if (!result.Ok)
+        {
+            return result;
+        }
+
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TContext>();
+        await db.Set<GoldpathCampaignItem>()
+            .Where(i => i.CampaignId == id && i.State == GoldpathCampaignItemState.Released)
+            .ExecuteUpdateAsync(s => s.SetProperty(i => i.ReleasedAt, (DateTimeOffset?)null), ct);
+        return result;
+    }
 
     /// <summary>
-    /// Aborts a campaign: unreleased/unclaimed items are terminal-stamped Aborted; items a
-    /// consumer already CLAIMED drain gracefully through the sink (never yanked mid-call).
+    /// Aborts a campaign: unreleased/unclaimed items and waiting retries are terminal-stamped
+    /// Aborted; items a consumer already CLAIMED or a target system ACCEPTED drain gracefully
+    /// through the sink and the pacer's sweeps (never yanked mid-call).
     /// </summary>
     public async Task<GoldpathAdminResult> AbortAsync(Guid id, string reason, string actor, CancellationToken ct)
     {
@@ -218,11 +239,16 @@ public sealed class GoldpathCampaignAdminService<TContext>
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TContext>();
+        // Unsent work is everything nobody is executing: never released, released but
+        // unclaimed, and a retry waiting on its rung (R2 review #4 — the pacer never visits
+        // an aborted campaign, so a waiting retry left as it was would wait forever).
         var stamped = await db.Set<GoldpathCampaignItem>()
             .Where(i => i.CampaignId == id
-                && (i.State == GoldpathCampaignItemState.Pending || i.State == GoldpathCampaignItemState.Released))
+                && (i.State == GoldpathCampaignItemState.Pending || i.State == GoldpathCampaignItemState.Released
+                    || i.State == GoldpathCampaignItemState.AwaitingRetry))
             .ExecuteUpdateAsync(s => s
                 .SetProperty(i => i.State, GoldpathCampaignItemState.Aborted)
+                .SetProperty(i => i.NextAttemptAt, (DateTimeOffset?)null)
                 .SetProperty(i => i.CompletedAt, _time.GetUtcNow()), ct);
         _logger.LogInformation("Campaign {CampaignId} aborted by {Actor}: {Stamped} unsent items terminal-stamped.", id, actor, stamped);
         return new GoldpathAdminResult(true, $"Campaign aborted; {stamped} unsent items stamped Aborted (claimed items drain).");
@@ -282,6 +308,7 @@ public sealed class GoldpathCampaignAdminService<TContext>
             campaign.ExcludedDays = effective.ExcludedDays.Count == 0 ? null : string.Join(",", effective.ExcludedDays);
             campaign.EndDate = effective.EndDate;
             campaign.MaxAttempts = effective.MaxAttempts;
+            campaign.Priority = effective.Priority;
             campaign.LastVerb = $"throttled by {actor}: {before} -> {Describe(effective)}";
             return null;
         }, ct, detailFactory: campaign => campaign.LastVerb);
@@ -347,7 +374,7 @@ public sealed class GoldpathCampaignAdminService<TContext>
             c.SucceededCount, c.FailedCount, inFlight, remaining,
             c.Tps, c.DailyQuota, c.ReleasedToday, c.MaxInFlight,
             c.WindowStart, c.WindowEnd, c.TimeZoneId,
-            [.. policy.ExcludedDays.Select(day => day.ToString())], c.EndDate, c.MaxAttempts,
+            [.. policy.ExcludedDays.Select(day => day.ToString())], c.EndDate, c.MaxAttempts, c.Priority,
             policy.IsWindowOpen(_time.GetUtcNow()) && policy.IsDayAllowed(_time.GetUtcNow()),
             eta, c.CreatedAt, c.CreatedBy, c.CompletedAt, c.LastVerb, c.Tenant);
     }
@@ -368,9 +395,10 @@ public sealed class GoldpathCampaignAdminService<TContext>
                     : current.ExcludedDays,
             EndDate = patch.ClearEndDate ? null : patch.EndDate ?? current.EndDate,
             MaxAttempts = patch.MaxAttempts ?? current.MaxAttempts,
+            Priority = patch.Priority ?? current.Priority,
         };
 
     private static string Describe(GoldpathCampaignPolicy p)
         => string.Create(CultureInfo.InvariantCulture,
-            $"tps={p.Tps} quota={p.DailyQuota?.ToString(CultureInfo.InvariantCulture) ?? "none"} maxInFlight={p.MaxInFlight} window={(p.WindowStart is null ? "always" : $"{p.WindowStart}-{p.WindowEnd} {p.TimeZoneId}")} excludedDays={(p.ExcludedDays.Count == 0 ? "none" : string.Join("+", p.ExcludedDays))} endDate={p.EndDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "open"} maxAttempts={p.MaxAttempts}");
+            $"tps={p.Tps} quota={p.DailyQuota?.ToString(CultureInfo.InvariantCulture) ?? "none"} maxInFlight={p.MaxInFlight} window={(p.WindowStart is null ? "always" : $"{p.WindowStart}-{p.WindowEnd} {p.TimeZoneId}")} excludedDays={(p.ExcludedDays.Count == 0 ? "none" : string.Join("+", p.ExcludedDays))} endDate={p.EndDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "open"} maxAttempts={p.MaxAttempts} priority={p.Priority}");
 }

@@ -41,6 +41,7 @@ public class ModelContractTests
         Assert.Equal(256, entity.FindProperty("CreatedBy")!.GetMaxLength());
         Assert.Equal(512, entity.FindProperty("LastVerb")!.GetMaxLength());
         Assert.Equal(128, entity.FindProperty("Tenant")!.GetMaxLength());
+        Assert.Equal(256, entity.FindProperty("EnumeratedKey")!.GetMaxLength());
     }
 
     [Fact]
@@ -58,8 +59,11 @@ public class ModelContractTests
         Assert.Equal("GoldpathCampaignItems", entity.GetTableName());
         Assert.Equal(["CampaignId", "Seq"], entity.FindPrimaryKey()!.Properties.Select(p => p.Name));
         Assert.Equal(1024, entity.FindProperty("Error")!.GetMaxLength());
-        var index = Assert.Single(entity.GetIndexes());
-        Assert.Equal(["CampaignId", "State"], index.Properties.Select(p => p.Name));
+        Assert.Equal(64, entity.FindProperty("ErrorCode")!.GetMaxLength());
+        Assert.Equal(128, entity.FindProperty("CorrelationId")!.GetMaxLength());
+        // R2: the ripeness range and the callback lookup each walk their own index.
+        var indexes = entity.GetIndexes().Select(i => string.Join("+", i.Properties.Select(p => p.Name))).Order().ToArray();
+        Assert.Equal(["CampaignId+CorrelationId", "CampaignId+State+NextAttemptAt", "CampaignId+State+ReleasedAt"], indexes);
     }
 
     [Fact]
@@ -104,6 +108,8 @@ public class ModelContractTests
         Assert.Null(campaign.CompletedAt);
         Assert.Null(campaign.LastVerb);
         Assert.Null(campaign.Tenant);
+        Assert.Equal(GoldpathCampaignPriority.Normal, campaign.Priority);
+        Assert.Null(campaign.EnumeratedKey);
     }
 
     [Fact]
@@ -115,6 +121,12 @@ public class ModelContractTests
         Assert.Null(item.ClaimedAt);
         Assert.Null(item.CompletedAt);
         Assert.Null(item.Error);
+        Assert.Null(item.ErrorCode);
+        Assert.Null(item.NextAttemptAt);
+        Assert.Null(item.AckDeadline);
+        Assert.Null(item.CorrelationId);
+        Assert.Null(item.ReleasedAt);
+        Assert.Equal(0, item.Attempts);
     }
 
     [Fact]
@@ -133,6 +145,13 @@ public class ModelContractTests
         Assert.Equal(3, (int)GoldpathCampaignItemState.Succeeded);
         Assert.Equal(4, (int)GoldpathCampaignItemState.Failed);
         Assert.Equal(5, (int)GoldpathCampaignItemState.Aborted);
+        Assert.Equal(6, (int)GoldpathCampaignItemState.AwaitingRetry);
+        Assert.Equal(7, (int)GoldpathCampaignItemState.AwaitingAck);
+        Assert.Equal(7, (int)GoldpathCampaignState.ExpiredIncomplete);
+        // R2.5: Normal must stay 0 — every pre-R2 row reads as Normal through the new column.
+        Assert.Equal(0, (int)GoldpathCampaignPriority.Normal);
+        Assert.Equal(1, (int)GoldpathCampaignPriority.High);
+        Assert.Equal(2, (int)GoldpathCampaignPriority.Low);
     }
 
     [Fact]
@@ -144,5 +163,11 @@ public class ModelContractTests
         var outcome = new GoldpathCampaignOutcomeMessage(Guid.Empty, 7, false, "refused");
         Assert.False(outcome.Succeeded);
         Assert.Equal("refused", outcome.Error);
+        // R2 widened the outcome without moving the positional shape: the defaults are R1's behaviour.
+        Assert.True(outcome.Retryable);
+        Assert.False(outcome.Accepted);
+        Assert.Null(outcome.ErrorCode);
+        Assert.Null(outcome.CorrelationId);
+        Assert.Null(outcome.AckDeadline);
     }
 }
