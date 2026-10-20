@@ -123,6 +123,21 @@ The 2026-09-14 table that stood here (self-hosted runner, nightly 34890001568, s
 mode — itself the successor of a 2026-09-05 local run) is superseded, not merged; both are
 in git history.
 
+**Measured 2026-10-20 — the first Campaign score**, a full run in `mutation-heavy.yml` on
+the campaign R2 hardening (PR #277) merged with `main` and the per-package test scope of
+#275 (without that scope the job outran its 340-minute timeout):
+[run 39454180800](https://github.com/qorpe/goldpath/actions/runs/39454180800/job/118736572505).
+1,053 mutants tested against the 191 Campaign unit tests.
+
+| Package | Score | Margin over break (70) |
+|---|---:|---:|
+| Campaign | 74.77 % | 4.77 |
+
+The first run of the same code before its callback surface's answers were pinned scored
+71.47 % ([run 39432932577](https://github.com/qorpe/goldpath/actions/runs/39432932577/job/118662399665));
+the weakest files there were the callback surface (48.8 %) and the pacer
+(`GoldpathCampaignJobs.cs`, 59.2 %). The pacer is the next place to add facts.
+
 ## Excluded files
 
 | Package | Excluded file | Why it is not scored |
