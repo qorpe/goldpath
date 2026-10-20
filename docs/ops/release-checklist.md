@@ -13,11 +13,12 @@ only after that PR merges green.
       green nightly that ran on the commit BEFORE its own template changes, and every app
       generated with `fileexchange` on that train failed its first build (GP2102).
 - [ ] Mutation scores current for every package whose engine paths changed since the
-      last release. The hosted-fit set (nightly matrix — sixteen packages since 2026-09-05): nightly. The big six (Jobs, Archival, Bulk,
-      Notification, Campaign, Caching): `mutation-heavy.yml` dispatch when time allows,
-      otherwise the LOCAL run is authoritative (`scripts/mutation-gate.sh Goldpath.<Package>` —
-      the FULL config name; the script now refuses a name that matches no config, because
-      `mutation-gate.sh Jobs` once ran nothing and printed GREEN).
+      last release. The nightly matrix scores every gated package — twenty-two packages since
+      2026-10-20, when the big six (Jobs, Archival, Bulk, Notification, Campaign, Caching)
+      joined it; `mutation-heavy.yml` re-scores those six on demand. A local run is
+      `scripts/mutation-gate.sh Goldpath.<Package>` — the FULL config name; the script refuses a
+      name that matches no config, because `mutation-gate.sh Jobs` once ran nothing and printed
+      GREEN.
 - [ ] Bench reference numbers re-measured (`bench.yml` dispatch) IF any engine path
       changed; ops docs updated from the run.
 
