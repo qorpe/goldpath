@@ -97,8 +97,9 @@ jobs:
         run: |
           set -uo pipefail
           labels=$(cat "$RUNNER_TEMP/labels")
-          verdict=$(python3 scripts/merge-tier.py decide --tier "$TIER" --labels "$labels")
-          status=$?
+          # The step shell is `bash -e`: without the `||` a failing verdict would exit here,
+          # before the reason reaches the log and the summary (the first red run did exactly that).
+          verdict=$(python3 scripts/merge-tier.py decide --tier "$TIER" --labels "$labels") && status=0 || status=$?
           echo "$verdict"
           { echo; echo "**Labels:** \`${labels:-none}\`"; echo; echo "**Decision:** ${verdict#::error title=merge-policy::}"; } >> "$GITHUB_STEP_SUMMARY"
           exit $status
