@@ -62,8 +62,9 @@ project ran ([nightly 39297981494](https://github.com/qorpe/goldpath/actions/run
 that scores all twenty-two packages (the long-running six at concurrency 2) and once in
 [mutation-heavy 39420917618](https://github.com/qorpe/goldpath/actions/runs/39420917618) at
 concurrency 1. Both runs gave the same three scores; their rows below carry them, the old
-number in brackets. The other eighteen rows, all but Console (below), stand at f459fe2 — their
-code and tests did not change, and the same nightly re-scored them within the noise band below.
+number in brackets. The other seventeen rows, all but Console and Campaign (below), stand at
+f459fe2 — their code and tests did not change, and the same nightly re-scored them within the
+noise band below.
 
 **Console was re-measured 2026-10-19**, a full run on the #272 branch, after the product
 console link tiles (#257) put the package's first real decision logic in it — the link URL
@@ -88,7 +89,7 @@ at f459fe2, so its row carries it (minutes not recorded).
 | DataProtection | 78.95 % | 8.95 | 1.5 | 78.95 %, 33.0 |
 | Data | 77.38 % | 7.38 | 2.3 | 77.38 %, 38.0 |
 | FileExchange | 76.92 % | 6.92 | 3.6 | 76.92 %, 31.8 |
-| Campaign | 75.13 % | 5.13 | 28.5 | never finished (OOM) |
+| Campaign | 74.77 % (75.13) | 4.77 | 56.4 | never finished (OOM) |
 | Approvals | 74.84 % | 4.84 | 3.5 | 74.84 %, 217.7 |
 | Archival | 74.49 % | 4.49 | 10.6 | never finished (OOM) |
 | Idempotency | 73.58 % | 3.58 | 2.2 | 73.58 %, 3.3 |
@@ -123,20 +124,16 @@ The 2026-09-14 table that stood here (self-hosted runner, nightly 34890001568, s
 mode — itself the successor of a 2026-09-05 local run) is superseded, not merged; both are
 in git history.
 
-**Measured 2026-10-20 — the first Campaign score**, a full run in `mutation-heavy.yml` on
-the campaign R2 hardening (PR #277) merged with `main` and the per-package test scope of
-#275 (without that scope the job outran its 340-minute timeout):
-[run 39454180800](https://github.com/qorpe/goldpath/actions/runs/39454180800/job/118736572505).
-1,053 mutants tested against the 191 Campaign unit tests.
-
-| Package | Score | Margin over break (70) |
-|---|---:|---:|
-| Campaign | 74.77 % | 4.77 |
-
-The first run of the same code before its callback surface's answers were pinned scored
-71.47 % ([run 39432932577](https://github.com/qorpe/goldpath/actions/runs/39432932577/job/118662399665));
-the weakest files there were the callback surface (48.8 %) and the pacer
-(`GoldpathCampaignJobs.cs`, 59.2 %). The pacer is the next place to add facts.
+**Campaign after revision R2 (PR #277), 2026-10-20.** The row above carries the R2 engine's
+score; the bracketed 75.13 % is the pre-R2 engine at f459fe2. R2 grew the package (typed
+results, signed callbacks, parking, the carried fair share, the drain sweep: 1,053 mutants
+tested, 191 tests), and the first run of it scored 71.47 %
+([run 39432932577](https://github.com/qorpe/goldpath/actions/runs/39432932577/job/118662399665)),
+with the new callback surface weakest at 48.8 %. Twelve tests then pinned what each callback
+answer says, the body limit, the timestamp window and the fair share's edges:
+[run 39454180800](https://github.com/qorpe/goldpath/actions/runs/39454180800/job/118736572505),
+74.77 % at concurrency 1 (minutes as measured there). The pacer (`GoldpathCampaignJobs.cs`,
+59.2 % in the first run) is the next place to add facts.
 
 ## Excluded files
 
