@@ -31,8 +31,9 @@ with a table:
 2. The free MassTransit 8.x line's maintenance window closes **around the end of 2026**
    ([messaging-exit](goldpath-messaging-exit.md) §4 A). That is about ten weeks away, and no
    family-bus RFC or repository exists yet (the `qorpe` organisation's repository list, 2026-10-20).
-3. `main` carries **no branch protection** (`gh api repos/qorpe/goldpath/branches/main/protection`
-   → 404 "Branch not protected", 2026-10-20). ADR-0010's consequence says *"gate bypassing is
+3. `main` requires a pull request (no approvals, administrators included) but lists **no
+   required status checks** (`gh api repos/qorpe/goldpath/branches/main/protection`, 2026-10-20;
+   earlier the same day it answered 404 "Branch not protected"). ADR-0010's consequence says *"gate bypassing is
    also technically closed off (branch protection + pipeline rules)"*. Today every CI gate in this
    repository reports a result, but none of them can block a merge.
 
@@ -152,7 +153,7 @@ effort (ad = agent-days) · **(e)** dependency / target train.
 
 | # | Criterion | (a) Proof | (b) Today (evidence) | (c) | (d) | (e) |
 |---|---|---|---|---|---|---|
-| G8 | **GM at PR time (T30) + branch protection with required checks** | [#273](https://github.com/qorpe/goldpath/pull/273) is merged. `main` protection lists required checks (gates, build/test, security audit, licence gate, `golden manifests (PR subset)`) and merges go through a PR. A planted red PR cannot merge | #273 open, CLEAN, 18 checks green. T30 is opened by #271. **`main` is unprotected** (API 404, 2026-10-20), which contradicts ADR-0010's consequence | A (#273) + O (setting) | done + 1 owner hour | preview.10. First of all, because it makes every later gate enforceable |
+| G8 | **GM at PR time (T30) + branch protection with required checks** | [#273](https://github.com/qorpe/goldpath/pull/273) is merged. `main` protection lists required checks (gates, build/test, security audit, licence gate, `golden manifests (PR subset)`) and merges go through a PR. A planted red PR cannot merge | #273 open, CLEAN, 18 checks green. T30 is opened by #271. **`main` requires a PR but no status check** (API, 2026-10-20), which still falls short of ADR-0010's consequence | A (#273) + O (setting) | done + 1 owner hour | preview.10. First of all, because it makes every later gate enforceable |
 | G9 | **Mutation: every gated package above break with margin** | Every gated package scores **≥ 75%** (break 70 + a 5-point margin; Q5) on two consecutive nightlies with the heavy six in the nightly. T33 is closed. ApiDefaults / Locking.SqlServer / Sdk keep their written no-gate reason | With [#275](https://github.com/qorpe/goldpath/pull/275) + [#278](https://github.com/qorpe/goldpath/pull/278) (open): Caching 69.57 → **100**, Auth 70.65 → **97.83**, Bulk 70.09 → **88.38**. Still under a 5-point margin: MultiTenancy 72.09, ServiceDefaults 72.15, Jobs 72.52, Analyzers 72.55, Idempotency 73.58, Archival 74.49, Approvals 74.84 (#278's [`stryker/README.md`](../../stryker/README.md) table, nightly [39420913374](https://github.com/qorpe/goldpath/actions/runs/39420913374)). T33: the EF cached-model blind spot in Jobs/Archival | A | 5–10 ad | preview.10 → preview.11 |
 | G10 | **Scenario campaign: all seven seeded scenarios evidenced** | Each scenario's `evidence:` names a replayable run ([scenario-campaign.md](../strategy/scenario-campaign.md)) | **1 of 7** (S-FIN-01 only) | — | — | — |
 | G10a | S-FLEET-03 (GlobalTps pair), S-FIN-02 (hold vs erasure), S-OPS-01 (pause-all survives restart + audit), S-OPS-02 (refusals from the screen, zero 500s) | each one a test or e2e run, linked | `needs: local` for all four; none written | A | 1–2 ad each | preview.10. The FLEET scenario runs on the R2 train |
