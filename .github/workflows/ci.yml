@@ -31,6 +31,8 @@ jobs:
         run: ./scripts/schema-honesty.sh
       - name: docs freshness (no link to a missing file)
         run: bash scripts/docs-freshness.sh
+      - name: merge tiers self-test (ADR-0014 — the rules this PR proposes still put every fixture where it belongs)
+        run: python3 scripts/merge-tier.py selftest
       - name: security audit (known CVEs fail the PR — nightly already scans; PRs must too)
         run: |
           dotnet restore -v q

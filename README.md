@@ -84,7 +84,7 @@ accessibility gate.
 |---|---|
 | `docs/strategy/` · `docs/adr/` · `docs/rfc/` | Strategy, the 10-ADR constitution, module RFCs + frozen contracts |
 | `docs/guide/` · `docs/stories/` | The adopter's path (start here) · proof stories |
-| `docs/ops/` · `docs/upgrades/` | Migrations/trace/release runbooks · per-release upgrade guides |
+| `docs/ops/` · `docs/upgrades/` | Migrations/trace/release runbooks, the agent pipeline and its merge tiers · per-release upgrade guides |
 | `schemas/manifest/v1/` | Manifest JSON Schema + valid/invalid corpus (CI corpus gate: valid must pass, invalid must fail) |
 | `packages/` · `analyzers/` | The NuGet train (20 packages) · GP#### Roslyn rules |
 | `templates/` · `tools/` | `dotnet new` pack (solution + worker) · the `goldpath` CLI |

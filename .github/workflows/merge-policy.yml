@@ -1,0 +1,153 @@
+# ADR-0014: agent-verified pull requests merge automatically — EXCEPT Tier C (decisions,
+# releases, the gates themselves, licence/security policy, the agent layer), which the owner
+# merges. This workflow is the deterministic half of that rule:
+#   - it computes the tier from the pull request's changed files, using the rules in
+#     .github/merge-tiers.yml (the ONE place they live) and scripts/merge-tier.py;
+#   - it writes the tier and the files that put it there to the job summary;
+#   - it sets exactly one `tier:A|B|C` label;
+#   - the `merge-policy` job FAILS on Tier C carrying `agent-pr` without `owner-approved`,
+#     and on `hold` — so with `merge-policy` a required check, the verifier cannot merge
+#     a Tier C change and nothing merges while a hold is on.
+# Honest limit (ADR-0014 §Identity): the agents act with the owner's GitHub identity, so a
+# label is not proof of who set it. The morning report audits every label and every merge.
+#
+# The rules and the script are read from the BASE branch: the policy that judges a pull
+# request is the one already merged, never the one the pull request proposes (a PR that
+# edits the rules is Tier C anyway). Until this file is on the base branch — its own PR —
+# the head's copy is used, once, and the summary says so.
+name: merge-policy
+
+on:
+  pull_request:
+    types: [opened, synchronize, labeled, unlabeled, reopened]
+
+permissions: {}
+
+concurrency:
+  group: merge-policy-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  merge-policy:
+    # Stable name: this is the context branch protection requires.
+    name: merge-policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      tier: ${{ steps.classify.outputs.tier }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+    steps:
+      - name: the policy as the base branch has it
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            .github
+            scripts
+      - name: is the policy on the base branch yet?
+        id: bootstrap
+        run: |
+          if [ -f scripts/merge-tier.py ] && [ -f .github/merge-tiers.yml ]; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::merge-policy bootstrap — the base branch has no policy yet, so this pull request's own copy judges it (once: the PR that introduces the policy)"
+          fi
+      - name: bootstrap — the policy as this pull request proposes it
+        if: steps.bootstrap.outputs.needed == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            .github
+            scripts
+      - name: the policy's own self-test
+        run: python3 scripts/merge-tier.py selftest
+      - name: read the pull request (labels, file count, changed files)
+        run: |
+          set -euo pipefail
+          gh api "repos/$REPO/pulls/$PR" --jq '.changed_files' > "$RUNNER_TEMP/count"
+          gh api "repos/$REPO/pulls/$PR" --jq '[.labels[].name] | join(",")' > "$RUNNER_TEMP/labels"
+          gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
+            --jq '.[] | {filename, previous_filename, status, patch}' -c > "$RUNNER_TEMP/files.jsonl"
+          echo "files listed: $(wc -l < "$RUNNER_TEMP/files.jsonl") of $(cat "$RUNNER_TEMP/count"); labels: $(cat "$RUNNER_TEMP/labels")"
+      - name: compute the tier
+        id: classify
+        run: |
+          set -euo pipefail
+          python3 scripts/merge-tier.py classify \
+            --rules .github/merge-tiers.yml \
+            --files "$RUNNER_TEMP/files.jsonl" \
+            --expected-count "$(cat "$RUNNER_TEMP/count")" \
+            --summary "$GITHUB_STEP_SUMMARY" > "$RUNNER_TEMP/tier.json"
+          cat "$RUNNER_TEMP/tier.json"
+          tier=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["tier"])' "$RUNNER_TEMP/tier.json")
+          echo "tier=$tier" >> "$GITHUB_OUTPUT"
+      - name: decide (fails on Tier C + agent-pr without owner-approved, and on hold)
+        env:
+          TIER: ${{ steps.classify.outputs.tier }}
+        run: |
+          set -uo pipefail
+          labels=$(cat "$RUNNER_TEMP/labels")
+          verdict=$(python3 scripts/merge-tier.py decide --tier "$TIER" --labels "$labels")
+          status=$?
+          echo "$verdict"
+          { echo; echo "**Labels:** \`${labels:-none}\`"; echo; echo "**Decision:** ${verdict#::error title=merge-policy::}"; } >> "$GITHUB_STEP_SUMMARY"
+          exit $status
+
+  tier-label:
+    # The ONLY job holding a write token, and it runs no code from the pull request: it sets
+    # one `tier:` label from the tier the read-only job computed. A fork's token cannot
+    # write, so forks are skipped (the tier is still in merge-policy's summary).
+    name: tier-label
+    needs: merge-policy
+    if: always() && needs.merge-policy.outputs.tier != '' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      TIER: ${{ needs.merge-policy.outputs.tier }}
+    steps:
+      - name: set exactly one tier label
+        run: |
+          set -euo pipefail
+          case "$TIER" in A|B|C) ;; *) echo "::error::unexpected tier '$TIER'"; exit 1 ;; esac
+          describe() {
+            case "$1" in
+              A) echo "ADR-0014 Tier A: merges automatically once agent-verified and green" ;;
+              B) echo "ADR-0014 Tier B: public API/templates/dependencies/migrations; merges automatically once agent-verified and green" ;;
+              C) echo "ADR-0014 Tier C: decisions, releases, gates, policy, agent layer; the owner merges" ;;
+            esac
+          }
+          colour() { case "$1" in A) echo 0e8a16 ;; B) echo fbca04 ;; C) echo b60205 ;; esac; }
+          existing=$(gh api --paginate "repos/$REPO/labels?per_page=100" --jq '.[].name')
+          for t in A B C; do
+            if ! grep -qx "tier:$t" <<<"$existing"; then
+              # A concurrent run on another PR may create it first; the add below is the real check.
+              gh api "repos/$REPO/labels" -f name="tier:$t" -f color="$(colour "$t")" -f description="$(describe "$t")" > /dev/null \
+                || echo "tier:$t was created concurrently"
+            fi
+          done
+          current=$(gh api "repos/$REPO/issues/$PR/labels" --jq '.[].name')
+          for t in A B C; do
+            if [ "$t" != "$TIER" ] && grep -qx "tier:$t" <<<"$current"; then
+              gh api -X DELETE "repos/$REPO/issues/$PR/labels/tier%3A$t" > /dev/null
+            fi
+          done
+          if ! grep -qx "tier:$TIER" <<<"$current"; then
+            gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=tier:$TIER" > /dev/null
+          fi
+          echo "tier:$TIER set on #$PR"

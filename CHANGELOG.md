@@ -4,6 +4,20 @@ All notable changes to the Goldpath packages are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: SemVer.
 
 ## [Unreleased]
+### Added
+- **Merge tiers for agent pull requests (ADR-0014, proposed).** Repository governance, no
+  package changes. `.github/workflows/merge-policy.yml` computes a pull request's tier from
+  its changed files with the rules in `.github/merge-tiers.yml` (read from the base branch,
+  applied by `scripts/merge-tier.py`), writes the tier and the files behind it to the job
+  summary, sets one `tier:A|B|C` label, and fails the `merge-policy` check on Tier C
+  (decisions, releases, the gates, licence/security policy, the agent layer) carrying
+  `agent-pr` without `owner-approved`, and on `hold`. The tier computation ships with a
+  self-test — fixtures for every rule family, the decision table, and a check that every
+  script a workflow runs is Tier C — run in `ci.yml`. The agents act with the owner's GitHub
+  identity, so Tier C is enforced by the check, the verifier's rules and the morning report,
+  not by identity; the hardening is open-threads T38. Operator page:
+  [docs/ops/agent-pipeline.md](docs/ops/agent-pipeline.md).
+
 ### Fixed
 - **Every mutation gate ran the whole solution's tests, whatever its config said.** The gate
   started Stryker at the repository root, where it finds `Goldpath.sln` and switches to

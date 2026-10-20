@@ -1,0 +1,101 @@
+# Merge tiers — ADR-0014 (agent-verified changes merge automatically). THE ONE place the
+# path rules live: the `merge-policy` workflow reads this file and scripts/merge-tier.py
+# applies it. Nothing else decides a tier.
+#
+#   C  always merged by the owner: decisions, releases, the gates themselves, licence and
+#      security policy, the agent layer. An `agent-pr` that lands here fails `merge-policy`
+#      until the owner adds `owner-approved`.
+#   B  public API, templates' code, dependencies, migrations — merges automatically once
+#      `agent-verified` and every required check is green.
+#   A  everything no rule below names (tests, docs outside the C paths, small fixes) — the
+#      default, so it takes no rules; it merges automatically like B. A and B differ only
+#      in what the morning report draws attention to.
+#
+# Semantics: a file takes the HIGHEST tier any rule gives it (a renamed file is judged by its
+# old name too); the pull request takes the highest tier of its files.
+#   'glob'          `**/` any directories or none · `**` anything · `*` one segment · `?` one char
+#   'glob | regex'  the path matches AND a changed patch line (`+`/`-` marker included) matches
+#                   the regex. No patch from the API (binary/too large) counts as a match.
+# Format: every rule single-quoted (a glob may start with `*`, which bare YAML reads as an
+# alias). The gate parses this subset itself and refuses any line it does not understand;
+# its self-test cross-checks the parse against PyYAML. Changing this file is itself Tier C.
+#
+# Rules marked EXTENSION go beyond the list the owner named on 2026-10-20 and apply that
+# decision's own principle ("the gates themselves"); the owner accepts or strikes them by
+# merging or amending ADR-0014.
+
+C:
+  # ── decisions (ADR-0010 keeps them human; ADR-0014 does not touch them) ────────────────
+  - 'docs/adr/**'                  # ADR acceptance — the constitution
+  - 'docs/rfc/**'                  # RFC acceptance; any RFC change, the practical rule
+
+  # ── releases / the train (tags → NuGet stay human regardless) ──────────────────────────
+  - 'Directory.Build.props | ^[+-].*<Version(Prefix|Suffix)>'
+  - 'templates/*/Directory.Packages.props | ^[+-].*Include="Goldpath\.'
+  - 'README.md | ^[+-].*Goldpath\.Templates@'                     # EXTENSION: template-pins.sh checks these pins
+  - 'docs/guide/getting-started.md | ^[+-].*Goldpath\.Templates@'  # EXTENSION: same pin, same gate
+  - 'CHANGELOG.md | ^[+-]## \[[0-9]'  # a version heading = a release PR; [Unreleased] entries stay A
+  - 'docs/upgrades/**'
+
+  # ── the gates themselves ──────────────────────────────────────────────────────────────────
+  - '.github/**'                   # workflows, this file, CODEOWNERS, dependabot, gm-shapes
+  - 'scripts/*gate*'               # license-gate.py, mutation-gate.sh, …
+  - 'scripts/docs-freshness.sh'
+  - 'scripts/ledger-check.sh'
+  - 'scripts/schema-honesty.sh'
+  - 'scripts/skills-parity.sh'
+  - 'scripts/template-pins.sh'
+  - 'scripts/merge-tier*'          # this gate and its fixtures
+  - 'stryker/**'                   # mutation configs and thresholds
+  # EXTENSION: every other script a workflow runs is a gate too. The self-test fails if a
+  # workflow ever runs a script these rules leave below C.
+  - 'scripts/corpus-check.sh'
+  - 'scripts/kit-freshness.sh'
+  - 'scripts/train-freshness.sh'
+  - 'scripts/product-guard.sh'
+  - 'scripts/validate-*.sh'        # the GM matrix, the CLI and the migration proofs
+  - 'scripts/console-smoke.sh'
+  - 'scripts/build-console.sh'
+  - 'scripts/review-agent.sh'
+  - 'scripts/sbom.sh'
+  # EXTENSION: lowering a verifier's severity or skipping a test switches a gate off from
+  # outside the gate's own files ("suppression without justification is forbidden").
+  - '**/.editorconfig'
+  - '**/Directory.Build.props | ^[+-].*<(TreatWarningsAsErrors|WarningsAsErrors|NoWarn|AnalysisLevel|AnalysisMode|EnforceCodeStyleInBuild)>'
+  - '**/*.csproj | ^\+.*<(NoWarn|TreatWarningsAsErrors)>'
+  - '**/*.cs | ^\+.*(#pragma warning disable|SuppressMessage)'
+  - '**/*.cs | ^\+.*\b(Fact|Theory)\b.*\bSkip\s*='
+  - 'evals/**'                     # EXTENSION: the skills' acceptance (ADR-0007) is a gate
+
+  # ── licence and security policy ───────────────────────────────────────────────────────────
+  - 'scripts/license-gate.py'      # also caught by *gate*; named so the intent is explicit
+  - 'SECURITY.md'
+
+  # ── the agent layer ───────────────────────────────────────────────────────────────────────
+  - '.claude/**'
+  - 'templates/*/.claude/**'
+  - '**/.claude/**'                # EXTENSION: the sample's byte-identical copy (skills-parity.sh)
+  - '**/CLAUDE.md'                 # EXTENSION: the operating manual the agents obey
+  - 'skills/**'
+
+B:
+  # ── public API and shipped code ─────────────────────────────────────────────────────────
+  - 'packages/**'
+  - 'analyzers/**'
+  - 'tools/**'                     # the CLI and the spec-engine pin
+  - 'schemas/**'                   # the manifest contract adopters write against
+  - 'ui/**'                        # the console every app serves
+  - 'samples/**'
+  # ── templates' code (their pins and .claude are C above) ────────────────────────────────
+  - 'templates/**'
+  # ── dependencies ────────────────────────────────────────────────────────────────────────
+  - '**/Directory.Packages.props'
+  - '**/Directory.Build.props'
+  - '**/*.csproj'
+  - '**/global.json'
+  - '**/nuget.config'
+  - '.config/**'
+  - '**/package.json'
+  - '**/pnpm-lock.yaml'
+  # ── migrations ──────────────────────────────────────────────────────────────────────────
+  - '**/Migrations/**'
