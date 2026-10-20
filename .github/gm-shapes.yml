@@ -1,0 +1,150 @@
+# The golden-manifest shapes (ADR-0008) — ONE list, read by two lanes through
+# .github/workflows/gm.yml:
+#   - nightly.yml runs EVERY shape;
+#   - ci.yml runs the shapes marked `pr: true` on every pull request that touches what a
+#     generated app is built from (open-threads T30: the matrix ran only nightly, which is
+#     how preview.8 shipped GP2102 and how PRs kept merging while the nightly was red).
+# Why each `pr: true` shape is in the PR subset — and why every other shape is left to the
+# nightly — is written in docs/strategy/golden-manifests-v1.md §6; docs-freshness holds
+# that table to this file in both directions.
+#
+# Keys: name (the shape, also the generated app's name) · args (dotnet new / goldpath new
+# arguments) · template (default goldpath-solution) · post (';'-separated goldpath verbs
+# run after generation) · viaCli ("1": generate with the CLI's verb, not dotnet new) ·
+# pr (true: also runs at PR time).
+shapes:
+  - name: GmOneAuthDefault
+    args: ""
+  - name: GmOneOpenFlow
+    args: "--auth none"
+  - name: GmFourSimple
+    args: "--db sqlserver --broker none --auth none"
+  # GM-4's OTHER dimension: the same simple shape in clean-architecture — four
+  # projects, the packages anchor riding Infrastructure, migrations owned there.
+  - name: GmFourClean
+    args: "--db sqlserver --broker none --auth none --layout clean-architecture"
+    pr: true
+  # The clean layout on the DEFAULT providers (postgres + broker + auth) with a
+  # module that maps an authed admin surface: the Application project consumes
+  # through the seam (ADR-0013), and Infrastructure lifts EF Design's vulnerable
+  # transitive on every provider — the preview.8 release found NU1903 here because
+  # no shape combined clean + postgres (2026-09-05).
+  - name: GmOneClean
+    args: "--layout clean-architecture --features fileexchange"
+  # The clean layout carrying the features whose code the layout MOVES. Neither
+  # clean shape above reaches them: GmFourClean takes no features at all, and
+  # GmOneClean keeps the default broker, which supplies Mediant.Behaviors to the
+  # Application project by accident through Goldpath.Messaging. So this shape is
+  # deliberately broker-less. It is the shape qorpe/coexist generated on 2026-09-09,
+  # and it did not build — twice, for two unrelated reasons: the entity partials and
+  # the command attribute land in Domain and Application, but only the Api csproj
+  # carried the feature-conditional package references.
+  #
+  # `audittrail` joined at the preview.9 release. It had been held back on the claim
+  # that a generated app consumes the PUBLISHED Abstractions — which is wrong for this
+  # lane: validate-gm.sh packs the repository into a local feed that shadows nuget.org
+  # at the same version, so every shape here builds against the SOURCE. The deferral
+  # cost the shape a few days of coverage and nothing else; the reasoning is kept so
+  # nobody repeats it.
+  - name: GmCleanFeatures
+    args: "--broker none --layout clean-architecture --features audittrail --features idempotency --features dataprotection --features locking"
+    pr: true
+  # GM-6's realizable half: a service head (own db, own manifest) + the YARP
+  # gateway — built by the SAME verbs an adopter runs, with the ROUTED probe in
+  # the generated smoke (gateway /api/health/ready answers through the chain).
+  - name: GmSixGateway
+    args: "--auth none"
+    post: "new service Billing;new gateway"
+    pr: true
+  # The GROWN app: born lean, then grown by the adopter's own `goldpath add feature`
+  # verbs — the CLI recipe path proven end to end (ai-sdlc-status: the verb had shipped
+  # UNPROVEN). Five recipes cover the three recipe shapes: a plain registration
+  # (audittrail, softdelete), a provider-gated one (locking), a jobs rider that brings
+  # the console (bulk), and the one that births the bus + its broker resource (outbox).
+  # Then `db add`, as the verbs' next steps tell an adopter: the recipes grow the
+  # model, and a model without its migration boots against missing tables — the
+  # shape's first nightly (2026-09-05) hung on exactly that.
+  - name: GmGrown
+    args: "--auth none --broker none"
+    post: "add feature audittrail;add feature softdelete;add feature locking;add feature bulk;add feature outbox;db add Grown"
+    pr: true
+  # The in-solution worker's parity proof (T25's last gap, 2026-09-05): an AUTHED,
+  # feature-bearing solution gains a jobs worker and a queue worker by the adopter's
+  # own verb — both inherit the floor and the features, both boot behind the AppHost.
+  - name: GmWorkerInSolution
+    args: "--features audittrail --features softdelete --features multitenancy --features bulk"
+    post: "add worker eod --trigger jobs;add worker ingest --trigger queue;add worker tick --trigger schedule;db add Workers"
+    pr: true
+  # The CLI's OWN generation verb (preview.8 coverage audit): every other shape calls
+  # dotnet new directly, so `goldpath new solution` — the command the guides teach —
+  # had unit tests and no end-to-end proof. Same shape as GmOneAuthDefault, born by
+  # the verb instead of the template invocation.
+  - name: GmOneViaCli
+    args: ""
+    viaCli: "1"
+  # The worker's generation verb, for the same reason.
+  - name: GmWorkerViaCli
+    args: "--trigger schedule"
+    template: goldpath-worker
+    viaCli: "1"
+  # The api-key auth floor: it was in the template's choice list, in the CLI's flag
+  # and in the wizard, and in NO shape — openid and none were both proven, apikey
+  # never (preview.8 coverage audit).
+  - name: GmApiKey
+    args: "--auth apikey --features bulk"
+    pr: true
+  # The nine recipes GmGrown does not run. `goldpath add feature` had fourteen
+  # recipes and six end-to-end proofs; these are the rest, grown on ONE app behind an
+  # auth floor (GmEverything proves the feature set, but only as template flags and
+  # only with --auth none). `notification` joined 2026-10-20: choosing the PR-time
+  # subset by coverage (T30) found that GmGrown + this row ran thirteen of the fourteen
+  # recipes while the docs said fourteen — the notification recipe, there since the
+  # initial import, had never run end to end.
+  - name: GmGrownRest
+    args: "--auth openid"
+    post: "add feature multitenancy;add feature idempotency;add feature dataprotection;add feature caching;add feature archival;add feature approvals;add feature fileexchange;add feature campaign;add feature notification;db add GrownRest"
+    pr: true
+  # The bulk-only customer: bulk (jobs + console riding along) with ONLY the app
+  # database — no broker, no Redis. The module×infrastructure matrix's proof row.
+  - name: GmBulkOnly
+    args: "--features bulk --broker none --auth none"
+  # Dotted solution names are the .NET norm (Company.Product) — issue #24's regression shape.
+  - name: Gm.Dotted
+    args: "--broker none --auth none"
+  # The console's shape: an operational module composes it, and the generated
+  # smoke proves it SERVES with its own bundle (no auth here, so the page is
+  # reachable — the authed shapes below assert the 401 instead).
+  - name: GmConsole
+    args: "--features bulk --auth none"
+  # The SAME shape with the auth floor up: the console's page must answer 401.
+  # Without this row the guarded branch of the generated smoke is never executed —
+  # the matrix had no shape combining auth with an operational module.
+  - name: GmConsoleAuthed
+    args: "--features bulk"
+  - name: GmEverything
+    args: "--features multitenancy --features audittrail --features softdelete --features idempotency --features dataprotection --features caching --features locking --features approvals --features fileexchange --features archival --features bulk --features notification --features campaign --auth none"
+    pr: true
+  - name: GmWorkerQueue
+    args: ""
+    template: goldpath-worker
+  - name: GmWorkerSchedule
+    args: "--trigger schedule"
+    template: goldpath-worker
+    pr: true
+  - name: GmWorkerJobs
+    args: "--trigger jobs"
+    template: goldpath-worker
+  # Worker concept parity (open-threads T25, 2026-09-03): the jobs worker with the
+  # auth floor UP — the admin surface and the console must answer 401 — carrying the
+  # table-owning features, on sqlserver so the jobs store provider flip is proven.
+  - name: GmWorkerJobsAuthed
+    args: "--trigger jobs --db sqlserver --auth openid --features audittrail --features softdelete --features locking --features fileexchange"
+    template: goldpath-worker
+    pr: true
+  # The queue worker with every feature it can compose and NO auth: the tenant rides
+  # the message header, the riders bring the jobs runtime next to the inbox, and the
+  # console SERVES from the worker's own head.
+  - name: GmWorkerQueueFeatures
+    args: "--features multitenancy --features audittrail --features softdelete --features dataprotection --features locking --features notification --auth none"
+    template: goldpath-worker
+    pr: true

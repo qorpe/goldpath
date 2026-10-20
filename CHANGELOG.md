@@ -45,6 +45,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   matrix now scores all twenty-two gated packages; `mutation-heavy.yml` stays for re-scoring
   the six on demand.
 
+### Added
+- **The golden-manifest matrix runs at PR time** (open-threads T30). ADR-0008 asks for it on
+  every template or core package change; CI ran it only nightly, which is how preview.8 shipped
+  GP2102 and how pull requests kept merging for days while the nightly was red. A pull request
+  that touches what a generated app is built from — the templates, the CLI, the analyzers, the
+  packages (the lane packs the source into a feed that shadows nuget.org), the console bundle,
+  the manifest schema, the root build files or the lane itself — now runs eleven of the
+  twenty-three shapes, in parallel, before merge, behind one check that always reports and so
+  can be required: `golden manifests (PR subset)`. The eleven are chosen by coverage — every
+  template flag value, every `add feature` recipe and every CLI verb that writes into an app
+  runs in at least one of them; `golden-manifests-v1.md` §6a argues each choice and each shape
+  left to the nightly. The shapes moved out of `nightly.yml` into `.github/gm-shapes.yml`, read
+  by one reusable `gm.yml` for both lanes (and dispatchable on any branch), and docs-freshness
+  holds the doc's table to the file's `pr: true` marks in both directions. Proven the way the
+  thread demanded: a planted GP2102 regression in the solution template turned the PR red in
+  `GmEverything` and `GmGrownRest` while the repository build stayed green, and its revert
+  turned it green again.
+
+### Fixed
+- **The `add feature notification` recipe had never run end to end.** The golden-manifests doc
+  said the two grown shapes ran all fourteen recipes; they ran thirteen. `GmGrownRest` now
+  grows `notification` too — found while choosing the PR subset by coverage.
+
 ## [0.1.0-preview.9] - 2026-10-19
 
 The repair train — and the security train. preview.8 shipped four ways for a generated or grown

@@ -50,7 +50,8 @@ Every mutating verb writes an audit row with the actor, server-side.
 Nothing here asks for trust: exactly-once is a broker round-trip test, recovery is a
 real `kill -9`, performance numbers come from a pinned CI profile you can rent
 (4 vCPU/16 GB — each module's `ops/*-benchmarks.md`), correlation is a span chain you
-can walk in Tempo ([guide](../ops/trace-correlation.md)), and the nightly matrix
-regenerates seven app shapes against real containers. When a claim and a proof
+can walk in Tempo ([guide](../ops/trace-correlation.md)), and the golden-manifest
+matrix regenerates every app shape nightly against real containers — and the covering
+subset on every pull request that could change a generated app, before it merges. When a claim and a proof
 disagree, the proof wins and the claim gets fixed — in public
 ([the CorPay gap ledger](../../samples/GAP-LEDGER.md)).

@@ -18,7 +18,7 @@ templates + AI skills + guardrails + living documentation. Not a framework — a
 - ✔ Composable packages — added to an existing project in 5 minutes (L1) or scaffolded from scratch (L3)
 - ✔ Spec-driven: `.goldpath/manifest.yaml` + OpenAPI/AsyncAPI as the single source of truth
 - ✔ AI in the development layer: skills generate, guardrails verify, humans approve
-- ✔ Proof-driven: every claim below is a test/bench that runs in CI (nightly 10-shape golden-manifest matrix, real containers)
+- ✔ Proof-driven: every claim below is a test/bench that runs in CI (the golden-manifest matrix on real containers: every shape nightly, and the covering subset on every pull request that could change a generated app)
 - ✘ Not a framework (imposes no structure), no custom DSL, no wrappers around Microsoft
 
 ## Quickstart

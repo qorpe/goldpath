@@ -126,12 +126,29 @@ for verb in sorted(verbs):
     if f"goldpath {verb}" not in reference:
         fail.append(f"CLI verb 'goldpath {verb}' missing from docs/guide/cli-reference.md")
 
-# 4. Every golden-manifest shape in the nightly matrix is in the golden-manifests doc.
-nightly = read(".github", "workflows", "nightly.yml")
+# 4. Every golden-manifest shape (.github/gm-shapes.yml — the nightly runs them all) is a
+#    row of the golden-manifests doc's §6 table, every row there is a shape, and the doc's
+#    "Runs" column says PR exactly for the shapes marked `pr: true` (open-threads T30: the
+#    PR-time subset is chosen by coverage, and the doc is where the choice is argued).
+shapes_text = read(".github", "gm-shapes.yml")
 gm_doc = read("docs", "strategy", "golden-manifests-v1.md")
-for shape in re.findall(r"- name: (Gm[A-Za-z.]+)", nightly):
-    if shape not in gm_doc:
-        fail.append(f"nightly shape {shape} missing from docs/strategy/golden-manifests-v1.md")
+shapes = {}
+for block in re.split(r"\n  - name: ", shapes_text)[1:]:
+    name = block.split("\n", 1)[0].strip()
+    shapes[name] = bool(re.search(r"^    pr: true\s*$", block, re.M))
+doc_rows = {}
+for m in re.finditer(r"^\| (Gm[A-Za-z.]+) \|(.*)\|\s*$", gm_doc, re.M):
+    doc_rows[m.group(1)] = "PR" in m.group(2).rsplit("|", 1)[-1]
+for shape, pr in shapes.items():
+    if shape not in doc_rows:
+        fail.append(f"shape {shape} (gm-shapes.yml) has no row in docs/strategy/golden-manifests-v1.md §6")
+    elif doc_rows[shape] != pr:
+        fail.append(f"shape {shape}: gm-shapes.yml says pr={pr}, the doc's Runs column says {'PR' if doc_rows[shape] else 'nightly only'}")
+for shape in doc_rows:
+    if shape not in shapes:
+        fail.append(f"docs/strategy/golden-manifests-v1.md §6 lists {shape}, which .github/gm-shapes.yml does not run")
+if not any(shapes.values()):
+    fail.append(".github/gm-shapes.yml marks no shape `pr: true` — the PR-time lane would run nothing")
 
 # 4b. Every integration event a PACKAGE publishes is catalogued with its fields in the
 #     events guide — the wire contract a consumer binds to may not be undocumented
@@ -240,7 +257,7 @@ if fail:
     for f in fail:
         print(f"  {f}")
     sys.exit(1)
-print(f"── inventory sync: {len(packages)} packages, {len(verbs)} CLI verbs, nightly shapes, scripts and templates all documented")
+print(f"── inventory sync: {len(packages)} packages, {len(verbs)} CLI verbs, golden-manifest shapes (and their PR subset), scripts and templates all documented")
 PY
 STATUS=$(( STATUS + $? ))
 exit $(( STATUS > 0 ? 1 : 0 ))
