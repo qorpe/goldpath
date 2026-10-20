@@ -245,10 +245,12 @@ public sealed class GoldpathCampaignEngine<TContext>
         // Ripeness filters BEFORE the allowance truncates (review R3): a backlog of
         // not-yet-ripe low-Seq items must never starve a ripe item behind them. R2.3
         // persists the ripe instant per item (jittered at failure time), so the query is
-        // one indexed range on (CampaignId, State, NextAttemptAt).
+        // one indexed range on (CampaignId, State, NextAttemptAt). A row with NO instant
+        // predates the column (R1 wrote AwaitingRetry without one): it is ripe — the
+        // CampaignR2 backfill stamps its R1 rung, and this is the net if that step was missed.
         var due = await db.Set<GoldpathCampaignItem>().AsNoTracking()
             .Where(i => i.CampaignId == campaign.Id && i.State == GoldpathCampaignItemState.AwaitingRetry
-                && i.NextAttemptAt <= now)
+                && (i.NextAttemptAt == null || i.NextAttemptAt <= now))
             .OrderBy(i => i.Seq)
             .Select(i => i.Seq)
             .Take(allowance)
@@ -341,7 +343,8 @@ public sealed class GoldpathCampaignEngine<TContext>
     /// A RIPE AwaitingRetry row claims too: the leader publishes BEFORE it marks (crash
     /// safety), and on a real broker the retry's message can reach a consumer before the
     /// mark lands — refusing it would drop every retry into the orphan sweep's wait.
-    /// An unripe one still refuses, so a stale duplicate cannot jump the ladder.
+    /// An unripe one still refuses, so a stale duplicate cannot jump the ladder; a row with no
+    /// ripe instant predates R2 and is ripe by the same rule the release query reads.
     /// </summary>
     public async Task<GoldpathCampaignItem?> ClaimAsync(TContext db, Guid campaignId, long seq, CancellationToken cancellationToken)
     {
@@ -349,7 +352,7 @@ public sealed class GoldpathCampaignEngine<TContext>
         var claimed = await db.Set<GoldpathCampaignItem>()
             .Where(i => i.CampaignId == campaignId && i.Seq == seq
                 && (i.State == GoldpathCampaignItemState.Released || i.State == GoldpathCampaignItemState.Pending
-                    || (i.State == GoldpathCampaignItemState.AwaitingRetry && i.NextAttemptAt <= now))
+                    || (i.State == GoldpathCampaignItemState.AwaitingRetry && (i.NextAttemptAt == null || i.NextAttemptAt <= now)))
                 && db.Set<GoldpathCampaign>().Any(c => c.Id == campaignId && c.State == GoldpathCampaignState.Running))
             .ExecuteUpdateAsync(s => s
                 .SetProperty(i => i.State, GoldpathCampaignItemState.Processing)

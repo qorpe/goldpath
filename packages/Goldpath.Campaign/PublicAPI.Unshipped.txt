@@ -101,3 +101,5 @@ Goldpath.GoldpathCampaign.EnumeratedKey.get -> string?
 Goldpath.GoldpathCampaign.EnumeratedKey.set -> void
 Goldpath.GoldpathCampaignType.ResumesByKey.get -> bool
 Goldpath.GoldpathCampaignTypeBuilder<TTarget>.TargetsAfter(System.Func<System.IServiceProvider!, System.Collections.Generic.IReadOnlyDictionary<string!, string!>!, string?, System.Collections.Generic.IAsyncEnumerable<TTarget!>!>! targets, System.Func<TTarget!, string!>! keyOf) -> Goldpath.GoldpathCampaignTypeBuilder<TTarget!>!
+Goldpath.GoldpathCampaignMigrations
+static Goldpath.GoldpathCampaignMigrations.GoldpathCampaignR2Backfill(this Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder! migrationBuilder, string? schema = null) -> Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder!

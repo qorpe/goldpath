@@ -208,8 +208,9 @@ public sealed class GoldpathCampaignAdminService<TContext>
     }
 
     /// <summary>
-    /// Aborts a campaign: unreleased/unclaimed items are terminal-stamped Aborted; items a
-    /// consumer already CLAIMED drain gracefully through the sink (never yanked mid-call).
+    /// Aborts a campaign: unreleased/unclaimed items and waiting retries are terminal-stamped
+    /// Aborted; items a consumer already CLAIMED or a target system ACCEPTED drain gracefully
+    /// through the sink and the pacer's sweeps (never yanked mid-call).
     /// </summary>
     public async Task<GoldpathAdminResult> AbortAsync(Guid id, string reason, string actor, CancellationToken ct)
     {
@@ -238,11 +239,16 @@ public sealed class GoldpathCampaignAdminService<TContext>
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TContext>();
+        // Unsent work is everything nobody is executing: never released, released but
+        // unclaimed, and a retry waiting on its rung (R2 review #4 — the pacer never visits
+        // an aborted campaign, so a waiting retry left as it was would wait forever).
         var stamped = await db.Set<GoldpathCampaignItem>()
             .Where(i => i.CampaignId == id
-                && (i.State == GoldpathCampaignItemState.Pending || i.State == GoldpathCampaignItemState.Released))
+                && (i.State == GoldpathCampaignItemState.Pending || i.State == GoldpathCampaignItemState.Released
+                    || i.State == GoldpathCampaignItemState.AwaitingRetry))
             .ExecuteUpdateAsync(s => s
                 .SetProperty(i => i.State, GoldpathCampaignItemState.Aborted)
+                .SetProperty(i => i.NextAttemptAt, (DateTimeOffset?)null)
                 .SetProperty(i => i.CompletedAt, _time.GetUtcNow()), ct);
         _logger.LogInformation("Campaign {CampaignId} aborted by {Actor}: {Stamped} unsent items terminal-stamped.", id, actor, stamped);
         return new GoldpathAdminResult(true, $"Campaign aborted; {stamped} unsent items stamped Aborted (claimed items drain).");
