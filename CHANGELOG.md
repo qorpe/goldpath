@@ -18,7 +18,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   runs in at least one of them; `golden-manifests-v1.md` §6a argues each choice and each shape
   left to the nightly. The shapes moved out of `nightly.yml` into `.github/gm-shapes.yml`, read
   by one reusable `gm.yml` for both lanes (and dispatchable on any branch), and docs-freshness
-  holds the doc's table to the file's `pr: true` marks in both directions.
+  holds the doc's table to the file's `pr: true` marks in both directions. Proven the way the
+  thread demanded: a planted GP2102 regression in the solution template turned the PR red in
+  `GmEverything` and `GmGrownRest` while the repository build stayed green, and its revert
+  turned it green again.
 
 ### Fixed
 - **The `add feature notification` recipe had never run end to end.** The golden-manifests doc
