@@ -31,7 +31,7 @@ entry of `CHANGELOG.md` names that train; this line names no version because a p
 | [goldpath-archival](goldpath-archival.md) | Goldpath.Archival | implemented |
 | [goldpath-bulk](goldpath-bulk.md) | Goldpath.Bulk (ladder L3) | implemented |
 | [goldpath-notification](goldpath-notification.md) | Goldpath.Notification | implemented |
-| [goldpath-campaign](goldpath-campaign.md) | Goldpath.Campaign (ladder L4) | implemented |
+| [goldpath-campaign](goldpath-campaign.md) | Goldpath.Campaign (ladder L4) | implemented (R1 published; R2 on `main`, ships with preview.10) — revision **R3** (scheduled start + `Ready`, target-system ceilings as data, `MaxAwaitingAck`, a policy version on throttle, auto-suspend + `Suspended`) **PROPOSED** (2026-10-21): merging it is the owner's acceptance, seven questions open (Q1–Q7), code slices follow; tracked as `../strategy/open-threads.md` T39 |
 | [goldpath-template](goldpath-template.md) | `dotnet new` solution pack | implemented |
 | [goldpath-template-completion](goldpath-template-completion.md) | template completion set | implemented |
 | [goldpath-migrations](goldpath-migrations.md) | migrations discipline + `goldpath db` + bundle | implemented (H1) |
