@@ -13,7 +13,7 @@ Re-run and update this file whenever the enumeration, release or sink path chang
 
 ## Reading the numbers
 
-- **Enumeration is not the bottleneck:** 65k rows/s means even the TT-Mobile-scale 30M
+- **Enumeration is not the bottleneck:** 65k rows/s means even a device-fleet-scale 30M
   plan materializes inside a coffee break — and it streams, so memory stays flat.
 - **The pacer's −6.7% includes the cold start:** the measured window opens BEFORE the
   first tick banks budget and while the same slice is still enumerating; steady-state
