@@ -24,6 +24,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   three mutants only an unrelated benchmark killed). Caching scores 69.57 %, below the break,
   in both modes — open thread T32. The gate also streams the scope lines it used to discard
   (`tail -4`), and both mutation workflows keep the full log and Stryker's JSON report.
+- **Caching sat below its mutation break, and Bulk and Auth cleared theirs inside the noise.**
+  The honest scores from the scope fix put Caching at 69.57 % (open thread T32), Bulk at
+  70.09 % and Auth at 70.65 % — the last two within the ±1 point a same-commit rerun moves.
+  Tests, not a lower break and not an exclusion, moved them, each citing the clause it proves:
+  Caching to **100.00 %** (the tiers, the configuration section, the default TTL and the
+  injected key helper, all asserted from the container an app resolves), Auth to **97.83 %**
+  (the ops roles, the audience guard's exact edges, HTTPS-only metadata, the failure meter, the
+  binding's typed 403, and `UseGoldpathAuth` authenticating on a bare pipeline) and Bulk to
+  **88.38 %**. Bulk's largest gap was a test reading a CACHED model: EF builds a context type's
+  model once per process, so in Stryker's long-lived test host the model contract tests never
+  saw `AddGoldpathBulk` run under a mutant, and 23 mutants survived assertions written to kill
+  them; the rest were an engine never observed mid-batch, where the terminal recount hides a
+  wrong counter. The same cached-model blind spot sits in the Jobs and Archival model suites
+  (open thread T33). Measured in the nightly and on the heavy lane alike, same scores.
+- **Six packages were mutation-tested only when somebody remembered to dispatch them.** Jobs,
+  Archival, Bulk, Notification, Campaign and Caching ran in the dispatch-only
+  `mutation-heavy.yml`, which is how Caching stayed red for seven weeks unseen. With their
+  scope fixed they finish in under 15 minutes at the nightly's concurrency, so the nightly
+  matrix now scores all twenty-two gated packages; `mutation-heavy.yml` stays for re-scoring
+  the six on demand.
 
 ## [0.1.0-preview.9] - 2026-10-19
 

@@ -20,8 +20,12 @@ public sealed class RecordingHandler : IGoldpathBulkRowHandler<PaymentRow>
 {
     public List<(PaymentRow Row, GoldpathBulkRowContext Context)> Executed { get; } = [];
 
+    /// <summary>Runs first on every invocation — lets a test look at the world the handler sees.</summary>
+    public Action<PaymentRow, GoldpathBulkRowContext>? Probe { get; set; }
+
     public Task ExecuteAsync(PaymentRow row, GoldpathBulkRowContext context, CancellationToken cancellationToken)
     {
+        Probe?.Invoke(row, context);
         if (row.Note == "FAIL")
         {
             throw new InvalidOperationException($"scripted failure for row {context.RowNumber}");

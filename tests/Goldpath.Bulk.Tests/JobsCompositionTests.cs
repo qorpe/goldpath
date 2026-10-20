@@ -40,6 +40,39 @@ public class JobsCompositionTests : IDisposable
         Assert.Equal(2, plan.TotalItems);
     }
 
+    /// <summary>The intake run plans only what still needs validating: Received and Validating (a resumed chunk), never a decided batch.</summary>
+    [Fact]
+    public async Task Validate_plan_takes_only_received_and_resumed_batches()
+    {
+        using var scope = _fixture.Scope();
+        var (received, _) = await _fixture.Engine.IngestAsync(scope.ServiceProvider, "payments",
+            BulkFixture.Csv(("E1", "T", "1", null)), "a.csv", null, CancellationToken.None);
+        var (resumed, _) = await _fixture.Engine.IngestAsync(scope.ServiceProvider, "payments",
+            BulkFixture.Csv(("E2", "T", "2", null)), "b.csv", null, CancellationToken.None);
+        await _fixture.IngestValidatedAsync(BulkFixture.Csv(("E3", "T", "3", null)));
+        _fixture.Mutate(db => db.Set<GoldpathBulkBatch>().Single(b => b.Id == resumed.Id).State = GoldpathBulkBatchState.Validating);
+
+        var plan = await ValidateJob().PlanAsync(CreateContext(scope.ServiceProvider), CancellationToken.None);
+
+        Assert.Equal([$"validate:{received.Id:N}", $"validate:{resumed.Id:N}", "purge:files"], plan.ChunkPayloads);
+    }
+
+    /// <summary>D6: the intake run's trailing <c>purge:files</c> chunk IS the retention sweep.</summary>
+    [Fact]
+    public async Task The_purge_tail_chunk_deletes_expired_files()
+    {
+        using var fixture = new BulkFixture(b => b.DeleteFileAfter(TimeSpan.FromHours(1)));
+        var batch = await fixture.IngestValidatedAsync(BulkFixture.Csv(("E1", "T", "1", null)));
+        using var scope = fixture.Scope();
+        Assert.True((await fixture.Engine.RejectAsync(scope.ServiceProvider, batch.Id, "ops", "wrong cutoff", CancellationToken.None)).Ok);
+        fixture.Mutate(db => db.Set<GoldpathBulkBatch>().Single(b => b.Id == batch.Id).DecidedAt = DateTimeOffset.UtcNow.AddHours(-2));
+
+        await new GoldpathBulkValidateJob<BulkTestContext>(fixture.Engine, fixture.Options, TimeProvider.System)
+            .ExecuteChunkAsync(BulkFixture.MakeChunk(0, "purge:files"), CreateContext(scope.ServiceProvider), CancellationToken.None);
+
+        Assert.Equal(0, fixture.Query(db => db.Set<GoldpathBulkFile>().Count()));
+    }
+
     [Fact]
     public async Task Execute_plan_chunks_each_adopted_batch_over_its_row_number_space()
     {

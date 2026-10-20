@@ -2,7 +2,7 @@
 
 One config per package (`Goldpath.<Package>.json`), all at the same thresholds: high 85,
 low 75, **break 70** — `scripts/mutation-gate.sh <Package>` runs one, the nightly matrix
-runs the hosted-fit set, `mutation-heavy.yml` the six long-running ones. Stryker JSON
+runs all of them, `mutation-heavy.yml` re-runs the six long-running ones on demand. Stryker JSON
 cannot carry comments, so every `mutate` exclusion and every `ignore-methods` entry is
 justified HERE (ADR-0005: suppression is visible and justified at every layer). An
 exclusion without a row below is a finding.
@@ -39,7 +39,7 @@ borrow exactly those — not every container-backed story that happens to pass t
 | Messaging | `Goldpath.Messaging.Conformance` | The seam's own conformance suite (ADR-0013): `S2_1_exactly_once_…` is the outbox's exactly-once contract (1 mutant). |
 | Messaging | `Goldpath.IntegrationTests` | `Committed_transaction_delivers_exactly_once` and `Rolled_back_transaction_publishes_nothing` prove the outbox registration against real Postgres + RabbitMQ (3 mutants). |
 | Locking | `Goldpath.IntegrationTests` | `Exactly_one_competitor_holds_the_lock_and_release_hands_it_over` and `Tenant_scoped_names_do_not_contend_across_tenants` contend for a real lock; the unit suite has no second holder (1 mutant). |
-| Caching | `Goldpath.IntegrationTests` | `A_second_host_with_a_cold_l1_reads_the_value_from_redis_l2` is the only proof of the Redis L2 wiring (3 mutants). The package stays BELOW the break with it — see the measured scores. |
+| Caching | `Goldpath.IntegrationTests` | `A_second_host_with_a_cold_l1_reads_the_value_from_redis_l2` is the only proof of the Redis L2 wiring (3 mutants). With it the package sat BELOW the break until `CachingCompositionTests` (2026-10-20) — see the measured scores. |
 
 ## Measured scores
 
@@ -57,12 +57,23 @@ project ran ([nightly 39297981494](https://github.com/qorpe/goldpath/actions/run
 2026-10-19; of the heavy six only Caching ever finished a hosted run in that mode — red — in
 [mutation-heavy 39378794363](https://github.com/qorpe/goldpath/actions/runs/39378794363)).
 
+**Caching, Auth and Bulk were re-measured the same day** at commit fe968b5, after the tests of
+#278 — once in the first [nightly 39420913374](https://github.com/qorpe/goldpath/actions/runs/39420913374)
+that scores all twenty-two packages (the long-running six at concurrency 2) and once in
+[mutation-heavy 39420917618](https://github.com/qorpe/goldpath/actions/runs/39420917618) at
+concurrency 1. Both runs gave the same three scores; their rows below carry them, the old
+number in brackets. The other nineteen rows stand at f459fe2 — their code and tests did not
+change, and the same nightly re-scored them within the noise band below.
+
 | Package | Score | Margin over break (70) | Minutes | Solution mode (score, minutes) |
 |---|---:|---:|---:|---|
+| Caching | 100.00 % (69.57) | 30.00 | 2.3 | 69.57 %, 33.4 (RED there too) |
+| Auth | 97.83 % (70.65) | 27.83 | 1.8 | 70.65 %, 32.3 |
 | Abstractions | 95.24 % | 25.24 | 0.9 | 95.24 %, 30.0 |
 | SoftDelete | 91.67 % | 21.67 | 1.4 | 91.67 %, 3.7 |
 | Locking | 91.67 % | 21.67 | 7.1 | 91.67 %, 59.5 |
 | Cli | 91.48 % | 21.48 | 7.6 | 91.44 %, 8.6 |
+| Bulk | 88.38 % (70.09) | 18.38 | 15.2 | never finished (timeout) |
 | AuditTrail | 81.97 % | 11.97 | 5.1 | 81.97 %, 5.7 |
 | Notification | 81.23 % | 11.23 | 5.9 | never finished (OOM) |
 | Messaging | 80.72 % | 10.72 | 26.9 | 80.72 %, 69.4 |
@@ -78,18 +89,22 @@ project ran ([nightly 39297981494](https://github.com/qorpe/goldpath/actions/run
 | Jobs | 72.52 % | 2.52 | 9.1 | never finished (OOM) |
 | ServiceDefaults | 72.15 % | 2.15 | 2.2 | 72.15 %, 4.3 |
 | MultiTenancy | 72.09 % | 2.09 | 6.2 | 75.58 %, 38.5 |
-| Auth | 70.65 % | **0.65** | 1.8 | 70.65 %, 32.3 |
-| Bulk | 70.09 % | **0.09** | 15.0 | never finished (timeout) |
-| Caching | **69.57 %** | **-0.43** | 2.5 | 69.57 %, 33.4 (RED there too) |
 
-Read the margin column, not the score. **Caching is below the break** — it was in solution
-mode as well, unseen because the heavy lane never finished; that is open thread T32, and the
-break is not lowered for it. **Bulk clears it by 0.09 and Auth by 0.65**; MultiTenancy,
-ServiceDefaults, Jobs and Analyzers by under three points. Same-commit reruns on these
-runners move a score by up to ±1 point (Approvals 73.86–74.84, Bulk 70.09–71.28, Jobs
-72.14–72.90, Cli 91.13–91.87: tests that time out under instrumentation on one run and kill
-on the next), so for Bulk and Auth the next red night is a coin toss, not a regression. Treat
-a margin under 2 as a standing invitation to add facts, not as a passing grade.
+Read the margin column, not the score. At f459fe2 **Caching was below the break** (red in
+solution mode as well, unseen because the heavy lane never finished — open thread T32) and
+**Bulk cleared it by 0.09 and Auth by 0.65**. The break was not lowered and nothing was
+excluded: tests were added (#278). Caching's seven survivors were all observable from the
+container; Auth's were options, guards and pipeline order nobody asserted; Bulk's model
+contract tests had been reading a CACHED EF model — EF builds a context type's model once per
+process, so in Stryker's long-lived test host `AddGoldpathBulk` never ran under a mutant —
+and its engine had never been observed mid-batch, where the terminal recount cannot hide a
+wrong counter. Two Auth survivors remain and are equivalent (the none-branch
+`UseAuthentication`, and binding wired for the api-key strategy, whose principal never
+carries a tenant claim). MultiTenancy, ServiceDefaults, Jobs and Analyzers still clear the
+break by under three points. Same-commit reruns on these runners move a score by up to ±1
+point (Approvals 73.86–74.84, Bulk 70.09–71.28 before #278, Jobs 72.14–72.90, Cli
+91.13–91.87: tests that time out under instrumentation on one run and kill on the next).
+Treat a margin under 2 as a standing invitation to add facts, not as a passing grade.
 
 MultiTenancy is the one package whose score moved with the scope: 75.58 % → 72.09 %. Stryker's
 JSON report from the solution-mode run names the difference — three header-name string

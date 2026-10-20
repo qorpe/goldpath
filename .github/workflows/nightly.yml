@@ -203,16 +203,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The hosted-fit sixteen (issue #20): the six long-running packages OOMed the 16 GB
-        # runners even at concurrency 2 — they live in mutation-heavy.yml (dispatch-only)
-        # and in the release checklist's local cadence. The OOM was Stryker's solution mode
-        # running every referencing test project; scoped to their own suites (2026-10-20) all
-        # six finish in under 30 min. Folding them in here is a decision of its own (T32).
+        # The hosted-fit twenty-two: every gated package, every night. Until 2026-10-20 the six
+        # long-running ones (Jobs, Archival, Bulk, Notification, Campaign, Caching) lived only in
+        # mutation-heavy.yml — they OOMed the 16 GB runners (issue #20), because Stryker's
+        # solution mode ran every referencing test project. Scoped to their own suites they
+        # finish in under 30 min, and Caching, which kept them out (T32), clears its break.
+        # mutation-heavy.yml stays as the on-demand rerun of those six.
         package: [Goldpath.Abstractions, Goldpath.Data, Goldpath.Idempotency, Goldpath.AuditTrail,
                   Goldpath.SoftDelete, Goldpath.DataProtection, Goldpath.MultiTenancy,
                   Goldpath.Locking, Goldpath.Auth, Goldpath.Cli, Goldpath.Approvals, Goldpath.FileExchange,
                   Goldpath.Console, Goldpath.Messaging, Goldpath.ServiceDefaults,
-                  Goldpath.Analyzers]
+                  Goldpath.Analyzers, Goldpath.Jobs, Goldpath.Archival, Goldpath.Bulk,
+                  Goldpath.Notification, Goldpath.Campaign, Goldpath.Caching]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6

@@ -68,6 +68,33 @@ public class CsvFormatTests
         Assert.Contains("no header row", Assert.Single(errors).Message, StringComparison.Ordinal);
     }
 
+    /// <summary>D3: a spreadsheet's "Unicode" export (UTF-16 with its byte-order mark) reads like UTF-8.</summary>
+    [Fact]
+    public async Task A_utf16_export_with_its_byte_order_mark_parses()
+    {
+        var format = new GoldpathCsvFormat(new GoldpathCsvOptions());
+        var rows = new List<GoldpathBulkRawRow>();
+        using var stream = new MemoryStream([.. Encoding.Unicode.GetPreamble(), .. Encoding.Unicode.GetBytes("Name,Amount\nÇelik,10\n")]);
+
+        var total = await format.ReadAsync(stream, row => { rows.Add(row); return Task.CompletedTask; }, _ => Task.CompletedTask, CancellationToken.None);
+
+        Assert.Equal(1, total);
+        Assert.Equal("Çelik", rows[0].Fields["Name"]);
+        Assert.Equal("10", rows[0].Fields["Amount"]);
+    }
+
+    /// <summary>The format seam reads a stream it does not own: the caller's stream stays open.</summary>
+    [Fact]
+    public async Task The_reader_leaves_the_callers_stream_open()
+    {
+        var format = new GoldpathCsvFormat(new GoldpathCsvOptions());
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes("A\n1\n"));
+
+        await format.ReadAsync(stream, _ => Task.CompletedTask, _ => Task.CompletedTask, CancellationToken.None);
+
+        Assert.True(stream.CanRead, "disposing the reader must not close the caller's stream");
+    }
+
     [Fact]
     public async Task Blank_lines_are_noise_not_data()
     {
