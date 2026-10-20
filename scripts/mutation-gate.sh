@@ -22,6 +22,7 @@ if [ $# -ge 1 ] && [ ! -f "stryker/$1.json" ]; then
   exit 2
 fi
 FAILED=()
+SCOPE_LINES='Stryker will mutate solution|Analyzing [0-9]+ test project|Building (solution|test project)|Found project .* to mutate|Number of tests found|mutants created|mutants will be tested|mutation score|threshold| (ERR|FTL)\]'
 for cfg in stryker/*.json; do
   name=$(basename "$cfg" .json)
   if [ $# -ge 1 ] && [ "$name" != "$1" ]; then continue; fi
@@ -35,10 +36,19 @@ for cfg in stryker/*.json; do
   if [ -n "${GOLDPATH_MUTATION_CONCURRENCY:-}" ]; then
     CONCURRENCY_FLAG="--concurrency ${GOLDPATH_MUTATION_CONCURRENCY}"
   fi
+  # The full Stryker log lands beside its reports; the console gets the lines that say WHAT
+  # ran — the scope (solution or test projects), the tests found, the mutant count — and the
+  # verdict. Until 2026-10-20 only the last four lines survived, so no nightly log could show
+  # which test projects a score came from.
+  mkdir -p "$ROOT/StrykerOutput"
+  log="$ROOT/StrykerOutput/gate-$name.log"
+  started=$SECONDS
   # shellcheck disable=SC2086 — each flag is a single token by construction
-  if ! dotnet stryker -f "$cfg" $SINCE_FLAG $CONCURRENCY_FLAG 2>&1 | tail -4; then
+  if ! dotnet stryker -f "$cfg" $SINCE_FLAG $CONCURRENCY_FLAG 2>&1 | tee "$log" \
+      | { grep --line-buffered -E "$SCOPE_LINES" || true; }; then
     FAILED+=("$name")
   fi
+  echo "   $name took $(( (SECONDS - started) / 60 )) min (full log: StrykerOutput/gate-$name.log)"
 done
 
 if [ ${#FAILED[@]} -gt 0 ]; then
