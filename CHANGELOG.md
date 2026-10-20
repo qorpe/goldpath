@@ -4,6 +4,26 @@ All notable changes to the Goldpath packages are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: SemVer.
 
 ## [Unreleased]
+### Fixed
+- **Every mutation gate ran the whole solution's tests, whatever its config said.** The gate
+  started Stryker at the repository root, where it finds `Goldpath.sln` and switches to
+  solution mode — and solution mode never reads `test-projects`: it runs every test project
+  whose build references the package. Abstractions was mutated against 702 tests and the
+  integration host instead of its own 18; Approvals took 3.6 hours a night; the six heavy
+  packages ran out of memory on hosted runners (issue #20's exit 143). The gate now runs
+  Stryker from the package's own directory (`test-projects` written `../../tests/...`; four
+  configs pointed at paths that never existed and nobody noticed, because the setting was
+  never read), and it fails a run whose log shows solution mode or a test-project count other
+  than the config's. Suites that legitimately score another package are named in that
+  package's config with a row in `stryker/README.md` — Data, MultiTenancy, Messaging, Locking
+  and Caching borrow them; a borrowed integration class is admitted by `test-case-filter`, not
+  the whole container-backed suite — and `docs-freshness.sh` fails a missing test project or
+  an unrowed borrow. Measured on hosted runners 2026-10-20: the sixteen nightly packages from
+  10.1 hours of job time to 1.3, the slowest from 218 minutes to 27, all six heavy packages
+  finishing in under 30 minutes, every score unchanged except MultiTenancy (75.58 → 72.09 %:
+  three mutants only an unrelated benchmark killed). Caching scores 69.57 %, below the break,
+  in both modes — open thread T32. The gate also streams the scope lines it used to discard
+  (`tail -4`), and both mutation workflows keep the full log and Stryker's JSON report.
 
 ## [0.1.0-preview.9] - 2026-10-19
 

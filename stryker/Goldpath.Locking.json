@@ -2,12 +2,15 @@
   "stryker-config": {
     "project": "Goldpath.Locking.csproj",
     "test-projects": [
-      "tests/Goldpath.Locking.Tests/Goldpath.Locking.Tests.csproj"
+      "../../tests/Goldpath.Locking.Tests/Goldpath.Locking.Tests.csproj",
+      "../../tests/Goldpath.IntegrationTests/Goldpath.IntegrationTests.csproj"
     ],
+    "test-case-filter": "FullyQualifiedName!~Goldpath.Tests.Integration.|FullyQualifiedName~Goldpath.Tests.Integration.LockContractTests.",
     "target-framework": "net10.0",
     "reporters": [
       "progress",
-      "markdown"
+      "markdown",
+      "json"
     ],
     "thresholds": {
       "high": 85,

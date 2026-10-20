@@ -211,6 +211,29 @@ for config in sorted(n for n in os.listdir(os.path.join(root, "stryker")) if n.e
         if f"`{excluded}`" not in stryker_doc:
             fail.append(f"stryker/{config} excludes {excluded} with no row in stryker/README.md")
 
+# 9. Every stryker config's test-projects resolve from the PACKAGE directory (the gate runs
+#    Stryker there, because at the root Goldpath.sln switches it to solution mode, which ignores
+#    test-projects), and a test project other than the package's own carries a ledger row —
+#    borrowed tests raise a score, so the reason they count must be written down (2026-10-20).
+import json
+for config in sorted(n for n in os.listdir(os.path.join(root, "stryker")) if n.endswith(".json")):
+    c = json.loads(read("stryker", config))["stryker-config"]
+    package = config[:-5]
+    homes = [d for d in ("packages", "analyzers", "tools")
+             if os.path.isfile(os.path.join(root, d, package, c["project"]))]
+    if len(homes) != 1:
+        fail.append(f"stryker/{config}: project {c['project']} is not under packages/, analyzers/ or tools/")
+        continue
+    home = os.path.join(root, homes[0], package)
+    for test_project in c.get("test-projects", []):
+        if not os.path.isfile(os.path.normpath(os.path.join(home, test_project))):
+            fail.append(f"stryker/{config}: test project {test_project} does not exist relative to {homes[0]}/{package}")
+            continue
+        borrowed = os.path.basename(test_project)[:-len(".csproj")]
+        if borrowed != f"{package}.Tests" and not any(
+                f"| {package[len('Goldpath.'):]} | `{borrowed}`" in line for line in stryker_doc.splitlines()):
+            fail.append(f"stryker/{config} scores with {borrowed} but stryker/README.md has no row saying why")
+
 if fail:
     print("── inventory sync: the docs stopped telling the truth:")
     for f in fail:

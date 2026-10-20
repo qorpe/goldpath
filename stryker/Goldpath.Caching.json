@@ -2,12 +2,15 @@
   "stryker-config": {
     "project": "Goldpath.Caching.csproj",
     "test-projects": [
-      "tests/Goldpath.Caching.Tests/Goldpath.Caching.Tests.csproj"
+      "../../tests/Goldpath.Caching.Tests/Goldpath.Caching.Tests.csproj",
+      "../../tests/Goldpath.IntegrationTests/Goldpath.IntegrationTests.csproj"
     ],
+    "test-case-filter": "FullyQualifiedName!~Goldpath.Tests.Integration.|FullyQualifiedName~Goldpath.Tests.Integration.RedisCachingTests.",
     "target-framework": "net10.0",
     "reporters": [
       "progress",
-      "markdown"
+      "markdown",
+      "json"
     ],
     "thresholds": {
       "high": 85,

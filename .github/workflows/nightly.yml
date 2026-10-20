@@ -203,9 +203,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The hosted-fit sixteen (issue #20): the six long-running packages OOM the 16 GB
+        # The hosted-fit sixteen (issue #20): the six long-running packages OOMed the 16 GB
         # runners even at concurrency 2 — they live in mutation-heavy.yml (dispatch-only)
-        # and in the release checklist's local cadence.
+        # and in the release checklist's local cadence. The OOM was Stryker's solution mode
+        # running every referencing test project; scoped to their own suites (2026-10-20) all
+        # six finish in under 30 min. Folding them in here is a decision of its own (T32).
         package: [Goldpath.Abstractions, Goldpath.Data, Goldpath.Idempotency, Goldpath.AuditTrail,
                   Goldpath.SoftDelete, Goldpath.DataProtection, Goldpath.MultiTenancy,
                   Goldpath.Locking, Goldpath.Auth, Goldpath.Cli, Goldpath.Approvals, Goldpath.FileExchange,
@@ -223,6 +225,18 @@ jobs:
         env:
           GOLDPATH_MUTATION_CONCURRENCY: "2"
         run: bash scripts/mutation-gate.sh "${{ matrix.package }}"
+      # The evidence behind the verdict: the gate's full log and Stryker's JSON report (which
+      # test killed which mutant). The console keeps only the scope lines and the score.
+      - uses: actions/upload-artifact@v7
+        if: always()
+        continue-on-error: true
+        with:
+          name: mutation-${{ matrix.package }}
+          path: |
+            **/StrykerOutput/gate-*.log
+            **/StrykerOutput/*/reports/mutation-report.json
+          if-no-files-found: ignore
+          retention-days: 14
 
   # Known CVEs in the dependency tree fail the night — the license gate's security twin.
   security:
