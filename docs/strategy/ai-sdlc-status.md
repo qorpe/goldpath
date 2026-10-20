@@ -21,7 +21,7 @@ document exists to prevent.
 
 | Stage | Target (foundation) | Today | Deterministic gate today | Gap → next artifact |
 |---|---|---|---|---|
-| Design / analysis | `authoring` + `spec-review` skills: business language → manifest + spec (§6.1) | **NOT BUILT** — manifests are hand-authored | `specdrift validate` / `spec_drift` (schema + rules) | `authoring` skill — Phase 2 (§12) |
+| Design / analysis | `authoring` + `spec-review` skills: business language → manifest + spec (§6.1) | **NOT BUILT** — manifests are hand-authored. The plan is [goldpath-authoring](../rfc/goldpath-authoring.md), **PROPOSED** 2026-10-20 (Slice 0, the no-LLM floor, approved to start; Slices 1–3 wait for acceptance). See the honesty note under §2 | `specdrift validate` / `spec_drift` (schema + rules) | `authoring` skill + `spec-review` agent — the RFC's Slices 1–2 (open-threads T34) |
 | Composition | manifest as the single source of truth | `goldpath-manifest` skill **SHIPPED-UNPROVEN**; CLI + schema + GM matrix **SHIPPED-PROVEN** (every shape nightly; since 2026-10-20 the covering subset also runs on every PR that touches what a generated app is built from — T30) | GM matrix (PR subset + nightly) + specdrift | drive the skill in a recorded run |
 | Development | `new-service` / `add-feature`: spec → code with tests (§7) | `goldpath new`/`add worker` deterministic scaffolding **SHIPPED-PROVEN** (GM nightly); `goldpath-feature` skill **SHIPPED-PROVEN** — it drove the five CorPay S2 slices (`coverage-matrix.md` tooling table); the `goldpath add feature` CLI verb is **SHIPPED-PROVEN** by the nightly `GmGrown` shape (a lean app grown by five recipes — audittrail, softdelete, locking, bulk, outbox — then migrated, built, drift-checked and smoked; GREEN on the 2026-09-05 dispatch after the four recipe bugs it found were fixed); the Insurance sample remains its field proof | build + analyzers (42 rules) + PublicAPI ledger + `dotnet format` | field the CLI verb (coverage-matrix plans it for the Insurance sample) |
 | DB | migrations discipline driven by CLI verbs | `goldpath db` verbs + D7 proofs (`validate-migrations.sh` on real pg) **SHIPPED-PROVEN** | migration bundle CI step + GP1801 | — |
@@ -38,8 +38,8 @@ document exists to prevent.
 
 | Skill (foundation §6.1) | Status | Where |
 |---|---|---|
-| `authoring` | NOT BUILT (Phase 2) | — |
-| `spec-review` | NOT BUILT (Phase 2) | — |
+| `authoring` | NOT BUILT (Phase 2) — RFC PROPOSED 2026-10-20 | [goldpath-authoring](../rfc/goldpath-authoring.md) (Slice 1) |
+| `spec-review` | NOT BUILT (Phase 2) — RFC PROPOSED 2026-10-20 | [goldpath-authoring](../rfc/goldpath-authoring.md) (Slice 2) |
 | `new-service` | covered deterministically | `goldpath new` (CLI — no LLM needed, by design) |
 | `add-feature` | **SHIPPED-PROVEN** (drove CorPay S2) | `.claude/skills/goldpath-feature` |
 | `test-gen` | **SHIPPED-PROVEN** (fielded on CorPay 2026-07-23 — `samples/corpay/tests/SPEC-GAPS.md`) | `.claude/skills/goldpath-test-gen` |
@@ -55,6 +55,14 @@ document exists to prevent.
 ran on CorPay 2026-07-23 (spec-derived tests + gap report; adversarial run with one
 genuine finding, fixed). `goldpath-manifest` remains unfielded (`coverage-matrix.md`
 plans it for the Insurance sample).
+
+**Honesty note (2026-10-20, [goldpath-authoring](../rfc/goldpath-authoring.md) D9).** The
+CHANGELOG entry for Skills v1 says "the Phase 2 gate is MET". What the `goldpath-feature` eval
+proved is **sentence → code**: its input sentence was already decomposed by a human, the same
+agent wrote the contract it then implemented, and no business-approved spec existed for
+ADR-0010's gate #1 to approve. The spec-gated form that foundation §3.2 and §7 describe
+(sentence → approved spec → code) is **not met**. The CHANGELOG stays as written, because it is
+history; this row, the skills-v1 RFC and the authoring RFC carry the correction.
 
 ## 3. Mechanism inventory — what carries the AI layer
 

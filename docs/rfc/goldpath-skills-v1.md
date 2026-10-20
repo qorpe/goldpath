@@ -41,6 +41,13 @@ OUTCOMES are.
 - The **goldpath-feature eval IS the Phase 2 gate demo**: generated app + "a customer can cancel
   an unshipped order" → the acceptance script requires: new endpoint present in the exported
   OpenAPI, handler + tests exist, specdrift clean, full suite green.
+  **Honesty note (2026-10-20,
+  [goldpath-authoring](goldpath-authoring.md) D9):** the gate this eval met is
+  **sentence → code**. The input sentence was already decomposed by a human, and the same agent
+  wrote the contract it then implemented; no business-approved spec existed, so ADR-0010's
+  gate #1 had nothing to approve. The CHANGELOG's "the Phase 2 gate is MET" stays as the history
+  it is. The spec-gated form foundation §3.2 and §7 describe (sentence → approved spec → code)
+  is NOT met, and the authoring RFC is the plan for it.
 - Execution: locally/manually now (an agent session drives it; the script judges);
   joins CI when an agent-in-CI story exists — recorded as the deferral it is.
 
