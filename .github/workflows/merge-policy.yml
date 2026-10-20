@@ -77,7 +77,7 @@ jobs:
           gh api "repos/$REPO/pulls/$PR" --jq '.changed_files' > "$RUNNER_TEMP/count"
           gh api "repos/$REPO/pulls/$PR" --jq '[.labels[].name] | join(",")' > "$RUNNER_TEMP/labels"
           gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
-            --jq '.[] | {filename, previous_filename, status, patch}' -c > "$RUNNER_TEMP/files.jsonl"
+            --jq '.[] | {filename, previous_filename, status, patch}' > "$RUNNER_TEMP/files.jsonl"
           echo "files listed: $(wc -l < "$RUNNER_TEMP/files.jsonl") of $(cat "$RUNNER_TEMP/count"); labels: $(cat "$RUNNER_TEMP/labels")"
       - name: compute the tier
         id: classify
