@@ -166,6 +166,16 @@ public sealed class GoldpathCampaignType
 
     internal Func<string, GoldpathCampaignItemContext, CancellationToken, Task<GoldpathCampaignActionResult>> ExecuteItem { get; set; } = null!;
 
+    /// <summary>
+    /// True when the type accepts target-system callbacks (campaign RFC R2.8): it declared
+    /// <see cref="GoldpathCampaignTypeBuilder{TTarget}.SignedCallbacks"/>. A type without a
+    /// secret has no callback surface at all — an unsigned callback is not possible.
+    /// </summary>
+    public bool SignsCallbacks => CallbackSecrets.Count > 0;
+
+    /// <summary>The active HMAC keys (the current one, plus the previous one during a rotation).</summary>
+    internal IReadOnlyList<byte[]> CallbackSecrets { get; set; } = [];
+
     internal Func<object, string> SerializeTarget { get; set; } = null!;
 }
 
@@ -231,6 +241,47 @@ public sealed class GoldpathCampaignTypeBuilder<TTarget>
 
         _type.MaxTps = maxTps;
         return this;
+    }
+
+    /// <summary>
+    /// Accepts the target system's callbacks for this type, authenticated by an HMAC-SHA256
+    /// signature over the request (campaign RFC R2.8): the target system signs
+    /// <c>{timestamp}\n{METHOD}\n{path}\n{body}</c> with <paramref name="secret"/> and sends
+    /// it in <c>X-Goldpath-Signature: v1=&lt;hex&gt;</c> with the unix-seconds timestamp in
+    /// <c>X-Goldpath-Timestamp</c> (<see cref="GoldpathCampaignCallbackSignature"/> computes
+    /// it). The target system needs no ops credential — only this secret, which comes from
+    /// configuration, never from source. During a rotation pass the outgoing secret as
+    /// <paramref name="previousSecret"/>: either one verifies until you drop it.
+    /// </summary>
+    public GoldpathCampaignTypeBuilder<TTarget> SignedCallbacks(string secret, string? previousSecret = null)
+    {
+        var secrets = new List<byte[]> { CallbackKey(secret, nameof(secret)) };
+        if (previousSecret is not null)
+        {
+            var previous = CallbackKey(previousSecret, nameof(previousSecret));
+            if (previous.AsSpan().SequenceEqual(secrets[0]))
+            {
+                throw new ArgumentException("The previous secret equals the current one — a rotation needs a new secret.", nameof(previousSecret));
+            }
+
+            secrets.Add(previous);
+        }
+
+        _type.CallbackSecrets = secrets;
+        return this;
+    }
+
+    private static byte[] CallbackKey(string secret, string parameter)
+    {
+        var key = System.Text.Encoding.UTF8.GetBytes(secret ?? "");
+        if (key.Length < GoldpathCampaignCallbackSignature.MinimumSecretBytes)
+        {
+            throw new ArgumentException(
+                $"A callback secret needs at least {GoldpathCampaignCallbackSignature.MinimumSecretBytes} bytes — generate one "
+                + "(`openssl rand -base64 32`) and read it from configuration.", parameter);
+        }
+
+        return key;
     }
 
     /// <summary>Sets the default policy new instances start from.</summary>
@@ -354,6 +405,13 @@ public sealed class GoldpathCampaignOptions
     /// 0 pins the exact ladder (tests that count seconds use it).
     /// </summary>
     public double RetryJitter { get; set; } = 0.2;
+
+    /// <summary>
+    /// How far a signed callback's timestamp may sit from this host's clock, either way
+    /// (campaign RFC R2.8). It bounds a replay: a captured callback re-sent later than this is
+    /// refused, and inside the window a repeat is idempotent (the item already settled).
+    /// </summary>
+    public TimeSpan CallbackTimestampTolerance { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>The wait before attempt N+1 given N attempts so far, jittered per call.</summary>
     public TimeSpan NextRetryDelay(int attemptsSoFar)

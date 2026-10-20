@@ -15,30 +15,53 @@ using Xunit;
 namespace Goldpath.Tests.Integration;
 
 /// <summary>
-/// Campaign revision R2.1 on real PostgreSQL + RabbitMQ + the HTTP callback surface: a
-/// target system that ACCEPTS and answers later. Odd customers are accepted and a
-/// provider loop posts their callbacks over HTTP (which publishes the outcome onto the
-/// real bus for the batching sink); two of them are never answered, so the ack sweep
-/// turns them into retryable failures and the ladder's second attempt succeeds.
+/// Campaign revision R2.1 + R2.8 on real PostgreSQL + RabbitMQ + the HTTP callback surface:
+/// a target system that ACCEPTS and answers later, over SIGNED callbacks. Odd customers are
+/// accepted. Half of them answer IMMEDIATELY — from inside the handler, before it has even
+/// returned Accepted, so the item is still Processing and no acceptance is visible (the
+/// race the R2 review's finding 1 named: the old fake provider waited for AwaitingAck and
+/// hid it). The other half are answered by a provider loop after the acceptance lands. Two
+/// are never answered: the ack sweep turns them into retryable failures and the ladder's
+/// second attempt succeeds.
 /// </summary>
 [Collection("quartz-process-globals")]
 public sealed class CampaignR2Tests : IAsyncLifetime
 {
-    /// <summary>Accepted on a first attempt for odd ids; Succeeded otherwise.</summary>
+    /// <summary>The type's callback secret — a test value, read from configuration in a real app.</summary>
+    private const string Secret = "integration-only-callback-secret-0123456789";
+
+    /// <summary>Accepted on a first attempt for odd ids; Succeeded otherwise. Ids 1 mod 4 answer before returning.</summary>
     public sealed class AckHandler : IGoldpathCampaignActionHandler<CampaignTests.CustomerTarget>
     {
         public static ConcurrentDictionary<int, int> Executions { get; } = new();
 
         public static ConcurrentDictionary<int, bool> NeverAnswered { get; } = new();
 
-        public Task<GoldpathCampaignActionResult> ExecuteAsync(
+        /// <summary>The target system answering at once: set by the test, called before Accepted is returned.</summary>
+        public static Func<string, CancellationToken, Task<HttpStatusCode>>? AnswerNow { get; set; }
+
+        public static ConcurrentBag<HttpStatusCode> ImmediateStatuses { get; } = [];
+
+        public async Task<GoldpathCampaignActionResult> ExecuteAsync(
             CampaignTests.CustomerTarget target, GoldpathCampaignItemContext context, CancellationToken cancellationToken)
         {
             Executions.AddOrUpdate(target.Id, 1, (_, count) => count + 1);
-            return Task.FromResult(context.Attempt == 1 && target.Id % 2 == 1
-                ? GoldpathCampaignActionResult.Accepted(
-                    string.Create(CultureInfo.InvariantCulture, $"corr-{target.Id}-{context.Attempt}"), TimeSpan.FromSeconds(4))
-                : GoldpathCampaignActionResult.Succeeded());
+            if (context.Attempt != 1 || target.Id % 2 == 0)
+            {
+                return GoldpathCampaignActionResult.Succeeded();
+            }
+
+            var correlation = string.Create(CultureInfo.InvariantCulture, $"corr-{target.Id}-{context.Attempt}");
+            if (target.Id % 4 == 1 && !NeverAnswered.ContainsKey(target.Id) && AnswerNow is { } answer)
+            {
+                // The device answered while our call to the target system was still returning:
+                // the callback is fully processed before this handler returns Accepted.
+                ImmediateStatuses.Add(await answer(
+                    string.Create(CultureInfo.InvariantCulture, $"/goldpath/campaign/callbacks/{context.Type}/{context.CampaignId:N}/{correlation}"),
+                    cancellationToken));
+            }
+
+            return GoldpathCampaignActionResult.Accepted(correlation, TimeSpan.FromSeconds(4));
         }
     }
 
@@ -52,6 +75,7 @@ public sealed class CampaignR2Tests : IAsyncLifetime
     {
         AckHandler.Executions.Clear();
         AckHandler.NeverAnswered.Clear();
+        AckHandler.ImmediateStatuses.Clear();
         await Task.WhenAll(_postgres.StartAsync(), _rabbit.StartAsync());
         await using (var db = new CampaignTests.CampDb(new DbContextOptionsBuilder<CampaignTests.CampDb>().UseNpgsql(_postgres.GetConnectionString()).Options))
         {
@@ -72,6 +96,7 @@ public sealed class CampaignR2Tests : IAsyncLifetime
             campaign.RetryJitter = 0;
             campaign.AddCampaign<CampaignTests.CustomerTarget>("winback", c => c
                 .MaxTargets(10_000)
+                .SignedCallbacks(Secret)
                 .Targets((services, _) => services.GetRequiredService<CampaignTests.CampDb>()
                     .Customers.AsNoTracking()
                     .OrderBy(x => x.Id)
@@ -94,13 +119,27 @@ public sealed class CampaignR2Tests : IAsyncLifetime
             jobs.AddGoldpathCampaignJobs<CampaignTests.CampDb>(pacerCron: "0/5 * * * * ?");
         });
         _app = builder.Build();
-        _app.MapGoldpathCampaignCallbacks<CampaignTests.CampDb>(exposeUnsecured: true);   // behind mTLS in a real deployment
+        _app.MapGoldpathCampaignCallbacks<CampaignTests.CampDb>();   // signed callbacks: no ops credential, no unsigned path
         await _app.StartAsync();
         _client = _app.GetTestClient();
+        AckHandler.AnswerNow = async (path, ct) => (await PostSignedAsync(path, new { succeeded = true }, ct)).StatusCode;
+    }
+
+    /// <summary>What the target system does: sign the exact path and body it sends.</summary>
+    private Task<HttpResponseMessage> PostSignedAsync(string path, object body, CancellationToken ct, string secret = Secret, long? timestamp = null)
+    {
+        var json = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(body);
+        var at = timestamp ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = new ByteArrayContent(json) };
+        request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+        request.Headers.Add(GoldpathCampaignCallbackSignature.TimestampHeader, at.ToString(CultureInfo.InvariantCulture));
+        request.Headers.Add(GoldpathCampaignCallbackSignature.SignatureHeader, GoldpathCampaignCallbackSignature.Sign(secret, "POST", path, at, json));
+        return _client.SendAsync(request, ct);
     }
 
     public async Task DisposeAsync()
     {
+        AckHandler.AnswerNow = null;
         _client.Dispose();
         await _app.StopAsync();
         await _app.DisposeAsync();
@@ -150,7 +189,7 @@ public sealed class CampaignR2Tests : IAsyncLifetime
             campaignId = campaign.Id;
         }
 
-        // The target system: answers every acceptance it can see, except the two scripted silences.
+        // The target system's slow path: answers the acceptances it can see (ids 3 mod 4), except the two scripted silences.
         var statuses = new ConcurrentBag<int>();
         using var providerStop = CancellationTokenSource.CreateLinkedTokenSource(token);
         var provider = Task.Run(async () =>
@@ -164,12 +203,12 @@ public sealed class CampaignR2Tests : IAsyncLifetime
                 foreach (var correlation in pending)
                 {
                     var id = int.Parse(correlation.Split('-')[1], CultureInfo.InvariantCulture);
-                    if (AckHandler.NeverAnswered.ContainsKey(id))
+                    if (AckHandler.NeverAnswered.ContainsKey(id) || id % 4 == 1)
                     {
-                        continue;
+                        continue;   // silent, or answered already from inside the handler
                     }
 
-                    var response = await _client.PostAsJsonAsync($"/goldpath/campaign/callbacks/winback/{correlation}", new { succeeded = true }, providerStop.Token);
+                    var response = await PostSignedAsync($"/goldpath/campaign/callbacks/winback/{campaignId:N}/{correlation}", new { succeeded = true }, providerStop.Token);
                     statuses.Add((int)response.StatusCode);
                 }
 
@@ -206,12 +245,73 @@ public sealed class CampaignR2Tests : IAsyncLifetime
         Assert.Equal(1, items.Single(i => i.Seq == 7).Attempts);
         Assert.Equal(0, items.Single(i => i.Seq == 8).Attempts);
         Assert.Contains(202, statuses);   // a pending acceptance → outcome published
+        Assert.DoesNotContain(404, statuses);
+
+        // The callbacks that outran their acceptance were PARKED (202), never 404 — and every
+        // one of them settled on its first attempt, nothing executed twice.
+        Assert.Equal(9, AckHandler.ImmediateStatuses.Count);   // ids 1, 5, 9, … 37 minus the silent 21
+        Assert.All(AckHandler.ImmediateStatuses, status => Assert.Equal(HttpStatusCode.Accepted, status));
+        Assert.All(items.Where(i => i.Seq % 4 == 1 && i.Seq != 21), i => Assert.Equal(0, i.Attempts));
+        Assert.Empty(Query(db => db.Set<GoldpathCampaignParkedCallback>().AsNoTracking().ToList()));
 
         // The provider retries a webhook it already delivered: found, settled, nothing published.
-        var repeat = await _client.PostAsJsonAsync("/goldpath/campaign/callbacks/winback/corr-1-1", new { succeeded = true }, token);
+        var repeat = await PostSignedAsync($"/goldpath/campaign/callbacks/winback/{campaignId:N}/corr-1-1", new { succeeded = true }, token);
         Assert.Equal(HttpStatusCode.OK, repeat.StatusCode);
-        var unknown = await _client.PostAsJsonAsync("/goldpath/campaign/callbacks/winback/corr-nope", new { succeeded = true }, token);
+        var unknown = await PostSignedAsync($"/goldpath/campaign/callbacks/winback/{campaignId:N}/corr-nope", new { succeeded = true }, token);
         Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
+
+        // R2.8: an unsigned callback, one signed by another secret and a stale one are refused before the engine sees them.
+        var unsigned = await _client.PostAsJsonAsync($"/goldpath/campaign/callbacks/winback/{campaignId:N}/corr-3-1", new { succeeded = false }, token);
+        Assert.Equal(HttpStatusCode.Unauthorized, unsigned.StatusCode);
+        var forged = await PostSignedAsync($"/goldpath/campaign/callbacks/winback/{campaignId:N}/corr-3-1", new { succeeded = false }, token, secret: "a-guessed-secret-of-at-least-32-bytes!!");
+        Assert.Equal(HttpStatusCode.Unauthorized, forged.StatusCode);
+        var stale = await PostSignedAsync($"/goldpath/campaign/callbacks/winback/{campaignId:N}/corr-3-1", new { succeeded = false }, token,
+            timestamp: DateTimeOffset.UtcNow.AddMinutes(-10).ToUnixTimeSeconds());
+        Assert.Equal(HttpStatusCode.Unauthorized, stale.StatusCode);
         Assert.Equal(40, Query(db => db.Set<GoldpathCampaign>().AsNoTracking().Single(c => c.Id == campaignId)).SucceededCount);
+    }
+
+    /// <summary>
+    /// R2 review #4 on real PostgreSQL: the CampaignR2 migration's data step stamps every R1
+    /// waiting retry with the rung it was waiting on, and leaves everything else alone.
+    /// </summary>
+    [Fact]
+    public async Task The_R2_backfill_stamps_R1_waiting_retries_on_PostgreSQL()
+    {
+        var failedAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+        var campaignId = Guid.NewGuid();
+        using (var scope = _app.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<CampaignTests.CampDb>();
+            db.Set<GoldpathCampaign>().Add(new GoldpathCampaign
+            {
+                Id = campaignId,
+                Type = "winback",
+                Name = "r1",
+                State = GoldpathCampaignState.Paused,
+                TimeZoneId = "UTC",
+                Tps = 1,
+                MaxInFlight = 10,
+                MaxAttempts = 3,
+                CreatedAt = failedAt,
+                CreatedBy = "it",
+            });
+            db.Set<GoldpathCampaignItem>().AddRange(
+                new GoldpathCampaignItem { CampaignId = campaignId, Seq = 1, TargetJson = "{}", State = GoldpathCampaignItemState.AwaitingRetry, Attempts = 1, CompletedAt = failedAt },
+                new GoldpathCampaignItem { CampaignId = campaignId, Seq = 2, TargetJson = "{}", State = GoldpathCampaignItemState.AwaitingRetry, Attempts = 2, CompletedAt = failedAt },
+                new GoldpathCampaignItem { CampaignId = campaignId, Seq = 3, TargetJson = "{}", State = GoldpathCampaignItemState.Failed, Attempts = 3, CompletedAt = failedAt });
+            await db.SaveChangesAsync();
+
+            var migration = new Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder(db.Database.ProviderName);
+            migration.GoldpathCampaignR2Backfill();
+            var step = (Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation)Assert.Single(migration.Operations);
+            Assert.Equal(2, await db.Database.ExecuteSqlRawAsync(step.Sql));
+            Assert.Equal(0, await db.Database.ExecuteSqlRawAsync(step.Sql));   // idempotent
+        }
+
+        var items = Query(db => db.Set<GoldpathCampaignItem>().AsNoTracking().Where(i => i.CampaignId == campaignId).OrderBy(i => i.Seq).ToList());
+        Assert.InRange((items[0].NextAttemptAt!.Value - failedAt - TimeSpan.FromSeconds(30)).Duration(), TimeSpan.Zero, TimeSpan.FromMilliseconds(1));
+        Assert.InRange((items[1].NextAttemptAt!.Value - failedAt - TimeSpan.FromMinutes(2)).Duration(), TimeSpan.Zero, TimeSpan.FromMilliseconds(1));
+        Assert.Null(items[2].NextAttemptAt);
     }
 }

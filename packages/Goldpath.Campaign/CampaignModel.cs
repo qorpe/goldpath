@@ -234,6 +234,39 @@ public class GoldpathCampaignItem
 }
 
 /// <summary>
+/// A target system's callback that arrived BEFORE the acceptance it answers was visible
+/// (campaign RFC R2.1, amended 2026-10-20). A device can answer while the handler's own call
+/// to the target system is still returning; the sink then writes the acceptance moments
+/// later. The callback is parked here, keyed by campaign and correlation id, and the sink
+/// settles it the moment it applies the acceptance. A parked callback nobody claims expires
+/// after <see cref="GoldpathCampaignOptions.StaleClaimAfter"/>. Tiny on purpose: it holds
+/// only answers that outran their question.
+/// </summary>
+public class GoldpathCampaignParkedCallback
+{
+    /// <summary>The campaign the callback's route named.</summary>
+    public Guid CampaignId { get; set; }
+
+    /// <summary>The correlation id the callback's route named.</summary>
+    public string CorrelationId { get; set; } = "";
+
+    /// <summary>What the target system reported.</summary>
+    public bool Succeeded { get; set; }
+
+    /// <summary>The provider's short error code, when it failed.</summary>
+    public string? ErrorCode { get; set; }
+
+    /// <summary>The provider's words, when it failed (bounded).</summary>
+    public string? Error { get; set; }
+
+    /// <summary>For a failure: whether the ladder applies.</summary>
+    public bool Retryable { get; set; }
+
+    /// <summary>When the callback arrived (the expiry clock).</summary>
+    public DateTimeOffset ReceivedAt { get; set; }
+}
+
+/// <summary>
 /// One admin action — the jobs console's iron rule, kept: no admin action without an
 /// audit record. Written by the admin service for EVERY mutating verb.
 /// </summary>
@@ -261,7 +294,7 @@ public class GoldpathCampaignAudit
 /// <summary>Maps the campaign tables onto the app's own DbContext (same database).</summary>
 public static class GoldpathCampaignModel
 {
-    /// <summary>Adds campaigns + items to the model.</summary>
+    /// <summary>Adds campaigns, items, parked callbacks and the audit trail to the model.</summary>
     public static ModelBuilder AddGoldpathCampaign(this ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<GoldpathCampaign>(campaign =>
@@ -296,6 +329,16 @@ public static class GoldpathCampaignModel
             item.HasIndex(i => new { i.CampaignId, i.CorrelationId });
             // R2.6: the orphan sweep walks Released items by age.
             item.HasIndex(i => new { i.CampaignId, i.State, i.ReleasedAt });
+        });
+
+        modelBuilder.Entity<GoldpathCampaignParkedCallback>(parked =>
+        {
+            parked.ToTable("GoldpathCampaignParkedCallbacks");
+            parked.HasKey(p => new { p.CampaignId, p.CorrelationId });
+            parked.Property(p => p.CorrelationId).HasMaxLength(128);
+            parked.Property(p => p.ErrorCode).HasMaxLength(64);
+            parked.Property(p => p.Error).HasMaxLength(1024);
+            parked.HasIndex(p => p.ReceivedAt);   // the expiry sweep
         });
 
         modelBuilder.Entity<GoldpathCampaignAudit>(audit =>

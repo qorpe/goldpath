@@ -396,6 +396,8 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
             await SweepStaleClaimsAsync(db, campaign.Id, now, chunk, cancellationToken);
         }
 
+        // Callbacks that outran an acceptance which never came (R2.1 parking) expire here.
+        await _engine.ExpireParkedCallbacksAsync(db, cancellationToken);
         db.ChangeTracker.Clear();
     }
 

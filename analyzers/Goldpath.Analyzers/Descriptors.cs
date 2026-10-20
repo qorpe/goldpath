@@ -449,6 +449,21 @@ public static class Descriptors
         isEnabledByDefault: true,
         helpLinkUri: HelpBase + "goldpath-campaign.md");
 
+    /// <summary>GP1704: the callback surface is mapped but nothing can sign a callback — an unsigned callback is not possible.</summary>
+    public static readonly DiagnosticDescriptor CampaignCallbacksWithoutSigning = new(
+        "GP1704",
+        "Campaign callbacks mapped without a signing campaign type",
+        "MapGoldpathCampaignCallbacks is mapped but no campaign type declares SignedCallbacks(secret) — callbacks are authenticated by their HMAC signature, an unsigned callback is not possible, and the map call refuses to start",
+        Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A target system's callback settles an item as succeeded or failed; unauthenticated, anyone who can "
+                   + "guess a correlation id records a send that never happened. Campaign RFC R2.8 authenticates every "
+                   + "callback with an HMAC-SHA256 signature keyed by the type's secret (from configuration), inside a "
+                   + "timestamp window. Declare .SignedCallbacks(secret) on the type whose handler answers Accepted.",
+        helpLinkUri: HelpBase + "goldpath-campaign.md",
+        customTags: WellKnownDiagnosticTags.CompilationEnd);
+
     /// <summary>GP2001: a product assembly declares types in the Goldpath namespace — the fork's first symptom.</summary>
     public static readonly DiagnosticDescriptor ProductDeclaresGoldpathNamespace = new(
         "GP2001",

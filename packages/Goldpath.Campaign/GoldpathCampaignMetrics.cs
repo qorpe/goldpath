@@ -29,6 +29,12 @@ public static class GoldpathCampaignMetrics
     private static readonly Counter<long> OrphansTotal = Meter.CreateCounter<long>(
         "goldpath_campaign_orphans_rereleased_total", description: "Released items published again because no consumer claimed them in time (R2.6).");
 
+    private static readonly Counter<long> CallbacksParkedTotal = Meter.CreateCounter<long>(
+        "goldpath_campaign_callbacks_parked_total", description: "Callbacks that arrived before their acceptance landed and were parked (R2.1).");
+
+    private static readonly Counter<long> CallbacksRejectedTotal = Meter.CreateCounter<long>(
+        "goldpath_campaign_callbacks_rejected_total", description: "Callbacks refused for a missing, stale or wrong signature (R2.8).");
+
     private static readonly object SnapshotLock = new();
     private static readonly Dictionary<Guid, (string Type, long Remaining, long InFlight)> Snapshots = [];
 
@@ -48,6 +54,12 @@ public static class GoldpathCampaignMetrics
 
     internal static void AckTimeouts(string type, int count)
         => AckTimeoutsTotal.Add(count, new KeyValuePair<string, object?>("type", type));
+
+    internal static void CallbacksParked(string type, int count)
+        => CallbacksParkedTotal.Add(count, new KeyValuePair<string, object?>("type", type));
+
+    internal static void CallbacksRejected(string type)
+        => CallbacksRejectedTotal.Add(1, new KeyValuePair<string, object?>("type", type));
 
     internal static void Outcomes(Guid campaignId, int succeeded, int failed)
     {

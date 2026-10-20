@@ -438,38 +438,96 @@ public sealed class GoldpathCampaignEngine<TContext>
         };
 
     /// <summary>
-    /// Resolves a target system's callback (R2.1) to the outcome it means: the item of
-    /// <paramref name="type"/> that carries <paramref name="correlationId"/>. Found + null
-    /// outcome = already settled (idempotent repeat); not found = unknown id.
+    /// Resolves a target system's callback (R2.1) to what it means, inside ONE campaign (the
+    /// route names it — R2 review #1): the item of <paramref name="campaignId"/> that awaits
+    /// <paramref name="correlationId"/> gets an outcome to publish; an item that carries the
+    /// id but already settled makes the callback an idempotent repeat. A callback can outrun
+    /// its acceptance — the device answered while the handler's call was still returning, or
+    /// before the sink flushed — so an id nobody carries YET, on a campaign with a claim in
+    /// flight, is PARKED and the sink settles it the moment it writes the acceptance. Park,
+    /// then look again: whichever of the two writes lands second sees the first.
     /// </summary>
     public async Task<GoldpathCampaignCallbackResolution> ResolveCallbackAsync(
-        TContext db, string type, string correlationId, GoldpathCampaignCallbackRequest request, CancellationToken cancellationToken)
+        TContext db, string type, Guid campaignId, string correlationId, GoldpathCampaignCallbackRequest request, CancellationToken cancellationToken)
     {
-        var hit = await (
-            from item in db.Set<GoldpathCampaignItem>().AsNoTracking()
-            join campaign in db.Set<GoldpathCampaign>().AsNoTracking() on item.CampaignId equals campaign.Id
-            where campaign.Type == type && item.CorrelationId == correlationId
-            orderby item.Seq descending
-            select new { item.CampaignId, item.Seq, item.State, item.Attempts })
-            .FirstOrDefaultAsync(cancellationToken);
-        if (hit is null)
+        var campaignType = await db.Set<GoldpathCampaign>().AsNoTracking()
+            .Where(c => c.Id == campaignId).Select(c => c.Type).SingleOrDefaultAsync(cancellationToken);
+        if (campaignType is null || !string.Equals(campaignType, type, StringComparison.Ordinal))
         {
-            return new GoldpathCampaignCallbackResolution(false, null);
-        }
-
-        if (hit.State != GoldpathCampaignItemState.AwaitingAck)
-        {
-            return new GoldpathCampaignCallbackResolution(true, null);
+            return new GoldpathCampaignCallbackResolution(GoldpathCampaignCallbackStatus.Unknown, null);
         }
 
         var error = request.Error is { Length: > 1000 } oversized ? oversized[..1000] : request.Error;
-        return new GoldpathCampaignCallbackResolution(true, new GoldpathCampaignOutcomeMessage(hit.CampaignId, hit.Seq, request.Succeeded, error)
+        if (await PendingOutcomeAsync(db, campaignId, correlationId, request, error, cancellationToken) is { } pending)
         {
-            ErrorCode = request.ErrorCode,
-            Retryable = request.Retryable,
-            CorrelationId = correlationId,
-            Attempt = hit.Attempts + 1,
-        });
+            return new GoldpathCampaignCallbackResolution(GoldpathCampaignCallbackStatus.Pending, pending);
+        }
+
+        if (await db.Set<GoldpathCampaignItem>().AnyAsync(i => i.CampaignId == campaignId && i.CorrelationId == correlationId, cancellationToken))
+        {
+            return new GoldpathCampaignCallbackResolution(GoldpathCampaignCallbackStatus.AlreadySettled, null);
+        }
+
+        // Nobody carries the id. Only a claim in flight can still accept it; with none, the id is unknown.
+        if (!await db.Set<GoldpathCampaignItem>().AnyAsync(
+                i => i.CampaignId == campaignId && i.State == GoldpathCampaignItemState.Processing, cancellationToken))
+        {
+            return new GoldpathCampaignCallbackResolution(GoldpathCampaignCallbackStatus.Unknown, null);
+        }
+
+        try
+        {
+            db.Set<GoldpathCampaignParkedCallback>().Add(new GoldpathCampaignParkedCallback
+            {
+                CampaignId = campaignId,
+                CorrelationId = correlationId,
+                Succeeded = request.Succeeded,
+                ErrorCode = request.ErrorCode is { Length: > 64 } code ? code[..64] : request.ErrorCode,
+                Error = error,
+                Retryable = request.Retryable,
+                ReceivedAt = _time.GetUtcNow(),
+            });
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            // The same early answer twice: the first one parked stands.
+        }
+        finally
+        {
+            db.ChangeTracker.Clear();
+        }
+
+        // The sink may have written the acceptance between the first look and the park.
+        if (await PendingOutcomeAsync(db, campaignId, correlationId, request, error, cancellationToken) is { } landed)
+        {
+            await db.Set<GoldpathCampaignParkedCallback>()
+                .Where(p => p.CampaignId == campaignId && p.CorrelationId == correlationId)
+                .ExecuteDeleteAsync(cancellationToken);
+            return new GoldpathCampaignCallbackResolution(GoldpathCampaignCallbackStatus.Pending, landed);
+        }
+
+        GoldpathCampaignMetrics.CallbacksParked(type, 1);
+        return new GoldpathCampaignCallbackResolution(GoldpathCampaignCallbackStatus.Parked, null);
+    }
+
+    /// <summary>The outcome a callback means for the item of the campaign awaiting <paramref name="correlationId"/>; null when none awaits it.</summary>
+    private static async Task<GoldpathCampaignOutcomeMessage?> PendingOutcomeAsync(
+        TContext db, Guid campaignId, string correlationId, GoldpathCampaignCallbackRequest request, string? error, CancellationToken cancellationToken)
+    {
+        var awaiting = await db.Set<GoldpathCampaignItem>().AsNoTracking()
+            .Where(i => i.CampaignId == campaignId && i.CorrelationId == correlationId && i.State == GoldpathCampaignItemState.AwaitingAck)
+            .Select(i => new { i.Seq, i.Attempts })
+            .FirstOrDefaultAsync(cancellationToken);
+        return awaiting is null
+            ? null
+            : new GoldpathCampaignOutcomeMessage(campaignId, awaiting.Seq, request.Succeeded, request.Succeeded ? null : error)
+            {
+                ErrorCode = request.ErrorCode,
+                Retryable = request.Retryable,
+                CorrelationId = correlationId,
+                Attempt = awaiting.Attempts + 1,
+            };
     }
 
     /// <summary>
@@ -566,7 +624,9 @@ public sealed class GoldpathCampaignEngine<TContext>
                         .SetProperty(i => i.Attempts, attemptsAfter)
                         .SetProperty(i => i.CompletedAt, now)   // = last failure instant
                         .SetProperty(i => i.NextAttemptAt, nextAttemptAt)
-                        .SetProperty(i => i.CorrelationId, (string?)null)
+                        // The spent acceptance's id STAYS: a repeat of the webhook that failed it
+                        // finds the row and answers 200 (R2.1 "idempotent") instead of 404; the
+                        // next acceptance overwrites it.
                         .SetProperty(i => i.AckDeadline, (DateTimeOffset?)null)
                         .SetProperty(i => i.Error, failure.Error)
                         .SetProperty(i => i.ErrorCode, failure.ErrorCode), cancellationToken);
@@ -591,6 +651,58 @@ public sealed class GoldpathCampaignEngine<TContext>
                 .SetProperty(c => c.SucceededCount, c => c.SucceededCount + settled)
                 .SetProperty(c => c.FailedCount, c => c.FailedCount + exhausted), cancellationToken);
         GoldpathCampaignMetrics.Outcomes(campaignId, settled, exhausted);
+
+        if (accepted.Length > 0)
+        {
+            await SettleParkedCallbacksAsync(db, campaignId, accepted, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// The other half of parking (R2 review #1): the acceptances this flush just wrote may
+    /// have been answered already. One query per flush finds those answers; each becomes the
+    /// outcome of the attempt it answers (attempt-bound, so a stale park cannot settle a
+    /// later attempt), is applied, and leaves the parking lot.
+    /// </summary>
+    private async Task SettleParkedCallbacksAsync(
+        TContext db, Guid campaignId, GoldpathCampaignOutcomeMessage[] accepted, CancellationToken cancellationToken)
+    {
+        var correlations = accepted.Select(a => a.CorrelationId).OfType<string>().Distinct(StringComparer.Ordinal).ToArray();
+        var parked = await db.Set<GoldpathCampaignParkedCallback>().AsNoTracking()
+            .Where(p => p.CampaignId == campaignId && correlations.Contains(p.CorrelationId))
+            .ToListAsync(cancellationToken);
+        if (parked.Count == 0)
+        {
+            return;
+        }
+
+        var answers = parked.Select(p =>
+        {
+            var acceptance = accepted.Last(a => string.Equals(a.CorrelationId, p.CorrelationId, StringComparison.Ordinal));
+            return new GoldpathCampaignOutcomeMessage(campaignId, acceptance.Seq, p.Succeeded, p.Succeeded ? null : p.Error)
+            {
+                ErrorCode = p.ErrorCode,
+                Retryable = p.Retryable,
+                CorrelationId = p.CorrelationId,
+                Attempt = acceptance.Attempt,
+            };
+        }).ToArray();
+        await ApplyOutcomesAsync(db, campaignId, answers, cancellationToken);
+        var settled = parked.Select(p => p.CorrelationId).ToArray();
+        await db.Set<GoldpathCampaignParkedCallback>()
+            .Where(p => p.CampaignId == campaignId && settled.Contains(p.CorrelationId))
+            .ExecuteDeleteAsync(cancellationToken);
+        _logger.LogInformation("Campaign {CampaignId}: {Count} callbacks that outran their acceptance settled on arrival of it.", campaignId, parked.Count);
+    }
+
+    /// <summary>
+    /// Drops parked callbacks no acceptance claimed within <see cref="GoldpathCampaignOptions.StaleClaimAfter"/>
+    /// — by then the claim they were waiting for was swept as interrupted anyway. Returns how many went.
+    /// </summary>
+    public async Task<int> ExpireParkedCallbacksAsync(TContext db, CancellationToken cancellationToken)
+    {
+        var cutoff = _time.GetUtcNow() - _options.StaleClaimAfter;
+        return await db.Set<GoldpathCampaignParkedCallback>().Where(p => p.ReceivedAt < cutoff).ExecuteDeleteAsync(cancellationToken);
     }
 
     /// <summary>

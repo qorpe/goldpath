@@ -130,11 +130,11 @@ public class R2Tests
         await fixture.Engine.ReleaseBatchAsync(scope.ServiceProvider, campaign, 1, CancellationToken.None);
         await fixture.ConsumeAllPublishedAsync();
 
-        var unknown = await fixture.Engine.ResolveCallbackAsync(db, "winback", "nope", new GoldpathCampaignCallbackRequest(true), CancellationToken.None);
-        Assert.False(unknown.Found);
+        var unknown = await fixture.Engine.ResolveCallbackAsync(db, "winback", campaign.Id, "nope", new GoldpathCampaignCallbackRequest(true), CancellationToken.None);
+        Assert.Equal(GoldpathCampaignCallbackStatus.Unknown, unknown.Status);
 
-        var pending = await fixture.Engine.ResolveCallbackAsync(db, "winback", "fota-42", new GoldpathCampaignCallbackRequest(true), CancellationToken.None);
-        Assert.True(pending.Found);
+        var pending = await fixture.Engine.ResolveCallbackAsync(db, "winback", campaign.Id, "fota-42", new GoldpathCampaignCallbackRequest(true), CancellationToken.None);
+        Assert.Equal(GoldpathCampaignCallbackStatus.Pending, pending.Status);
         Assert.NotNull(pending.Outcome);
         await fixture.Engine.ApplyOutcomesAsync(db, campaign.Id, [pending.Outcome!], CancellationToken.None);
 
@@ -143,8 +143,8 @@ public class R2Tests
         Assert.Equal(1, fixture.Reload(campaign.Id).SucceededCount);
 
         // The provider retries its webhook: found, already settled, nothing to publish.
-        var repeat = await fixture.Engine.ResolveCallbackAsync(db, "winback", "fota-42", new GoldpathCampaignCallbackRequest(true), CancellationToken.None);
-        Assert.True(repeat.Found);
+        var repeat = await fixture.Engine.ResolveCallbackAsync(db, "winback", campaign.Id, "fota-42", new GoldpathCampaignCallbackRequest(true), CancellationToken.None);
+        Assert.Equal(GoldpathCampaignCallbackStatus.AlreadySettled, repeat.Status);
         Assert.Null(repeat.Outcome);
         Assert.Equal(1, fixture.Reload(campaign.Id).SucceededCount);
     }
@@ -161,15 +161,20 @@ public class R2Tests
         await fixture.Engine.ReleaseBatchAsync(scope.ServiceProvider, campaign, 1, CancellationToken.None);
         await fixture.ConsumeAllPublishedAsync();
 
-        var resolution = await fixture.Engine.ResolveCallbackAsync(db, "winback", "sms-7",
+        var resolution = await fixture.Engine.ResolveCallbackAsync(db, "winback", campaign.Id, "sms-7",
             new GoldpathCampaignCallbackRequest(false, "DELIVERY_FAILED", "handset unreachable", Retryable: true), CancellationToken.None);
         await fixture.Engine.ApplyOutcomesAsync(db, campaign.Id, [resolution.Outcome!], CancellationToken.None);
 
         var item = fixture.Query(d => d.Set<GoldpathCampaignItem>().AsNoTracking().Single());
         Assert.Equal(GoldpathCampaignItemState.AwaitingRetry, item.State);
         Assert.Equal("DELIVERY_FAILED", item.ErrorCode);
-        Assert.Null(item.CorrelationId);   // the acceptance is spent; the retry gets a fresh one
+        // The spent acceptance's id stays on the row (R2 review #1): a repeat of this webhook finds it
+        // and is an idempotent 200, not a 404; the retry's acceptance overwrites it.
+        Assert.Equal("sms-7", item.CorrelationId);
         Assert.Null(item.AckDeadline);
+        var repeat = await fixture.Engine.ResolveCallbackAsync(db, "winback", campaign.Id, "sms-7",
+            new GoldpathCampaignCallbackRequest(false, "DELIVERY_FAILED", "handset unreachable", Retryable: true), CancellationToken.None);
+        Assert.Equal(GoldpathCampaignCallbackStatus.AlreadySettled, repeat.Status);
     }
 
     [Fact]
@@ -281,7 +286,8 @@ public class R2Tests
     {
         var builder = WebApplication.CreateBuilder();
         builder.Services.AddDbContext<CampaignTestContext>(o => o.UseSqlite("DataSource=:memory:"));
-        builder.Services.AddSingleton(new GoldpathCampaignOptions());
+        builder.Services.AddSingleton(new GoldpathCampaignOptions().AddCampaign<TestTarget>("device", c => c
+            .MaxTargets(10).SignedCallbacks(CampaignFixture.CallbackSecret).Targets((_, _) => AsyncEnumerable.Empty<TestTarget>())));
         using var app = builder.Build();
         app.MapGoldpathCampaignCallbacks<CampaignTestContext>();
 
@@ -290,7 +296,7 @@ public class R2Tests
             .OfType<RouteEndpoint>()
             .Select(e => $"{e.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods.Single()} {e.RoutePattern.RawText}")
             .ToArray();
-        Assert.Equal(["POST /goldpath/campaign/callbacks/{type}/{correlationId}"], actual);
+        Assert.Equal(["POST /goldpath/campaign/callbacks/{type}/{campaignId:guid}/{correlationId}"], actual);
     }
 }
 

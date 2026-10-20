@@ -95,6 +95,9 @@ public sealed class CampaignTestContext(DbContextOptions<CampaignTestContext> op
 
 public sealed class CampaignFixture : IDisposable
 {
+    /// <summary>The winback type's callback secret (a test value, 47 bytes).</summary>
+    public const string CallbackSecret = "test-only-callback-secret-not-for-any-real-host";
+
     private readonly SqliteConnection _connection;
 
     public CampaignFixture(Action<GoldpathCampaignOptions>? configure = null, int sourceSize = 10, Action<IServiceCollection>? extraServices = null)
@@ -106,6 +109,7 @@ public sealed class CampaignFixture : IDisposable
         Options = new GoldpathCampaignOptions();
         Options.AddCampaign<TestTarget>("winback", c => c
             .MaxTargets(1_000)
+            .SignedCallbacks(CallbackSecret)
             .Targets((_, _) => Stream(Source)));
         configure?.Invoke(Options);
 
