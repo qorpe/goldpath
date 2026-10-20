@@ -446,7 +446,7 @@ Proofs: the signed path settles and a signed repeat is 200; seven unauthentic va
 each have a red-then-green test; the recipe is pinned by a vector; the integration suite
 signs every callback on real infrastructure and refuses unsigned, forged and stale ones.
 
-## Revision R3 — scheduled start, ceilings as data, an acknowledgement ceiling, a policy version, auto-suspend (PROPOSED 2026-10-21)
+## Revision R3 — scheduled start, ceilings as data, an acknowledgement ceiling, a policy version, auto-suspend (ACCEPTED 2026-10-21 — owner decision in chat, the seven questions Q1–Q7 answered as recommended; the merge of PR #313 records it. Implementation: the eleven slices below, none landed yet)
 
 **Finding.** A coverage analysis on 2026-10-20 compared R2 with a device-fleet adopter's
 bulk-operations design (controlled actions against tens of millions of devices, several target
@@ -475,8 +475,10 @@ Five things the design needs are not in the module:
 approved as ONE revision covering exactly these five — StartAt + a READY state, target-system
 ceilings as data + `IOptionsMonitor`, `MaxAwaitingAck` with null = today's behaviour, a throttle
 version (optimistic concurrency), and a `Suspended` state for auto-suspend. One migration, one
-train. This text comes first (docs-only, [#303](https://github.com/qorpe/goldpath/issues/303));
-**the owner merging it is its acceptance**; each code slice below is its own issue.
+train. This text came first (docs-only, [#303](https://github.com/qorpe/goldpath/issues/303)).
+**Owner decision (2026-10-21, in chat):** R3 is ACCEPTED as written here, with Q1–Q7 answered
+as recommended (*Owner decisions* at the end of this revision); the text below already reads
+them as decided. Each code slice below is its own issue.
 
 | # | Addition | The sentence for it |
 |---|---|---|
@@ -528,8 +530,8 @@ is meant in the repeated hour. `EnumerateStepAsync`, which flips `Enumerating �
 when the snapshot completes, flips to `Ready` instead while `policy.IsBeforeStart(now)`.
 `PrepareTickAsync` starts a `Ready` campaign whose start has passed (state-token guarded, like
 `TryExpireAsync`) and runs R1.2's expiry check on `Ready` too. The transition goes through one
-internal start-gate check that ships with no gates; it is where #291's approval plugs in
-(question Q6).
+internal start-gate check that ships with no gates; it is where #291's approval plugs in, as
+amendment R3.7 (owner decision Q6).
 
 `StartAt` is the earliest start, not a promise: a campaign whose snapshot is still running at
 `StartAt` starts when the snapshot completes, and the console shows both facts.
@@ -605,7 +607,7 @@ rate live, name a target system.
 `TargetSystem = 1`), `Name` (128; empty for the global row), `MaxTps` (`int?`, the live value;
 null on the global row = off), `SeedMaxTps` (`int?`, the code value last seeded), `UpdatedAt`,
 `UpdatedBy`; primary key `(Kind, Name)`. The leader reconciles the seed rows at the start of
-every slice: it inserts a missing row from code and, under question Q4's recommended answer,
+every slice: it inserts a missing row from code and, by owner decision Q4,
 follows a changed code value only while the operator has never moved the row (`MaxTps ==
 SeedMaxTps`), otherwise keeps the operator's value and logs the disagreement. A concurrent
 insert from the admin service is a primary-key conflict that both sides resolve by re-reading.
@@ -621,7 +623,7 @@ banks at most one tick's worth of tokens: the burst rule
 fixed, no knob) applies to the new one from its first line.
 
 **Admin and console.** The ceilings need routes the frozen contract does not have, so they ride
-an admin-contract revision (question Q5): proposed `GET /ceilings` (both kinds, with the types
+admin-contract revision R4 ([#304](https://github.com/qorpe/goldpath/issues/304); owner decision Q5): `GET /ceilings` (both kinds, with the types
 and running campaigns each one binds), `POST /ceilings/global/throttle`,
 `POST /ceilings/target-systems/{name}/throttle`, and `GET /ceilings/audit`. A change is audited in
 `GoldpathCampaignAudit` with `CampaignId = Guid.Empty` and action `ceiling`, detail old → new.
@@ -732,7 +734,7 @@ FailedCount` today, which counts `Released`, `Processing`, `AwaitingRetry` and `
 With `MaxAwaitingAck` null that stays exactly the rule, line for line. With it set:
 
 - `MaxInFlight` caps live work: `inFlight − AwaitingAckCount`. A waiting retry keeps its slot,
-  the backpressure R1.3 chose deliberately (question Q2: the issue's literal text counted
+  the backpressure R1.3 chose deliberately (owner decision Q2; the issue's literal text counted
   `Released + Processing` only).
 - `MaxAwaitingAck` caps `AwaitingAckCount`. An acceptance moves an item from the first ceiling
   to the second, and the pacer releases only while both have room.
@@ -840,7 +842,7 @@ produces. The ratio counts every completed attempt, **retryable failures include
 owner decided: a melting target system shows up as timeouts first. `ACK_TIMEOUT` and an
 interrupted claim count as failures; an acceptance is not an outcome until it settles.
 
-**Counting (question Q3).** Two counters on the campaign row, `WindowOutcomes` and
+**Counting (owner decision Q3).** Two counters on the campaign row, `WindowOutcomes` and
 `WindowFailures`, ride the campaign `UPDATE` that `ApplyOutcomesAsync` already runs once per
 flush. The stale-claim sweep's `FailedCount` update carries them too. They cost no extra write.
 Each tick, for a `Running` campaign with the ratio set, the pacer reads them from the row it has
@@ -932,7 +934,10 @@ every item exactly once.
 ### The one migration
 
 Every R3 column lands in ONE generated migration, named in the upgrade guide with its `[schema]`
-marker (question Q1 settles whether it is shared with R2's on preview.10).
+marker. By owner decision Q1 it is SHARED with R2's on preview.10: R2 is unpublished, so an
+adopter coming from preview.9 generates one migration for both, and the preview.10 guide's step
+becomes `goldpath db add CampaignR2R3`, with R2's `GoldpathCampaignR2Backfill()` line still at the
+end of its `Up`. The guide is rewritten by the slice that lands the schema (R3-S1).
 
 | Table | Change | Default that reproduces R2 |
 |---|---|---|
@@ -986,8 +991,8 @@ What the table means for each provider:
 
 ### Verifiers (ADR-0005)
 
-R3 adds no coding standard an adopter must follow, so **no analyzer is proposed** and **GP1705
-stays free** (the next id after GP1704 in `AnalyzerReleases.Unshipped.md`; question Q7). Every
+R3 adds no coding standard an adopter must follow, so **R3 ships no analyzer** and **GP1705
+stays free** (the next id after GP1704 in `AnalyzerReleases.Unshipped.md`; owner decision Q7). Every
 rule is a runtime invariant, and each has its verifier:
 
 | Rule | Verifier |
@@ -1023,7 +1028,9 @@ rule is a runtime invariant, and each has its verifier:
 - **Four-eyes approval at `Ready`** ([#291](https://github.com/qorpe/goldpath/issues/291)): the
   owner decided on 2026-10-20 that T37's trigger has fired and that the gate sits at `Ready`,
   through `Goldpath.Approvals`. It is not one of the five items approved for R3. R3.1 leaves it
-  one internal start-gate check to plug into (question Q6).
+  one internal start-gate check to plug into; the binding follows as amendment **R3.7**, written
+  after this revision (owner decision Q6). It needs no campaign column, so it adds nothing to the
+  one migration.
 - **Read and mutate roles** ([#297](https://github.com/qorpe/goldpath/issues/297)): reversing
   R2's "finer roles than the ops floor" non-goal (owner, 2026-10-20) is recorded in this RFC by
   [#304](https://github.com/qorpe/goldpath/issues/304), together with admin-contract R4 and its
@@ -1069,7 +1076,7 @@ independent of it, and each has a reason:
 | [#288](https://github.com/qorpe/goldpath/issues/288) snapshot off the leader tick | not in R3 | no public API; it shortens the time to `Ready` and leaves the R3.1 rule unchanged |
 | [#289](https://github.com/qorpe/goldpath/issues/289) `StartAt` + `Ready` | **R3.1** | — |
 | [#290](https://github.com/qorpe/goldpath/issues/290) target-system ceilings, tunable options | **R3.2** (part a + the verb of part b), **R3.3** (the reload of part b) | — |
-| [#291](https://github.com/qorpe/goldpath/issues/291) four-eyes at `Ready` | not in R3; plugs into R3.1 | outside the owner's five; question Q6 |
+| [#291](https://github.com/qorpe/goldpath/issues/291) four-eyes at `Ready` | amendment R3.7 (owner decision Q6); plugs into R3.1 | outside the owner's five |
 | [#292](https://github.com/qorpe/goldpath/issues/292) burst control | not in R3 | a defect against R1's DoD, no knob (owner); R3.2's bucket inherits its one-tick rule |
 | [#293](https://github.com/qorpe/goldpath/issues/293) `MaxAwaitingAck` | **R3.4** | — |
 | [#294](https://github.com/qorpe/goldpath/issues/294) metrics RFC §7 promises | not in R3 | no public API; R3's instruments join its export test |
@@ -1087,61 +1094,53 @@ with the last one.
 
 | Slice | R3 item | Issue | Depends on | Scope |
 |---|---|---|---|---|
-| R3-S1 | all | new — "Campaign R3: the schema" | acceptance | every column, the ceilings table, the two enum values, the model goldens, the one upgrade-guide migration step; no behaviour. Landing the schema first makes it one migration whatever order the features land in |
-| R3-S2 | R3.1 | #289, part a | S1 | engine + pacer + admin: `Ready`, the start gate check, the throttle rules, `R3StartTests` (DST pair included) |
-| R3-S3 | R3.1 | #289, part b | S2 | `CampaignR3Tests` on the real broker, the console governor's start, the console smoke, S-FLEET-01's scheduled-start step |
-| R3-S4 | R3.5 | #298, part a | S1 | `PolicyVersion`, the conditional throttle, the refusal audit, the overload; the HTTP half is #298 part b with #304's route slice |
-| R3-S5 | R3.4 | #293, part a | S1 | `AwaitingAckCount` in the flush and the sweep, the slice re-count, the pacer rule, the throttle field, unit proofs |
-| R3-S6 | R3.4 | #293, part b | S5 | the slow-acknowledgement real-broker test, the governor fields, runbook item 8 |
-| R3-S7 | R3.3 | #290, part c | S1 | `Goldpath:Campaign` through `IOptionsMonitor`, replace-not-append binding, the refused-reload path |
-| R3-S8 | R3.2 | #290, part a | S1, #292 | registration, the seed reconcile, the pacer's target-system bucket, unit proofs |
-| R3-S9 | R3.2 | #290, part b | S8, #304's contract text | the ceiling verbs, audit, routes under R4, S-FLEET-03 extended on the real broker, the governor editor |
-| R3-S10 | R3.6 | #299, part a | S1 (soft: #294, so the new counter joins its export test) | the window counters in the flush and the sweep, the pacer's evaluation, `Suspended` across the verbs, the reason, unit proofs |
-| R3-S11 | R3.6 | #299, part b | S10 | S-OPS-03 on the real broker, the console's suspended view and resume, the runbook item, the scenario entry, the RFC status line `IMPLEMENTED` |
+| R3-S1 | all | [#314](https://github.com/qorpe/goldpath/issues/314) | acceptance | every column, the ceilings table, the two enum values, the model goldens, the preview.10 guide's one `goldpath db add CampaignR2R3` step (Q1); no behaviour. Landing the schema first makes it one migration whatever order the features land in |
+| R3-S2 | R3.1 | [#289](https://github.com/qorpe/goldpath/issues/289) | S1 | engine + pacer + admin: `Ready`, the start gate check, the throttle rules, `R3StartTests` (DST pair included) |
+| R3-S3 | R3.1 | [#315](https://github.com/qorpe/goldpath/issues/315) | S2 | `CampaignR3Tests` on the real broker, the console governor's start, the console smoke, S-FLEET-01's scheduled-start step |
+| R3-S4 | R3.5 | [#298](https://github.com/qorpe/goldpath/issues/298) | S1 | `PolicyVersion`, the conditional throttle, the refusal audit, the overload; the HTTP half rides admin-contract R4's route slice ([#304](https://github.com/qorpe/goldpath/issues/304)) |
+| R3-S5 | R3.4 | [#293](https://github.com/qorpe/goldpath/issues/293) | S1 | `AwaitingAckCount` in the flush and the sweep, the slice re-count, the pacer rule, the throttle field, unit proofs |
+| R3-S6 | R3.4 | [#316](https://github.com/qorpe/goldpath/issues/316) | S5 | the slow-acknowledgement real-broker test, the governor fields, runbook item 8 |
+| R3-S7 | R3.3 | [#317](https://github.com/qorpe/goldpath/issues/317) | acceptance (no schema) | `Goldpath:Campaign` through `IOptionsMonitor`, replace-not-append binding, the refused-reload path |
+| R3-S8 | R3.2 | [#290](https://github.com/qorpe/goldpath/issues/290) | S1, #292 | registration, the seed reconcile, the pacer's target-system bucket, unit proofs |
+| R3-S9 | R3.2 | [#318](https://github.com/qorpe/goldpath/issues/318) | S8, #304's contract text | the ceiling verbs, audit, routes under R4, S-FLEET-03 extended on the real broker, the governor editor |
+| R3-S10 | R3.6 | [#299](https://github.com/qorpe/goldpath/issues/299) | S1 (soft: #294, so the new counter joins its export test) | the window counters in the flush and the sweep, the pacer's evaluation, `Suspended` across the verbs, the reason, unit proofs |
+| R3-S11 | R3.6 | [#319](https://github.com/qorpe/goldpath/issues/319) | S10 | S-OPS-03 on the real broker, the console's suspended view and resume, the runbook item, the scenario entry, the RFC status line `IMPLEMENTED` |
 
-#289, #290, #293, #298 and #299 are each too big for one run as written; the parts above are
-the split. #290 becomes three parts (a model + pacer, b verb + console, c options reload), one
-more than the issue proposed, because the reload shares no code with the ceilings.
+#289, #290, #293, #298 and #299 were each too big for one run as written. Each now carries its
+first part, retitled, and the later parts are new issues: #289 → #315, #293 → #316,
+#290 → #317 (the options reload, which shares no code with the ceilings) and #318, #299 → #319.
+#298 keeps the campaign half; its HTTP half rides admin-contract R4. R3-S1 (#314) and R3-S7 (#317)
+depend on nothing but this revision's merge; every other slice waits on the slices its row names.
 
-### Open questions for the owner
+### Owner decisions (2026-10-21, in chat — all seven as recommended)
 
-Answer as "Q1 a, Q2 yes, …". Each question carries the recommendation the text above already
-assumes.
+The revision was written with these seven open; the owner answered them on 2026-10-21 and the
+text above reads them as decided.
 
-- **Q1 — The migration on preview.10.** R2 is unpublished, and its guide names
-  `goldpath db add CampaignR2`. If R3-S1 lands before preview.10 is tagged, an adopter coming
-  from preview.9 can only generate ONE migration: EF diffs the whole model, which includes R3.
-  (a) Ship R2 and R3 together and make the preview.10 guide one step, `goldpath db add
-  CampaignR2R3`, with R2's backfill line at the end of its `Up`. (b) Hold R3-S1 until after
-  the preview.10 tag and ship R3 as `CampaignR3` on preview.11. *Recommended: (a)* — the
-  milestone already pairs R2 with R3, and one schema step is what "one migration, one train"
-  asks for.
+- **Q1 — The migration on preview.10.** R2 is unpublished, and its guide named
+  `goldpath db add CampaignR2`; once R3-S1 lands an adopter coming from preview.9 can only
+  generate ONE migration, because EF diffs the whole model. Options were (a) ship R2 and R3
+  together as one step, or (b) hold R3 to preview.11 as `CampaignR3`. **Owner decision
+  2026-10-21: (a)** — one migration, `goldpath db add CampaignR2R3`, on preview.10, with R2's
+  backfill line at the end of its `Up`.
 - **Q2 — Does a waiting retry keep its `MaxInFlight` slot when `MaxAwaitingAck` is set?** #293's
-  text counts `Released + Processing` only. *Recommended: yes* — count `AwaitingRetry` too. R1.3
-  chose that backpressure, a ripe retry becomes a live call again, and the rule then needs one
-  counter (`AwaitingAckCount`) instead of two.
-- **Q3 — The auto-suspend window.** (a) Counters on the campaign row: the ratio over the outcomes
-  since the window last restarted, evaluated every tick once `SuspendMinSample` is reached, the
-  window restarting every `SuspendWindow` outcomes (default 1,000). This needs no index and no
-  extra write. (b) An exact sliding "last N" over the items table, which needs a new index on
-  the thirty-million-row table and still misses retryable failures whose items later succeeded.
-  *Recommended: (a)*, with the 1,000 default.
+  text counted `Released + Processing` only. **Owner decision 2026-10-21: yes** — `AwaitingRetry`
+  keeps its slot (R1.3's backpressure), and the rule needs one counter, `AwaitingAckCount`.
+- **Q3 — The auto-suspend window.** (a) Counters on the campaign row, evaluated every tick once
+  `SuspendMinSample` is reached, restarting every `SuspendWindow` outcomes; or (b) an exact
+  sliding "last N" over the items table (a new index on the thirty-million-row table). **Owner
+  decision 2026-10-21: (a)**, `SuspendWindow` default 1,000.
 - **Q4 — A code ceiling that changes after the row was seeded.** (a) Follow the code while the
-  operator has never moved the row (`MaxTps == SeedMaxTps`); otherwise keep the operator's value
-  and log the disagreement. (b) The row always wins after the first seed. (c) The code wins on
-  every deploy. *Recommended: (a)* — a deploy never silently undoes an operator's incident
-  change, and a developer's reviewed change still lands where nobody overrode it.
-- **Q5 — The ceiling routes.** They are new routes, and the owner's R4 list on #304 does not name
-  them: `GET /ceilings`, `POST /ceilings/global/throttle`,
-  `POST /ceilings/target-systems/{name}/throttle`, `GET /ceilings/audit`. *Recommended: fold them
-  into admin-contract R4 (#304)*, so the contract is revised and frozen once.
-- **Q6 — #291 (four-eyes at `Ready`).** R3 stays exactly the five approved items. R3.1's
-  `Ready → Running` goes through one internal start-gate check that ships with no gates. #291's
-  binding (an approval declared on the type, the Approvals subject keyed by the campaign id, no
-  campaign column) would follow as amendment **R3.7**, written after this revision is accepted.
-  *Recommended: yes, as an amendment.* It needs no migration, so it can still ride the R3 train.
-- **Q7 — An analyzer for R3?** The candidate is GP1705 (Error, compilation end): a
-  `.TargetSystem("x")` with no `AddTargetSystem("x", …)` in the compilation. *Recommended: no.*
-  The startup refusal already fails the first run and names both names (ADR-0008), and a
-  string-matching analyzer across call sites would be weaker than the runtime check. GP1705 stays
-  free.
+  operator has never moved the row; (b) the row always wins; (c) the code always wins. **Owner
+  decision 2026-10-21: (a)** — code follows only while `MaxTps == SeedMaxTps`; otherwise the
+  operator's value stays and the disagreement is logged.
+- **Q5 — The ceiling routes** (`GET /ceilings`, `POST /ceilings/global/throttle`,
+  `POST /ceilings/target-systems/{name}/throttle`, `GET /ceilings/audit`). **Owner decision
+  2026-10-21: fold them into admin-contract R4 ([#304](https://github.com/qorpe/goldpath/issues/304))**,
+  so the contract is revised and frozen once.
+- **Q6 — #291 (four-eyes at `Ready`).** **Owner decision 2026-10-21: an amendment, R3.7**, written
+  after this revision lands. R3.1's `Ready → Running` keeps one internal start-gate check with no
+  gates; R3.7 binds the Approvals subject to the campaign id, with no campaign column.
+- **Q7 — An analyzer for R3?** The candidate was GP1705 (`.TargetSystem("x")` with no
+  `AddTargetSystem("x", …)`). **Owner decision 2026-10-21: no analyzer** — the startup refusal
+  is the verifier; GP1705 stays free.
