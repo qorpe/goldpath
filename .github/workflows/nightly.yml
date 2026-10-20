@@ -203,9 +203,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The hosted-fit sixteen (issue #20): the six long-running packages OOM the 16 GB
+        # The hosted-fit sixteen (issue #20): the six long-running packages OOMed the 16 GB
         # runners even at concurrency 2 — they live in mutation-heavy.yml (dispatch-only)
-        # and in the release checklist's local cadence.
+        # and in the release checklist's local cadence. The OOM was Stryker's solution mode
+        # running every referencing test project; scoped to their own suites (2026-10-20) all
+        # six finish in under 30 min. Folding them in here is a decision of its own (T32).
         package: [Goldpath.Abstractions, Goldpath.Data, Goldpath.Idempotency, Goldpath.AuditTrail,
                   Goldpath.SoftDelete, Goldpath.DataProtection, Goldpath.MultiTenancy,
                   Goldpath.Locking, Goldpath.Auth, Goldpath.Cli, Goldpath.Approvals, Goldpath.FileExchange,

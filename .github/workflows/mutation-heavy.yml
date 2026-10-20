@@ -1,6 +1,9 @@
-# The six mutation runs hosted 16 GB runners cannot finish (issue #20 — exit 143 OOM at
+# The six mutation runs hosted 16 GB runners could not finish (issue #20 — exit 143 OOM at
 # concurrency 2, scattered times). Dispatch-only, concurrency 1, generous timeouts; the
 # release checklist keeps the LOCAL cadence as the authoritative fallback for these six.
+# The OOM came from Stryker's solution mode, which ran every test project referencing the
+# package (Jobs: 457 tests, the integration host among them). Since the 2026-10-20 scope fix
+# each job builds and runs only its configured suites and all six finish in under 30 min.
 name: mutation-heavy
 
 on:

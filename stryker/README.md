@@ -35,13 +35,11 @@ borrow exactly those — not every container-backed story that happens to pass t
 | Data | `Goldpath.SoftDelete.Tests` | Asserts the stamped-update rewrite through `QueryFilters` and the contributor ordering in `SaveContributors` — Data's composition seam, exercised by the module that plugs into it (2 mutants). |
 | Data | `Goldpath.MultiTenancy.Tests` | The tenant guard's ordering (`Guard_messages_teach_the_fix_and_the_contributor_runs_first`) asserts `SaveContributors` and the filter composition in `QueryFilters` (2 mutants). |
 | MultiTenancy | `Goldpath.Auth.Tests` | `Binding_can_be_disabled_for_gateway_owned_tenancy` / `Binding_rejection_body_names_the_problem` assert the tenant-to-principal binding MultiTenancy registers (1 mutant). |
-| MultiTenancy | `Goldpath.IntegrationTests` | `Http_tenant_survives_middleware_stamp_outbox_broker_and_consumer_stamp` is the tenant's journey through the outbox and a real broker, which no unit suite can host (2 mutants). The rest of the suite is filtered out: under solution mode it also killed 3 header-name string mutants INCIDENTALLY, through the campaign pacer bench (75.58 %); the deliberate tests alone score 72.09 %, and a whole-suite borrow cost 130 min a night for those 3. |
+| MultiTenancy | `Goldpath.IntegrationTests` | `Http_tenant_survives_middleware_stamp_outbox_broker_and_consumer_stamp` is the tenant's journey through the outbox and a real broker, which no unit suite can host (2 mutants). The rest of the suite is filtered out: under solution mode it also killed 3 header-name string mutants INCIDENTALLY, through the campaign pacer bench (75.58 %); the deliberate tests alone score 72.09 %. Borrowing the whole suite cost 130 minutes (nightly 39388961885) and did not even kill those 3 — the bench fails under Stryker's instrumentation. |
 | Messaging | `Goldpath.Messaging.Conformance` | The seam's own conformance suite (ADR-0013): `S2_1_exactly_once_…` is the outbox's exactly-once contract (1 mutant). |
 | Messaging | `Goldpath.IntegrationTests` | `Committed_transaction_delivers_exactly_once` and `Rolled_back_transaction_publishes_nothing` prove the outbox registration against real Postgres + RabbitMQ (3 mutants). |
 | Locking | `Goldpath.IntegrationTests` | `Exactly_one_competitor_holds_the_lock_and_release_hands_it_over` and `Tenant_scoped_names_do_not_contend_across_tenants` contend for a real lock; the unit suite has no second holder (1 mutant). |
 | Caching | `Goldpath.IntegrationTests` | `A_second_host_with_a_cold_l1_reads_the_value_from_redis_l2` is the only proof of the Redis L2 wiring (3 mutants). The package stays BELOW the break with it — see the measured scores. |
-
-## Excluded files
 
 ## Measured scores
 
@@ -50,43 +48,60 @@ paths changed"; until 2026-09-05 no score was written down anywhere, so the gate
 checked only by the person who ran it. This table is that record. A score here is a FULL
 run (`scripts/mutation-gate.sh <Package>`), never a `--since` diff run.
 
-**Measured 2026-09-14**, full runs (`scripts/mutation-gate.sh`) on the self-hosted runner, in
-nightly run 34890001568 on the preview.9 release candidate — all four of its CLI fixes in. The
-2026-09-05 local measurements this replaces are in git history.
+**Measured 2026-10-20**, full runs on GitHub's hosted runners (ubuntu-latest, 4 vCPU / 16 GB)
+at commit f459fe2 — the first scores taken with each package's OWN scope (see "Which tests
+score a package"): the sixteen in [nightly 39410985645](https://github.com/qorpe/goldpath/actions/runs/39410985645)
+at concurrency 2, the heavy six in [mutation-heavy 39410990059](https://github.com/qorpe/goldpath/actions/runs/39410990059)
+at concurrency 1. "Solution mode" is the same package on main, where every referencing test
+project ran ([nightly 39297981494](https://github.com/qorpe/goldpath/actions/runs/39297981494),
+2026-10-19; of the heavy six only Caching ever finished a hosted run in that mode — red — in
+[mutation-heavy 39378794363](https://github.com/qorpe/goldpath/actions/runs/39378794363)).
 
-| Package | Score | Margin over break (70) |
-|---|---:|---:|
-| Abstractions | 95.24 % | 25.24 |
-| SoftDelete | 91.67 % | 21.67 |
-| Locking | 91.67 % | 21.67 |
-| Cli | 91.09 % | 21.09 |
-| AuditTrail | 81.97 % | 11.97 |
-| Messaging | 80.72 % | 10.72 |
-| DataProtection | 78.95 % | 8.95 |
-| Data | 77.38 % | 7.38 |
-| FileExchange | 76.92 % | 6.92 |
-| Approvals | 76.47 % | 6.47 |
-| Console | 75.00 % | 5.00 |
-| Idempotency | 73.58 % | 3.58 |
-| Analyzers | 72.55 % | 2.55 |
-| ServiceDefaults | 72.15 % | 2.15 |
-| MultiTenancy | 72.09 % | 2.09 |
-| Auth | 70.65 % | **0.65** |
+| Package | Score | Margin over break (70) | Minutes | Solution mode (score, minutes) |
+|---|---:|---:|---:|---|
+| Abstractions | 95.24 % | 25.24 | 0.9 | 95.24 %, 30.0 |
+| SoftDelete | 91.67 % | 21.67 | 1.4 | 91.67 %, 3.7 |
+| Locking | 91.67 % | 21.67 | 7.1 | 91.67 %, 59.5 |
+| Cli | 91.48 % | 21.48 | 7.6 | 91.44 %, 8.6 |
+| AuditTrail | 81.97 % | 11.97 | 5.1 | 81.97 %, 5.7 |
+| Notification | 81.23 % | 11.23 | 5.9 | never finished (OOM) |
+| Messaging | 80.72 % | 10.72 | 26.9 | 80.72 %, 69.4 |
+| DataProtection | 78.95 % | 8.95 | 1.5 | 78.95 %, 33.0 |
+| Data | 77.38 % | 7.38 | 2.3 | 77.38 %, 38.0 |
+| FileExchange | 76.92 % | 6.92 | 3.6 | 76.92 %, 31.8 |
+| Campaign | 75.13 % | 5.13 | 28.5 | never finished (OOM) |
+| Console | 75.00 % | 5.00 | 1.1 | 75.00 %, 24.3 |
+| Approvals | 74.84 % | 4.84 | 3.5 | 74.84 %, 217.7 |
+| Archival | 74.49 % | 4.49 | 10.6 | never finished (OOM) |
+| Idempotency | 73.58 % | 3.58 | 2.2 | 73.58 %, 3.3 |
+| Analyzers | 72.55 % | 2.55 | 3.9 | 72.55 %, 5.4 |
+| Jobs | 72.52 % | 2.52 | 9.1 | never finished (OOM) |
+| ServiceDefaults | 72.15 % | 2.15 | 2.2 | 72.15 %, 4.3 |
+| MultiTenancy | 72.09 % | 2.09 | 6.2 | 75.58 %, 38.5 |
+| Auth | 70.65 % | **0.65** | 1.8 | 70.65 %, 32.3 |
+| Bulk | 70.09 % | **0.09** | 15.0 | never finished (timeout) |
+| Caching | **69.57 %** | **-0.43** | 2.5 | 69.57 %, 33.4 (RED there too) |
 
-Read the margin column, not the score. Five packages clear the break by less than four
-points — **Auth by 0.65**, MultiTenancy by 2.09, ServiceDefaults by 2.15, Analyzers by 2.55 and
-Idempotency by 3.58 — so in those five a single deleted or weakened test turns the gate red. That
-fact was invisible until this table existed: the checklist asked for scores and nothing recorded
-one. Treat a margin under 2 as a standing invitation to add facts, not as a passing grade.
+Read the margin column, not the score. **Caching is below the break** — it was in solution
+mode as well, unseen because the heavy lane never finished; that is open thread T32, and the
+break is not lowered for it. **Bulk clears it by 0.09 and Auth by 0.65**; MultiTenancy,
+ServiceDefaults, Jobs and Analyzers by under three points. Same-commit reruns on these
+runners move a score by up to ±1 point (Approvals 73.86–74.84, Bulk 70.09–71.28, Jobs
+72.14–72.90, Cli 91.13–91.87: tests that time out under instrumentation on one run and kill
+on the next), so for Bulk and Auth the next red night is a coin toss, not a regression. Treat
+a margin under 2 as a standing invitation to add facts, not as a passing grade.
 
-Against 2026-09-05: Cli fell 2.10 to 91.09 — new recipe code in preview.9, still 21 points clear.
-Messaging fell 3.62 — it gained the consume seam (ADR-0013) in the same window, so its scored
-code is not the code measured on 2026-09-05. MultiTenancy fell 2.33. The two measurements ran on
-different machines, so those drops are recorded here, not explained.
+MultiTenancy is the one package whose score moved with the scope: 75.58 % → 72.09 %. Stryker's
+JSON report from the solution-mode run names the difference — three header-name string
+mutants in `MultiTenancy.cs` that only the campaign pacer bench killed, incidentally (row
+above). Every other package scores the same under its own scope, because the suites that
+killed its mutants are now named in its config.
 
-The six long-running packages (Jobs, Archival, Bulk, Notification, Campaign, Caching) run
-in `mutation-heavy.yml` (dispatch-only) and are measured locally before a release; their
-rows join this table at the next such run.
+The 2026-09-14 table that stood here (self-hosted runner, nightly 34890001568, solution
+mode — itself the successor of a 2026-09-05 local run) is superseded, not merged; both are
+in git history.
+
+## Excluded files
 
 | Package | Excluded file | Why it is not scored |
 |---|---|---|
