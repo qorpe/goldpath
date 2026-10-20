@@ -10,19 +10,17 @@ namespace Goldpath.Campaign.Tests;
 /// <summary>Scripts a typed result per target id (R2.1); unscripted ids succeed.</summary>
 public sealed class TestActionHandler(CampaignFixture fixture) : IGoldpathCampaignActionHandler<TestTarget>
 {
-    public static Dictionary<int, GoldpathCampaignActionResult> Script { get; } = [];
-
     public Task<GoldpathCampaignActionResult> ExecuteAsync(TestTarget target, GoldpathCampaignItemContext context, CancellationToken cancellationToken)
     {
         fixture.Executed.Add((target, context));
-        return Task.FromResult(Script.TryGetValue(target.Id, out var scripted) ? scripted : GoldpathCampaignActionResult.Succeeded());
+        return Task.FromResult(fixture.Script.TryGetValue(target.Id, out var scripted) ? scripted : GoldpathCampaignActionResult.Succeeded());
     }
 }
 
 /// <summary>Revision R2 (campaign RFC): typed results, acceptances + callbacks, the configurable jittered ladder.</summary>
 public class R2Tests
 {
-    private static Action<GoldpathCampaignOptions> FastTicks(Action<GoldpathCampaignOptions>? extra = null)
+    internal static Action<GoldpathCampaignOptions> FastTicks(Action<GoldpathCampaignOptions>? extra = null)
         => o =>
         {
             o.LeadershipSlice = TimeSpan.FromMilliseconds(400);
@@ -35,7 +33,7 @@ public class R2Tests
         => services.AddScoped<IGoldpathCampaignActionHandler<TestTarget>>(sp =>
             new TestActionHandler(sp.GetRequiredService<CampaignFixtureHolder>().Fixture));
 
-    private static CampaignFixture ActionFixture(Action<GoldpathCampaignOptions>? extra = null, int sourceSize = 3)
+    internal static CampaignFixture ActionFixture(Action<GoldpathCampaignOptions>? extra = null, int sourceSize = 3)
     {
         CampaignFixture? fixture = null;
         fixture = new CampaignFixture(FastTicks(extra), sourceSize, services =>
@@ -46,7 +44,7 @@ public class R2Tests
         return fixture;
     }
 
-    private static GoldpathCampaignPolicy Generous(int maxAttempts = 1)
+    internal static GoldpathCampaignPolicy Generous(int maxAttempts = 1)
         => new(10_000, null, 100, null, null, "UTC") { MaxAttempts = maxAttempts };
 
     // ---- R2.1 typed results ----
@@ -54,10 +52,9 @@ public class R2Tests
     [Fact]
     public async Task TheThreeResultShapes_LandInThreeItemStates()
     {
-        TestActionHandler.Script.Clear();
-        TestActionHandler.Script[2] = GoldpathCampaignActionResult.Failed("UNSUPPORTED_DEVICE", "no OMA-DM client", retryable: false);
-        TestActionHandler.Script[3] = GoldpathCampaignActionResult.Accepted("corr-3", TimeSpan.FromMinutes(5));
         using var fixture = ActionFixture();
+        fixture.Script[2] = GoldpathCampaignActionResult.Failed("UNSUPPORTED_DEVICE", "no OMA-DM client", retryable: false);
+        fixture.Script[3] = GoldpathCampaignActionResult.Accepted("corr-3", TimeSpan.FromMinutes(5));
         var campaign = await fixture.CreateAsync(Generous(maxAttempts: 3));
         await fixture.EnumerateAllAsync(campaign);
         using var scope = fixture.Services.CreateScope();
@@ -90,7 +87,6 @@ public class R2Tests
     [Fact]
     public async Task TheIdempotencyKeyNamesTheAttempt()
     {
-        TestActionHandler.Script.Clear();
         using var fixture = ActionFixture(sourceSize: 1);
         var campaign = await fixture.CreateAsync(Generous());
         await fixture.EnumerateAllAsync(campaign);
@@ -125,9 +121,8 @@ public class R2Tests
     [Fact]
     public async Task ACallbackSettlesAnAcceptedItem_AndASecondCallbackIsIdempotent()
     {
-        TestActionHandler.Script.Clear();
-        TestActionHandler.Script[1] = GoldpathCampaignActionResult.Accepted("fota-42", TimeSpan.FromMinutes(30));
         using var fixture = ActionFixture(sourceSize: 1);
+        fixture.Script[1] = GoldpathCampaignActionResult.Accepted("fota-42", TimeSpan.FromMinutes(30));
         var campaign = await fixture.CreateAsync(Generous());
         await fixture.EnumerateAllAsync(campaign);
         using var scope = fixture.Services.CreateScope();
@@ -157,9 +152,8 @@ public class R2Tests
     [Fact]
     public async Task AFailedCallback_WalksTheLadder_WithTheProvidersCode()
     {
-        TestActionHandler.Script.Clear();
-        TestActionHandler.Script[1] = GoldpathCampaignActionResult.Accepted("sms-7", TimeSpan.FromMinutes(30));
         using var fixture = ActionFixture(o => o.RetryJitter = 0, sourceSize: 1);
+        fixture.Script[1] = GoldpathCampaignActionResult.Accepted("sms-7", TimeSpan.FromMinutes(30));
         var campaign = await fixture.CreateAsync(Generous(maxAttempts: 2));
         await fixture.EnumerateAllAsync(campaign);
         using var scope = fixture.Services.CreateScope();
@@ -181,9 +175,8 @@ public class R2Tests
     [Fact]
     public async Task AnAckDeadlineThatPasses_IsARetryableFailure_ThenExhausts()
     {
-        TestActionHandler.Script.Clear();
-        TestActionHandler.Script[1] = GoldpathCampaignActionResult.Accepted("slow-1", TimeSpan.FromMinutes(1));
         using var fixture = ActionFixture(o => o.RetryJitter = 0, sourceSize: 1);
+        fixture.Script[1] = GoldpathCampaignActionResult.Accepted("slow-1", TimeSpan.FromMinutes(1));
         var clock = new ManualClock(DateTimeOffset.UtcNow);
         var engine = new GoldpathCampaignEngine<CampaignTestContext>(
             fixture.Options, clock, NullLogger<GoldpathCampaignEngine<CampaignTestContext>>.Instance);

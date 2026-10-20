@@ -131,6 +131,12 @@ public sealed class CampaignFixture : IDisposable
 
     public HashSet<int> FailIds { get; } = [];
 
+    /// <summary>Typed results the scripted action handler answers per target id (unscripted ids succeed).</summary>
+    public Dictionary<int, GoldpathCampaignActionResult> Script { get; } = [];
+
+    /// <summary>The fixture's in-memory database connection (a test host can share it).</summary>
+    public SqliteConnection Connection => _connection;
+
     public List<(TestTarget Target, GoldpathCampaignItemContext Context)> Executed { get; } = [];
 
     public GoldpathCampaignOptions Options { get; }

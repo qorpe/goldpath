@@ -592,7 +592,13 @@ public sealed class GoldpathCampaignEngine<TContext>
         }
     }
 
-    /// <summary>Replays one FAILED item (the jobs replay-items verb): re-claim, re-execute, apply inline.</summary>
+    /// <summary>
+    /// Replays one FAILED item (the jobs replay-items verb): re-claim, re-execute, apply inline.
+    /// Only a Failed row can be re-claimed — an item a consumer owns, or one waiting on its
+    /// ladder or its callback, is never executed a second time by the repair verb. A handler
+    /// that throws puts the item back exactly as it was (Failed, counted), so a re-driven
+    /// replay can never drift the ledger (R2 review, finding 5).
+    /// </summary>
     public async Task ReplayItemAsync(IServiceProvider services, string itemKey, CancellationToken cancellationToken)
     {
         var separator = itemKey.IndexOf('#');
@@ -608,15 +614,43 @@ public sealed class GoldpathCampaignEngine<TContext>
             return;   // idempotent evidence, not a re-send
         }
 
-        await db.Set<GoldpathCampaignItem>()
-            .Where(i => i.CampaignId == campaignId && i.Seq == seq)
-            .ExecuteUpdateAsync(s => s.SetProperty(i => i.State, GoldpathCampaignItemState.Processing), cancellationToken);
+        // State-guarded like the consumer's claim (constraint 2): Failed → Processing, or nothing.
+        var claimed = await db.Set<GoldpathCampaignItem>()
+            .Where(i => i.CampaignId == campaignId && i.Seq == seq && i.State == GoldpathCampaignItemState.Failed
+                && i.Attempts == item.Attempts)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(i => i.State, GoldpathCampaignItemState.Processing)
+                .SetProperty(i => i.ClaimedAt, _time.GetUtcNow()), cancellationToken);
+        if (claimed == 0)
+        {
+            _logger.LogInformation("Repair item {ItemKey} is {State}, not Failed — someone owns it; nothing replayed.", itemKey, item.State);
+            return;
+        }
+
         // The item LEFT the failed set the moment it was re-claimed; the apply below counts
-        // it again only if it fails again (exhausted at MaxAttempts → +1), so the ledger heals.
+        // it again only if it fails again (exhausted → +1), so the ledger heals on the OUTCOME.
         await db.Set<GoldpathCampaign>().Where(c => c.Id == campaignId)
             .ExecuteUpdateAsync(s => s.SetProperty(c => c.FailedCount, c => c.FailedCount - 1), cancellationToken);
-        var result = await ExecuteItemAsync(services, campaign.Type, campaignId, seq, item.TargetJson, campaign.Tenant,
-            attempt: item.Attempts + 1, replay: true, cancellationToken);
+        var attempt = item.Attempts + 1;
+        GoldpathCampaignActionResult result;
+        try
+        {
+            result = await ExecuteItemAsync(services, campaign.Type, campaignId, seq, item.TargetJson, campaign.Tenant,
+                attempt, replay: true, cancellationToken);
+        }
+        catch
+        {
+            // No outcome exists, so nothing happened as far as the ledger knows: put the item
+            // back in the failed set it came from, then let the runner record the throw.
+            await db.Set<GoldpathCampaignItem>()
+                .Where(i => i.CampaignId == campaignId && i.Seq == seq && i.State == GoldpathCampaignItemState.Processing
+                    && i.Attempts == item.Attempts)
+                .ExecuteUpdateAsync(s => s.SetProperty(i => i.State, GoldpathCampaignItemState.Failed), CancellationToken.None);
+            await db.Set<GoldpathCampaign>().Where(c => c.Id == campaignId)
+                .ExecuteUpdateAsync(s => s.SetProperty(c => c.FailedCount, c => c.FailedCount + 1), CancellationToken.None);
+            throw;
+        }
+
         await ApplyOutcomesAsync(db, campaignId, [OutcomeFor(campaignId, seq, result)], cancellationToken);
     }
 }
