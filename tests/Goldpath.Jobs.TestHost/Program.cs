@@ -10,7 +10,9 @@
 //        REQUIRES a broker by design (campaign RFC D8) — no in-memory stand-in.
 //        --secured raises the AUTH FLOOR (no principal → the surfaces refuse), and
 //        --multitenant makes the app tenant-scoped (R1), so the gate can prove how the
-//        console behaves when it is refused rather than only when it is welcome.)
+//        console behaves when it is refused rather than only when it is welcome.
+//        GOLDPATH_CONSOLE_SERVICES / GOLDPATH_CONSOLE_LINKS fill the console's registry;
+//        GOLDPATH_LINKS_ONLY_CONSOLE maps a second, links-only console at /linked/console.)
 using Goldpath;
 using Goldpath.Jobs.TestHost;
 using MassTransit;
@@ -86,6 +88,17 @@ await host.WaitForShutdownAsync();
 // real Postgres + Quartz) whose admin surface the console drives over real HTTP. The ops
 // policy is opted OUT explicitly here — the auth floor has its own proofs (H2/A3/A4); this
 // host exists to prove the CONSOLE, so it must not need an IdP to do it.
+// "name=value;name=value" from an environment variable — how the smoke script hands this
+// host its registry (services and links alike) without a config file per run.
+static IEnumerable<(string Name, string Value)> Entries(string variable)
+{
+    foreach (var entry in (Environment.GetEnvironmentVariable(variable) ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries))
+    {
+        var parts = entry.Split('=', 2);
+        yield return (parts[0], parts.Length > 1 ? parts[1] : "");
+    }
+}
+
 static async Task RunConsoleHostAsync(
     string connectionString, string url, string? brokerUri, bool secured, bool multiTenant, string fleet)
 {
@@ -312,12 +325,41 @@ static async Task RunConsoleHostAsync(
 
     app.MapGoldpathConsole(exposeUnsecured: unsecured, configure: console =>
     {
-        foreach (var entry in (Environment.GetEnvironmentVariable("GOLDPATH_CONSOLE_SERVICES") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries))
+        foreach (var (name, adminBaseUrl) in Entries("GOLDPATH_CONSOLE_SERVICES"))
         {
-            var parts = entry.Split('=', 2);
-            console.AddService(parts[0], parts.Length > 1 ? parts[1] : "");
+            console.AddService(name, adminBaseUrl);
+        }
+
+        // Product console link tiles (#257), the sibling of the services above.
+        foreach (var (name, url) in Entries("GOLDPATH_CONSOLE_LINKS"))
+        {
+            console.AddLink(name, url);
         }
     });
+
+    // A LINKS-ONLY console beside it (#257): the same app, a second prefix, no service at
+    // all — the registry shape that must answer `links` with NO `services` key, so the
+    // console shows the tiles and no registry warning.
+    var linksOnly = Entries("GOLDPATH_LINKS_ONLY_CONSOLE").ToArray();
+    if (linksOnly.Length > 0)
+    {
+        app.MapGoldpathConsole("/linked/console", exposeUnsecured: unsecured, configure: console =>
+        {
+            foreach (var (name, url) in linksOnly)
+            {
+                console.AddLink(name, url);
+            }
+        });
+    }
+
+    // A stand-in PRODUCT console a tile can land on (#257) — what Coexist mounts at
+    // /coexist/console/ on its own app. Behind the same floor as everything else here:
+    // a product surface applies its own floor (platform-SDK D7), and a link grants nothing.
+    var product = app.MapGroup("/product");
+    AdminSurfaceGuard.Apply(app, product, "/product", unsecured);
+    product.MapGet("/console/", () => Results.Content(
+        "<!doctype html><html lang=\"en\"><head><title>Product console</title></head><body><main><h1>Product console</h1></main></body></html>",
+        "text/html"));
     // The webhook channel's destination: a real endpoint that really answers 200.
     app.MapPost("/smoke/hook", () => Results.Ok());
     if (brokerUri is not null)

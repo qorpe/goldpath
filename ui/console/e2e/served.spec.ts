@@ -73,6 +73,61 @@ test("loads from the embedded assets and reads the registry the APP configured",
     expect((await page.request.get(`${tenant}/goldpath/console/console.config.json`)).status()).toBe(404);
   });
 
+  // Product console link tiles (#257; docs/rfc/goldpath-console-link-tiles.md). The proof
+  // standard is the adopter's own (coexist S24): DRIVEN in a browser, not inferred from config.
+  test("a product console tile comes from the APP's configuration, and clicking it ARRIVES there", async ({ page }) => {
+    await page.goto(served);
+
+    const tiles = page.getByRole("navigation", { name: "Product consoles" });
+    await expect(tiles.getByRole("link")).toHaveCount(2);
+    // Same origin shows the path; another origin shows its host — the operator sees where
+    // the tile goes before going.
+    await expect(tiles.getByRole("link", { name: "Product /product/console/" })).toBeVisible();
+    const floored = tiles.getByRole("link", { name: /^Floored console/ });
+    await expect(floored).toContainText(new URL(process.env.GOLDPATH_SECURED_URL ?? "http://localhost:5312").host);
+    await expect(floored).toHaveAttribute("href", `${process.env.GOLDPATH_SECURED_URL ?? "http://localhost:5312"}/goldpath/console/`);
+
+    await tiles.getByRole("link", { name: "Product /product/console/" }).click();
+
+    await expect(page).toHaveURL(new URL("/product/console/", served).href);
+    await expect(page.getByRole("heading", { name: "Product console" })).toBeVisible();
+  });
+
+  test("a LINKS-ONLY app shows its tile, one service, and NO registry warning", async ({ page }) => {
+    // The seam this test exists for: the server must OMIT `services` (an empty list is a
+    // BROKEN registry to the console) — the same false warning the no-service test guards,
+    // reached by a new road.
+    const linked = process.env.GOLDPATH_LINKED_CONSOLE_URL ?? "http://localhost:5310/linked/console/";
+    await page.goto(linked);
+
+    // Today renders in the SAME pass as the banner (both wait for the registry), so once it
+    // is visible the warning has either appeared or never will.
+    await expect(page.getByTestId("triage-home")).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Product consoles" }).getByRole("link")).toHaveCount(1);
+    // The banner's own words, not the bare word "registry": this app runs a file rail CALLED
+    // registry-daily, and its quarantine row is a true statement on the same screen.
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByText(/service registry|registry entr|showing this service only|missing a (service|product console)/i)).toHaveCount(0);
+    await expect(page.getByLabel(/service/i)).toHaveCount(0);
+
+    // And the answer underneath it, from the running app: `links`, and no `services` key.
+    const registry = await page.request.get(`${linked}console.config.json`);
+    expect(registry.status()).toBe(200);
+    expect(Object.keys(await registry.json())).toEqual(["links"]);
+  });
+
+  test("the query string cannot put a tile on the page — links come only from server configuration", async ({ page }) => {
+    await page.goto(`${served}?link=${encodeURIComponent("https://evil.example/")}&links=${encodeURIComponent("javascript:alert(1)")}`);
+    const tiles = page.getByRole("navigation", { name: "Product consoles" });
+    await expect(tiles.getByRole("link")).toHaveCount(2);
+    await expect(page.getByText("evil.example")).toHaveCount(0);
+
+    // ?base= is the one-service DEV override and carries no tiles at all.
+    await page.goto(`${served}?base=`);
+    await expect(page.getByTestId("triage-home")).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Product consoles" })).toHaveCount(0);
+  });
+
   test("an unknown path 404s instead of serving a page that would render blank", async ({ page }) => {
     // The console has no client-side routes yet: sections are state, not URLs. Answering
     // this with the page would be 200 + a blank screen, because the page's relative asset

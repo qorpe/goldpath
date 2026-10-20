@@ -75,7 +75,14 @@ custom-develop ON, with the same kit, the same way they add features to the back
      absent module, because "we could not ask" and "they do not have it" are different
      sentences.
 - **External products**: Mockifyr (mocks) and other products appear as configured LINK
-  tiles — their UI is theirs.
+  tiles — their UI is theirs. SHIPPED on `main` (2026-10-19, #257; decision record
+  [goldpath-console-link-tiles.md](goldpath-console-link-tiles.md)), published with the next
+  train: `AddLink(name, url)` adds a `links` array beside `services` in `console.config.json`
+  (a links-only app OMITS `services`, because an empty list reads as a broken registry), and
+  Today draws one native-link tile per product, plus "Open {name}" in the palette. A link is
+  NEVER probed — a tile asserts an address, not health. The URL is a root-relative path or an
+  absolute http(s) address without credentials; anything else is refused in `AddLink`, again
+  at `MapGoldpathConsole` startup, and once more by the console's reader.
 
 ## 4. Decisions
 
@@ -92,7 +99,7 @@ custom-develop ON, with the same kit, the same way they add features to the back
   also inject a `<base href>` (open-threads T9). The "no Node
   in generated apps" principle holds by construction. Custom pages: the kit npm package
   for teams that build UI, and a config-driven link/iframe-free tile row for those that
-  do not.
+  do not — the product console tiles of §3 (`AddLink`, 2026-10-19).
 - **D2 — The operator's first screen: cross-service TRIAGE ("today").**
   Red/overrun-predicted runs, repair-queue depths, gates awaiting four-eyes, DLQ depth —
   each row deep-links into its panel. Fleet browsing is one click away, never the

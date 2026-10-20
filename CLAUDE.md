@@ -40,7 +40,7 @@ train) is on nuget.org (plus `specdrift` 0.4.2 as tool/MCP/Docker/Action). Mocki
 (`samples/corpay`, proven nightly against the published packages). The console phase is
 COMPLETE: U1–U9 met (`docs/rfc/goldpath-console.md`; family standards ui-standard v1.3
 §7–§9 — one visual family with qorpe/mockifyr), the admin contract is at Revision R3
-(repeatable OR filters), and the console smoke (39 tests + axe) drives three real
+(repeatable OR filters), and the console smoke (44 tests + axe) drives three real
 apps and the app-SERVED console. Steps 1–5 of `docs/strategy/master-plan-2026-08.md` are DONE, and so is 6.0: the family UI
 kit is extracted to [qorpe/ui](https://github.com/qorpe/ui), published to npm through OIDC
 trusted publishing, with BOTH consoles running on the published package. The **finalize set

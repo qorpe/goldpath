@@ -62,6 +62,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   thread demanded: a planted GP2102 regression in the solution template turned the PR red in
   `GmEverything` and `GmGrownRest` while the repository build stayed green, and its revert
   turned it green again.
+- **Product console link tiles in the console registry (#257).** The console RFC promised that
+  products "appear as configured LINK tiles", and the registry had nowhere to put a link: its one
+  entry kind is a service the console PROBES, so a product with no Goldpath admin surface (the
+  RFC's own Mockifyr example) could only have joined as a false UNREACHABLE row. Coexist, which
+  mounts its own console beside the core one, was reachable only by typing its address.
+  `GoldpathConsoleOptions.AddLink(name, url)` (and `Links`, `GoldpathConsoleLink`) adds a `links`
+  array beside `services` in `console.config.json`; Today draws one native-link tile per product,
+  and the ⌘K palette offers "Open {name}". A link is never probed — a tile asserts an address,
+  never health. A links-only app OMITS `services` instead of sending an empty list, because the
+  console reads an empty list as a broken registry. The URL is a root-relative path or an
+  absolute http(s) address without credentials; anything else (`javascript:`, `data:`, `file:`,
+  `//host`, a path-relative address, a control character) stops the app at startup, and the
+  console re-checks a hand-written file. Additive: eight new PublicAPI lines, nothing shipped
+  changes — take it blind. Decision record: `docs/rfc/goldpath-console-link-tiles.md`.
 
 ### Fixed
 - **The `add feature notification` recipe had never run end to end.** The golden-manifests doc

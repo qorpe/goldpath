@@ -1,1 +1,9 @@
 #nullable enable
+Goldpath.GoldpathConsoleLink
+Goldpath.GoldpathConsoleLink.GoldpathConsoleLink(string! Name, string! Url) -> void
+Goldpath.GoldpathConsoleLink.Name.get -> string!
+Goldpath.GoldpathConsoleLink.Name.init -> void
+Goldpath.GoldpathConsoleLink.Url.get -> string!
+Goldpath.GoldpathConsoleLink.Url.init -> void
+Goldpath.GoldpathConsoleOptions.AddLink(string! name, string! url) -> Goldpath.GoldpathConsoleOptions!
+Goldpath.GoldpathConsoleOptions.Links.get -> System.Collections.Generic.IList<Goldpath.GoldpathConsoleLink!>!
