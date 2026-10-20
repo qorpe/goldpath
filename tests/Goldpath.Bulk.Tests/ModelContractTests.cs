@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Metadata.Conventions;
 using Xunit;
 
 namespace Goldpath.Bulk.Tests;
@@ -9,15 +10,24 @@ namespace Goldpath.Bulk.Tests;
 /// the EF model metadata — table names, keys, lengths, indexes, the concurrency token.
 /// A mutated model literal is a real defect, not noise.
 /// </summary>
-public class ModelContractTests : IDisposable
+/// <remarks>
+/// The model is built FRESH for every test, straight from <c>AddGoldpathBulk</c> under the
+/// provider's conventions — never read from a <see cref="DbContext"/>. EF builds a context
+/// type's model ONCE per process and caches it, so in Stryker's long-lived test host
+/// <c>AddGoldpathBulk</c> ran only for whichever test touched a context first, never under the
+/// mutant these assertions were meant to catch. Until 2026-10-20 that left 23 mutants in it
+/// surviving the very assertions below (mutation-heavy run 39410990059).
+/// </remarks>
+public class ModelContractTests
 {
-    private readonly BulkFixture _fixture = new();
     private readonly IModel _model;
 
     public ModelContractTests()
-        => _model = _fixture.Query(db => db.Model);
-
-    public void Dispose() => _fixture.Dispose();
+    {
+        var builder = new ModelBuilder(SqliteConventionSetBuilder.Build());
+        builder.AddGoldpathBulk();
+        _model = builder.FinalizeModel();
+    }
 
     private IEntityType Entity<T>() => _model.FindEntityType(typeof(T))!;
 
@@ -51,6 +61,7 @@ public class ModelContractTests : IDisposable
         Assert.Equal(64, Entity<GoldpathBulkFile>().FindProperty("Sha256")!.GetMaxLength());
         Assert.Equal(260, Entity<GoldpathBulkFile>().FindProperty("FileName")!.GetMaxLength());
         Assert.Equal(128, Entity<GoldpathBulkBatch>().FindProperty("Definition")!.GetMaxLength());
+        Assert.Equal(55, Entity<GoldpathBulkBatch>().FindProperty("TraceParent")!.GetMaxLength());   // W3C traceparent: fixed 55 chars
         Assert.Equal(128, Entity<GoldpathBulkBatch>().FindProperty("Tenant")!.GetMaxLength());
         Assert.Equal(256, Entity<GoldpathBulkBatch>().FindProperty("DecidedBy")!.GetMaxLength());
         Assert.Equal(1024, Entity<GoldpathBulkBatch>().FindProperty("DecisionNote")!.GetMaxLength());

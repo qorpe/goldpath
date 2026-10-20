@@ -120,6 +120,37 @@ public class FileStoreTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// Both read paths honor a partly consumed chunk: a short read followed by a read larger
+    /// than what is left returns exactly the remainder, never past the chunk's end.
+    /// </summary>
+    [Fact]
+    public async Task A_short_read_then_a_long_read_returns_exactly_the_remainder()
+    {
+        var data = Bytes(10_000);
+        var (file, _) = await SaveAsync(new MemoryStream(data));
+        using var scope = _fixture.Scope();
+        var db = scope.ServiceProvider.GetRequiredService<BulkTestContext>();
+
+        await using (var stream = _fixture.Store.OpenRead(db, file.Id))
+        {
+            var head = new byte[3];
+            var rest = new byte[16_384];
+            Assert.Equal(3, stream.Read(head, 0, head.Length));
+            Assert.Equal(data.Length - 3, stream.Read(rest, 0, rest.Length));
+            Assert.Equal(data, head.Concat(rest.Take(data.Length - 3)).ToArray());
+        }
+
+        await using (var stream = _fixture.Store.OpenRead(db, file.Id))
+        {
+            var head = new byte[3];
+            var rest = new byte[16_384];
+            Assert.Equal(3, await stream.ReadAsync(head.AsMemory()));
+            Assert.Equal(data.Length - 3, await stream.ReadAsync(rest.AsMemory()));
+            Assert.Equal(data, head.Concat(rest.Take(data.Length - 3)).ToArray());
+        }
+    }
+
     [Fact]
     public async Task Reading_a_missing_file_yields_zero_bytes()
     {

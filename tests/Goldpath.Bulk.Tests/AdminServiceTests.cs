@@ -55,7 +55,7 @@ public class AdminServiceTests : IDisposable
         Assert.Single(await _admin.GetBatchesAsync(["validated"], null, null, 10, CancellationToken.None));
         // R3: several states OR together in one request.
         Assert.Equal(2, (await _admin.GetBatchesAsync(["validated", "received"], null, null, 10, CancellationToken.None)).Count);
-        Assert.Single(await _admin.GetBatchesAsync(null, null, "agency-1", 10, CancellationToken.None));
+        Assert.Equal(mine.Id, Assert.Single(await _admin.GetBatchesAsync(null, null, "agency-1", 10, CancellationToken.None)).Id);
         // H8 frozen contract: take rides AdminPaging.Clamp — the floor answers one row.
         Assert.Single(await _admin.GetBatchesAsync(null, null, null, 0, CancellationToken.None));
 
@@ -128,6 +128,99 @@ public class AdminServiceTests : IDisposable
         Assert.Equal(4, (await _admin.GetBatchesAsync(null, ["refunds", "payments"], null, 10, CancellationToken.None)).Count);
         Assert.Single(await _admin.GetBatchesAsync(["validated"], ["refunds", "payments"], null, 10, CancellationToken.None));
         Assert.Empty(await _admin.GetBatchesAsync(["received"], ["refunds"], null, 10, CancellationToken.None));
+    }
+
+    private void SeedBatches(params (string Definition, GoldpathBulkBatchState State, TimeSpan Age)[] batches)
+    {
+        var now = DateTimeOffset.UtcNow;
+        _fixture.Mutate(db =>
+        {
+            foreach (var (definition, state, age) in batches)
+            {
+                db.Set<GoldpathBulkBatch>().Add(new GoldpathBulkBatch
+                {
+                    Id = Guid.NewGuid(),
+                    Definition = definition,
+                    FileId = Guid.NewGuid(),
+                    State = state,
+                    ReceivedAt = now - age,
+                    ValidatedAt = state == GoldpathBulkBatchState.Validated ? now - age : null,
+                });
+            }
+        });
+    }
+
+    /// <summary>The list contract ("recent batches, newest first"): the page is ordered by arrival, latest on top.</summary>
+    [Fact]
+    public async Task Batches_list_newest_first()
+    {
+        SeedBatches(
+            ("payments", GoldpathBulkBatchState.Received, TimeSpan.FromHours(3)),
+            ("payments", GoldpathBulkBatchState.Received, TimeSpan.FromHours(1)),
+            ("payments", GoldpathBulkBatchState.Received, TimeSpan.FromHours(2)));
+
+        var batches = await _admin.GetBatchesAsync(null, null, null, 10, CancellationToken.None);
+
+        Assert.Equal(batches.OrderByDescending(b => b.ReceivedAt).Select(b => b.Id), batches.Select(b => b.Id));
+        Assert.True(batches[0].ReceivedAt > batches[^1].ReceivedAt);
+    }
+
+    /// <summary>Contract R3: a repeatable filter given ZERO values is no filter — never "match nothing".</summary>
+    [Fact]
+    public async Task An_empty_definition_filter_is_no_filter()
+    {
+        SeedBatches(
+            ("payments", GoldpathBulkBatchState.Received, TimeSpan.FromMinutes(1)),
+            ("refunds", GoldpathBulkBatchState.Received, TimeSpan.FromMinutes(2)));
+
+        Assert.Equal(2, (await _admin.GetBatchesAsync(null, [], null, 10, CancellationToken.None)).Count);
+    }
+
+    /// <summary>The gate-age gauge reports the OLDEST batch waiting at the gate, not the newest.</summary>
+    [Fact]
+    public async Task The_gate_age_is_the_oldest_waiting_batch()
+    {
+        SeedBatches(
+            ("payments", GoldpathBulkBatchState.Validated, TimeSpan.FromMinutes(1)),
+            ("payments", GoldpathBulkBatchState.Validated, TimeSpan.FromMinutes(30)));
+
+        var status = Assert.Single(await _admin.GetDefinitionsAsync(CancellationToken.None));
+
+        Assert.Equal(2, status.AwaitingApproval);
+        Assert.InRange(status.OldestAwaitingApprovalSeconds!.Value, 30 * 60, 31 * 60);
+    }
+
+    /// <summary>
+    /// Admin-contract R1 on the report: a batch's findings answer its own tenant and the
+    /// all-tenants view, and a foreign tenant gets the same empty answer as an absent batch.
+    /// </summary>
+    [Fact]
+    public async Task The_error_report_is_tenant_scoped_and_fails_closed()
+    {
+        var mine = await _fixture.IngestValidatedAsync(BulkFixture.Csv(("E1", "T", "-1", null)), tenant: "agency-1");
+        await _fixture.IngestValidatedAsync(BulkFixture.Csv(("E2", "T", "-2", null)), tenant: "agency-2");
+
+        Assert.Single(await _admin.GetErrorsAsync(mine.Id, "agency-1", 0, 10, CancellationToken.None));
+        Assert.Single(await _admin.GetErrorsAsync(mine.Id, null, 0, 10, CancellationToken.None));
+        Assert.Empty(await _admin.GetErrorsAsync(mine.Id, "agency-2", 0, 10, CancellationToken.None));
+    }
+
+    /// <summary>D6 report order: several findings on ONE row page in the order validation recorded them.</summary>
+    [Fact]
+    public async Task Findings_on_one_row_keep_their_recorded_order()
+    {
+        using var fixture = new BulkFixture(b => b.Validate((_, ctx) =>
+        {
+            ctx.Fail("Iban", "iban checksum fails");
+            ctx.Fail("Amount", "amount exceeds the daily limit");
+        }));
+        var admin = new GoldpathBulkAdminService<BulkTestContext>(
+            fixture.Engine, fixture.Options, fixture.Services.GetRequiredService<IServiceScopeFactory>(), TimeProvider.System);
+        var batch = await fixture.IngestValidatedAsync(BulkFixture.Csv(("E1", "T", "1", null)));
+
+        var report = await admin.GetErrorsAsync(batch.Id, null, 0, 10, CancellationToken.None);
+
+        Assert.Equal(["Iban", "Amount"], report.Select(e => e.Field));
     }
 
     [Fact]

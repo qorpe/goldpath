@@ -14,8 +14,12 @@ public class EngineEdgeTests : IDisposable
     public async Task Verbs_on_a_missing_batch_teach_no_such_batch()
     {
         using var scope = _fixture.Scope();
-        Assert.Equal("no such batch", (await _fixture.Engine.ApproveAsync(scope.ServiceProvider, Guid.NewGuid(), "x", null, CancellationToken.None)).Message);
-        Assert.Equal("no such batch", (await _fixture.Engine.RejectAsync(scope.ServiceProvider, Guid.NewGuid(), "x", "reason", CancellationToken.None)).Message);
+        var approve = await _fixture.Engine.ApproveAsync(scope.ServiceProvider, Guid.NewGuid(), "x", null, CancellationToken.None);
+        Assert.False(approve.Ok);   // a refusal, not a success with a sad message (the endpoint maps Ok to the status code)
+        Assert.Equal("no such batch", approve.Message);
+        var reject = await _fixture.Engine.RejectAsync(scope.ServiceProvider, Guid.NewGuid(), "x", "reason", CancellationToken.None);
+        Assert.False(reject.Ok);
+        Assert.Equal("no such batch", reject.Message);
     }
 
     [Fact]
@@ -54,7 +58,9 @@ public class EngineEdgeTests : IDisposable
     {
         var batch = await _fixture.IngestValidatedAsync(BulkFixture.Csv(("E1", "T", "1", null)));
         using var scope = _fixture.Scope();
-        Assert.True((await _fixture.Engine.RejectAsync(scope.ServiceProvider, batch.Id, "ops", "wrong file", CancellationToken.None)).Ok);
+        var rejected = await _fixture.Engine.RejectAsync(scope.ServiceProvider, batch.Id, "ops", "wrong file", CancellationToken.None);
+        Assert.True(rejected.Ok);
+        Assert.Equal("rejected", rejected.Message);
 
         await _fixture.Engine.ValidateBatchAsync(scope.ServiceProvider, batch.Id, CancellationToken.None);
 
