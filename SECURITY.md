@@ -68,6 +68,27 @@ decision we can make, but not one we can guess.
   Publishing (OIDC), so there is no API key in this repository to leak. The same is true of
   the family UI kit on npm.
 
+## How we test for security issues
+
+There is no paid penetration test today. That was an owner decision on 2026-10-21 (GA gate
+G15): a paid test happens when a paying customer funds one. In its place, two free scans run
+in CI. Neither one is a substitute for a threat model, which G15's second part adds.
+
+- **CodeQL** (static analysis, [`.github/workflows/codeql.yml`](.github/workflows/codeql.yml)):
+  - Covers the C# and the console's TypeScript with the `security-extended` query suite.
+  - Runs on every pull request, on `main`, and weekly, so new queries also reach code that
+    has not changed.
+  - Findings land in the repository's code-scanning view.
+- **OWASP ZAP baseline** (dynamic, passive, [`scripts/zap-baseline.sh`](scripts/zap-baseline.sh)):
+  - Runs nightly against a **generated** app (the golden-manifest shape `GmBulkOnly`). It
+    covers the API root and the console that API serves, in Production posture.
+  - Every alert is either fixed or ignored in
+    [`scripts/zap-baseline.conf`](scripts/zap-baseline.conf) with its reason. Any other alert
+    fails the night, and the report is kept as a workflow artifact.
+
+Both scanners are pinned (actions to a commit, the ZAP image to a digest), so a red result
+comes from a change in Goldpath, not in the scanner.
+
 ## Hardening notes for adopters
 
 - The admin surface (`/goldpath/admin/*`) is **fail-closed** by default: with no auth

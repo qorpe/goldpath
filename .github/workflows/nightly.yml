@@ -175,3 +175,38 @@ jobs:
         working-directory: samples/corpay
         run: dotnet test tests/CorPay.SmokeTests/CorPay.SmokeTests.csproj --no-build --nologo
         timeout-minutes: 20
+
+  # OWASP ZAP baseline (GA gate G15, owner decision Q9: the free pentest substitute, beside
+  # codeql.yml). A passive scan of a GENERATED app — golden-manifest shape GmBulkOnly, its
+  # API root and the console it serves — in Production posture. Any alert the committed
+  # rules file does not IGNORE with a reason fails the night; the reports are uploaded
+  # either way, because a red scan is read from its report.
+  zap-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: ui/console/pnpm-lock.yaml
+      - name: zap baseline — the API and its served console
+        run: bash scripts/zap-baseline.sh
+        env:
+          ZAP_OUT: ${{ runner.temp }}/zap-report
+      - name: the reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: zap-baseline
+          path: ${{ runner.temp }}/zap-report
+          retention-days: 30
