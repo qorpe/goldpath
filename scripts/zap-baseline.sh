@@ -6,8 +6,8 @@
 # The target is a GENERATED app, not a purpose-built host: the golden-manifest shape
 # GmBulkOnly (`--features bulk --broker none --auth none`), which carries an API and the
 # console that API serves, on PostgreSQL only. validate-gm.sh generates, builds and proves it
-# exactly as the GM lane does; this script then runs its API in Production and scans two
-# entry points: the API root and the served console.
+# exactly as the GM lane does; this script then runs its API in Production and scans it
+# twice: every operation of its OpenAPI document, and the console it serves.
 #
 #   scripts/zap-baseline.sh            # needs docker, dotnet, pnpm (the console is packed)
 #
@@ -66,18 +66,22 @@ start_api Development
 kill "$API_PID"; wait "$API_PID" 2>/dev/null || true; API_PID=""
 start_api Production
 
-scan() {
-  local name=$1 url=$2
-  echo "── zap baseline: $name ($url)"
-  # --network host: the API listens on the runner's loopback. -I is NOT passed: a WARN that
-  # the rules file does not IGNORE with a reason fails the run.
-  docker run --rm --network host -v "$ROOT/scripts:/zap/rules:ro" -v "$OUT:/zap/wrk:rw" "$ZAP_IMAGE" \
-    zap-baseline.py -t "$url" -c /zap/rules/zap-baseline.conf -m 2 \
-      -r "zap-$name.html" -J "zap-$name.json" -w "zap-$name.md"
+# Both legs are PASSIVE. The API has no page to spider (its root is a 404), so its leg imports
+# the app's own OpenAPI document and requests every operation (zap-api-scan.py -S: safe mode,
+# no active attack); the console leg spiders the page the API serves.
+# --network host: the API listens on the runner's loopback. -I is NOT passed: a WARN that the
+# rules file does not settle with a reason fails the run.
+zap() {
+  docker run --rm --network host -v "$ROOT/scripts:/zap/rules:ro" -v "$OUT:/zap/wrk:rw" "$ZAP_IMAGE" "$@"
 }
 
 status=0
-scan api "$TARGET/" || status=$?
-scan console "$TARGET/goldpath/console/" || status=$?
+cp "$APP/src/$SHAPE.Api/openapi/$SHAPE.Api.json" "$OUT/openapi.json"
+echo "── zap api scan (passive, from the app's OpenAPI document)"
+zap zap-api-scan.py -t /zap/wrk/openapi.json -f openapi -S -O "$TARGET" -c /zap/rules/zap-baseline.conf \
+  -r zap-api.html -J zap-api.json -w zap-api.md || status=$?
+echo "── zap baseline: the served console"
+zap zap-baseline.py -t "$TARGET/goldpath/console/" -c /zap/rules/zap-baseline.conf -m 2 \
+  -r zap-console.html -J zap-console.json -w zap-console.md || status=$?
 echo "── reports: $OUT"
 exit "$status"
