@@ -31,8 +31,8 @@ jobs:
         run: ./scripts/schema-honesty.sh
       - name: engine gate (GA G1 — no new bus-engine type in a public signature; the baseline only shrinks)
         run: |
-          ./scripts/engine-gate.sh --selftest
           ./scripts/engine-gate.sh
+          ./scripts/engine-gate.sh --selftest
       - name: docs freshness (no link to a missing file)
         run: bash scripts/docs-freshness.sh
       - name: merge tiers self-test (ADR-0014 — the rules this PR proposes still put every fixture where it belongs)
