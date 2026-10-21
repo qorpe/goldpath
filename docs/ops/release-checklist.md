@@ -29,6 +29,21 @@ only after that PR merges green.
       decide which train a generated app restores. `scripts/template-pins.sh` gates this
       on every PR; it exists because the pins sat four trains behind while the golden
       manifest matrix quietly validated the old one.
+- [ ] **CorPay's `Goldpath.*` pins move to the new train in this PR**
+      (`samples/corpay/Directory.Packages.props`), not after the tag. When they moved
+      afterwards, the publish turned `train-freshness` red on `main` and on every open PR
+      until a follow-up caught up (v0.1.0-preview.9, #307). The gate holds this:
+      - While this repository's train is not on nuget.org yet (the release PR, and `main`
+        between merge and publish), it requires CorPay to pin exactly that train.
+      - A release PR that leaves CorPay behind fails here, before the tag rather than after.
+      - Adopters' runs of the script are unaffected.
+
+      Before the publish, nuget.org cannot restore the new pins. To build CorPay on the
+      release PR, restore it from a locally packed feed, the way `validate-gm.sh` builds a
+      generated app:
+      `dotnet pack Goldpath.sln -c Release -o /tmp/feed && dotnet build samples/corpay/CorPay.sln --source /tmp/feed --source https://api.nuget.org/v3/index.json`.
+      The nightly's `sample-corpay` job restores from nuget.org only, so it stays red on the
+      release head until the publish.
 - [ ] PublicAPI roll: each package's `PublicAPI.Unshipped.txt` content moves to
       `PublicAPI.Shipped.txt` (empty Unshipped after the roll).
 - [ ] `CHANGELOG.md`: the train's entry, newest on top.
