@@ -19,6 +19,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   [docs/ops/agent-pipeline.md](docs/ops/agent-pipeline.md).
 
 ### Fixed
+- **The golden-manifest lane builds the generated app before `goldpath db init` and before
+  every `db` post-generation verb** (#279), so a compile or analyzer error fails with the
+  compiler's own diagnostic instead of `dotnet ef`'s bare "Build failed". In the T30 proof
+  (#273) a planted defect — GP2102 dropped from the template's `WarningsNotAsErrors` — turned
+  two shapes red and neither log named GP2102: GmEverything failed at `db init`, GmGrownRest
+  (whose FileExchange only arrives through `add feature fileexchange`) at its later
+  `db add GrownRest`. Replanted, `validate-gm.sh` now stops at `error GP2102` in both. The
+  build after the post verbs stays, since they and the migrations change the app; on a warm
+  green run the extra step costs about six seconds (56.8 s → 62.1 s for one shape).
 - **Every mutation gate ran the whole solution's tests, whatever its config said.** The gate
   started Stryker at the repository root, where it finds `Goldpath.sln` and switches to
   solution mode — and solution mode never reads `test-projects`: it runs every test project
