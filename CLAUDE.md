@@ -2,10 +2,11 @@
 
 ## Project
 AI-native, spec-driven enterprise .NET accelerator (a golden path; NOT a framework).
-Conceptual grounding: `docs/strategy/foundation.md`. Constitution: `docs/adr/` (13 ADRs — do
+Conceptual grounding: `docs/strategy/foundation.md`. Constitution: `docs/adr/` (15 ADRs — do
 not propose anything that contradicts them; changes only via a superseding ADR. ADR-0013 is
 the ONE scoped exception to ADR-0003: the message bus is a swappable engine behind a
-Goldpath-owned seam).
+Goldpath-owned seam; ADR-0015 amends it within that same concern — more than two engine
+adapters, zero adopter impact for any engine switch, the default engine locked for 1.x).
 
 ## Language rule
 - Docs, code, identifiers, XML docs, commits, PRs: ENGLISH
@@ -40,7 +41,7 @@ train) is on nuget.org (plus `specdrift` 0.4.2 as tool/MCP/Docker/Action). Mocki
 (`samples/corpay`, proven nightly against the published packages). The console phase is
 COMPLETE: U1–U9 met (`docs/rfc/goldpath-console.md`; family standards ui-standard v1.3
 §7–§9 — one visual family with qorpe/mockifyr), the admin contract is at Revision R3
-(repeatable OR filters), and the console smoke (39 tests + axe) drives three real
+(repeatable OR filters), and the console smoke (44 tests + axe) drives three real
 apps and the app-SERVED console. Steps 1–5 of `docs/strategy/master-plan-2026-08.md` are DONE, and so is 6.0: the family UI
 kit is extracted to [qorpe/ui](https://github.com/qorpe/ui), published to npm through OIDC
 trusted publishing, with BOTH consoles running on the published package. The **finalize set
@@ -48,7 +49,7 @@ F1–F3** (2026-08-09) closed the paperwork the engineering had outrun: five led
 reconciled with GitHub behind two new gates (`ledger-check.sh`, `schema-honesty.sh`), an
 SBOM + signed provenance on every train with `SECURITY.md`, and the measured messaging-exit
 RFC. Next: the pilot product module (step 6.1), then the scenario campaign and the
-Insurance/Telco samples as the full-set exam. Live status ledgers —
+Insurance/Telco/Factoring samples as the full-set exam (1.0 gates: `docs/rfc/goldpath-ga-readiness.md`, accepted 2026-10-21). Live status ledgers —
 keep them updated in the same PR that changes reality: `docs/strategy/ai-sdlc-status.md`
 (AI-assisted SDLC vs reality), `docs/strategy/coverage-matrix.md` (capability × sample),
 and `docs/strategy/open-threads.md` (deferred work with its TRIGGER and the proof that

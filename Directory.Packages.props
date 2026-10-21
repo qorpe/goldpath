@@ -35,6 +35,9 @@
     <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.11.0" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
     <PackageVersion Include="CsCheck" Version="4.9.1" />
+    <!-- The CLI reads authoring artefacts with the SAME parser and version the engine uses
+         (specdrift 0.4.2 pins YamlDotNet 18.1.0), so the two cannot disagree on what a file says. -->
+    <PackageVersion Include="YamlDotNet" Version="18.1.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageVersion Include="MassTransit.RabbitMQ" Version="8.5.11" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.16.0" />

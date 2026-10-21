@@ -126,12 +126,29 @@ for verb in sorted(verbs):
     if f"goldpath {verb}" not in reference:
         fail.append(f"CLI verb 'goldpath {verb}' missing from docs/guide/cli-reference.md")
 
-# 4. Every golden-manifest shape in the nightly matrix is in the golden-manifests doc.
-nightly = read(".github", "workflows", "nightly.yml")
+# 4. Every golden-manifest shape (.github/gm-shapes.yml — the nightly runs them all) is a
+#    row of the golden-manifests doc's §6 table, every row there is a shape, and the doc's
+#    "Runs" column says PR exactly for the shapes marked `pr: true` (open-threads T30: the
+#    PR-time subset is chosen by coverage, and the doc is where the choice is argued).
+shapes_text = read(".github", "gm-shapes.yml")
 gm_doc = read("docs", "strategy", "golden-manifests-v1.md")
-for shape in re.findall(r"- name: (Gm[A-Za-z.]+)", nightly):
-    if shape not in gm_doc:
-        fail.append(f"nightly shape {shape} missing from docs/strategy/golden-manifests-v1.md")
+shapes = {}
+for block in re.split(r"\n  - name: ", shapes_text)[1:]:
+    name = block.split("\n", 1)[0].strip()
+    shapes[name] = bool(re.search(r"^    pr: true\s*$", block, re.M))
+doc_rows = {}
+for m in re.finditer(r"^\| (Gm[A-Za-z.]+) \|(.*)\|\s*$", gm_doc, re.M):
+    doc_rows[m.group(1)] = "PR" in m.group(2).rsplit("|", 1)[-1]
+for shape, pr in shapes.items():
+    if shape not in doc_rows:
+        fail.append(f"shape {shape} (gm-shapes.yml) has no row in docs/strategy/golden-manifests-v1.md §6")
+    elif doc_rows[shape] != pr:
+        fail.append(f"shape {shape}: gm-shapes.yml says pr={pr}, the doc's Runs column says {'PR' if doc_rows[shape] else 'nightly only'}")
+for shape in doc_rows:
+    if shape not in shapes:
+        fail.append(f"docs/strategy/golden-manifests-v1.md §6 lists {shape}, which .github/gm-shapes.yml does not run")
+if not any(shapes.values()):
+    fail.append(".github/gm-shapes.yml marks no shape `pr: true` — the PR-time lane would run nothing")
 
 # 4b. Every integration event a PACKAGE publishes is catalogued with its fields in the
 #     events guide — the wire contract a consumer binds to may not be undocumented
@@ -181,7 +198,8 @@ for template in sorted(d for d in os.listdir(os.path.join(root, "templates"))
 #    said ten, thirteen and fifteen at once (preview.8 coverage audit, 2026-09-05): the
 #    nightly's own comment, the release checklist's parenthetical, and the matrix itself.
 WORDS = {10: "ten", 11: "eleven", 12: "twelve", 13: "thirteen", 14: "fourteen", 15: "fifteen",
-         16: "sixteen", 17: "seventeen", 18: "eighteen", 19: "nineteen", 20: "twenty"}
+         16: "sixteen", 17: "seventeen", 18: "eighteen", 19: "nineteen", 20: "twenty",
+         21: "twenty-one", 22: "twenty-two", 23: "twenty-three", 24: "twenty-four", 25: "twenty-five"}
 nightly_text = read(".github", "workflows", "nightly.yml")
 matrix = re.search(r"package: \[(.*?)\]", nightly_text, re.S)
 if matrix:
@@ -211,12 +229,35 @@ for config in sorted(n for n in os.listdir(os.path.join(root, "stryker")) if n.e
         if f"`{excluded}`" not in stryker_doc:
             fail.append(f"stryker/{config} excludes {excluded} with no row in stryker/README.md")
 
+# 9. Every stryker config's test-projects resolve from the PACKAGE directory (the gate runs
+#    Stryker there, because at the root Goldpath.sln switches it to solution mode, which ignores
+#    test-projects), and a test project other than the package's own carries a ledger row —
+#    borrowed tests raise a score, so the reason they count must be written down (2026-10-20).
+import json
+for config in sorted(n for n in os.listdir(os.path.join(root, "stryker")) if n.endswith(".json")):
+    c = json.loads(read("stryker", config))["stryker-config"]
+    package = config[:-5]
+    homes = [d for d in ("packages", "analyzers", "tools")
+             if os.path.isfile(os.path.join(root, d, package, c["project"]))]
+    if len(homes) != 1:
+        fail.append(f"stryker/{config}: project {c['project']} is not under packages/, analyzers/ or tools/")
+        continue
+    home = os.path.join(root, homes[0], package)
+    for test_project in c.get("test-projects", []):
+        if not os.path.isfile(os.path.normpath(os.path.join(home, test_project))):
+            fail.append(f"stryker/{config}: test project {test_project} does not exist relative to {homes[0]}/{package}")
+            continue
+        borrowed = os.path.basename(test_project)[:-len(".csproj")]
+        if borrowed != f"{package}.Tests" and not any(
+                f"| {package[len('Goldpath.'):]} | `{borrowed}`" in line for line in stryker_doc.splitlines()):
+            fail.append(f"stryker/{config} scores with {borrowed} but stryker/README.md has no row saying why")
+
 if fail:
     print("── inventory sync: the docs stopped telling the truth:")
     for f in fail:
         print(f"  {f}")
     sys.exit(1)
-print(f"── inventory sync: {len(packages)} packages, {len(verbs)} CLI verbs, nightly shapes, scripts and templates all documented")
+print(f"── inventory sync: {len(packages)} packages, {len(verbs)} CLI verbs, golden-manifest shapes (and their PR subset), scripts and templates all documented")
 PY
 STATUS=$(( STATUS + $? ))
 exit $(( STATUS > 0 ? 1 : 0 ))

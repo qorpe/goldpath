@@ -3,14 +3,23 @@
   "title": "Goldpath Campaign — governor & progress",
   "uid": "goldpath-campaign",
   "schemaVersion": 39,
-  "tags": ["goldpath", "campaign"],
-  "time": { "from": "now-24h", "to": "now" },
+  "tags": [
+    "goldpath",
+    "campaign"
+  ],
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
   "templating": {
     "list": [
       {
         "name": "type",
         "type": "query",
-        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
         "query": "label_values(goldpath_campaign_released_total, type)",
         "includeAll": true,
         "multi": true
@@ -21,35 +30,118 @@
     {
       "type": "timeseries",
       "title": "Release rate (items/s) vs the configured TPS — the pacer's precision IS this line (runbook §1)",
-      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
-      "targets": [{ "expr": "rate(goldpath_campaign_released_total{type=~\"$type\"}[1m])", "legendFormat": "released/s {{type}}" }]
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "rate(goldpath_campaign_released_total{type=~\"$type\"}[1m])",
+          "legendFormat": "released/s {{type}}"
+        }
+      ]
     },
     {
       "type": "timeseries",
       "title": "In-flight per campaign — pinned at MaxInFlight means consumers lag the pacer (runbook §2)",
-      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
-      "targets": [{ "expr": "goldpath_campaign_in_flight{type=~\"$type\"}", "legendFormat": "{{campaign}}" }]
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "goldpath_campaign_in_flight{type=~\"$type\"}",
+          "legendFormat": "{{campaign}}"
+        }
+      ]
     },
     {
       "type": "timeseries",
       "title": "Remaining per campaign — the slope is the honest ETA",
-      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
-      "targets": [{ "expr": "goldpath_campaign_remaining{type=~\"$type\"}", "legendFormat": "{{campaign}}" }]
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "goldpath_campaign_remaining{type=~\"$type\"}",
+          "legendFormat": "{{campaign}}"
+        }
+      ]
     },
     {
       "type": "timeseries",
       "title": "Outcomes (per hour) — failures climbing is a provider conversation (runbook §3)",
-      "gridPos": { "x": 12, "y": 8, "w": 6, "h": 8 },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 6,
+        "h": 8
+      },
       "targets": [
-        { "expr": "sum(increase(goldpath_campaign_succeeded_total[1h]))", "legendFormat": "succeeded" },
-        { "expr": "sum(increase(goldpath_campaign_failed_total[1h]))", "legendFormat": "failed" }
+        {
+          "expr": "sum(increase(goldpath_campaign_succeeded_total[1h]))",
+          "legendFormat": "succeeded"
+        },
+        {
+          "expr": "sum(increase(goldpath_campaign_failed_total[1h]))",
+          "legendFormat": "failed"
+        }
       ]
     },
     {
       "type": "timeseries",
       "title": "Window-closed ticks (per hour) — nonzero outside the send window is CORRECT; inside it, the timezone is wrong (runbook §4)",
-      "gridPos": { "x": 18, "y": 8, "w": 6, "h": 8 },
-      "targets": [{ "expr": "increase(goldpath_campaign_window_closed_ticks_total{type=~\"$type\"}[1h])", "legendFormat": "{{type}}" }]
+      "gridPos": {
+        "x": 18,
+        "y": 8,
+        "w": 6,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "increase(goldpath_campaign_window_closed_ticks_total{type=~\"$type\"}[1h])",
+          "legendFormat": "{{type}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Ack timeouts (per hour) — accepted items nobody answered before the deadline; climbing = the callback surface or the target system (runbook §8)",
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "increase(goldpath_campaign_ack_timeouts_total{type=~\"$type\"}[1h])",
+          "legendFormat": "{{type}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Orphaned releases published again (per hour) — a jump after a resume is by design; a steady climb is a lost-message problem (runbook §9)",
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "increase(goldpath_campaign_orphans_rereleased_total{type=~\"$type\"}[1h])",
+          "legendFormat": "{{type}}"
+        }
+      ]
     }
   ]
 }

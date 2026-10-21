@@ -2,14 +2,15 @@
   "stryker-config": {
     "project": "Goldpath.AuditTrail.csproj",
     "test-projects": [
-      "tests/Goldpath.AuditTrail.Tests/Goldpath.AuditTrail.Tests.csproj",
-      "tests/Goldpath.DataProtection.Tests/Goldpath.DataProtection.Tests.csproj",
-      "tests/Goldpath.SoftDelete.Tests/Goldpath.SoftDelete.Tests.csproj"
+      "../../tests/Goldpath.AuditTrail.Tests/Goldpath.AuditTrail.Tests.csproj",
+      "../../tests/Goldpath.DataProtection.Tests/Goldpath.DataProtection.Tests.csproj",
+      "../../tests/Goldpath.SoftDelete.Tests/Goldpath.SoftDelete.Tests.csproj"
     ],
     "target-framework": "net10.0",
     "reporters": [
       "progress",
-      "markdown"
+      "markdown",
+      "json"
     ],
     "thresholds": {
       "high": 85,

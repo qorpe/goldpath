@@ -4,15 +4,21 @@ All notable changes to the Goldpath packages are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: SemVer.
 
 ## [Unreleased]
+### Added
+- **Merge tiers for agent pull requests (ADR-0014, proposed).** Repository governance, no
+  package changes. `.github/workflows/merge-policy.yml` computes a pull request's tier from
+  its changed files with the rules in `.github/merge-tiers.yml` (read from the base branch,
+  applied by `scripts/merge-tier.py`), writes the tier and the files behind it to the job
+  summary, sets one `tier:A|B|C` label, and fails the `merge-policy` check on Tier C
+  (decisions, releases, the gates, licence/security policy, the agent layer) carrying
+  `agent-pr` without `owner-approved`, and on `hold`. The tier computation ships with a
+  self-test — fixtures for every rule family, the decision table, and a check that every
+  script a workflow runs is Tier C — run in `ci.yml`. The agents act with the owner's GitHub
+  identity, so Tier C is enforced by the check, the verifier's rules and the morning report,
+  not by identity; the hardening is open-threads T38. Operator page:
+  [docs/ops/agent-pipeline.md](docs/ops/agent-pipeline.md).
 
-### Changed
-- **The cycle's sixth step is stack-neutral**, because it was not. It named `spec_validate`,
-  `spec_drift` and `specs/` — true for a generated .NET application and meaningless for an npm
-  library, which is the next repository due to carry this text. The step now says: run THIS
-  repository's own contract check, whatever proves that what is committed still equals what is
-  built, and get it clean. Each repository's skill names its own; the sequence does not change
-  between them. `skills-parity.sh` now also holds goldpath's own copy of `cycle.md` identical
-  to the one the templates ship, while leaving its maintainer-shaped skills and hook alone.
+### Fixed
 - **The golden-manifest lane builds the generated app before `goldpath db init` and before
   every `db` post-generation verb** (#279), so a compile or analyzer error fails with the
   compiler's own diagnostic instead of `dotnet ef`'s bare "Build failed". In the T30 proof
@@ -22,9 +28,258 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   `db add GrownRest`. Replanted, `validate-gm.sh` now stops at `error GP2102` in both. The
   build after the post verbs stays, since they and the migrations change the app; on a warm
   green run the extra step costs about six seconds (56.8 s → 62.1 s for one shape).
+- **Every mutation gate ran the whole solution's tests, whatever its config said.** The gate
+  started Stryker at the repository root, where it finds `Goldpath.sln` and switches to
+  solution mode — and solution mode never reads `test-projects`: it runs every test project
+  whose build references the package. Abstractions was mutated against 702 tests and the
+  integration host instead of its own 18; Approvals took 3.6 hours a night; the six heavy
+  packages ran out of memory on hosted runners (issue #20's exit 143). The gate now runs
+  Stryker from the package's own directory (`test-projects` written `../../tests/...`; four
+  configs pointed at paths that never existed and nobody noticed, because the setting was
+  never read), and it fails a run whose log shows solution mode or a test-project count other
+  than the config's. Suites that legitimately score another package are named in that
+  package's config with a row in `stryker/README.md` — Data, MultiTenancy, Messaging, Locking
+  and Caching borrow them; a borrowed integration class is admitted by `test-case-filter`, not
+  the whole container-backed suite — and `docs-freshness.sh` fails a missing test project or
+  an unrowed borrow. Measured on hosted runners 2026-10-20: the sixteen nightly packages from
+  10.1 hours of job time to 1.3, the slowest from 218 minutes to 27, all six heavy packages
+  finishing in under 30 minutes, every score unchanged except MultiTenancy (75.58 → 72.09 %:
+  three mutants only an unrelated benchmark killed). Caching scores 69.57 %, below the break,
+  in both modes — open thread T32. The gate also streams the scope lines it used to discard
+  (`tail -4`), and both mutation workflows keep the full log and Stryker's JSON report.
+- **Caching sat below its mutation break, and Bulk and Auth cleared theirs inside the noise.**
+  The honest scores from the scope fix put Caching at 69.57 % (open thread T32), Bulk at
+  70.09 % and Auth at 70.65 % — the last two within the ±1 point a same-commit rerun moves.
+  Tests, not a lower break and not an exclusion, moved them, each citing the clause it proves:
+  Caching to **100.00 %** (the tiers, the configuration section, the default TTL and the
+  injected key helper, all asserted from the container an app resolves), Auth to **97.83 %**
+  (the ops roles, the audience guard's exact edges, HTTPS-only metadata, the failure meter, the
+  binding's typed 403, and `UseGoldpathAuth` authenticating on a bare pipeline) and Bulk to
+  **88.38 %**. Bulk's largest gap was a test reading a CACHED model: EF builds a context type's
+  model once per process, so in Stryker's long-lived test host the model contract tests never
+  saw `AddGoldpathBulk` run under a mutant, and 23 mutants survived assertions written to kill
+  them; the rest were an engine never observed mid-batch, where the terminal recount hides a
+  wrong counter. The same cached-model blind spot sits in the Jobs and Archival model suites
+  (open thread T33). Measured in the nightly and on the heavy lane alike, same scores.
+- **Six packages were mutation-tested only when somebody remembered to dispatch them.** Jobs,
+  Archival, Bulk, Notification, Campaign and Caching ran in the dispatch-only
+  `mutation-heavy.yml`, which is how Caching stayed red for seven weeks unseen. With their
+  scope fixed they finish in under 15 minutes at the nightly's concurrency, so the nightly
+  matrix now scores all twenty-two gated packages; `mutation-heavy.yml` stays for re-scoring
+  the six on demand.
 
+### Added
+- **The deterministic floor under authoring** (Slice 0 of the
+  [goldpath-authoring](docs/rfc/goldpath-authoring.md) RFC, which landed PROPOSED; no LLM
+  anywhere in it). Before a business sentence can become an approved spec, the artefacts that
+  carry it need a shape, a check and a place to live:
+  - **specanchor's rule, ledger-term and spec schemas are pinned** in `schemas/specanchor/v1/`
+    as byte copies of an immutable upstream commit. specanchor has published no release yet, so
+    there is no tag to pin to. `scripts/specanchor-freshness.sh` (CI) proves three things: the
+    copies were not edited in place, the recorded commit really serves those bytes, and upstream
+    has not moved past them. It also turns red the day specanchor publishes a tag while the pin
+    is still a commit. Air-gapped runs keep the offline check and skip the rest honestly.
+  - **`schemas/authoring/v1/decisions.schema.json`** is the one new artefact: what a proposal
+    decides about the manifest, the source of each decision, and every domain opt-in resolved
+    into a question or a sourced answer. There is no `disable`. Providers, architecture,
+    external systems and products are questions only.
+  - **`corpus-check.sh` gates three schema families** (manifest, specanchor, decisions) with 34
+    entries. It is also stricter. An invalid entry now counts as rejected only when specdrift
+    returns findings (exit 1). Before, any non-zero exit counted, so a schema keyword the engine
+    cannot evaluate (exit 2) made the whole negative half pass. That was proven by planting
+    one. Each YAML invalid entry names its planted defect on a `# expect:` line, and the
+    rejection must be for that reason.
+  - **`goldpath spec ready`**: V1, every card's shape through `specdrift validate` against the
+    schemas the CLI now carries. V2, every `manifest.proposed.yaml` against the app's own
+    rules; an outbox proposed with `broker: none` gets SPEC0101. V3, ids unique across the
+    repository, sources that resolve to existing lines inside it, spec→rule links, declared
+    questions, and an honest open-bracket count. `--gate SPEC-nnnn --author <who>` adds
+    ADR-0010's gate #1, which refuses an unapproved spec, a spec with open brackets, or a spec
+    approved by its own author. `--next-id rule|spec` allocates ids, so nobody picks them by
+    hand. The CLI reads the cards with the engine's own YAML parser and version (YamlDotNet
+    18.1.0, now pinned here), so the two cannot read a file differently.
+  - **`goldpath add feature <x> --plan`** prints the recipe as JSON: manifest lines, packages,
+    provider edits, whether the model grows, and the decisions the team must take. It writes
+    nothing and runs no engine. The decisions are word for word what the real run prints after
+    it succeeds, because both now come from one method. A test pins this for all fourteen
+    recipes against a twin app really grown.
+  - **An empty `docs/domain/` skeleton** in the solution template and CorPay, held identical by
+    `skills-parity.sh`. This changes what `dotnet new goldpath-solution` generates, so it rides
+    the next train.
+- **The golden-manifest matrix runs at PR time** (open-threads T30). ADR-0008 asks for it on
+  every template or core package change; CI ran it only nightly, which is how preview.8 shipped
+  GP2102 and how pull requests kept merging for days while the nightly was red. A pull request
+  that touches what a generated app is built from — the templates, the CLI, the analyzers, the
+  packages (the lane packs the source into a feed that shadows nuget.org), the console bundle,
+  the manifest schema, the root build files or the lane itself — now runs eleven of the
+  twenty-three shapes, in parallel, before merge, behind one check that always reports and so
+  can be required: `golden manifests (PR subset)`. The eleven are chosen by coverage — every
+  template flag value, every `add feature` recipe and every CLI verb that writes into an app
+  runs in at least one of them; `golden-manifests-v1.md` §6a argues each choice and each shape
+  left to the nightly. The shapes moved out of `nightly.yml` into `.github/gm-shapes.yml`, read
+  by one reusable `gm.yml` for both lanes (and dispatchable on any branch), and docs-freshness
+  holds the doc's table to the file's `pr: true` marks in both directions. Proven the way the
+  thread demanded: a planted GP2102 regression in the solution template turned the PR red in
+  `GmEverything` and `GmGrownRest` while the repository build stayed green, and its revert
+  turned it green again.
+- **Product console link tiles in the console registry (#257).** The console RFC promised that
+  products "appear as configured LINK tiles", and the registry had nowhere to put a link: its one
+  entry kind is a service the console PROBES, so a product with no Goldpath admin surface (the
+  RFC's own Mockifyr example) could only have joined as a false UNREACHABLE row. Coexist, which
+  mounts its own console beside the core one, was reachable only by typing its address.
+  `GoldpathConsoleOptions.AddLink(name, url)` (and `Links`, `GoldpathConsoleLink`) adds a `links`
+  array beside `services` in `console.config.json`; Today draws one native-link tile per product,
+  and the ⌘K palette offers "Open {name}". A link is never probed — a tile asserts an address,
+  never health. A links-only app OMITS `services` instead of sending an empty list, because the
+  console reads an empty list as a broken registry. The URL is a root-relative path or an
+  absolute http(s) address without credentials; anything else (`javascript:`, `data:`, `file:`,
+  `//host`, a path-relative address, a control character) stops the app at startup, and the
+  console re-checks a hand-written file. Additive: eight new PublicAPI lines, nothing shipped
+  changes — take it blind. Decision record: `docs/rfc/goldpath-console-link-tiles.md`.
+
+### Fixed
+- **The `add feature notification` recipe had never run end to end.** The golden-manifests doc
+  said the two grown shapes ran all fourteen recipes; they ran thirteen. `GmGrownRest` now
+  grows `notification` too — found while choosing the PR subset by coverage.
+
+### Added
+- **Campaign revision R2 — asynchronous targets, shared ceilings, keyset takeover**
+  ([RFC](docs/rfc/goldpath-campaign.md), revision R2 with its 2026-10-20 amendments;
+  [upgrade guide](docs/upgrades/0.1.0-preview.10.md)). A design review for a device-fleet
+  adopter found four places where the module and the adopter's architecture disagreed and
+  the architecture was right. Typed handler results (`IGoldpathCampaignActionHandler<T>`:
+  Succeeded / Failed with a code and a retryable flag / Accepted with a correlation id and an
+  ack deadline), an `AwaitingAck` item state, an idempotent HTTP callback surface
+  (`MapGoldpathCampaignCallbacks`, `POST {prefix}/{type}/{campaignId}/{correlationId}`) and an
+  ack sweep that turns a missed deadline into a retryable failure; an idempotency key per
+  attempt; a configurable, jittered retry ladder with the ripe instant persisted per item; a
+  per-type `MaxTps` ceiling; a `Priority` (High 3 · Normal 2 · Low 1) that splits a contended
+  shared ceiling by weighted max-min fair share, the fractional share carried tick to tick so
+  nobody starves; a claim guard that reads the campaign state (pause means now) plus orphaned
+  releases published again after `OrphanReleaseAfter`; and a keyset selector (`TargetsAfter`)
+  so a takeover reopens the stream after the last key instead of re-reading every row. The R1
+  handler contract is untouched.
+- **Signed campaign callbacks** (campaign RFC R2.8). A target system authenticates each
+  callback with an HMAC-SHA256 signature keyed by the campaign type's secret
+  (`SignedCallbacks(secret, previousSecret)` — two active during a rotation), over the
+  timestamp, method, path and body, inside `CallbackTimestampTolerance`; it needs no ops
+  credential, and an unsigned callback is not possible. A callback that arrives before its
+  acceptance is visible is parked and settles when the acceptance lands. New rule **GP1704**
+  (Error): the callback surface mapped while no campaign type signs.
+- **[schema]** Campaign R2: two columns on `GoldpathCampaigns`, five nullable columns on
+  `GoldpathCampaignItems`, the `GoldpathCampaignParkedCallbacks` table, and the items'
+  `(CampaignId, State)` index replaced by three. `goldpath db add CampaignR2`, then one line —
+  `migrationBuilder.GoldpathCampaignR2Backfill()` — stamps the retries R1 left waiting. The
+  three `CREATE INDEX` statements block writes on a large items table: apply between
+  campaigns, or build them concurrently (the upgrade guide has both providers' statements).
 
 ### Changed
+- **Three removed public members** in `Goldpath.Campaign`, all shipped in preview.8:
+  `GoldpathCampaignEngine<TContext>.ExecuteItemAsync` takes the attempt number and returns
+  the typed result (source- and binary-breaking); the positional `GoldpathCampaignInfo`
+  constructor gains `Priority` before `WindowOpenNow` (source- and binary-breaking); the
+  `GoldpathCampaignThrottle` constructor gains an optional trailing `Priority`
+  (source-compatible, **binary-breaking** — recompile). Only code that drives the engine or
+  builds the admin records directly is affected.
+- **The campaign retry ladder's default changed**: 30 s, 2 min, then **10 min** for every
+  later attempt (R1: 2 min), with **±20% jitter** on every rung (R1: exact). Pin R1 with
+  `RetryBackoff = [30s, 2m]` and `RetryJitter = 0`.
+
+### Fixed
+- A retry re-released on a real broker could be dropped by the consumer's claim guard: the
+  leader publishes before it marks (crash safety), and the retry's message reached a
+  consumer while the row still said `AwaitingRetry`. A ripe `AwaitingRetry` row now claims;
+  an unripe one still refuses. R1's ladder had unit proof only; the R2 real-broker
+  integration is what found it.
+- Aborting a campaign left its retries waiting on a rung forever (`AwaitingRetry`, never
+  released again); abort now stamps them `Aborted` with the rest of the unsent work.
+- A consumer that died mid-call on a paused, closed-window, aborted, expired or finished
+  campaign stayed `Processing` forever — the stale-claim sweep visited only campaigns
+  releasing that tick. It now reaches every campaign with work in flight.
+
+## [0.1.0-preview.9] - 2026-10-19
+
+The repair train — and the security train. preview.8 shipped four ways for a generated or grown
+app to fail — `fileexchange` on its first build, a second jobs feature added with the CLI, `add
+feature idempotency`, and `add feature multitenancy` failing the app's own smoke test — and the
+clean-architecture layout did not build with `audittrail` or `idempotency`. All five are fixed,
+and the release checklist now demands the matrix green on the release's own head. Four .NET
+advisories published 2026-10-13/15 made every app generated on preview.8 fail its first restore;
+this train carries the lifts in both templates. One type moved between packages: recompile. Read
+the [upgrade guide](docs/upgrades/0.1.0-preview.9.md) — each section says whether it touches
+you.
+
+### Fixed
+- **Every build and every generated app failed restore on four .NET advisories published
+  2026-10-13/15.** `System.Security.Cryptography.Pkcs` (GHSA-846f-f764-76mx, GHSA-2fmv-
+  rv2c-59x7) and `System.Security.Cryptography.Xml` (GHSA-c399-9853-6jmj, GHSA-7hqp-7c5m-4vq6)
+  arrive transitively through SqlClient, MimeKit, Roslyn workspaces and Aspire; `MessagePack`
+  (GHSA-qhrr-8q5h-9q3h) through Aspire's StreamJsonRpc. Under TreatWarningsAsErrors
+  NU1902/NU1903 is a restore failure, so the nightly (every GM shape, every mutation scope,
+  corpay, the console smoke) and every pull request went red at once. The repository lifts Pkcs
+  to 10.0.13 on both target frameworks (MimeKit 4.18 already demands >= 10.0.0 on net8.0, so an
+  8.0.x pin is a downgrade) with a direct reference in the three projects whose graphs carry it,
+  the pattern the solution template already used for Xml; a repository-wide transitive pin was
+  tried and rejected, because it turns every central version into a ceiling and collides with
+  the deliberate per-TFM EF Core pins. The two templates and CorPay enable
+  `CentralPackageTransitivePinningEnabled` and pin Pkcs 10.0.13, Xml 10.0.13 and MessagePack
+  2.5.307 — a generated app is one TFM, so the pin is the lift wherever the package lands,
+  including the projects an adopter adds later. An app already generated on preview.8 needs the
+  same three pins until it regenerates.
+- **`goldpath add feature multitenancy` failed the app's own smoke test** (#261). Tenancy is
+  fail-closed and refuses a request without the tenant header before auth runs; the template's
+  smoke sends it under `--features multitenancy`, and the recipe left the smoke alone. The
+  recipe now adds the template's line, its `using` and the `Goldpath.Abstractions` reference.
+- **`goldpath add feature idempotency` left an app that did not build** (#260). GP1001 fails
+  the build while idempotency is composed and a command is unmarked; the template marks its
+  sample `CreateOrderCommand` under `--features idempotency` and the recipe did not. It now
+  emits the template's four lines (a test reads them from the template), and in
+  clean-architecture adds `Mediant.Behaviors` with its pin to the project that compiles the
+  sample. The published preview.8 CLI has the gap; the upgrade guide gives the one-line fix.
+- **Every app generated with `fileexchange` failed its first build on preview.8** (#259).
+  FileExchange is composed with no rail by design, GP2102 says so, and the generated apps
+  promote warnings to errors. The templates keep GP2102 a warning (`WarningsNotAsErrors`); it
+  still shows until the first `AddRail`.
+- **A second jobs-riding `add feature` referenced `Goldpath.Jobs` twice** (#258) — NU1504,
+  and the app stopped restoring. References are now checked per package against the whole
+  project file.
+- **The clean-architecture layout did not build with `audittrail` or `idempotency`** (#254).
+  `IAuditLogged` moved to `Goldpath.Abstractions` (see Changed), and the `Application` project
+  references `Mediant.Behaviors` under `UseIdempotency`. Found by `qorpe/coexist`; the nightly
+  `GmCleanFeatures` shape now generates exactly that layout with those features.
+- **The migration runbook's verify step could never pass** (#245): it demanded no occurrence
+  of the old repository slug, which the runbook itself and `SECURITY.md` name on purpose. It
+  now says what a clean result looks like.
+- **`docs-freshness.sh` reported two of its three checks and then forgave them.** The script
+  had `set -uo pipefail` but no `-e` and two separate blocks, so only the LAST block's exit
+  code survived: a broken relative link and a retired tool name were printed and the gate
+  exited 0 — while the file's own header claimed a broken link fails CI. Both checks now
+  gate, and both were verified to fail on planted drift. Found by the maintainer stop-gate on
+  the day it was written, which is the argument for the hook in one sentence.
+
+### Changed
+- **`IAuditLogged` moved from `Goldpath.AuditTrail` to `Goldpath.Abstractions`** (#254),
+  beside the markers it belongs with. Same namespace — recompile, no source edits. A binary
+  compiled against preview.8's `Goldpath.AuditTrail` must be rebuilt; the upgrade guide says
+  why a type forward was withdrawn.
+- **Every repository URL points at `qorpe/goldpath`** (#240), including the two that ship
+  inside packages: `HelpBase`, the help link of all forty-nine analyzer rules, and
+  `RepositoryUrl`, the Source Link target and nuget.org source link.
+- **The release checklist requires the golden-manifest matrix green on the release PR's own
+  head.** preview.8 was tagged against a green nightly that ran on the commit before its own
+  template changes, which is how GP2102 shipped. The nightly `GmCleanFeatures` shape also gains
+  `audittrail`, now that the templates consume `IAuditLogged` from the train.
+- **The analyzer release ledger is true.** GP1901, GP1902, GP2101 and GP2102 shipped on
+  preview.8 but were still listed as unshipped; they now sit in the shipped ledger.
+- **T27 closes for the library repositories and T28 opens** (#253): the delivery cycle reached
+  every named repository, and the sweep's one gap has its own thread.
+- **The cycle's sixth step is stack-neutral**, because it was not. It named `spec_validate`,
+  `spec_drift` and `specs/` — true for a generated .NET application and meaningless for an npm
+  library, which is the next repository due to carry this text. The step now says: run THIS
+  repository's own contract check, whatever proves that what is committed still equals what is
+  built, and get it clean. Each repository's skill names its own; the sequence does not change
+  between them. `skills-parity.sh` now also holds goldpath's own copy of `cycle.md` identical
+  to the one the templates ship, while leaving its maintainer-shaped skills and hook alone.
 - **The migration product module is `qorpe.coexist`, not `qorpe.sync`.** Two reasons, and the
   first decided it: an internal asset of the same name was under review in the same week by the
   same reviewer who owns this module, and a module sharing its name would have been read as a
@@ -34,29 +289,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   but not guaranteed, live in the description. Thirteen documents, the manifest schema's example
   and two corpus fixtures moved; nothing had been published under the old name, so this is the
   cheapest the rename would ever have been.
-
-### Fixed
-- **Every build and every generated app failed restore on four .NET advisories published
-  2026-10-13/15.** `System.Security.Cryptography.Pkcs` (GHSA-846f-f764-76mx, GHSA-2fmv-rv2c-59x7)
-  and `System.Security.Cryptography.Xml` (GHSA-c399-9853-6jmj, GHSA-7hqp-7c5m-4vq6) arrive
-  transitively through SqlClient, MimeKit, Roslyn workspaces and Aspire; `MessagePack`
-  (GHSA-qhrr-8q5h-9q3h) through Aspire's StreamJsonRpc. Under TreatWarningsAsErrors NU1902/NU1903
-  is a restore failure, so the nightly (every GM shape, every mutation scope, corpay, the console
-  smoke) and every pull request went red at once. The repository lifts Pkcs to 10.0.13 on both target frameworks (MimeKit 4.18 already
-  demands >= 10.0.0 on net8.0, so an 8.0.x pin is a downgrade) with a direct reference in the three projects whose graphs carry it, the pattern the
-  solution template already used for Xml; a repository-wide transitive pin was tried and
-  rejected, because it turns every central version into a ceiling and collides with the
-  deliberate per-TFM EF Core pins. The two templates and CorPay enable
-  `CentralPackageTransitivePinningEnabled` and pin Pkcs 10.0.13, Xml 10.0.13 and MessagePack
-  2.5.307 — a generated app is one TFM, so the pin is the lift wherever the package lands,
-  including the projects an adopter adds later. An app already generated on preview.8 needs the
-  same three pins until it regenerates.
-- **`docs-freshness.sh` reported two of its three checks and then forgave them.** The script
-  had `set -uo pipefail` but no `-e` and two separate blocks, so only the LAST block's exit
-  code survived: a broken relative link and a retired tool name were printed and the gate
-  exited 0 — while the file's own header claimed a broken link fails CI. Both checks now
-  gate, and both were verified to fail on planted drift. Found by the maintainer stop-gate on
-  the day it was written, which is the argument for the hook in one sentence.
+- **CorPay consumes through the seam.** The sample took 0.1.0-preview.8 the day it
+  published: three handlers instead of `IConsumer<T>` (`OrderPlacedHandler`,
+  `PaymentExecutedHandler`, `WorkItemQueuedHandler`), twenty-one pins moved, queue names
+  unchanged. It was the last line under the release checklist's next-train adoptions, and
+  the messaging-exit RFC's CorPay box closes with it.
 
 ### Added
 - **goldpath runs the discipline it ships** (delivery-cycle RFC D4). The repository carries
@@ -66,9 +303,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   run. Copying the app-shaped hook would have meant a 23-package build on every turn end,
   which is slow enough that the hook would be deleted — and a deleted gate is worse than an
   absent one.
-
-
-### Added
 - **One delivery cycle, shipped with the templates** ([RFC](docs/rfc/goldpath-delivery-cycle-v1.md)).
   `.claude/cycle.md` carries nine steps in which a defect and a feature differ only in the
   first, and it deliberately holds no rules of its own — every rule stays in the document that
@@ -84,14 +318,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 - The `goldpath-defect` eval, whose acceptance **reverts the fix and requires the new test to
   go red** — the cycle's own rule, checked rather than trusted.
 
-
-### Changed
-- **CorPay consumes through the seam.** The sample took 0.1.0-preview.8 the day it
-  published: three handlers instead of `IConsumer<T>` (`OrderPlacedHandler`,
-  `PaymentExecutedHandler`, `WorkItemQueuedHandler`), twenty-one pins moved, queue names
-  unchanged. It was the last line under the release checklist's next-train adoptions, and
-  the messaging-exit RFC's CorPay box closes with it.
-
+### Dependencies
+- .NET 10.0.12 patch line across the Microsoft.Extensions and EF Core packages, Quartz 3.21.0
+  (via 3.20.1), Testcontainers 4.15.0 (#244, #255); `Microsoft.Extensions.Http.Resilience`
+  10.9.0 (#247) and `Microsoft.Extensions.ServiceDiscovery` 10.9.0 (#256), both off the 9.x line;
+  console dev dependencies (#241). 33 NuGet updates (#268) — among them MailKit 4.18.1 and
+  **MassTransit 8.5.11**, a patch on the 8.x OSS line the messaging-exit RFC keeps; the CLI's
+  `KnownVersions`, both templates and CorPay move with it — and 13 console dependencies (#270).
 
 ## [0.1.0-preview.8] - 2026-09-07
 

@@ -67,8 +67,13 @@ green → merge → ledgers updated in the same PR.
    decide the pilot's next investment.
 7. **Scenario campaign** — starts after step 3 and runs alongside: S-FIN-01 first,
    the S-FLEET set once R1 ships, the 30M rig spec co-written before any scale claim.
-   All seven seeded scenarios get evidence.
-8. **The samples — LAST, as the full-set exam** — Insurance and Telco from scratch
+   All seven seeded scenarios get evidence. **2026-10-21 (GA readiness Q11):** zero budget —
+   the 30M run uses the full dataset, never a shrunk one, overnight on the owner's Mac in a
+   dedicated Lima VM, with GitHub-hosted free runners as the repeatable lane.
+8. **The samples — LAST, as the full-set exam** — Insurance, Telco and **Factoring** from
+   scratch (Factoring added 2026-10-21 by the owner, [GA readiness](../rfc/goldpath-ga-readiness.md)
+   Q6/G12: a generic clean-room domain sample in this public repository, with no client or
+   engagement content; it is not T23's industry pack)
    (with the step-5 wizard, proving it in anger) plus CorPay's open cells (SoftDelete,
    Caching, a real Contracts-idiom worker consumer, the Archival slice, SPEC-GAPS
    G3–G7, GAP-LEDGER #32/#33/#34). `add feature`, `db bundle`, the manifest skill —
@@ -108,9 +113,11 @@ how an asset acquires a surprise:
    AI decision record, confidence gate. **It belongs after the pilot, not before** — the
    pilot is what will say which of the four an adopter actually reaches for.
 10. **The MassTransit exit RFC** — DONE 2026-08-09 (F3, PR #157: `docs/rfc/goldpath-messaging-exit.md`,
-    the measured exit). What REMAINS of this item is only the T18/T24 decision itself —
-    stay pinned on 8.5.10 or take the v9 commercial license — which lives on the
-    open-threads ledger, not here. Original text kept for the record:
+    the measured exit). The decision itself was taken in two steps: option F on 2026-09-03
+    (ADR-0013), then on 2026-10-21 Wolverine as the 1.0 insurance by 2026-12-31 and the
+    family bus on its own committed timeline ([GA readiness](../rfc/goldpath-ga-readiness.md)
+    Q1/Q2). Both live on the open-threads ledger (T18, T40), not here. Original text kept for
+    the record:
     (issue #11, owner-prioritized) — MassTransit v9 has gone
     commercial (`docs/rfc/goldpath-messaging.md` §strategy). The options recorded there are
     a v8 fork, Wolverine, or growing Mediant toward transport. This is a **licensing
@@ -151,10 +158,15 @@ for "we forgot".
 
 ## Parked on written triggers (deliberately open)
 
-Oracle provider (T16 — first committed Oracle-mandating adopter) · `upgrade` skill
-(first real preview→preview migration) · console URL routes / OIDC login / tenant
-picker (T9/T10/T11) · ⌘K entity-id search (needs a cross-module lookup endpoint) ·
-stat-card trends (no time series in the contract) · TS mutation for the ui kit (T3).
+*Moved out 2026-10-21:* the Oracle provider (T16 — its trigger fired on 2026-10-20 and the owner
+put it IN for 1.0, GA gate G7) and the console OIDC login (T10 — a 1.0 gate, G6) are scheduled
+work now, not parks.
+
+`upgrade` skill (first real preview→preview migration) · console URL routes / tenant
+picker (T9/T11) · ⌘K entity-id search (needs a cross-module lookup endpoint) ·
+stat-card trends (no time series in the contract) · TS mutation for the ui kit (T3) ·
+public demos, one subdomain per product (T41 — the owner has an always-on machine; parked
+2026-10-21).
 
 ## The transformation park fired early (owner decision, 2026-08-16)
 

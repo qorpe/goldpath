@@ -35,6 +35,11 @@ EXCEPTIONS = {
     ("CorPay", "conventions.md"): "the sample's own domain conventions ride on top of the template's",
 }
 
+# The domain-memory skeleton (goldpath-authoring RFC, Slice 0) is copied the same way: the
+# template generates it, CorPay carries the same files. The worker template does not — a worker
+# has no business-facing specs of its own — and goldpath's own root is not an application.
+DOMAIN_SOURCE = "templates/goldpath-solution/docs/domain"
+DOMAIN_COPIES = {"CorPay": "samples/corpay/docs/domain"}
 def digest(path):
     with open(path, "rb") as f:
         return hashlib.md5(f.read()).hexdigest()
@@ -78,6 +83,21 @@ for (label, rel) in EXCEPTIONS:
     if rel not in sources:
         fail.append(f"exception ({label}, {rel}) names a file the template no longer has")
 
+domain_root = os.path.join(root, DOMAIN_SOURCE)
+if not os.path.isdir(domain_root):
+    fail.append(f"{DOMAIN_SOURCE} does not exist — the template generates no domain-memory skeleton")
+else:
+    for label, copy in DOMAIN_COPIES.items():
+        for base, dirs, names in os.walk(domain_root):
+            for n in names:
+                rel = os.path.relpath(os.path.join(base, n), domain_root)
+                target = os.path.join(root, copy, rel)
+                if not os.path.exists(target):
+                    fail.append(f"{label}: docs/domain/{rel} exists in the template and is missing here")
+                    continue
+                compared += 1
+                if digest(target) != digest(os.path.join(base, n)):
+                    fail.append(f"{label}: docs/domain/{rel} has drifted from the template")
 if fail:
     print("── skills-parity: the agent layer has drifted:")
     for f in fail:

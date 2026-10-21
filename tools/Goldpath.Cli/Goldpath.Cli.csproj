@@ -15,6 +15,25 @@
     <EmbeddedResource Include="../../schemas/manifest/v1/goldpath-manifest.schema.json"
                       Link="goldpath-manifest.schema.json"
                       LogicalName="Goldpath.Cli.goldpath-manifest.schema.json" />
+    <!-- goldpath spec ready (goldpath-authoring RFC V1) validates the authoring artefacts against
+         the SAME pinned schemas the corpus gate proves — the specanchor byte copies and the
+         decisions schema — shipped inside the tool so an air-gapped app needs no download. -->
+    <EmbeddedResource Include="../../schemas/specanchor/v1/rule.schema.v1.json"
+                      Link="schemas/rule.schema.v1.json"
+                      LogicalName="Goldpath.Cli.rule.schema.v1.json" />
+    <EmbeddedResource Include="../../schemas/specanchor/v1/ledger-term.schema.v1.json"
+                      Link="schemas/ledger-term.schema.v1.json"
+                      LogicalName="Goldpath.Cli.ledger-term.schema.v1.json" />
+    <EmbeddedResource Include="../../schemas/specanchor/v1/spec.schema.v1.json"
+                      Link="schemas/spec.schema.v1.json"
+                      LogicalName="Goldpath.Cli.spec.schema.v1.json" />
+    <EmbeddedResource Include="../../schemas/authoring/v1/decisions.schema.json"
+                      Link="schemas/decisions.schema.json"
+                      LogicalName="Goldpath.Cli.decisions.schema.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="YamlDotNet" />
   </ItemGroup>
 
 </Project>

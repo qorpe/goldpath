@@ -19,12 +19,13 @@ public interface IGoldpathCampaignItemHandler<in TTarget>
 /// <summary>Ambient facts handed to the item handler.</summary>
 public sealed class GoldpathCampaignItemContext
 {
-    internal GoldpathCampaignItemContext(Guid campaignId, long seq, string type, string? tenant, bool replay, IServiceProvider services)
+    internal GoldpathCampaignItemContext(Guid campaignId, long seq, string type, string? tenant, int attempt, bool replay, IServiceProvider services)
     {
         CampaignId = campaignId;
         Seq = seq;
         Type = type;
         Tenant = tenant;
+        Attempt = attempt;
         Replay = replay;
         Services = services;
     }
@@ -34,6 +35,16 @@ public sealed class GoldpathCampaignItemContext
 
     /// <summary>The item's sequence (the repair coordinate).</summary>
     public long Seq { get; }
+
+    /// <summary>Which attempt this execution is, 1-based (R2.1): the ladder's rung and the idempotency key's suffix.</summary>
+    public int Attempt { get; }
+
+    /// <summary>
+    /// `{campaignId:N}#{seq}#{attempt}` — hand it to the target system (R2.1) so a redelivered
+    /// request is recognized there as the same attempt, never executed twice.
+    /// </summary>
+    public string IdempotencyKey
+        => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{CampaignId:N}#{Seq}#{Attempt}");
 
     /// <summary>The campaign-type key.</summary>
     public string Type { get; }
@@ -66,6 +77,9 @@ public sealed record GoldpathCampaignPolicy(
     /// <summary>Attempts per item before the repair queue (R1.3); 1 = today's behavior.</summary>
     public int MaxAttempts { get; init; } = 1;
 
+    /// <summary>Share of a contended shared ceiling (R2.5); Normal unless an operator says otherwise.</summary>
+    public GoldpathCampaignPriority Priority { get; init; } = GoldpathCampaignPriority.Normal;
+
     /// <summary>True when <paramref name="utcNow"/> falls inside the send window (always true when no window).</summary>
     public bool IsWindowOpen(DateTimeOffset utcNow)
     {
@@ -93,7 +107,11 @@ public sealed record GoldpathCampaignPolicy(
     public bool IsExpired(DateTimeOffset utcNow)
         => EndDate is { } end && LocalDay(utcNow) > end;
 
-    /// <summary>The backoff before attempt N+1 (R1.3): one fixed ladder, 30s then 2m.</summary>
+    /// <summary>
+    /// The R1 ladder's two rungs (30s then 2m), kept as the documented default shape.
+    /// R2 reads the rungs from <see cref="GoldpathCampaignOptions.RetryBackoff"/> (configurable,
+    /// jittered) — this static stays for callers that pinned the R1 numbers.
+    /// </summary>
     public static TimeSpan RetryBackoff(int attemptsSoFar)
         => attemptsSoFar <= 1 ? TimeSpan.FromSeconds(30) : TimeSpan.FromMinutes(2);
 
@@ -123,13 +141,40 @@ public sealed class GoldpathCampaignType
     /// <summary>The enumeration ceiling — MANDATORY (an unbounded L4 enumeration is an outage, GP1701).</summary>
     public long MaxTargets { get; internal set; }
 
+    /// <summary>
+    /// Release ceiling per second across EVERY campaign of this type (R2.4); null = none.
+    /// This is the TARGET SYSTEM's protection — an SMS gateway or a device-management
+    /// core has a rate it can take, and three campaigns at once must not exceed it together.
+    /// </summary>
+    public int? MaxTps { get; internal set; }
+
     /// <summary>Default policy for new instances (operators may override per instance).</summary>
     public GoldpathCampaignPolicy DefaultPolicy { get; internal set; }
         = new(Tps: 50, DailyQuota: null, MaxInFlight: 1_000, WindowStart: null, WindowEnd: null, TimeZoneId: "UTC");
 
     internal Func<IServiceProvider, IReadOnlyDictionary<string, string>, IAsyncEnumerable<object>> Enumerate { get; set; } = null!;
 
-    internal Func<string, GoldpathCampaignItemContext, CancellationToken, Task> ExecuteItem { get; set; } = null!;
+    /// <summary>True when the type resumes enumeration by KEY after a takeover (R2.7) rather than by count.</summary>
+    public bool ResumesByKey => KeyOf is not null;
+
+    internal Func<IServiceProvider, IReadOnlyDictionary<string, string>, string?, IAsyncEnumerable<object>>? EnumerateAfter { get; set; }
+
+    internal Func<object, string>? KeyOf { get; set; }
+
+    /// <summary>The key of a target as its item row stored it (R2 review #3: the resume key of a row that carries none).</summary>
+    internal Func<string, string?>? KeyOfStoredTarget { get; set; }
+
+    internal Func<string, GoldpathCampaignItemContext, CancellationToken, Task<GoldpathCampaignActionResult>> ExecuteItem { get; set; } = null!;
+
+    /// <summary>
+    /// True when the type accepts target-system callbacks (campaign RFC R2.8): it declared
+    /// <see cref="GoldpathCampaignTypeBuilder{TTarget}.SignedCallbacks"/>. A type without a
+    /// secret has no callback surface at all — an unsigned callback is not possible.
+    /// </summary>
+    public bool SignsCallbacks => CallbackSecrets.Count > 0;
+
+    /// <summary>The active HMAC keys (the current one, plus the previous one during a rotation).</summary>
+    internal IReadOnlyList<byte[]> CallbackSecrets { get; set; } = [];
 
     internal Func<object, string> SerializeTarget { get; set; } = null!;
 }
@@ -140,6 +185,8 @@ public sealed class GoldpathCampaignTypeBuilder<TTarget>
 {
     private readonly GoldpathCampaignType _type;
     private Func<IServiceProvider, IReadOnlyDictionary<string, string>, IAsyncEnumerable<TTarget>>? _targets;
+    private Func<IServiceProvider, IReadOnlyDictionary<string, string>, string?, IAsyncEnumerable<TTarget>>? _targetsAfter;
+    private Func<TTarget, string>? _keyOf;
 
     internal GoldpathCampaignTypeBuilder(GoldpathCampaignType type) => _type = type;
 
@@ -167,6 +214,76 @@ public sealed class GoldpathCampaignTypeBuilder<TTarget>
         return this;
     }
 
+    /// <summary>
+    /// Binds a KEYSET selector (R2.7): the third argument is the key of the last target
+    /// already materialized (null on a fresh start), and the stream must begin strictly
+    /// AFTER it in a stable order; <paramref name="keyOf"/> names each target's key (at
+    /// most 256 characters). A takeover then reopens the stream at the key instead of
+    /// re-reading every materialized row to skip it — the difference between a seconds-long
+    /// resume and a minutes-long one at tens of millions of targets.
+    /// </summary>
+    public GoldpathCampaignTypeBuilder<TTarget> TargetsAfter(
+        Func<IServiceProvider, IReadOnlyDictionary<string, string>, string?, IAsyncEnumerable<TTarget>> targets,
+        Func<TTarget, string> keyOf)
+    {
+        _targetsAfter = targets;
+        _keyOf = keyOf;
+        return this;
+    }
+
+    /// <summary>Sets the per-type release ceiling shared by every campaign of this type (R2.4).</summary>
+    public GoldpathCampaignTypeBuilder<TTarget> MaxTps(int maxTps)
+    {
+        if (maxTps <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxTps), "The type ceiling must be positive.");
+        }
+
+        _type.MaxTps = maxTps;
+        return this;
+    }
+
+    /// <summary>
+    /// Accepts the target system's callbacks for this type, authenticated by an HMAC-SHA256
+    /// signature over the request (campaign RFC R2.8): the target system signs
+    /// <c>{timestamp}\n{METHOD}\n{path}\n{body}</c> with <paramref name="secret"/> and sends
+    /// it in <c>X-Goldpath-Signature: v1=&lt;hex&gt;</c> with the unix-seconds timestamp in
+    /// <c>X-Goldpath-Timestamp</c> (<see cref="GoldpathCampaignCallbackSignature"/> computes
+    /// it). The target system needs no ops credential — only this secret, which comes from
+    /// configuration, never from source. During a rotation pass the outgoing secret as
+    /// <paramref name="previousSecret"/>: either one verifies until you drop it.
+    /// </summary>
+    public GoldpathCampaignTypeBuilder<TTarget> SignedCallbacks(string secret, string? previousSecret = null)
+    {
+        var secrets = new List<byte[]> { CallbackKey(secret, nameof(secret)) };
+        if (previousSecret is not null)
+        {
+            var previous = CallbackKey(previousSecret, nameof(previousSecret));
+            if (previous.AsSpan().SequenceEqual(secrets[0]))
+            {
+                throw new ArgumentException("The previous secret equals the current one — a rotation needs a new secret.", nameof(previousSecret));
+            }
+
+            secrets.Add(previous);
+        }
+
+        _type.CallbackSecrets = secrets;
+        return this;
+    }
+
+    private static byte[] CallbackKey(string secret, string parameter)
+    {
+        var key = System.Text.Encoding.UTF8.GetBytes(secret ?? "");
+        if (key.Length < GoldpathCampaignCallbackSignature.MinimumSecretBytes)
+        {
+            throw new ArgumentException(
+                $"A callback secret needs at least {GoldpathCampaignCallbackSignature.MinimumSecretBytes} bytes — generate one "
+                + "(`openssl rand -base64 32`) and read it from configuration.", parameter);
+        }
+
+        return key;
+    }
+
     /// <summary>Sets the default policy new instances start from.</summary>
     public GoldpathCampaignTypeBuilder<TTarget> DefaultPolicy(Func<GoldpathCampaignPolicy, GoldpathCampaignPolicy> configure)
     {
@@ -182,17 +299,44 @@ public sealed class GoldpathCampaignTypeBuilder<TTarget>
                 $"Campaign type '{_type.Key}' has no MaxTargets — an unbounded enumeration at L4 scale is an outage, not a campaign (campaign RFC D7 / GP1701).");
         }
 
-        var targets = _targets ?? throw new InvalidOperationException(
-            $"Campaign type '{_type.Key}' has no Targets selector — a campaign that cannot enumerate is a typo.");
+        if (_targets is not null && _targetsAfter is not null)
+        {
+            throw new InvalidOperationException(
+                $"Campaign type '{_type.Key}' binds both Targets and TargetsAfter — pick one: a type resumes by count or by key, not both.");
+        }
 
-        _type.Enumerate = (services, parameters) => Upcast(targets(services, parameters));
+        if (_targetsAfter is { } keyed && _keyOf is { } keyOf)
+        {
+            _type.Enumerate = (services, parameters) => Upcast(keyed(services, parameters, null));
+            _type.EnumerateAfter = (services, parameters, after) => Upcast(keyed(services, parameters, after));
+            _type.KeyOf = target => keyOf((TTarget)target);
+            _type.KeyOfStoredTarget = json => JsonSerializer.Deserialize<TTarget>(json) is { } stored ? keyOf(stored) : null;
+        }
+        else
+        {
+            var targets = _targets ?? throw new InvalidOperationException(
+                $"Campaign type '{_type.Key}' has no Targets selector — a campaign that cannot enumerate is a typo.");
+            _type.Enumerate = (services, parameters) => Upcast(targets(services, parameters));
+        }
+
         _type.SerializeTarget = target => JsonSerializer.Serialize((TTarget)target);
         _type.ExecuteItem = async (targetJson, context, cancellationToken) =>
         {
             var target = JsonSerializer.Deserialize<TTarget>(targetJson)
                 ?? throw new InvalidOperationException($"Campaign item payload of '{_type.Key}' deserialized to null.");
-            var handler = context.Services.GetRequiredService<IGoldpathCampaignItemHandler<TTarget>>();
+            // R2.1: the typed-result handler wins when registered; the R1 handler keeps its
+            // contract (return = success, throw = retryable failure) so no adopter recompiles.
+            if (context.Services.GetService<IGoldpathCampaignActionHandler<TTarget>>() is { } action)
+            {
+                return await action.ExecuteAsync(target, context, cancellationToken)
+                    ?? throw new InvalidOperationException($"The action handler of '{_type.Key}' returned null — answer Succeeded, Failed or Accepted.");
+            }
+
+            var handler = context.Services.GetService<IGoldpathCampaignItemHandler<TTarget>>()
+                ?? throw new InvalidOperationException(
+                    $"No IGoldpathCampaignActionHandler<{typeof(TTarget).Name}> or IGoldpathCampaignItemHandler<{typeof(TTarget).Name}> is registered for campaign type '{_type.Key}'.");
             await handler.ExecuteAsync(target, context, cancellationToken);
+            return GoldpathCampaignActionResult.Succeeded();
         };
     }
 
@@ -232,11 +376,60 @@ public sealed class GoldpathCampaignOptions
     public TimeSpan StaleClaimAfter { get; set; } = TimeSpan.FromMinutes(10);
 
     /// <summary>
+    /// A Released item still unclaimed after this long is an orphan (R2.6): its message
+    /// was dropped — the campaign was paused while it sat in the queue, the broker lost
+    /// it, a consumer refused the claim — and the pacer publishes it again under the same
+    /// allowance. A resume marks every Released item due at once, so this is the ceiling
+    /// on how long a lost message waits, not the usual wait.
+    /// </summary>
+    public TimeSpan OrphanReleaseAfter { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
     /// Per-process release ceiling across ALL running campaigns (R1.4); null = off.
     /// PLATFORM protection, not provider fairness: the pacer is a cluster singleton per
     /// app, so per-process IS per-app. Cross-app limiting belongs at the gateway.
     /// </summary>
     public int? GlobalTps { get; set; }
+
+    /// <summary>
+    /// The retry ladder (R2.3): the wait before attempt N+1 is rung N, the last rung
+    /// repeating for any further attempts. Default 30s, 2m, 10m — the R1 pair plus a rung
+    /// that lets a target system finish a maintenance window before the item is given up.
+    /// </summary>
+    public IReadOnlyList<TimeSpan> RetryBackoff { get; set; }
+        = [TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(10)];
+
+    /// <summary>
+    /// Fractional jitter on every rung (R2.3), ±: 0.2 spreads a 30s rung over 24–36s so a
+    /// thousand items that failed in the same second do not come back in the same second.
+    /// 0 pins the exact ladder (tests that count seconds use it).
+    /// </summary>
+    public double RetryJitter { get; set; } = 0.2;
+
+    /// <summary>
+    /// How far a signed callback's timestamp may sit from this host's clock, either way
+    /// (campaign RFC R2.8). It bounds a replay: a captured callback re-sent later than this is
+    /// refused, and inside the window a repeat is idempotent (the item already settled).
+    /// </summary>
+    public TimeSpan CallbackTimestampTolerance { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>The wait before attempt N+1 given N attempts so far, jittered per call.</summary>
+    public TimeSpan NextRetryDelay(int attemptsSoFar)
+    {
+        if (RetryBackoff.Count == 0)
+        {
+            throw new InvalidOperationException("RetryBackoff needs at least one rung.");
+        }
+
+        var rung = RetryBackoff[Math.Clamp(attemptsSoFar - 1, 0, RetryBackoff.Count - 1)];
+        if (RetryJitter <= 0)
+        {
+            return rung;
+        }
+
+        var factor = 1 + ((Random.Shared.NextDouble() * 2) - 1) * Math.Min(RetryJitter, 1);
+        return TimeSpan.FromTicks((long)(rung.Ticks * factor));
+    }
 
     /// <summary>Registers one campaign type.</summary>
     public GoldpathCampaignOptions AddCampaign<TTarget>(string key, Action<GoldpathCampaignTypeBuilder<TTarget>> configure)

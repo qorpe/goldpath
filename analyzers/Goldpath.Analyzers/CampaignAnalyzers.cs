@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
+using Microsoft.CodeAnalysis.Operations;
 
 namespace Goldpath.Analyzers;
 
@@ -48,9 +49,15 @@ internal static class CampaignMatching
             return false;
         }
 
-        var handlerInterface = context.Compilation.GetTypeByMetadataName("Goldpath.IGoldpathCampaignItemHandler`1");
-        if (handlerInterface is null || !type.AllInterfaces.Any(i =>
-            SymbolEqualityComparer.Default.Equals(i.OriginalDefinition, handlerInterface)))
+        // R2.1: both execution hooks are item handlers for GP1702/GP1703 — the typed-result
+        // one must not SaveChanges or bypass the notification seam any more than the R1 one.
+        var handlerInterfaces = new[]
+        {
+            context.Compilation.GetTypeByMetadataName("Goldpath.IGoldpathCampaignItemHandler`1"),
+            context.Compilation.GetTypeByMetadataName("Goldpath.IGoldpathCampaignActionHandler`1"),
+        };
+        if (!type.AllInterfaces.Any(i => handlerInterfaces.Any(handlerInterface =>
+            handlerInterface is not null && SymbolEqualityComparer.Default.Equals(i.OriginalDefinition, handlerInterface))))
         {
             return false;
         }
@@ -178,5 +185,65 @@ public sealed class CampaignNotificationBypassAnalyzer : DiagnosticAnalyzer
                 }
             }, SyntaxKind.ObjectCreationExpression);
         });
+    }
+}
+
+/// <summary>
+/// GP1704: the campaign callback surface mapped while no campaign type declares
+/// <c>SignedCallbacks</c> (campaign RFC R2.8). Callbacks are authenticated by their HMAC
+/// signature and an unsigned one is not possible — the map call refuses to start; this rule
+/// says it at BUILD time. Goldpath's own packages are exempt.
+/// </summary>
+[DiagnosticAnalyzer(LanguageNames.CSharp)]
+public sealed class CampaignCallbackSigningAnalyzer : DiagnosticAnalyzer
+{
+    /// <inheritdoc />
+    public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics
+        => ImmutableArray.Create(Descriptors.CampaignCallbacksWithoutSigning);
+
+    /// <inheritdoc />
+    public override void Initialize(AnalysisContext context)
+    {
+        context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
+        context.EnableConcurrentExecution();
+        context.RegisterCompilationStartAction(static start =>
+        {
+            if (start.Compilation.AssemblyName?.StartsWith("Goldpath.", StringComparison.Ordinal) is true)
+            {
+                return;
+            }
+
+            var state = new SigningState();
+            start.RegisterOperationAction(ctx =>
+            {
+                var method = ((IInvocationOperation)ctx.Operation).TargetMethod;
+                var owner = method.ContainingType?.OriginalDefinition.ToDisplayString();
+                if (method.Name == "MapGoldpathCampaignCallbacks" && owner == "Goldpath.GoldpathCampaignCallbackEndpoints")
+                {
+                    lock (state)
+                    {
+                        state.Location ??= ctx.Operation.Syntax.GetLocation();
+                    }
+                }
+                else if (method.Name == "SignedCallbacks" && owner == "Goldpath.GoldpathCampaignTypeBuilder<TTarget>")
+                {
+                    state.Signed = true;
+                }
+            }, OperationKind.Invocation);
+
+            start.RegisterCompilationEndAction(ctx =>
+            {
+                if (!state.Signed && state.Location is { } location)
+                {
+                    ctx.ReportDiagnostic(Diagnostic.Create(Descriptors.CampaignCallbacksWithoutSigning, location));
+                }
+            });
+        });
+    }
+
+    private sealed class SigningState
+    {
+        public volatile bool Signed;
+        public Location? Location;
     }
 }

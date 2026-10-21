@@ -1,0 +1,7 @@
+# expect: schema/minimum
+spec_id: SPEC-0003
+rule_ids: [RULE-0001]
+notation: gherkin
+body: "Scenario: x"
+open_brackets: -1
+schemaVersion: 1

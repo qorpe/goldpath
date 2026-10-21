@@ -1,0 +1,89 @@
+# The golden-manifest matrix (ADR-0008): pack → generate → build → spec-lint → smoke with
+# real containers, one parallel job per shape. ONE definition, called by two lanes —
+# nightly.yml with `scope: all`, ci.yml with `scope: pr` on the pull requests that touch
+# what a generated app is built from — and dispatchable on any branch (a release PR's own
+# head, a template fix before it merges). The shapes live in .github/gm-shapes.yml.
+#
+# It needs no secret: everything it restores is public (nuget.org, the npm registry, Docker
+# Hub), so a pull request from a fork runs it exactly as one from this repository does.
+name: gm
+
+on:
+  workflow_call:
+    inputs:
+      scope:
+        description: "all — every shape; pr — only the shapes marked `pr: true`"
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: "all — every shape; pr — only the shapes marked `pr: true`"
+        type: choice
+        options: [all, pr]
+        default: all
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      shapes: ${{ steps.read.outputs.shapes }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/gm-shapes.yml
+          sparse-checkout-cone-mode: false
+      - id: read
+        name: read the shapes (${{ inputs.scope }})
+        env:
+          SCOPE: ${{ inputs.scope }}
+        run: |
+          case "$SCOPE" in
+            all) filter='.shapes' ;;
+            pr)  filter='[.shapes[] | select(.pr == true)]' ;;
+            *)   echo "::error::scope must be all or pr, got '$SCOPE'"; exit 1 ;;
+          esac
+          shapes=$(yq -o=json -I=0 "$filter" .github/gm-shapes.yml)
+          echo "$shapes" | yq -P '.[].name'
+          echo "shapes=$shapes" >> "$GITHUB_OUTPUT"
+
+  shape:
+    needs: plan
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.shapes) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      # The GM lane packs a local feed, and that feed shadows nuget.org for the same
+      # version — so the console it packs must carry its assets, or every shape with an
+      # operational module serves a 500 where its console should be.
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: ui/console/pnpm-lock.yaml
+      - name: ${{ matrix.name }}
+        env:
+          GM_NAME: ${{ matrix.name }}
+          GM_ARGS: ${{ matrix.args }}
+          GOLDPATH_GM_TEMPLATE: ${{ matrix.template || 'goldpath-solution' }}
+          GOLDPATH_GM_POST: ${{ matrix.post || '' }}
+          GOLDPATH_GM_VIA_CLI: ${{ matrix.viaCli || '' }}
+        # GM_ARGS unquoted on purpose: it is a list of dotnet new arguments.
+        run: ./scripts/validate-gm.sh "$GM_NAME" $GM_ARGS

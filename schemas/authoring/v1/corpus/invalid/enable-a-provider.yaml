@@ -1,0 +1,9 @@
+# expect: schema/const
+# Providers change infrastructure; v1 asks, it never decides (RFC §3, D5).
+schemaVersion: 1
+spec_id: SPEC-0006
+decisions:
+  - path: providers.broker
+    change: enable
+    source:
+      quote: notify the beneficiary

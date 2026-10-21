@@ -18,13 +18,13 @@ templates + AI skills + guardrails + living documentation. Not a framework — a
 - ✔ Composable packages — added to an existing project in 5 minutes (L1) or scaffolded from scratch (L3)
 - ✔ Spec-driven: `.goldpath/manifest.yaml` + OpenAPI/AsyncAPI as the single source of truth
 - ✔ AI in the development layer: skills generate, guardrails verify, humans approve
-- ✔ Proof-driven: every claim below is a test/bench that runs in CI (nightly 10-shape golden-manifest matrix, real containers)
+- ✔ Proof-driven: every claim below is a test/bench that runs in CI (the golden-manifest matrix on real containers: every shape nightly, and the covering subset on every pull request that could change a generated app)
 - ✘ Not a framework (imposes no structure), no custom DSL, no wrappers around Microsoft
 
 ## Quickstart
 
 ```bash
-dotnet new install Goldpath.Templates@0.1.0-preview.8    # preview: pin the version
+dotnet new install Goldpath.Templates@0.1.0-preview.9    # preview: pin the version
 dotnet tool install -g Goldpath.Cli --prerelease
 dotnet tool install -g specdrift                         # the deterministic engine behind goldpath check/add
 
@@ -84,7 +84,7 @@ accessibility gate.
 |---|---|
 | `docs/strategy/` · `docs/adr/` · `docs/rfc/` | Strategy, the 10-ADR constitution, module RFCs + frozen contracts |
 | `docs/guide/` · `docs/stories/` | The adopter's path (start here) · proof stories |
-| `docs/ops/` · `docs/upgrades/` | Migrations/trace/release runbooks · per-release upgrade guides |
+| `docs/ops/` · `docs/upgrades/` | Migrations/trace/release runbooks, the agent pipeline and its merge tiers · per-release upgrade guides |
 | `schemas/manifest/v1/` | Manifest JSON Schema + valid/invalid corpus (CI corpus gate: valid must pass, invalid must fail) |
 | `packages/` · `analyzers/` | The NuGet train (20 packages) · GP#### Roslyn rules |
 | `templates/` · `tools/` | `dotnet new` pack (solution + worker) · the `goldpath` CLI |

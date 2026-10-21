@@ -2,12 +2,13 @@
   "stryker-config": {
     "project": "Goldpath.FileExchange.csproj",
     "test-projects": [
-      "tests/Goldpath.FileExchange.Tests/Goldpath.FileExchange.Tests.csproj"
+      "../../tests/Goldpath.FileExchange.Tests/Goldpath.FileExchange.Tests.csproj"
     ],
     "target-framework": "net10.0",
     "reporters": [
       "progress",
-      "markdown"
+      "markdown",
+      "json"
     ],
     "thresholds": {
       "high": 85,

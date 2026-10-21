@@ -1,3 +1,7 @@
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+
 namespace Goldpath.Cli;
 
 /// <summary>
@@ -11,23 +15,7 @@ public static class AddFeatureCommand
     /// <summary>Applies the feature, verifies with the engine, rolls back on findings.</summary>
     public static int Run(string feature, string appRoot, IProcessRunner runner, TextWriter output, TextWriter error)
     {
-        var manifestPath = Path.Combine(appRoot, ".goldpath", "manifest.yaml");
-        if (!File.Exists(manifestPath))
-        {
-            throw new CliFailureException($"no manifest at {manifestPath} — goldpath add runs inside a Goldpath-generated app (or pass --path).");
-        }
-
-        var manifest = File.ReadAllText(manifestPath);
-        if (ManifestEditor.ReadKind(manifest) is var kind && kind != "solution")
-        {
-            throw new CliFailureException(
-                $"this manifest is kind '{kind ?? "<none>"}' — Ring B features live in the owning SOLUTION's manifest; run goldpath add there.");
-        }
-
-        var files = AppFiles.Locate(appRoot);
-
-        var facts = AppFacts.Read(files);
-        var plan = FeatureRecipes.Build(feature, facts);
+        var (manifest, files, plan) = Prepare(feature, appRoot);
 
         if (ManifestEditor.IsEnabled(manifest, plan.ManifestKey))
         {
@@ -67,18 +55,83 @@ public static class AddFeatureCommand
             throw;
         }
 
-        if (plan.ModelCalls.Count > 0)
-        {
-            plan.NextSteps.Add($"the model grew: run `goldpath db add Add{AddWorkerCommand.Pascal(feature)}` and commit the migration (production applies the bundle — migrations RFC D5)");
-        }
-
         output.WriteLine($"goldpath: '{feature}' added — engine clean. Your decisions (goldpath never guesses domain opt-ins):");
-        foreach (var step in plan.NextSteps)
+        foreach (var step in Decisions(feature, plan))
         {
             output.WriteLine($"  → {step}");
         }
 
         return 0;
+    }
+
+    /// <summary>
+    /// <c>goldpath add feature X --plan</c> — what adding X would do, as JSON, with NOTHING
+    /// written and no engine run (goldpath-authoring RFC §3): the manifest lines, the packages,
+    /// the provider edits, whether the model grows, and the decisions the team must take — the
+    /// same list, word for word, that the real run prints after it succeeds. Authoring turns
+    /// each decision into a question or a sourced answer; it never guesses one.
+    /// </summary>
+    public static int Plan(string feature, string appRoot, TextWriter output)
+    {
+        var (manifest, _, plan) = Prepare(feature, appRoot);
+        var json = new JsonObject
+        {
+            ["feature"] = feature,
+            ["manifestKey"] = plan.ManifestKey,
+            ["alreadyEnabled"] = ManifestEditor.IsEnabled(manifest, plan.ManifestKey),
+            ["manifestLines"] = JsonList(plan.ManifestLines),
+            ["providerEdits"] = JsonList(plan.ProviderEdits.Select(edit => $"providers.{edit.Key}: {edit.Value}")),
+            ["packages"] = JsonList(plan.ApiPackages.Concat(plan.AppHostPackages).Distinct(StringComparer.Ordinal)),
+            ["modelGrows"] = plan.ModelCalls.Count > 0,
+            ["decisions"] = JsonList(Decisions(feature, plan)),
+        };
+        output.WriteLine(json.ToJsonString(s_planJson));
+        return 0;
+    }
+
+    // Indented for a reader, and unescaped so the recipe's words ("—", "'", "<T>") print as
+    // written: authoring copies an opt-in verbatim into decisions.yaml.
+    private static readonly JsonSerializerOptions s_planJson = new()
+    {
+        WriteIndented = true,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
+    private static JsonArray JsonList(IEnumerable<string> items) => new([.. items.Select(item => (JsonNode?)item)]);
+
+    /// <summary>
+    /// The decisions a feature hands the team: the recipe's own list, plus the migration when
+    /// the model grows. ONE method for the real run and the plan, so the two cannot drift.
+    /// </summary>
+    private static List<string> Decisions(string feature, RecipePlan plan)
+    {
+        var decisions = new List<string>(plan.NextSteps);
+        if (plan.ModelCalls.Count > 0)
+        {
+            decisions.Add($"the model grew: run `goldpath db add Add{AddWorkerCommand.Pascal(feature)}` and commit the migration (production applies the bundle — migrations RFC D5)");
+        }
+
+        return decisions;
+    }
+
+    /// <summary>Reads the app and builds the recipe — everything both the run and the plan need, writing nothing.</summary>
+    private static (string Manifest, AppFiles Files, RecipePlan Plan) Prepare(string feature, string appRoot)
+    {
+        var manifestPath = Path.Combine(appRoot, ".goldpath", "manifest.yaml");
+        if (!File.Exists(manifestPath))
+        {
+            throw new CliFailureException($"no manifest at {manifestPath} — goldpath add runs inside a Goldpath-generated app (or pass --path).");
+        }
+
+        var manifest = File.ReadAllText(manifestPath);
+        if (ManifestEditor.ReadKind(manifest) is var kind && kind != "solution")
+        {
+            throw new CliFailureException(
+                $"this manifest is kind '{kind ?? "<none>"}' — Ring B features live in the owning SOLUTION's manifest; run goldpath add there.");
+        }
+
+        var files = AppFiles.Locate(appRoot);
+        return (manifest, files, FeatureRecipes.Build(feature, AppFacts.Read(files)));
     }
 
     private static void Apply(RecipePlan plan, AppFiles files, string manifest)

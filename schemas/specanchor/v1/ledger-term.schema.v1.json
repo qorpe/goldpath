@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://specanchor.dev/schemas/ledger-term/v1.json",
+  "title": "specanchor ledger-term v1",
+  "description": "One glossary entry per term, per bounded context. aliases_in_code and not_to_be_confused_with are what make the glossary usable by an agent — without them it is decoration.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["term", "context", "definition", "aliases_in_code", "source_ref", "status", "schemaVersion"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "term": { "type": "string", "minLength": 1 },
+    "context": { "type": "string", "minLength": 1 },
+    "definition": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "description": "Two sentences maximum; structured fields carry the rest."
+    },
+    "aliases_in_code": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Identifiers as they appear in source. Feeds the statement-quality gate."
+    },
+    "not_to_be_confused_with": {
+      "type": "string",
+      "description": "Cross-context collisions: same word, different concept, different context."
+    },
+    "source_ref": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "status": { "enum": ["proposed", "confirmed_by_expert"] }
+  }
+}

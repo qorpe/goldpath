@@ -1,0 +1,12 @@
+# expect: schema/oneOf
+# An answer to an opt-in needs its source, or it is the guess the plan exists to prevent.
+schemaVersion: 1
+spec_id: SPEC-0011
+decisions:
+  - path: features.idempotency
+    change: enable
+    source:
+      quote: must never pay twice
+    opt_ins:
+      - opt_in: "mark every other write-performing command [Idempotent]"
+        answer: Only submit.

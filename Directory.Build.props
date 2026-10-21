@@ -11,7 +11,7 @@
 
   <PropertyGroup>
     <VersionPrefix>0.1.0</VersionPrefix>
-    <VersionSuffix>preview.8</VersionSuffix>
+    <VersionSuffix>preview.9</VersionSuffix>
     <Authors>Omer Celik</Authors>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <Company>Omer Celik</Company>

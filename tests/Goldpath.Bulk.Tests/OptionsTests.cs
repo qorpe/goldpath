@@ -20,6 +20,18 @@ public class OptionsTests
         Assert.Contains("GP1501", e.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>GP1501's runtime half: a ceiling of zero or less is refused AT THE CALL, naming the argument.</summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-5)]
+    public void A_ceiling_that_is_not_positive_is_refused_at_the_call(int maxRows)
+    {
+        var e = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new GoldpathBulkOptions().AddBatch<PaymentRow>("payments", b => b.MaxRows(maxRows)));
+        Assert.Equal("maxRows", e.ParamName);
+        Assert.Contains("must be positive", e.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Duplicate_definition_names_refuse()
     {
@@ -35,8 +47,47 @@ public class OptionsTests
     {
         var options = new GoldpathBulkOptions();
         options.AddBatch<PaymentRow>("payments", b => b.MaxRows(10));
+        options.AddBatch<PaymentRow>("refunds", b => b.MaxRows(10));
         var e = Assert.Throws<InvalidOperationException>(() => options.Definition("imports"));
-        Assert.Contains("payments", e.Message, StringComparison.Ordinal);
+        Assert.Contains("registered: payments, refunds.", e.Message, StringComparison.Ordinal);
+    }
+
+    public enum Rail
+    {
+        Swift,
+        Sepa,
+    }
+
+    public sealed class FeeRow
+    {
+        public string Id { get; set; } = "";
+        public decimal? Fee { get; set; }
+        public Rail Rail { get; set; }
+    }
+
+    /// <summary>
+    /// D3 typed conversion beyond the plain types: a nullable column converts through its
+    /// underlying type, an empty one is null (not a finding), enums match case-insensitively,
+    /// and a finding on a nullable names the UNDERLYING type a person recognizes.
+    /// </summary>
+    [Fact]
+    public void Nullable_and_enum_columns_convert_like_their_underlying_types()
+    {
+        var options = new GoldpathBulkOptions();
+        options.AddBatch<FeeRow>("fees", b => b.MaxRows(10));
+        var fees = options.Definition("fees");
+
+        var filled = fees.Validate(Raw(("Id", "F1"), ("Fee", "2.5"), ("Rail", "sepa")), EmptyServices);
+        Assert.Empty(filled.Errors);
+        Assert.Contains("\"Fee\":2.5", filled.Payload!, StringComparison.Ordinal);
+        Assert.Contains("\"Rail\":1", filled.Payload!, StringComparison.Ordinal);
+
+        var empty = fees.Validate(Raw(("Id", "F2"), ("Fee", "")), EmptyServices);
+        Assert.Empty(empty.Errors);
+        Assert.Contains("\"Fee\":null", empty.Payload!, StringComparison.Ordinal);
+
+        var broken = fees.Validate(Raw(("Id", "F3"), ("Fee", "two")), EmptyServices);
+        Assert.Equal(("Fee", "value is not a valid Decimal"), Assert.Single(broken.Errors));
     }
 
     [Fact]

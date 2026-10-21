@@ -320,3 +320,102 @@ describe("the console across services", () => {
     }
   });
 });
+
+// Product console link tiles (#257) — decision record docs/rfc/goldpath-console-link-tiles.md.
+describe("product console link tiles on Today", () => {
+  const withLinks = (registry: unknown) => estate({ registry });
+  const LINKS = [
+    { name: "Coexist", url: "/coexist/console/" },
+    { name: "Mockifyr", url: "https://mockifyr.internal/" },
+  ];
+
+  it("§4: Today draws one native link per product, named by the product AND where it goes", async () => {
+    render(<ConsoleApp fetcher={withLinks({ links: LINKS }).fetcher} search="" />);
+
+    const tiles = await screen.findByRole("navigation", { name: "Product consoles" });
+    const links = within(tiles).getAllByRole("link");
+    expect(links).toHaveLength(2);
+    // Same-origin shows its PATH, another origin its HOST — the operator sees the
+    // destination before going there.
+    expect(links[0]).toHaveAccessibleName("Coexist /coexist/console/");
+    expect(links[0]).toHaveAttribute("href", `${window.location.origin}/coexist/console/`);
+    expect(links[1]).toHaveAccessibleName("Mockifyr mockifyr.internal");
+    expect(links[1]).toHaveAttribute("href", "https://mockifyr.internal/");
+    // Same tab, like the kit's href rail items; the referrer is never loosened.
+    expect(links[1]).not.toHaveAttribute("target");
+    expect(links[1]).toHaveAttribute("referrerpolicy", "strict-origin-when-cross-origin");
+  });
+
+  it("§4: a links-only registry shows the tiles, ONE service, and no registry warning", async () => {
+    render(<ConsoleApp fetcher={withLinks({ links: LINKS }).fetcher} search="" />);
+
+    await screen.findByRole("navigation", { name: "Product consoles" });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "service" })).toBeNull();
+  });
+
+  it("§1: a tile is NEVER probed — the console sends nothing to a product's address", async () => {
+    const { fetcher, asked } = withLinks({ services: [{ name: "payments", adminBaseUrl: "https://payments.internal" }], links: LINKS });
+    render(<ConsoleApp fetcher={fetcher} search="" />);
+
+    await screen.findByRole("navigation", { name: "Product consoles" });
+    await screen.findByTestId("triage-cards");
+    expect(asked.some((url) => url.includes("mockifyr") || url.includes("coexist"))).toBe(false);
+  });
+
+  it("§4: no links, no section — never an empty one", async () => {
+    render(<ConsoleApp fetcher={estate().fetcher} search="" />);
+
+    await screen.findByTestId("triage-cards");
+    expect(screen.queryByRole("navigation", { name: "Product consoles" })).toBeNull();
+    expect(screen.queryByText("Product consoles")).toBeNull();
+  });
+
+  it("§4: a dropped link is ANNOUNCED as a missing product console, not a missing service", async () => {
+    render(
+      <ConsoleApp
+        fetcher={withLinks({ links: [...LINKS, { name: "Evil", url: "javascript:alert(1)" }] }).fetcher}
+        search=""
+      />,
+    );
+
+    const banner = await screen.findByRole("alert");
+    expect(banner).toHaveTextContent("1 product console link was skipped");
+    expect(banner).toHaveTextContent("the console is missing a product console you configured");
+    // The two good tiles are still drawn; the refused one is nowhere on the page.
+    const tiles = await screen.findByRole("navigation", { name: "Product consoles" });
+    expect(within(tiles).getAllByRole("link")).toHaveLength(2);
+    expect(screen.queryByText("Evil")).toBeNull();
+  });
+
+  it("§4: the palette offers each product console as a place to GO, to the approved address", async () => {
+    const navigate = vi.fn();
+    render(<ConsoleApp fetcher={withLinks({ links: LINKS }).fetcher} search="" navigate={navigate} />);
+    await screen.findByRole("navigation", { name: "Product consoles" });
+
+    await userEvent.keyboard("{Meta>}k{/Meta}");
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Consoles")).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByText("Open Mockifyr"));
+
+    expect(navigate).toHaveBeenCalledWith("https://mockifyr.internal/");
+  });
+
+  it("without links the palette has no Consoles group", async () => {
+    render(<ConsoleApp fetcher={estate().fetcher} search="" />);
+    await screen.findByRole("button", { name: "Runs" });
+
+    await userEvent.keyboard("{Meta>}k{/Meta}");
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByText("Consoles")).toBeNull();
+  });
+
+  it("the rail does NOT grow a Products group — tiles live on Today only (owner, 2026-10-19)", async () => {
+    render(<ConsoleApp fetcher={withLinks({ links: LINKS }).fetcher} search="" />);
+    const rail = await screen.findByTestId("shell-rail");
+    await screen.findByRole("navigation", { name: "Product consoles" });
+
+    expect(within(rail).queryByText("Coexist")).toBeNull();
+    expect(within(rail).queryByText(/^Products$/)).toBeNull();
+  });
+});

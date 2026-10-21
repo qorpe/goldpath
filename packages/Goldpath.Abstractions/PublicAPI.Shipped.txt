@@ -58,3 +58,4 @@ const Goldpath.GoldpathPolicies.Ops = "goldpath-ops" -> string!
 const Goldpath.GoldpathPolicies.OpsAllTenants = "goldpath-ops-all-tenants" -> string!
 Goldpath.GoldpathMultiTenancyMarker
 Goldpath.GoldpathMultiTenancyMarker.GoldpathMultiTenancyMarker() -> void
+Goldpath.IAuditLogged

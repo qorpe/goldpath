@@ -3,6 +3,8 @@ import { Banner, DensityToggle, IconAction, PageHeader, StatCard, StateBadge } f
 import { RefreshCw } from "lucide-react";
 import { MODULES, type AdminClient, type ModuleName } from "./adminClient";
 import { SECTION_ICON, type Capabilities } from "./sections";
+import { ProductLinks } from "./ProductLinks";
+import type { LinkEntry } from "./registry";
 import { collectServiceTriage, orderTriage, TRIAGE_SCOPE, type ServiceTriage, type TriageRow } from "./triage";
 
 export interface TriageService {
@@ -16,6 +18,8 @@ export interface TriageHomeProps {
   /** Opens the panel a row belongs to, on the service it belongs to. */
   onOpen: (service: string, section: ModuleName) => void;
   now?: Date;
+  /** Product consoles, drawn as link tiles BELOW the triage — "is anything wrong" stays first. */
+  links?: LinkEntry[];
 }
 
 /**
@@ -42,7 +46,7 @@ const CARD: Record<ModuleName, { label: string; tone: "danger" | "warning" }> = 
  * does not already publish: the triage reads the same take-bounded lists an operator would
  * and counts what it was given, which is why the scope is printed rather than implied.
  */
-export function TriageHome({ services, onOpen, now }: TriageHomeProps) {
+export function TriageHome({ services, onOpen, now, links = [] }: TriageHomeProps) {
   const [collected, setCollected] = useState<{ rows: TriageRow[]; services: (ServiceTriage & { name: string })[] } | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const rows = collected?.rows ?? null;
@@ -154,6 +158,8 @@ export function TriageHome({ services, onOpen, now }: TriageHomeProps) {
           ))}
         </ul>
       )}
+
+      <ProductLinks links={links} />
     </div>
   );
 }

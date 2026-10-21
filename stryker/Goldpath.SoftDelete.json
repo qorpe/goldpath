@@ -2,13 +2,14 @@
   "stryker-config": {
     "project": "Goldpath.SoftDelete.csproj",
     "test-projects": [
-      "tests/Goldpath.SoftDelete.Tests/Goldpath.SoftDelete.Tests.csproj",
-      "tests/Goldpath.MultiTenancy.Tests/Goldpath.MultiTenancy.Tests.csproj"
+      "../../tests/Goldpath.SoftDelete.Tests/Goldpath.SoftDelete.Tests.csproj",
+      "../../tests/Goldpath.MultiTenancy.Tests/Goldpath.MultiTenancy.Tests.csproj"
     ],
     "target-framework": "net10.0",
     "reporters": [
       "progress",
-      "markdown"
+      "markdown",
+      "json"
     ],
     "thresholds": {
       "high": 85,

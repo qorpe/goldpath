@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omercelik.dev/schemas/goldpath/authoring/decisions/v1.json",
+  "title": "Goldpath authoring decisions v1",
+  "description": "The decision record of one change proposal (specs/proposals/SPEC-nnnn/decisions.yaml, goldpath-authoring RFC §4 and D4): one entry per manifest path the proposal touches or relies on, each with its source, and every domain opt-in that `goldpath add feature <x> --plan` printed resolved into a question or a sourced answer. It records decisions about the binding layer; it is not a specification of behaviour (that is specanchor's rule/spec, ADR-0002).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "spec_id", "decisions"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "spec_id": {
+      "type": "string",
+      "pattern": "^SPEC-[0-9]{4}$",
+      "description": "The proposal this record belongs to; equals the folder name."
+    },
+    "decisions": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/decision" }
+    },
+    "questions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/question" },
+      "description": "What the sentence does not settle. Every question id a decision or opt-in names must be declared here (checked by `goldpath spec ready`)."
+    }
+  },
+  "$defs": {
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "change", "source"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^(features|nfr|providers|architecture|externalSystems|products)(\\.[A-Za-z0-9_-]+)+$",
+          "description": "A dotted manifest path, e.g. features.idempotency or nfr.latencyP95Ms."
+        },
+        "change": {
+          "enum": ["enable", "set", "rely", "ask"],
+          "description": "enable = switch a feature on · set = write a value the sentence states · rely = already on, and used as follows · ask = a question, not a decision. There is no 'disable': a removal the sentence implies is a question (RFC §3)."
+        },
+        "value": {
+          "description": "The value a `set` writes. Required for `set`."
+        },
+        "source": { "$ref": "#/$defs/source" },
+        "question": {
+          "type": "string",
+          "pattern": "^Q-[0-9]{3}$",
+          "description": "The question an `ask` raises. Required for `ask`."
+        },
+        "opt_ins": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/optIn" },
+          "description": "One entry per line `goldpath add feature <x> --plan` printed for this feature."
+        }
+      },
+      "allOf": [
+        { "if": { "properties": { "change": { "const": "set" } } }, "then": { "required": ["value"] } },
+        { "if": { "properties": { "change": { "const": "ask" } } }, "then": { "required": ["question"] } },
+        {
+          "$comment": "v1 manifest reach (RFC §3, D5 as proposed): features are enabled or relied on, nfr values are set only when the sentence states them, and everything else is a question. If the owner widens D5, this block widens with it.",
+          "if": { "properties": { "change": { "const": "enable" } } },
+          "then": { "properties": { "path": { "pattern": "^features\\." } } }
+        },
+        {
+          "if": { "properties": { "change": { "const": "set" } } },
+          "then": { "properties": { "path": { "pattern": "^nfr\\." } } }
+        },
+        {
+          "if": { "properties": { "path": { "pattern": "^(providers|architecture|externalSystems|products)\\." } } },
+          "then": { "properties": { "change": { "const": "ask" } } }
+        }
+      ]
+    },
+    "optIn": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["opt_in", "question"],
+          "properties": {
+            "opt_in": { "type": "string", "minLength": 1, "description": "The --plan line, verbatim." },
+            "question": { "type": "string", "pattern": "^Q-[0-9]{3}$" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["opt_in", "answer", "source"],
+          "properties": {
+            "opt_in": { "type": "string", "minLength": 1, "description": "The --plan line, verbatim." },
+            "answer": { "type": "string", "minLength": 1 },
+            "source": { "$ref": "#/$defs/source" }
+          }
+        }
+      ]
+    },
+    "question": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "text"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^Q-[0-9]{3}$" },
+        "text": { "type": "string", "minLength": 1 }
+      }
+    },
+    "source": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["file", "line_start", "line_end"],
+          "properties": {
+            "file": { "type": "string", "minLength": 1 },
+            "line_start": { "type": "integer", "minimum": 1 },
+            "line_end": { "type": "integer", "minimum": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["quote"],
+          "properties": {
+            "quote": { "type": "string", "minLength": 1, "description": "The words of the request, verbatim." }
+          }
+        }
+      ]
+    }
+  }
+}

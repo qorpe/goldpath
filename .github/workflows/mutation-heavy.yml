@@ -1,6 +1,9 @@
-# The six mutation runs hosted 16 GB runners cannot finish (issue #20 — exit 143 OOM at
-# concurrency 2, scattered times). Dispatch-only, concurrency 1, generous timeouts; the
-# release checklist keeps the LOCAL cadence as the authoritative fallback for these six.
+# The on-demand rerun of the six long-running packages, at concurrency 1. They once could not
+# finish on hosted 16 GB runners (issue #20 — exit 143 OOM at concurrency 2): Stryker's
+# solution mode ran every test project referencing the package (Jobs: 457 tests, the
+# integration host among them). Since the 2026-10-20 scope fix each job runs only its
+# configured suites, all six finish in under 30 min, and they run in the NIGHTLY matrix
+# with the rest. Dispatch this to re-score one of them without waiting for the night.
 name: mutation-heavy
 
 on:
@@ -29,3 +32,15 @@ jobs:
       - run: dotnet tool restore
       - name: mutation gate (single testhost — the 16 GB survival mode)
         run: bash scripts/mutation-gate.sh "${{ matrix.package }}"
+      # The evidence behind the verdict: the gate's full log and Stryker's JSON report (which
+      # test killed which mutant). The console keeps only the scope lines and the score.
+      - uses: actions/upload-artifact@v7
+        if: always()
+        continue-on-error: true
+        with:
+          name: mutation-${{ matrix.package }}
+          path: |
+            **/StrykerOutput/gate-*.log
+            **/StrykerOutput/*/reports/mutation-report.json
+          if-no-files-found: ignore
+          retention-days: 14
