@@ -2,8 +2,8 @@
   <!-- Central package management: every version is pinned here; "latest" is forbidden (ADR-0008). -->
   <ItemGroup>
     <PackageVersion Include="Asp.Versioning.Http" Version="8.1.1" />
-    <PackageVersion Include="MassTransit" Version="8.5.11" />
-    <PackageVersion Include="MassTransit.EntityFrameworkCore" Version="8.5.11" />
+    <PackageVersion Include="MassTransit" Version="9.2.3" />
+    <PackageVersion Include="MassTransit.EntityFrameworkCore" Version="9.2.3" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.14.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Analyzer.Testing" Version="1.1.4" />
