@@ -11,8 +11,10 @@
 #
 #   scripts/zap-baseline.sh            # needs docker, dotnet, pnpm (the console is packed)
 #
-# Every alert is either fixed or IGNOREd in scripts/zap-baseline.conf WITH its reason; any
-# other alert fails the run (zap-baseline.py exits non-zero on a WARN). Reports land in
+# Every alert listed in scripts/zap-baseline.conf carries its reason: IGNORE (not a weakness
+# here) or INFO (a real open finding, reported but not failing until fixed or signed; each
+# names its ledger entry). Any unlisted alert fails the run (zap-baseline.py exits non-zero
+# on a WARN). Reports land in
 # $ZAP_OUT (default ./zap-report) for the workflow to upload.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
