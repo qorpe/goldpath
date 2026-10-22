@@ -83,20 +83,28 @@ at f459fe2, so its row carries it (minutes not recorded).
 | Cli | 91.48 % | 21.48 | 7.6 | 91.44 %, 8.6 |
 | Console | 91.46 % (75.00) | 21.46 | — | 75.00 %, 24.3 |
 | Bulk | 88.38 % (70.09) | 18.38 | 15.2 | never finished (timeout) |
+| Idempotency | 84.91 % (73.58) | 14.91 | 1.8 | 73.58 %, 3.3 |
 | AuditTrail | 81.97 % | 11.97 | 5.1 | 81.97 %, 5.7 |
+| MultiTenancy | 81.40 % (72.09) | 11.40 | 6.1 | 75.58 %, 38.5 |
 | Notification | 81.23 % | 11.23 | 5.9 | never finished (OOM) |
 | Messaging | 80.72 % | 10.72 | 26.9 | 80.72 %, 69.4 |
 | DataProtection | 78.95 % | 8.95 | 1.5 | 78.95 %, 33.0 |
+| ServiceDefaults | 78.48 % (72.15) | 8.48 | 1.4 | 72.15 %, 4.3 |
+| Approvals | 77.78 % (74.84) | 7.78 | 3.4 | 74.84 %, 217.7 |
 | Data | 77.38 % | 7.38 | 2.3 | 77.38 %, 38.0 |
 | FileExchange | 76.92 % | 6.92 | 3.6 | 76.92 %, 31.8 |
 | Campaign | 74.77 % (75.13) | 4.77 | 56.4 | never finished (OOM) |
-| Approvals | 74.84 % | 4.84 | 3.5 | 74.84 %, 217.7 |
 | Archival | 74.49 % | 4.49 | 10.6 | never finished (OOM) |
-| Idempotency | 73.58 % | 3.58 | 2.2 | 73.58 %, 3.3 |
 | Analyzers | 72.55 % | 2.55 | 3.9 | 72.55 %, 5.4 |
 | Jobs | 72.52 % | 2.52 | 9.1 | never finished (OOM) |
-| ServiceDefaults | 72.15 % | 2.15 | 2.2 | 72.15 %, 4.3 |
-| MultiTenancy | 72.09 % | 2.09 | 6.2 | 75.58 %, 38.5 |
+
+**MultiTenancy, Idempotency, ServiceDefaults and Approvals were re-measured 2026-10-21** (#322,
+GA gate G9 part 1): full local runs of `scripts/mutation-gate.sh` (a container, not the hosted
+runner; minutes are local) after tests that kill named survivors by asserting an observable
+outcome. No threshold moved and nothing was excluded. Approvals' starting point measured 74.18 %
+locally against the nightly's 74.84 %, so a local number carries roughly that much noise; each
+of the four clears 75 by more than it. The hosted confirmation is G9's own proof: two
+consecutive nightlies at or above 75 %.
 
 Read the margin column, not the score. At f459fe2 **Caching was below the break** (red in
 solution mode as well, unseen because the heavy lane never finished — open thread T32) and

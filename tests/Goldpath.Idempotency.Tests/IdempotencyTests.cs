@@ -46,6 +46,13 @@ public class IdempotencyTests
         });
         app.MapGet("/api/v1/orders", () => Results.Ok(new { listed = true }));
         app.MapPost("/api/v1/orders/created", () => Results.Created("/api/v1/orders/42", new { id = 42 }));
+        app.MapPut("/api/v1/orders/7", () => Results.Ok(new { execution = Interlocked.Increment(ref s_executionCounter) }));
+        app.MapPatch("/api/v1/orders/7", () => Results.Ok(new { execution = Interlocked.Increment(ref s_executionCounter) }));
+        // Outside 2xx: a refusal and a 300 must never be stored, so a retry runs the handler again.
+        app.MapPost("/api/v1/orders/refused", () => Results.Json(
+            new { execution = Interlocked.Increment(ref s_executionCounter) }, statusCode: StatusCodes.Status409Conflict));
+        app.MapPost("/api/v1/orders/choices", () => Results.Json(
+            new { execution = Interlocked.Increment(ref s_executionCounter) }, statusCode: StatusCodes.Status300MultipleChoices));
 
         await app.StartAsync();
         return app;
@@ -172,6 +179,68 @@ public class IdempotencyTests
 
         var get = await client.GetAsync("/api/v1/orders");
         Assert.Equal(HttpStatusCode.OK, get.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("PUT")]
+    [InlineData("PATCH")]
+    public async Task Put_and_patch_are_mutating_and_replay_like_post(string method)
+    {
+        await using var app = await StartAppAsync();
+        var client = app.GetTestClient();
+
+        HttpRequestMessage Send()
+        {
+            var request = new HttpRequestMessage(new HttpMethod(method), "/api/v1/orders/7") { Content = JsonContent.Create(new { amount = 1 }) };
+            request.Headers.Add(GoldpathHeaders.IdempotencyKey, $"key-{method}");
+            return request;
+        }
+
+        var first = await client.SendAsync(Send());
+        var retry = await client.SendAsync(Send());
+
+        Assert.Equal(await first.Content.ReadAsStringAsync(), await retry.Content.ReadAsStringAsync());
+        Assert.Equal("true", retry.Headers.GetValues(GoldpathIdempotencyMiddleware.ReplayHeader).Single());
+    }
+
+    [Theory]
+    [InlineData("/api/v1/orders/refused")]   // 409: a refusal is not a result to replay
+    [InlineData("/api/v1/orders/choices")]   // 300: the 2xx window ends at 299
+    public async Task Responses_outside_2xx_are_not_stored_so_a_retry_runs_again(string path)
+    {
+        await using var app = await StartAppAsync();
+        var client = app.GetTestClient();
+
+        HttpRequestMessage Send()
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(new { amount = 1 }) };
+            request.Headers.Add(GoldpathHeaders.IdempotencyKey, "key-" + path);
+            return request;
+        }
+
+        var first = await client.SendAsync(Send());
+        var retry = await client.SendAsync(Send());
+
+        Assert.False(retry.Headers.Contains(GoldpathIdempotencyMiddleware.ReplayHeader));
+        Assert.NotEqual(await first.Content.ReadAsStringAsync(), await retry.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task The_problem_titles_say_which_misuse_it_was()
+    {
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var app = await StartAppAsync(gate: () => gate.Task);
+        var client = app.GetTestClient();
+
+        var held = client.SendAsync(Request("key-titles", new { amount = 1 }));
+        await Task.Delay(300);
+        var inFlight = await client.SendAsync(Request("key-titles", new { amount = 1 }));
+        Assert.Contains("A request with this Idempotency-Key is currently in flight.", await inFlight.Content.ReadAsStringAsync());
+
+        gate.SetResult();
+        await held;
+        var mismatch = await client.SendAsync(Request("key-titles", new { amount = 2 }));
+        Assert.Contains("This Idempotency-Key was already used with a different payload.", await mismatch.Content.ReadAsStringAsync());
     }
 
     [Fact]

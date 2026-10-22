@@ -78,6 +78,7 @@ public sealed class TenantSquareTests : IAsyncLifetime
         builder.WebHost.UseTestServer();
         builder.AddGoldpathMultiTenancy();
         builder.AddGoldpathData<WebApplicationBuilder, OrderDb>(o => o.UseNpgsql(_postgres.GetConnectionString()));
+        builder.Services.WaitForTheBusOnStart();   // a publish right after StartAsync must find its queue bound
         builder.AddGoldpathMessaging(bus =>
         {
             bus.AddConsumer<InvoiceOnOrderPlaced>();

@@ -80,6 +80,53 @@ public sealed class TenancyEdgeTests
     }
 
     [Fact]
+    public async Task The_400_is_an_rfc9110_problem_and_names_the_header_strategy_s_cause()
+    {
+        using var server = await BuildServerAsync();
+        var body = await (await server.GetTestClient().GetAsync("/loans")).Content.ReadAsStringAsync();
+
+        Assert.Contains("https://datatracker.ietf.org/doc/html/rfc9110#section-15.5.1", body);
+        Assert.Contains("header is missing or invalid", body);
+        Assert.DoesNotContain("subdomain", body);
+    }
+
+    [Fact]
+    public async Task The_subdomain_strategy_s_400_names_the_host_not_a_header()
+    {
+        using var server = await BuildServerAsync(o => o.Strategy = GoldpathTenantStrategy.Subdomain);
+        var response = await server.GetTestClient().SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://plainhost/loans"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("The request host carries no valid tenant subdomain.", body);
+        Assert.DoesNotContain(GoldpathHeaders.TenantId, body);
+    }
+
+    [Fact]
+    public async Task Exactly_three_host_labels_carry_a_tenant()
+    {
+        using var server = await BuildServerAsync(o => o.Strategy = GoldpathTenantStrategy.Subdomain);
+        var request = new HttpRequestMessage(HttpMethod.Get, "http://acme.bank.example/loans");
+
+        Assert.Equal("acme", await (await server.GetTestClient().SendAsync(request)).Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public void Registration_binds_configuration_then_the_delegate_and_marks_the_app_multi_tenant()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.Configuration["Goldpath:MultiTenancy:Strict"] = "false";
+        builder.Configuration["Goldpath:MultiTenancy:Strategy"] = "Subdomain";
+        builder.AddGoldpathMultiTenancy(o => o.Strategy = GoldpathTenantStrategy.Header);   // the delegate runs after binding
+        using var services = builder.Services.BuildServiceProvider();
+
+        var options = services.GetRequiredService<GoldpathMultiTenancyOptions>();
+        Assert.False(options.Strict);                                  // from configuration
+        Assert.Equal(GoldpathTenantStrategy.Header, options.Strategy); // the delegate wins
+        Assert.NotNull(services.GetService<GoldpathMultiTenancyMarker>());
+    }
+
+    [Fact]
     public void Scopes_nest_and_restore_their_previous_state()
     {
         using (GoldpathTenant.Use("outer"))

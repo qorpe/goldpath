@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **The engine gate (GA gate G1, #321).** `scripts/engine-gate.sh` fails CI when a
+  `PublicAPI.*.txt` outside a bus-engine adapter package names an engine type (`MassTransit.`,
+  `Wolverine.`) that is not in its committed baseline, `scripts/engine-gate.baseline.txt`. The
+  baseline holds the 13 lines shipped on 2026-10-20 and may only shrink, and `--selftest`
+  proves five planted faults red. The design that empties it is
+  [goldpath-messaging-engines](docs/rfc/goldpath-messaging-engines.md) (PROPOSED). No package
+  changes.
 - **Merge tiers for agent pull requests (ADR-0014, proposed).** Repository governance, no
   package changes. `.github/workflows/merge-policy.yml` computes a pull request's tier from
   its changed files with the rules in `.github/merge-tiers.yml` (read from the base branch,
@@ -19,6 +26,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   [docs/ops/agent-pipeline.md](docs/ops/agent-pipeline.md).
 
 ### Fixed
+- **Dependabot moves vitest and its `@vitest/*` plugins together.** Repository governance,
+  no package changes. The console's catch-all group takes minor/patch only, so a major
+  arrived per package: #359 bumped `@vitest/coverage-v8` to 5.0.5 alone, and against
+  vitest 2 the console tests could not even load ("does not provide an export named
+  'BaseCoverageProvider'"). A `vitest` group (`vitest`, `@vitest/*`, every update type),
+  listed before the catch-all, makes each family update one pull request; the family's
+  major stays a deliberate decision (open-threads T24).
+- **A label burst no longer leaves `merge-policy` BLOCKED beside a green run.** Repository
+  governance, no package changes. On #361 a push and two label edits in one second started
+  three runs; the workflow's `cancel-in-progress` group cancelled two, one of them the newest
+  check suite on the commit, which is the one branch protection reads (runs 39734763532,
+  39734763872, 39734763819). `gh pr merge` was refused until the cancelled runs were re-run
+  one at a time, and re-running two at once cancelled one again. `merge-policy.yml` now has
+  no concurrency group: every run reads the labels when it starts, so the newest run judges
+  the newest label state (the ADR-0014 answer) as long as nothing cancels it, and a
+  ten-second read-only job costs nothing to finish. `tier-label` skips a run whose commit the
+  pull request has moved past, so a slow older run cannot overwrite the newer tier. The
+  `merge-tier.py` self-test fails if a concurrency group comes back (proven red with the old
+  block and with `cancel-in-progress: false`, which still cancels a pending run when a third
+  arrives).
 - **The golden-manifest lane builds the generated app before `goldpath db init` and before
   every `db` post-generation verb** (#279), so a compile or analyzer error fails with the
   compiler's own diagnostic instead of `dotnet ef`'s bare "Build failed". In the T30 proof

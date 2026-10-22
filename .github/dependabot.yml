@@ -7,7 +7,8 @@
 # OWN pull request (visible, individually decidable, and a closed one is not recreated —
 # the mockifyr-proven pattern, which also keeps security majors visible where a blanket
 # ignore would suppress them). Standing deferrals: open-threads T24. GitHub Actions majors
-# stay grouped (runner-driven, CI-proven).
+# stay grouped (runner-driven, CI-proven), and so does the vitest family — one release
+# train, so its major arrives as ONE pull request, still a decision (see its group below).
 version: 2
 updates:
   - package-ecosystem: nuget
@@ -23,6 +24,14 @@ updates:
     schedule: { interval: weekly }
     open-pull-requests-limit: 3
     groups:
+      # vitest and its @vitest/* plugins are ONE release train: the plugins import from
+      # `vitest/node` at their own version, so half a bump cannot load (#359: coverage-v8
+      # 5.0.5 against vitest 2 — "does not provide an export named 'BaseCoverageProvider'").
+      # Every update of the family, a major included, arrives as one pull request; a major is
+      # still its own PR and its own decision (T24), just no longer split in two. First, so
+      # the family never falls into the catch-all below (a dependency joins its first match).
+      vitest:
+        patterns: ["vitest", "@vitest/*"]
       console-dependencies:
         patterns: ["*"]
         update-types: [minor, patch]
