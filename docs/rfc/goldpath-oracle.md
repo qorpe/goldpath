@@ -164,18 +164,28 @@ against Oracle (O-2), including:
 
 Oracle refuses an `IN (…)` list longer than 1,000 literals (ORA-01795). EF's Oracle provider
 parameterizes primitive collections, but how it translates `Contains` over a large local list
-is the risk. The engine's own `Contains` uses are:
-- the campaign's `due.Contains(i.Seq)`, `orphans.Contains(i.Seq)` and `seqs.Contains(i.Seq)`
-  (`GoldpathCampaignEngine.cs`);
-- the outcome sink's batch.
+is the risk. Every `Contains` over a local list that EF translates to SQL in `packages/`
+(found by searching for `<list>.Contains(<entity>.<member>)` inside a query; revised
+2026-10-22 after the verifier found the Archival site the first pass missed):
 
-Their sizes are bounded by `ReleaseBatchSize` and the sink batch (200), but a configured
-`ReleaseBatchSize` above 1,000 would cross the limit.
+| Site | The list | Its bound | Can it pass 1,000? |
+|---|---|---|---|
+| Campaign `due`, `orphans`, `seqs` (`GoldpathCampaignEngine.cs`) | item sequence numbers | `ReleaseBatchSize` (configurable) | **yes**, above 1,000 |
+| Campaign callback `correlations` and `settled` (`GoldpathCampaignEngine.cs`) | correlation ids of one accepted outcome batch | the sink batch (200) | no |
+| Campaign stale-claim sweep `stale` (`GoldpathCampaignJobs.cs`) | sequence numbers | `Take(100)`, fixed | no |
+| **Archival** `keys` (`GoldpathArchiveEngine.cs`, discovery) | aggregate keys | `BatchSize * 2`; `GoldpathArchivalOptions.BatchSize` is configurable, default 200 | **yes**, at `BatchSize` above 500 |
+| Admin repeatable filters (contract R3): Bulk `states` and `definition`, Jobs `status`, Campaign `states`, Notification `states` and `template` | values of a repeated query parameter | enum-valued filters by the enum's size; `definition` and `template` only by the request line (Kestrel's 8 KB default), not by Goldpath | `definition`/`template`: **yes**, on a host that raises the request-line limit |
+
+The `Contains` calls in FileExchange's and Approvals' admin services, Auth's role claims and the
+Quartz adapter run in memory (a `StringComparer` overload or a local sequence), so no SQL is
+generated for them.
 
 **The decision:** a Goldpath helper, `ChunkedContains`, splits any local list above 1,000 into
 `OR`-joined chunks of at most 1,000 when the provider is Oracle, and is a no-op otherwise. It
-is used at every engine `Contains` site whose list size is configurable. O-5 proves it with a
-`ReleaseBatchSize = 5,000` campaign on Oracle. The alternative was capping `ReleaseBatchSize`
+is used at every site in the table whose list can pass 1,000: Campaign's `due`, `orphans` and
+`seqs`, Archival's `keys`, and the admin `definition` and `template` filters. O-5 proves it with
+a `ReleaseBatchSize = 5,000` campaign and an Archival run at `BatchSize = 600` on Oracle, and an
+admin listing filtered by 1,001 definitions. The alternative was capping `ReleaseBatchSize`
 at 1,000 under Oracle. It is rejected because a configuration value would then behave
 differently by provider, and nobody would see why.
 
@@ -309,12 +319,29 @@ catch is a 1,000+ `Contains`, and it is not statically decidable, so it is handl
   - the R2 backfill's Oracle branch executed on a real Oracle;
   - a 5,000-item `ReleaseBatchSize` release (§2.5).
 - **Locking:** the `DistributedLock.Oracle` composition, with two holders and one winner.
+- **Archival:** the engine suite (`ArchivalTests`: discover, archive, recall, row purge) on
+  Oracle, plus the `BatchSize = 600` run of §2.5.
+- **Bulk:** the engine suite (`BulkTests`: ingest, validate, claim, execute) on Oracle. Bulk
+  carries the bulk insert and the claims of §2.6.
+- **Notification, Approvals, FileExchange and AuditTrail:** each module's model is in the O-2
+  model-contract goldens (store types, identifier lengths, and `''` read back as `NULL` on every
+  string column a module may write empty). Each module's EF store suite also gains an Oracle
+  twin: `NotificationTests` (PostgreSQL today), and `EfApprovalStoreTests`, `EfFileLedgerTests`
+  and AuditTrail's `AuditTrailTests` (SQLite today). These modules use no hand-written SQL, no
+  claims and no `Contains` that can pass 1,000 (§2.5, §2.7), so the Data proofs cover the query
+  translation they rely on. Their own suites still run, because Oracle's `''`-as-`NULL` and
+  identifier rules fail per model, not per provider.
+- **Idempotency** stores through `IDistributedCache`, not EF, so it has no Oracle surface.
+
+The precedent is weaker on SQL Server, which has GM shapes but no module suite on a SQL Server
+container. Oracle gets more because ORA-01795, `''` as `NULL` and the identifier rules are failure
+modes only Oracle has.
 
 **Golden-manifest shapes** (`.github/gm-shapes.yml`):
 
 | Shape | Args | Lane | Why |
 |---|---|---|---|
-| **GmOracle** | `--db oracle --broker none --auth none` | **PR** (`pr: true`) | The provider is a template condition. A template change that breaks it must be red at PR time, not the next night (T30's lesson) |
+| **GmOracle** | `--db oracle --broker none --auth none --features bulk --features archival` | **PR** (`pr: true`) | The provider is a template condition. A template change that breaks it must be red at PR time, not the next night (T30's lesson). Bulk and Archival are broker-free and carry module tables, so the PR-time shape migrates and smokes EF-backed module tables on Oracle rather than the bare Data module |
 | **GmOracleCampaign** | `--db oracle --features campaign --features jobs --features locking` (broker on) | **nightly**; added when §2.9's trigger fires | Pulls the most provider-specific code (Quartz store, backfill, chunked `Contains`, Oracle locking). Nightly because an Oracle container plus a broker exceeds the PR lane's budget |
 
 **Cost.** Oracle Free's slim-faststart image starts in about 20 to 40 seconds on the CI
@@ -341,8 +368,9 @@ needs real Oracle, its tests are `Category=Oracle` and run in their own CI lane.
 | **O-2** | Data on Oracle. Model-contract goldens for store types, identifier ≤128 and `''`/null; keyset suite; `DateOnly`/`TimeOnly`; D7 migrate up, down and idempotent | O-1 | preview.10 |
 | **O-3** | Jobs on Oracle. `GoldpathJobStoreProvider.Oracle`, `OracleDelegate` and the fleet-registry properties, the `qrtz_*` model against `tables_oracle.sql`, clustered-store tests | O-1 | preview.10 |
 | **O-4** | Locking on Oracle. The optional `Goldpath.Locking.Oracle` package, `GoldpathLockProvider.Oracle`, two-holder test, licence-gate scope note | O-1 | preview.11 |
-| **O-5** | Campaign and Bulk on Oracle. R2 backfill Oracle branch, `ChunkedContains` at every configurable `Contains`, the 5,000-batch release proof, the hand-written-SQL source scan, Bulk and Campaign Oracle bench columns | O-2, O-3 | preview.11 |
-| **O-6** | The adopter surface. Template `--db oracle` (solution and worker), AppHost with `Aspire.Hosting.Oracle`, the generated pins, **GmOracle** (`pr: true`), the oracle-with-broker finding (§3), schema `$comment` and `schema-honesty.sh`, `golden-manifests-v1.md`, `docs/guides/oracle.md`, G7 evidence. **`oracle` leaves SCHEMA-ONLY here** | O-2 to O-5 | preview.11 |
+| **O-5** | Campaign, Bulk and Archival on Oracle. R2 backfill Oracle branch, `ChunkedContains` at every site of §2.5 that can pass 1,000 (Campaign `due`/`orphans`/`seqs`, Archival `keys`, the admin `definition`/`template` filters), the 5,000-batch release, `BatchSize = 600` archival and 1,001-definition proofs, the Bulk and Archival engine suites on Oracle, the hand-written-SQL source scan, Bulk and Campaign Oracle bench columns | O-2, O-3 | preview.11 |
+| **O-5b** | The other EF-backed modules on Oracle. Notification, Approvals, FileExchange and AuditTrail: their models in the O-2 goldens and an Oracle twin of each module's EF store suite under `Category=Oracle` (§7) | O-2 | preview.11 |
+| **O-6** | The adopter surface. Template `--db oracle` (solution and worker), AppHost with `Aspire.Hosting.Oracle`, the generated pins, **GmOracle** (`pr: true`), the oracle-with-broker finding (§3), schema `$comment` and `schema-honesty.sh`, `golden-manifests-v1.md`, `docs/guides/oracle.md`, G7 evidence. **`oracle` leaves SCHEMA-ONLY here** | O-2 to O-5b | preview.11 |
 | **O-7** | GmOracleCampaign (broker on), nightly | §2.9's trigger: the post-G5 engine publishes an Oracle outbox store | after G5 |
 
 O-1 to O-6 land before G4 freezes the public API (GA readiness RFC), because O-3 and O-4 append

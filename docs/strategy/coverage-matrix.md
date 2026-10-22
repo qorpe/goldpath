@@ -47,6 +47,7 @@ every one of them ✅.
 | Variant | Today | Suggested home |
 |---|---|---|
 | db sqlserver | GM only | 🟡 Telco |
+| db oracle | **NOT BUILT** — [goldpath-oracle](../rfc/goldpath-oracle.md) is PROPOSED (2026-10-22, #305; GA gate G7, T16): a PR-time `GmOracle` shape and module suites on an Oracle container | none chosen; the RFC proves it by GM and package suites, and a sample home is a later decision |
 | auth apikey | GM only | 🟡 Telco partner/gateway surface |
 | tenancy subdomain | package tests | 🟡 Telco MVNO |
 | locking redis / sqlserver | package tests | 🟡 Telco |
