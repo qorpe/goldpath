@@ -26,6 +26,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   [docs/ops/agent-pipeline.md](docs/ops/agent-pipeline.md).
 
 ### Fixed
+- **Dependabot moves vitest and its `@vitest/*` plugins together.** Repository governance,
+  no package changes. The console's catch-all group takes minor/patch only, so a major
+  arrived per package: #359 bumped `@vitest/coverage-v8` to 5.0.5 alone, and against
+  vitest 2 the console tests could not even load ("does not provide an export named
+  'BaseCoverageProvider'"). A `vitest` group (`vitest`, `@vitest/*`, every update type),
+  listed before the catch-all, makes each family update one pull request; the family's
+  major stays a deliberate decision (open-threads T24).
 - **A label burst no longer leaves `merge-policy` BLOCKED beside a green run.** Repository
   governance, no package changes. On #361 a push and two label edits in one second started
   three runs; the workflow's `cancel-in-progress` group cancelled two, one of them the newest
