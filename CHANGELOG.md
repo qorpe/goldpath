@@ -19,6 +19,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   [docs/ops/agent-pipeline.md](docs/ops/agent-pipeline.md).
 
 ### Fixed
+- **A label burst no longer leaves `merge-policy` BLOCKED beside a green run.** Repository
+  governance, no package changes. On #361 a push and two label edits in one second started
+  three runs; the workflow's `cancel-in-progress` group cancelled two, one of them the newest
+  check suite on the commit, which is the one branch protection reads (runs 39734763532,
+  39734763872, 39734763819). `gh pr merge` was refused until the cancelled runs were re-run
+  one at a time, and re-running two at once cancelled one again. `merge-policy.yml` now has
+  no concurrency group: every run reads the labels when it starts, so the newest run judges
+  the newest label state (the ADR-0014 answer) as long as nothing cancels it, and a
+  ten-second read-only job costs nothing to finish. `tier-label` skips a run whose commit the
+  pull request has moved past, so a slow older run cannot overwrite the newer tier. The
+  `merge-tier.py` self-test fails if a concurrency group comes back (proven red with the old
+  block and with `cancel-in-progress: false`, which still cancels a pending run when a third
+  arrives).
 - **The golden-manifest lane builds the generated app before `goldpath db init` and before
   every `db` post-generation verb** (#279), so a compile or analyzer error fails with the
   compiler's own diagnostic instead of `dotnet ef`'s bare "Build failed". In the T30 proof

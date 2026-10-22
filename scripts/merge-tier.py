@@ -13,7 +13,9 @@ It answers two questions and nothing else, with no network and no LLM:
 
   selftest  Runs the fixtures in scripts/merge-tier.fixtures.json against a rules file and
             checks that every script a workflow runs is itself Tier C (a gate added later
-            cannot slip in as Tier A). Red on a planted fault; see docs/ops/agent-pipeline.md.
+            cannot slip in as Tier A), and that merge-policy.yml carries no concurrency
+            group (a cancelled run can leave the required check BLOCKED). Red on a planted
+            fault; see docs/ops/agent-pipeline.md.
 
 Usage:
   merge-tier.py classify --rules R --files FILES.jsonl [--expected-count N] [--summary MD]
@@ -224,6 +226,17 @@ def workflow_scripts():
     return sorted(found)
 
 
+def policy_concurrency():
+    """Line numbers of any `concurrency:` key in merge-policy.yml — there must be none.
+
+    A group cancels runs, and a cancelled run can be the newest check suite on the commit,
+    the one branch protection reads: `merge-policy` then stays BLOCKED beside a green run
+    (#361). Every run reads the labels when it starts, so nothing needs cancelling."""
+    path = os.path.join(ROOT, ".github", "workflows", "merge-policy.yml")
+    lines = open(path, encoding="utf-8").read().splitlines()
+    return [n for n, line in enumerate(lines, 1) if re.match(r"\s*concurrency\s*:", line)]
+
+
 def selftest(rules_path):
     failures = []
     try:
@@ -267,6 +280,11 @@ def selftest(rules_path):
         print(f"  {'ok  ' if ok else 'FAIL'} gate      {script} is run by a workflow: want C, got {tier}")
         if not ok:
             failures.append(f"gate script not Tier C: {script}")
+    found = policy_concurrency()
+    print(f"  {'ok  ' if not found else 'FAIL'} workflow  merge-policy.yml has no concurrency group"
+          + ("" if not found else f" (line {', '.join(map(str, found))})"))
+    if found:
+        failures.append("merge-policy.yml has a concurrency group: a cancelled run can leave the required check BLOCKED")
 
     if failures:
         print(f"── merge-tier selftest: RED ({len(failures)} failing)")
