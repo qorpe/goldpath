@@ -26,6 +26,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   [docs/ops/agent-pipeline.md](docs/ops/agent-pipeline.md).
 
 ### Fixed
+- **`train-freshness.sh` holds a release PR that leaves CorPay behind (#312).** Run from
+  this repository while its own train is not on nuget.org yet (the release PR, and `main`
+  between merge and publish), the gate now requires the product to pin exactly that train.
+  Before, it accepted a stale pin there and refused the new one, so CorPay's pins could only
+  move after the tag, and `main` went red until they did (v0.1.0-preview.9, #307). An
+  adopter's copy of the script behaves as before. The release checklist moves CorPay's pins
+  into the release PR. No package changes.
 - **Dependabot moves vitest and its `@vitest/*` plugins together.** Repository governance,
   no package changes. The console's catch-all group takes minor/patch only, so a major
   arrived per package: #359 bumped `@vitest/coverage-v8` to 5.0.5 alone, and against

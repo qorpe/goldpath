@@ -43,7 +43,8 @@ only after that PR merges green.
       generated app:
       `dotnet pack Goldpath.sln -c Release -o /tmp/feed && dotnet build samples/corpay/CorPay.sln --source /tmp/feed --source https://api.nuget.org/v3/index.json`.
       The nightly's `sample-corpay` job restores from nuget.org only, so it stays red on the
-      release head until the publish.
+      release head until the publish. Teaching it the packed feed is
+      [#378](https://github.com/qorpe/goldpath/issues/378), triggered by the next release PR.
 - [ ] PublicAPI roll: each package's `PublicAPI.Unshipped.txt` content moves to
       `PublicAPI.Shipped.txt` (empty Unshipped after the roll).
 - [ ] `CHANGELOG.md`: the train's entry, newest on top.
