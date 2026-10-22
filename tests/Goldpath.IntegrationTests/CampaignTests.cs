@@ -237,9 +237,13 @@ public sealed class CampaignTests : IAsyncLifetime
         var replayed = await admin.ReplayItemsAsync(failures[0].RunId, "it-operator", timeout.Token);
         Assert.True(replayed.Ok, replayed.Message);
 
-        // The verb fires the replay through the runner — wait for the heal to land.
+        // The verb fires the replay through the runner — wait for the heal to land. Wait on the
+        // OUTCOME, not the claim: a replay takes its item out of FailedCount when it claims it
+        // and adds it to SucceededCount only when the outcome applies, so "FailedCount == 0"
+        // alone is true while the last replay is still between the two (CI flake #357).
         GoldpathCampaign healed;
-        while ((healed = Query(db => db.Set<GoldpathCampaign>().AsNoTracking().Single(c => c.Id == campaign.Id))).FailedCount != 0)
+        while ((healed = Query(db => db.Set<GoldpathCampaign>().AsNoTracking().Single(c => c.Id == campaign.Id)))
+            is not { FailedCount: 0, SucceededCount: 50 })
         {
             await Task.Delay(TimeSpan.FromMilliseconds(500), timeout.Token);
         }
