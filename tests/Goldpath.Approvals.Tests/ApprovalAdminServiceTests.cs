@@ -80,6 +80,64 @@ public class ApprovalAdminServiceTests
     }
 
     [Fact]
+    public async Task A_filter_searches_the_window_not_just_the_first_take_rows()
+    {
+        // The oldest request is the only rejected one and the only payment run; four newer
+        // pending credit-limit requests sit on top of it. take = 1 must still find it.
+        var (engine, admin, clock) = Build();
+        var oldest = await engine.RequestAsync("payment-run", "P-old", 1_000_000m, "maker");
+        await engine.DecideAsync(oldest.Id, "checker", "manager", false, "duplicate run");
+        for (var i = 0; i < 4; i++)
+        {
+            clock.Advance(TimeSpan.FromMinutes(1));
+            await engine.RequestAsync("credit-limit", $"K-{i}", 500_000m, "maker");
+        }
+
+        Assert.Equal([oldest.Id], (await admin.GetRequestsAsync(["rejected"], null, 1, CancellationToken.None)).Select(r => r.Id));
+        Assert.Equal([oldest.Id], (await admin.GetRequestsAsync(null, ["payment-run"], 1, CancellationToken.None)).Select(r => r.Id));
+    }
+
+    [Fact]
+    public void The_rung_above_an_undeclared_role_is_none()
+    {
+        // Three rungs, so "not found" cannot pass for "found at the bottom" by accident.
+        var ladder = new GoldpathApprovalsOptions()
+            .AddLadder("treasury", l => l
+                .Rung("analyst", 10_000m, RungDeadline)
+                .Rung("manager", 1_000_000m, RungDeadline)
+                .TopRung("board", TimeSpan.FromHours(24)))
+            .Ladders["treasury"];
+
+        Assert.Null(ladder.Above(new GoldpathApprovalRung("retired-role", 1m, RungDeadline)));
+        Assert.Equal("manager", ladder.Above(ladder.Rungs[0])!.Role);
+        Assert.Equal("board", ladder.Above(ladder.Rungs[1])!.Role);
+        Assert.Null(ladder.Above(ladder.Rungs[^1]));
+    }
+
+    [Fact]
+    public async Task An_overdue_top_rung_expires_and_the_trail_says_where_it_stopped()
+    {
+        var (engine, admin, clock) = Build();
+        var request = await engine.RequestAsync("credit-limit", "K-big", 5_000_000m, "maker");   // above the expert ceiling: the top rung
+        clock.Advance(TimeSpan.FromHours(24));
+        await engine.EscalateOverdueAsync();
+
+        var detail = await admin.GetRequestAsync(request.Id, CancellationToken.None);
+        var last = detail!.Trail[^1];
+        Assert.Equal(("system", "expired", "overdue at top rung general-manager"), (last.Actor, last.Action, last.Detail));
+    }
+
+    [Fact]
+    public async Task A_delegation_of_exactly_the_maximum_window_is_allowed()
+    {
+        var (engine, _, _) = Build();
+
+        await engine.DelegateAsync("expert-one", "stand-in", new GoldpathApprovalsOptions().MaxDelegationWindow);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            engine.DelegateAsync("expert-two", "stand-in", new GoldpathApprovalsOptions().MaxDelegationWindow + TimeSpan.FromTicks(1)));
+    }
+
+    [Fact]
     public async Task Quorum_counts_only_the_PENDING_rung_signatures()
     {
         // A signature collected at a lower rung stays on the chain (distinct-eyes reads

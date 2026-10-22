@@ -103,6 +103,7 @@ public sealed class CampaignR2Tests : IAsyncLifetime
                     .Select(x => new CampaignTests.CustomerTarget(x.Id, x.Email))
                     .AsAsyncEnumerable()));
         });
+        builder.Services.WaitForTheBusOnStart();   // a publish right after StartAsync must find its queue bound
         builder.AddGoldpathMessaging(bus =>
         {
             bus.AddGoldpathCampaignConsumers<CampaignTests.CampDb>();

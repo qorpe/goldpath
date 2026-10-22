@@ -221,7 +221,8 @@ lines, open until each proof runs:
       api-portal has no consumers of its own.
 - [ ] The outbox/inbox configuration and the test harness in Goldpath vocabulary (today
       `AddGoldpathOutbox` takes the library's configurator; the smoke tests publish with a
-      raw bus) — the conformance suite's work.
+      raw bus) — the conformance suite's work. Designed in
+      [goldpath-messaging-engines](goldpath-messaging-engines.md) §4.1–§4.3 (PROPOSED 2026-10-21).
 - [x] The bus conformance suite exists in this repo (2026-09-05, `tests/Goldpath.Messaging.Conformance`,
       eight facts through the seam, green against MassTransit 8.5.10 on real containers, in the
       CI integration job) — its scenario list grows with §7.1's gaps; owner review pending.
