@@ -50,7 +50,8 @@ the first release; then the campaign is paused and claimed work drains.
 **Profile:** the overnight agent's cloud sandbox, Linux x64, 4 logical CPUs / 15 GB, Docker
 Engine 29, everything co-located (bench process, broker, database). Not the CI reference
 profile and not a dev machine; treat it as a third point. Code: `main` at `204fe6c`
-(the bench adds tests only).
+(the bench adds tests only). **Run id: none** — a local sandbox run, not a CI run. The
+first `bench.yml` run after merge records its run id here.
 
 | Measure (one-second windows, 900 of them) | Threshold (S-FLEET-02a) | Measured | Verdict |
 |---|---|---|---|

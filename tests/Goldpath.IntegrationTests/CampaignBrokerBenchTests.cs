@@ -31,7 +31,7 @@ namespace Goldpath.Tests.Integration;
 /// </para>
 /// </summary>
 [Trait("Category", "Bench")]
-[Collection("quartz-process-globals")]
+[Collection(CampaignBrokerBenchCollection.Name)]
 public sealed class CampaignBrokerBenchTests : IAsyncLifetime
 {
     public sealed record FleetTarget(long Id);
@@ -268,4 +268,19 @@ public sealed class CampaignBrokerBenchTests : IAsyncLifetime
 
         await Task.CompletedTask;
     }
+}
+
+/// <summary>
+/// Runs <see cref="CampaignBrokerBenchTests"/> ALONE. bench.yml runs every <c>Category=Bench</c>
+/// class in one assembly run, and a 1000-TPS RabbitMQ + PostgreSQL load beside the H6 reference
+/// benches would shift the numbers their <c>ops/*-benchmarks.md</c> tables compare against. xUnit
+/// runs a non-parallel collection after all parallel ones, overlapping nothing, which also keeps
+/// this class's in-process Quartz host away from every other (the <c>quartz-process-globals</c>
+/// concern).
+/// </summary>
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class CampaignBrokerBenchCollection
+{
+    /// <summary>The collection's name.</summary>
+    public const string Name = "campaign-broker-bench";
 }
