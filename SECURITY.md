@@ -82,12 +82,17 @@ in CI. Neither one is a substitute for a threat model, which G15's second part a
 - **OWASP ZAP baseline** (dynamic, passive, [`scripts/zap-baseline.sh`](scripts/zap-baseline.sh)):
   - Runs nightly against a **generated** app (the golden-manifest shape `GmBulkOnly`). It
     covers the API root and the console that API serves, in Production posture.
-  - Every alert is either fixed or ignored in
-    [`scripts/zap-baseline.conf`](scripts/zap-baseline.conf) with its reason. Any other alert
-    fails the night, and the report is kept as a workflow artifact.
+  - Every alert listed in [`scripts/zap-baseline.conf`](scripts/zap-baseline.conf) carries
+    its reason, and is one of two kinds. **IGNORE** means it is not a weakness here. **INFO**
+    means it is a real open finding: it is reported in every run but does not fail the night
+    until its fix lands or the owner signs it as an accepted risk in G15's second part. Each
+    INFO line names its ledger entry: [#377](https://github.com/qorpe/goldpath/issues/377)
+    (a Bulk defect) and open-threads
+    [T43](docs/strategy/open-threads.md) (three missing security headers).
+  - An alert that is not listed fails the night. The report is kept as a workflow artifact.
 
-Both scanners are pinned (actions to a commit, the ZAP image to a digest), so a red result
-comes from a change in Goldpath, not in the scanner.
+Both scanners are pinned, so a red result comes from a change in Goldpath, not in the
+scanner. CodeQL's actions are pinned to a commit and the ZAP image to a digest.
 
 ## Hardening notes for adopters
 
