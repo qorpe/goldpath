@@ -131,6 +131,24 @@ public class MessagingBuilderTests
     }
 
     [Fact]
+    public async Task Missing_arguments_are_refused_by_name()
+    {
+        Assert.Equal("configureMessaging", Assert.Throws<ArgumentNullException>(() => GoldpathMessagingTestHost.Create(null!)).ParamName);
+        Assert.Equal("configure", Assert.Throws<ArgumentNullException>(() => Host.CreateApplicationBuilder().AddGoldpathMessaging((Action<GoldpathMessagingBuilder>)null!)).ParamName);
+
+        await using var host = GoldpathMessagingTestHost.Create(_ => { });
+        Assert.Equal("integrationEvent", (await Assert.ThrowsAsync<ArgumentNullException>(() => host.PublishAsync<ShipmentBooked>(null!))).ParamName);
+        Assert.Equal("body", (await Assert.ThrowsAsync<ArgumentNullException>(() => host.PublishAsAsync<ShipmentDelayed>(null!))).ParamName);
+
+        Host.CreateApplicationBuilder().AddGoldpathMessaging(messaging =>
+        {
+            Assert.Equal("assemblies", Assert.Throws<ArgumentNullException>(() => messaging.AddHandlers(null!)).ParamName);
+            Assert.Equal("connectionName", Assert.ThrowsAny<ArgumentException>(() => messaging.UseRabbitMq(" ")).ParamName);
+            messaging.UseRabbitMq();
+        });
+    }
+
+    [Fact]
     public void The_outbox_defaults_are_todays()
     {
         var options = new GoldpathOutboxOptions();
