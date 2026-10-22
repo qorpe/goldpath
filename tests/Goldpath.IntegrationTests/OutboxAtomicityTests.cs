@@ -67,6 +67,7 @@ public sealed class OutboxAtomicityTests : IAsyncLifetime
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddSingleton<Deliveries>();
         builder.AddGoldpathData<HostApplicationBuilder, ShipDb>(o => o.UseNpgsql(_postgres.GetConnectionString()));
+        builder.Services.WaitForTheBusOnStart();   // a publish right after StartAsync must find its queue bound
         builder.AddGoldpathMessaging(bus =>
         {
             bus.AddConsumer<ShipmentConsumer>();
