@@ -93,6 +93,7 @@ public sealed class CampaignR2TakeoverTests : IAsyncLifetime
                         .AsAsyncEnumerable());
                 }, target => target.Id.ToString(CultureInfo.InvariantCulture)));
         });
+        builder.Services.WaitForTheBusOnStart();   // a publish right after StartAsync must find its queue bound
         builder.AddGoldpathMessaging(bus =>
         {
             bus.AddGoldpathCampaignConsumers<CampaignTests.CampDb>();

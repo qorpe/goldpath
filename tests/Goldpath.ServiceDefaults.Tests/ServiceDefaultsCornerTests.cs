@@ -178,6 +178,68 @@ public class ServiceDefaultsCornerTests
     }
 
     [Fact]
+    public async Task A_generated_correlation_id_is_the_trace_id_when_a_trace_exists()
+    {
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = _ => true,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+        };
+        ActivitySource.AddActivityListener(listener);
+        await using var app = await StartAppAsync(map: a => a.MapGet("/trace", () => Activity.Current?.TraceId.ToString() ?? "<none>"));
+
+        var response = await app.GetTestClient().GetAsync("/trace");
+        var traceId = await response.Content.ReadAsStringAsync();
+
+        Assert.NotEqual("<none>", traceId);
+        Assert.Equal(traceId, response.Headers.GetValues(GoldpathHeaders.CorrelationId).Single());   // logs and traces join on one id
+    }
+
+    [Fact]
+    public async Task Exported_logs_carry_the_formatted_message_and_the_scopes()
+    {
+        // Scopes are how the correlation id reaches an exported log record; without them the
+        // OTLP log line has no id to join on.
+        await using var app = await StartAppAsync();
+        var logging = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<OpenTelemetry.Logs.OpenTelemetryLoggerOptions>>().CurrentValue;
+
+        Assert.True(logging.IncludeScopes);
+        Assert.True(logging.IncludeFormattedMessage);
+    }
+
+    [Fact]
+    public async Task Live_reports_a_failing_check_that_is_tagged_live()
+    {
+        await using var app = await StartAppAsync(services: b =>
+            b.Services.AddHealthChecks().AddCheck("deadlock", () => HealthCheckResult.Unhealthy("stuck"), tags: ["live"]));
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, (await app.GetTestClient().GetAsync("/health/live")).StatusCode);
+    }
+
+    [Fact]
+    public async Task The_guard_s_refusal_says_why_in_its_title()
+    {
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var app = await StartAppAsync(
+            configure: o =>
+            {
+                o.RateLimiting.ConcurrencyLimit = 1;
+                o.RateLimiting.QueueLimit = 0;
+            },
+            map: a => a.MapGet("/held", async () => await gate.Task));
+        var client = app.GetTestClient();
+        var held = client.GetAsync("/held");
+        await Task.Delay(200);
+
+        var rejected = await client.GetAsync("/ok");
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, rejected.StatusCode);
+        Assert.Contains("\"title\":\"Too many concurrent requests.\"", await rejected.Content.ReadAsStringAsync());
+        gate.SetResult();
+        await held;
+    }
+
+    [Fact]
     public async Task Problem_details_carry_the_correlation_id_the_middleware_chose()
     {
         await using var app = await StartAppAsync();

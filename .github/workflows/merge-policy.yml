@@ -23,9 +23,16 @@ on:
 
 permissions: {}
 
-concurrency:
-  group: merge-policy-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+# NO concurrency group, deliberately — `merge-tier.py selftest` fails if one comes back.
+# Several events in one second (a push plus two label edits) create one run, and one check
+# suite, each; a shared group cancels all but one, and the race decides which. On #361 it
+# cancelled the NEWEST suite (run 39734763872), the one branch protection reads, so
+# `merge-policy` stayed cancelled — BLOCKED — beside a green run on the same commit, and
+# re-running two cancelled runs at once cancelled one again. `cancel-in-progress: false`
+# still cancels a pending run when a third arrives, and a group keyed by SHA and action
+# still collides on two `labeled` events. Every run reads the labels from the API when it
+# starts, so the newest run sees the newest label state — the ADR-0014 answer — as long as
+# nothing cancels it. A 10-second read-only job costs nothing to run to completion.
 
 jobs:
   merge-policy:
@@ -121,11 +128,19 @@ jobs:
       REPO: ${{ github.repository }}
       PR: ${{ github.event.pull_request.number }}
       TIER: ${{ needs.merge-policy.outputs.tier }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
       - name: set exactly one tier label
         run: |
           set -euo pipefail
           case "$TIER" in A|B|C) ;; *) echo "::error::unexpected tier '$TIER'"; exit 1 ;; esac
+          # Runs are never cancelled (see the top of this file), so a run for a commit the
+          # pull request has since moved past may finish last — the newer run sets the label.
+          head=$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')
+          if [ "$head" != "$HEAD_SHA" ]; then
+            echo "#$PR moved on to ${head:0:12}; this run judged ${HEAD_SHA:0:12}, so the newer run sets the label"
+            exit 0
+          fi
           describe() {
             case "$1" in
               # GitHub refuses a label description over 100 characters (HTTP 422).

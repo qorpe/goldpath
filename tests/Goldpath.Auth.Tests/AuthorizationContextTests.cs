@@ -61,6 +61,12 @@ public sealed class AuthorizationContextTests
         Assert.False(new HttpClaimsAuthorizationContext(new FixedAccessor(null)).HasClaim("department", "risk"));
     }
 
+    // The "Goldpath.Auth" meter is process-wide, so a MeterListener also hears every other
+    // test class that xUnit runs in parallel (AuthContractTests refuses bindings too: #310).
+    // A measurement callback runs synchronously on the recording call's own flow, so this
+    // marker, set around THIS test's call, tells its measurements apart from a neighbour's.
+    private static readonly AsyncLocal<bool> s_ownFlow = new();
+
     [Fact]
     public async Task Binding_rejects_and_api_key_failures_hit_their_meters()
     {
@@ -76,7 +82,7 @@ public sealed class AuthorizationContextTests
         };
         listener.SetMeasurementEventCallback<long>((instrument, value, tags, _) =>
         {
-            if (instrument.Name == "goldpath_auth_tenant_binding_rejects_total")
+            if (instrument.Name == "goldpath_auth_tenant_binding_rejects_total" && s_ownFlow.Value)
             {
                 Interlocked.Add(ref bindingRejects, value);
             }
@@ -97,7 +103,15 @@ public sealed class AuthorizationContextTests
         context.Response.Body = new MemoryStream();
         using (GoldpathTenant.Use("globex"))
         {
-            await middleware.InvokeAsync(context);
+            s_ownFlow.Value = true;
+            try
+            {
+                await middleware.InvokeAsync(context);
+            }
+            finally
+            {
+                s_ownFlow.Value = false;
+            }
         }
 
         Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
