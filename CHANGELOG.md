@@ -5,6 +5,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **`Goldpath.Messaging`: the message path in Goldpath's own vocabulary (GA gate G1 Part 2/4,
+  #327).** `builder.AddGoldpathMessaging(messaging => …)` takes a `GoldpathMessagingBuilder`:
+  `AddHandler<TEvent, THandler>()`, `AddHandlers(assemblies)`, `AddOutbox<TContext>(…)` with
+  `GoldpathOutboxOptions` (`DuplicateDetectionWindow` 30 min, `Inbox` on, `DeliveryPollInterval`
+  the engine's default unless set), `UseRabbitMq(connectionName = "messaging")` and `Options`.
+  The outbox's row-lock statements follow the context's EF provider, so the
+  `UsePostgres()`/`UseSqlServer()` line goes away, and an outbox on any other provider fails the
+  host's start in words instead of the delivery loop later; a non-positive outbox interval is
+  refused at registration. The pipeline is applied to every endpoint
+  without a `ConfigureGoldpathEndpoints` call. `modelBuilder.AddGoldpathOutboxEntities()` maps
+  the same three tables and columns as the engine-named calls (no migration).
+  `GoldpathMessagingTestHost` starts a host on the in-memory transport (or the one the block
+  selects), returns once the bus is up, and publishes as an upstream service would
+  (`PublishAsync` with a `GoldpathOutgoingMessage` stamp, `PublishAsAsync<TEvent>(shape)`). The
+  conformance suite and the outbox and tenant-square integration tests now use only this
+  vocabulary. **Additive:** the MassTransit-typed overloads stay until Part 4/4, so
+  `engine-gate.sh` is unchanged at 13. `Goldpath.Messaging` now references
+  `MassTransit.RabbitMQ` 8.5.11 (the transport `UseRabbitMq()` composes) and
+  `Microsoft.Extensions.Hosting` 10.0.11 (the test host). What Part 2 leaves is open-threads T44.
 - **The engine gate (GA gate G1, #321).** `scripts/engine-gate.sh` fails CI when a
   `PublicAPI.*.txt` outside a bus-engine adapter package names an engine type (`MassTransit.`,
   `Wolverine.`) that is not in its committed baseline, `scripts/engine-gate.baseline.txt`. The

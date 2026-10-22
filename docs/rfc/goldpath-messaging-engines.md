@@ -241,11 +241,17 @@ through the same runbook links. SECURITY.md's engine posture is G5's to write, n
 - [x] `scripts/engine-gate.sh` + baseline, run in CI's `gates` job (self-test and real tree).
 - [ ] Owner accepts §9 Q1–Q5 by merging (or answers otherwise, and this text changes first).
 - [ ] Part 2/4: the registration builder, the outbox options and entity mapping, the harness,
-      and GP0406 as Info. Baseline 13 → 3.
+      and GP0406 as Info. Baseline 13 → 3. **Landed additively (#327):** the builder, the outbox
+      options and entity mapping, and the test host's entry point and publish; the conformance
+      suite and the outbox and tenant-square integration tests use only them. Issue #327 keeps the
+      MassTransit-typed overloads until Part 4/4, so the baseline stays at 13 until then. GP0406,
+      the `providers.messagingEngine` key, engine discovery by attribute with a public
+      `IGoldpathMessagingEngine`, `ConfigureEngine`, `AddBatchHandler` (Part 3) and the harness's
+      `Handled`/`Faulted`/`Published` are open-threads T44.
 - [ ] Part 3/4: Campaign through the seam, with the batch contract. Baseline 3 → 0.
 - [ ] Part 4/4: `Goldpath.Messaging.MassTransit` extracted; `Goldpath.Messaging` engine-free.
-- [ ] messaging-exit §8's open line ("the outbox/inbox configuration and the test harness in
-      Goldpath vocabulary") is ticked by Part 2, pointing here.
+- [x] messaging-exit §8's open line ("the outbox/inbox configuration and the test harness in
+      Goldpath vocabulary") is ticked by Part 2 (#327), pointing here.
 
 **The preview.11 upgrade guide, outlined** (`docs/upgrades/0.1.0-preview.11.md`, written by the
 release PR):
