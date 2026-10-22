@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **The engine gate (GA gate G1, #321).** `scripts/engine-gate.sh` fails CI when a
+  `PublicAPI.*.txt` outside a bus-engine adapter package names an engine type (`MassTransit.`,
+  `Wolverine.`) that is not in its committed baseline, `scripts/engine-gate.baseline.txt`. The
+  baseline holds the 13 lines shipped on 2026-10-20 and may only shrink, and `--selftest`
+  proves five planted faults red. The design that empties it is
+  [goldpath-messaging-engines](docs/rfc/goldpath-messaging-engines.md) (PROPOSED). No package
+  changes.
 - **Merge tiers for agent pull requests (ADR-0014, proposed).** Repository governance, no
   package changes. `.github/workflows/merge-policy.yml` computes a pull request's tier from
   its changed files with the rules in `.github/merge-tiers.yml` (read from the base branch,
