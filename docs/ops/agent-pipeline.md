@@ -44,7 +44,15 @@ pull request when it is opened, pushed to, reopened or relabelled:
   A file list shorter than the pull request's own count, or a content rule with no patch to
   read, is judged Tier C.
 - **job `tier-label`** (the only job with a write token; runs no repository code) — sets
-  exactly one of `tier:A`, `tier:B`, `tier:C`, creating the labels the first time.
+  exactly one of `tier:A`, `tier:B`, `tier:C`, creating the labels the first time. A run for
+  a commit the pull request has since moved past leaves the label to the newer run.
+
+**No run is ever cancelled** — the workflow has no concurrency group, and the self-test keeps
+it that way. Several events in one second (a push plus two label edits) start one run each;
+on #361 a shared group cancelled the newest of them, the one branch protection reads, and
+`merge-policy` stayed BLOCKED beside a green run on the same commit until the cancelled runs
+were re-run one at a time. Every run reads the labels when it starts, so the newest run
+judges the newest label state.
 
 It guards only once it is a **required** status check on `main`, beside `ci`'s `gates`,
 `integration` and `kit` jobs (the owner's setting — `main` required none on 2026-10-20).
@@ -59,8 +67,10 @@ python3 scripts/merge-tier.py selftest --rules /tmp/x.yml # a candidate rules fi
 It runs the fixtures in `scripts/merge-tier.fixtures.json` (an ADR change is C, a workflow
 change is C, a package change is B, a tests-only change is A, a mixed change takes the
 highest tier, plus every content rule, renames, missing patches and a truncated list), the
-pass/fail decision table, and one structural check: **every script a workflow runs must be
-Tier C**, so a gate added later cannot arrive as Tier A. It runs in `ci.yml` against the
+pass/fail decision table, and two structural checks: **every script a workflow runs must be
+Tier C**, so a gate added later cannot arrive as Tier A; and **`merge-policy.yml` carries no
+concurrency group** (proven red by putting the old `cancel-in-progress: true` block back, and
+again with `cancel-in-progress: false`). It runs in `ci.yml` against the
 rules a pull request proposes, and inside `merge-policy` against the base's. It was proven
 red by deleting the `.github/**` rule from a copy of the rules file: the workflow fixture
 and the rules-file fixture turned Tier A and the run exited 1.

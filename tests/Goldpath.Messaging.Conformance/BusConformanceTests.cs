@@ -180,29 +180,55 @@ public sealed class BusConformanceTests(ConformanceContainers containers)
     [Fact]
     public async Task S2_8_a_graceful_stop_mid_stream_drains_across_processes_without_duplicates()
     {
-        // Slow handlers and more messages than the prefetch window: a graceful stop lets the
-        // in-flight ones finish and leaves the rest on the queue for the next process.
-        var observed = new Observed { HandlerDelay = TimeSpan.FromSeconds(2) };
+        // A graceful stop lets the in-flight handlers finish and leaves the rest on the queue
+        // for the next process. That needs MORE work queued than the engine holds in flight,
+        // and the window is the engine's business — the oracle's grows with the machine's
+        // cores (measured: 16 at 1 or 4 cores, 20 at 10, 32 at 16), another engine's may not.
+        // So the window is MEASURED — handlers wait at a gate, the count that entered settles
+        // at the window — and the backlog is grown until at least twice the window waits
+        // behind it. A fixed 40 let a 10-core machine finish everything before the stop.
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var observed = new Observed { HandlerGate = gate.Task, HandlerDelay = TimeSpan.FromSeconds(1) };
+        var published = 0;
+        int window;
         using (var first = await containers.BuildHostAsync(observed))
         {
             await first.StartAsync();
-            for (var i = 0; i < 40; i++)
+            var target = 40;
+            while (true)
             {
-                await first.PublishCommittedAsync(new Ping { Id = Guid.NewGuid(), Payload = $"m{i}" });
+                for (; published < target; published++)
+                {
+                    await first.PublishCommittedAsync(new Ping { Id = Guid.NewGuid(), Payload = $"m{published}" });
+                }
+
+                window = await observed.WaitForStartedToSettleAsync(TimeSpan.FromSeconds(2), Wait);
+                if (window > 0 && published >= 3 * window)
+                {
+                    break;
+                }
+
+                target = Math.Max(published * 2, 3 * window);
+                Assert.True(target <= 5_000, $"the engine took {window} of {published} messages in flight and kept going — no window to measure");
             }
 
-            await observed.WaitForPingsAsync(1, Wait);
-            await first.StopAsync();   // graceful: in-flight handlers finish, the rest stay queued
+            // Stop first, then open the gate: the in-flight handlers finish during the stop.
+            // Each still takes a second after the gate, so an engine slow to stop consuming
+            // starts at most one more wave — and two windows are still short of the backlog.
+            var stopping = first.StopAsync();
+            gate.SetResult();
+            await stopping;
         }
 
         var afterFirst = observed.PingCount;
-        Assert.InRange(afterFirst, 1, 39);
+        Assert.True(afterFirst >= window, $"{afterFirst} handled before the stop, but {window} were in flight — a graceful stop finishes them");
+        Assert.True(afterFirst < published, $"all {published} handled by the first process — nothing was left queued, so the handover went unproven");
 
         using var second = await containers.BuildHostAsync(observed);
         await second.StartAsync();
-        await observed.WaitForPingsAsync(40, TimeSpan.FromSeconds(120));
-        Assert.Equal(40, observed.PingCount);
-        Assert.Equal(40, observed.Pings.Select(p => p.Event.Id).Distinct().Count());   // no duplicates across the two lifetimes
+        await observed.WaitForPingsAsync(published, TimeSpan.FromSeconds(120));
+        Assert.Equal(published, observed.PingCount);
+        Assert.Equal(published, observed.Pings.Select(p => p.Event.Id).Distinct().Count());   // no duplicates across the two lifetimes
         await second.StopAsync();
     }
 }
