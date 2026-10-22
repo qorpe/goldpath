@@ -17,6 +17,7 @@ entry of `CHANGELOG.md` names that train; this line names no version because a p
 | [goldpath-servicedefaults](goldpath-servicedefaults.md) | Goldpath.ServiceDefaults (Ring A) | implemented |
 | [goldpath-apidefaults](goldpath-apidefaults.md) | Goldpath.ApiDefaults (golden-path core) | implemented |
 | [goldpath-data](goldpath-data.md) | Goldpath.Data (golden-path core) | implemented |
+| [goldpath-oracle](goldpath-oracle.md) | Oracle as a first-class database provider — a Data revision: pinned FUTC provider + scoped licence-gate exception, every provider-specific point with its Oracle form, Quartz store, GmOracle, slices O-1…O-7 | **PROPOSED** (2026-10-22; #305, from the owner's #287 decision and GA gate G7) — merging is the acceptance |
 | [goldpath-messaging](goldpath-messaging.md) | Goldpath.Messaging (golden-path core) | implemented |
 | [goldpath-analyzers](goldpath-analyzers.md) | Goldpath.Analyzers (executable standards) | implemented |
 | [goldpath-idempotency](goldpath-idempotency.md) | Goldpath.Idempotency (Ring B) | implemented (ops runbook + GP1001/1002/1004 shipped 2026-08-03) |
