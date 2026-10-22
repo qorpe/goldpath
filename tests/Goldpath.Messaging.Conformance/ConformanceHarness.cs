@@ -37,10 +37,48 @@ public sealed class Observed
 
     public TaskCompletionSource PoisonFaulted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    /// <summary>How long a Ping handler holds the message — the drain scenario slows it down.</summary>
+    /// <summary>While set and not completed, every Ping handler waits here — the drain scenario holds its window full.</summary>
+    public Task? HandlerGate { get; set; }
+
+    /// <summary>How long a Ping handler holds the message after the gate — the drain scenario slows it down.</summary>
     public TimeSpan HandlerDelay { get; set; }
 
+    private int _started;
+
+    /// <summary>Ping handlers entered so far, finished or not: the engine's in-flight window, while the gate holds.</summary>
+    public int Started => Volatile.Read(ref _started);
+
+    public void MarkStarted() => Interlocked.Increment(ref _started);
+
     public int PingCount => Pings.Count;
+
+    /// <summary>
+    /// Waits until no further handler has started for <paramref name="quiet"/>, and returns how
+    /// many have — with the gate closed, that is the engine's window, whatever its size.
+    /// </summary>
+    public async Task<int> WaitForStartedToSettleAsync(TimeSpan quiet, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        var last = -1;
+        var since = DateTime.UtcNow;
+        while (DateTime.UtcNow < deadline)
+        {
+            var now = Started;
+            if (now != last)
+            {
+                last = now;
+                since = DateTime.UtcNow;
+            }
+            else if (now > 0 && DateTime.UtcNow - since >= quiet)
+            {
+                return now;
+            }
+
+            await Task.Delay(50);
+        }
+
+        return Started;
+    }
 
     public async Task WaitForPingsAsync(int count, TimeSpan timeout)
     {
@@ -57,6 +95,12 @@ public sealed class PingHandler(Observed observed) : IIntegrationEventHandler<Pi
 {
     public async Task HandleAsync(Ping integrationEvent, IntegrationEventContext context, CancellationToken cancellationToken = default)
     {
+        observed.MarkStarted();
+        if (observed.HandlerGate is { } gate)
+        {
+            await gate.WaitAsync(cancellationToken);
+        }
+
         if (observed.HandlerDelay > TimeSpan.Zero)
         {
             await Task.Delay(observed.HandlerDelay, cancellationToken);
@@ -158,6 +202,10 @@ public sealed class ConformanceContainers : IAsyncLifetime
         }
 
         builder.AddGoldpathData<HostApplicationBuilder, ConformanceDb>(o => o.UseNpgsql(Postgres.GetConnectionString()));
+        // Engine wiring, so it lives in the harness, never in a fact: StartAsync returns only
+        // once the bus has started. Every fact publishes right after it, and on a fresh broker
+        // a publish that beats its queue's binding is dropped without an error (#371).
+        builder.Services.Configure<MassTransitHostOptions>(o => o.WaitUntilStarted = true);
         builder.AddGoldpathMessaging(bus =>
         {
             bus.AddGoldpathHandler<Ping, PingHandler>();
