@@ -1,7 +1,7 @@
 # RFC: messaging engines — the engine-free API, the adapter packages, and wire compatibility by design
 
-- Status: **PROPOSED** (2026-10-21). The owner accepts it by merging; §9 lists the five
-  choices that merge accepts, each with the recommendation the text is written to
+- Status: **ACCEPTED** (2026-10-22, owner decision; the merge of #361 records it). §9's five
+  choices are accepted as recommended — the text is written to them
 - Date: 2026-10-21
 - Opens GA gate **G1** ([goldpath-ga-readiness](goldpath-ga-readiness.md) §7.1 and §8.1:
   "the engine-adapter RFC revision and the ratcheting PublicAPI engine check" on preview.10)
