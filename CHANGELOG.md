@@ -5,6 +5,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **Security scans in CI (GA gate G15 Part 1/2, #339).** Repository CI, no package changes.
+  `.github/workflows/codeql.yml` runs CodeQL (`security-extended`) on the C# and the console's
+  TypeScript on every pull request, on `main` and weekly, with its actions pinned to commits.
+  A nightly `zap-baseline` job runs `scripts/zap-baseline.sh`: a passive OWASP ZAP baseline,
+  image pinned by digest, against a generated app (`GmBulkOnly`), its OpenAPI operations and
+  the console it serves, in Production posture. An alert that `scripts/zap-baseline.conf`
+  does not list fails the night. The first run's open findings are carried as INFO with
+  their ledger entries: #377 (an unknown Bulk definition answers 500) and open-threads T43
+  (three missing security headers).
 - **`Goldpath.Messaging`: the message path in Goldpath's own vocabulary (GA gate G1 Part 2/4,
   #327).** `builder.AddGoldpathMessaging(messaging => …)` takes a `GoldpathMessagingBuilder`:
   `AddHandler<TEvent, THandler>()`, `AddHandlers(assemblies)`, `AddOutbox<TContext>(…)` with
