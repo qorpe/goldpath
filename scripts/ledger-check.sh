@@ -12,7 +12,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-LEDGERS=(docs/strategy/open-threads.md samples/GAP-LEDGER.md docs/strategy/master-plan-2026-08.md)
+LEDGERS=(docs/strategy/open-threads.md samples/GAP-LEDGER.md docs/strategy/master-plan-2026-08.md docs/strategy/ga-gate-status.md)
 FAILED=0
 
 if ! command -v gh >/dev/null 2>&1 || ! gh auth status >/dev/null 2>&1; then
