@@ -136,3 +136,44 @@ const Goldpath.GoldpathCampaignCallbackSignature.SignatureHeader = "X-Goldpath-S
 const Goldpath.GoldpathCampaignCallbackSignature.TimestampHeader = "X-Goldpath-Timestamp" -> string!
 static Goldpath.GoldpathCampaignCallbackEndpoints.MapGoldpathCampaignCallbacks<TContext>(this Microsoft.AspNetCore.Routing.IEndpointRouteBuilder! endpoints, string! prefix = "/goldpath/campaign/callbacks", string? policy = null) -> Microsoft.AspNetCore.Routing.IEndpointRouteBuilder!
 static Goldpath.GoldpathCampaignCallbackSignature.Sign(string! secret, string! method, string! path, long timestamp, System.ReadOnlySpan<byte> body) -> string!
+Goldpath.GoldpathCampaignState.Ready = 8 -> Goldpath.GoldpathCampaignState
+Goldpath.GoldpathCampaign.StartAt.get -> System.DateTimeOffset?
+Goldpath.GoldpathCampaign.StartAt.set -> void
+Goldpath.GoldpathCampaignCeiling
+Goldpath.GoldpathCampaignCeiling.GoldpathCampaignCeiling() -> void
+Goldpath.GoldpathCampaignCeiling.Kind.get -> Goldpath.GoldpathCampaignCeilingKind
+Goldpath.GoldpathCampaignCeiling.Kind.set -> void
+Goldpath.GoldpathCampaignCeiling.Name.get -> string!
+Goldpath.GoldpathCampaignCeiling.Name.set -> void
+Goldpath.GoldpathCampaignCeiling.MaxTps.get -> int?
+Goldpath.GoldpathCampaignCeiling.MaxTps.set -> void
+Goldpath.GoldpathCampaignCeiling.SeedMaxTps.get -> int?
+Goldpath.GoldpathCampaignCeiling.SeedMaxTps.set -> void
+Goldpath.GoldpathCampaignCeiling.UpdatedAt.get -> System.DateTimeOffset
+Goldpath.GoldpathCampaignCeiling.UpdatedAt.set -> void
+Goldpath.GoldpathCampaignCeiling.UpdatedBy.get -> string!
+Goldpath.GoldpathCampaignCeiling.UpdatedBy.set -> void
+Goldpath.GoldpathCampaignCeilingKind
+Goldpath.GoldpathCampaignCeilingKind.Global = 0 -> Goldpath.GoldpathCampaignCeilingKind
+Goldpath.GoldpathCampaignCeilingKind.TargetSystem = 1 -> Goldpath.GoldpathCampaignCeilingKind
+Goldpath.GoldpathCampaign.MaxAwaitingAck.get -> int?
+Goldpath.GoldpathCampaign.MaxAwaitingAck.set -> void
+Goldpath.GoldpathCampaign.AwaitingAckCount.get -> long
+Goldpath.GoldpathCampaign.AwaitingAckCount.set -> void
+Goldpath.GoldpathCampaign.PolicyVersion.get -> long
+Goldpath.GoldpathCampaign.PolicyVersion.set -> void
+Goldpath.GoldpathCampaignState.Suspended = 9 -> Goldpath.GoldpathCampaignState
+Goldpath.GoldpathCampaign.SuspendOnFailureRatio.get -> double?
+Goldpath.GoldpathCampaign.SuspendOnFailureRatio.set -> void
+Goldpath.GoldpathCampaign.SuspendWindow.get -> int?
+Goldpath.GoldpathCampaign.SuspendWindow.set -> void
+Goldpath.GoldpathCampaign.SuspendMinSample.get -> int?
+Goldpath.GoldpathCampaign.SuspendMinSample.set -> void
+Goldpath.GoldpathCampaign.WindowOutcomes.get -> long
+Goldpath.GoldpathCampaign.WindowOutcomes.set -> void
+Goldpath.GoldpathCampaign.WindowFailures.get -> long
+Goldpath.GoldpathCampaign.WindowFailures.set -> void
+Goldpath.GoldpathCampaign.WindowStartedAt.get -> System.DateTimeOffset?
+Goldpath.GoldpathCampaign.WindowStartedAt.set -> void
+Goldpath.GoldpathCampaign.SuspendedReason.get -> string?
+Goldpath.GoldpathCampaign.SuspendedReason.set -> void

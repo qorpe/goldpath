@@ -1,1 +1,37 @@
 #nullable enable
+Goldpath.GoldpathMessagingBuilder
+Goldpath.GoldpathMessagingBuilder.AddHandler<TEvent, THandler>() -> Goldpath.GoldpathMessagingBuilder!
+Goldpath.GoldpathMessagingBuilder.AddHandlers(params System.Reflection.Assembly![]! assemblies) -> Goldpath.GoldpathMessagingBuilder!
+Goldpath.GoldpathMessagingBuilder.AddOutbox<TContext>(System.Action<Goldpath.GoldpathOutboxOptions!>? configure = null) -> Goldpath.GoldpathMessagingBuilder!
+Goldpath.GoldpathMessagingBuilder.Options.get -> Goldpath.GoldpathMessagingOptions!
+Goldpath.GoldpathMessagingBuilder.UseRabbitMq(string! connectionName = "messaging") -> Goldpath.GoldpathMessagingBuilder!
+Goldpath.GoldpathOutboxOptions
+Goldpath.GoldpathOutboxOptions.DeliveryPollInterval.get -> System.TimeSpan?
+Goldpath.GoldpathOutboxOptions.DeliveryPollInterval.set -> void
+Goldpath.GoldpathOutboxOptions.DuplicateDetectionWindow.get -> System.TimeSpan
+Goldpath.GoldpathOutboxOptions.DuplicateDetectionWindow.set -> void
+Goldpath.GoldpathOutboxOptions.GoldpathOutboxOptions() -> void
+Goldpath.GoldpathOutboxOptions.Inbox.get -> bool
+Goldpath.GoldpathOutboxOptions.Inbox.set -> void
+static Goldpath.GoldpathMessagingExtensions.AddGoldpathMessaging<TBuilder>(this TBuilder builder, System.Action<Goldpath.GoldpathMessagingBuilder!>! configure) -> TBuilder
+Goldpath.GoldpathMessagingTestHost
+Goldpath.GoldpathMessagingTestHost.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Goldpath.GoldpathMessagingTestHost.PublishAsAsync<TEvent>(object! body, System.Action<Goldpath.GoldpathOutgoingMessage!>? stamp = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Goldpath.GoldpathMessagingTestHost.PublishAsync<TEvent>(TEvent! integrationEvent, System.Action<Goldpath.GoldpathOutgoingMessage!>? stamp = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Goldpath.GoldpathMessagingTestHost.Services.get -> System.IServiceProvider!
+Goldpath.GoldpathMessagingTestHost.StartAsync() -> System.Threading.Tasks.Task!
+Goldpath.GoldpathMessagingTestHost.StartAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+Goldpath.GoldpathMessagingTestHost.StopAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Goldpath.GoldpathOutboxModelExtensions
+Goldpath.GoldpathOutgoingMessage
+Goldpath.GoldpathOutgoingMessage.CorrelationId.get -> string?
+Goldpath.GoldpathOutgoingMessage.CorrelationId.set -> void
+Goldpath.GoldpathOutgoingMessage.GoldpathOutgoingMessage() -> void
+Goldpath.GoldpathOutgoingMessage.Headers.get -> System.Collections.Generic.IDictionary<string!, object?>!
+Goldpath.GoldpathOutgoingMessage.MessageId.get -> System.Guid?
+Goldpath.GoldpathOutgoingMessage.MessageId.set -> void
+Goldpath.GoldpathOutgoingMessage.Tenant.get -> string?
+Goldpath.GoldpathOutgoingMessage.Tenant.set -> void
+static Goldpath.GoldpathMessagingTestHost.Create(System.Action<Goldpath.GoldpathMessagingBuilder!>! configureMessaging, System.Action<Microsoft.Extensions.Hosting.HostApplicationBuilder!>? configureHost = null) -> Goldpath.GoldpathMessagingTestHost!
+static Goldpath.GoldpathMessagingTestHost.StartAsync(System.Action<Goldpath.GoldpathMessagingBuilder!>! configureMessaging, System.Action<Microsoft.Extensions.Hosting.HostApplicationBuilder!>? configureHost = null) -> System.Threading.Tasks.Task<Goldpath.GoldpathMessagingTestHost!>!
+static Goldpath.GoldpathOutboxModelExtensions.AddGoldpathOutboxEntities(this Microsoft.EntityFrameworkCore.ModelBuilder! modelBuilder) -> Microsoft.EntityFrameworkCore.ModelBuilder!

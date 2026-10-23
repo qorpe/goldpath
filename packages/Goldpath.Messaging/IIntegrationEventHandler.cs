@@ -144,7 +144,8 @@ public static class GoldpathHandlerRegistrationExtensions
     /// <summary>
     /// Registers every <see cref="IIntegrationEventHandler{TEvent}"/> implementation found in
     /// <paramref name="assemblies"/> (a handler implementing several event interfaces joins
-    /// once per event).
+    /// once per event). An open generic type is skipped: it cannot be an endpoint, and a closed type
+    /// deriving from it is found.
     /// </summary>
     public static IBusRegistrationConfigurator AddGoldpathHandlers(this IBusRegistrationConfigurator configurator, params Assembly[] assemblies)
     {
@@ -152,7 +153,7 @@ public static class GoldpathHandlerRegistrationExtensions
         var register = typeof(GoldpathHandlerRegistrationExtensions).GetMethod(nameof(AddGoldpathHandler))!;
         foreach (var assembly in assemblies)
         {
-            foreach (var type in assembly.GetTypes().Where(t => t is { IsClass: true, IsAbstract: false }))
+            foreach (var type in assembly.GetTypes().Where(t => t is { IsClass: true, IsAbstract: false, ContainsGenericParameters: false }))
             {
                 foreach (var contract in type.GetInterfaces().Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == open))
                 {

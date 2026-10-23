@@ -11,8 +11,9 @@ namespace Goldpath.Cli;
 /// specdrift's own YAML reader rule for rule — same YamlDotNet version, YAML 1.2 core-schema
 /// scalars (bool/int/float/null, quoted scalars always strings) — because the engine judges the
 /// artefact's SHAPE first, and the CLI must never read a file differently from the engine that
-/// accepted it. The manifest is a different case: the CLI never parses it (see
-/// <see cref="ManifestEditor"/>).
+/// accepted it. The manifest is a different case: the CLI never parses it to EDIT or to judge it
+/// (see <see cref="ManifestEditor"/>), and reads it through this one reader for one report only —
+/// <see cref="RoadmapValues"/>, after specdrift has validated it.
 /// </summary>
 public static class ArtefactYaml
 {

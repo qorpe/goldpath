@@ -31,6 +31,28 @@ public enum GoldpathCampaignState
     /// (R1.2): whatever is left is a REPORT, never a background surprise. Terminal.
     /// </summary>
     ExpiredIncomplete = 7,
+
+    /// <summary>
+    /// The snapshot is complete and <see cref="GoldpathCampaign.StartAt"/> is still ahead
+    /// (R3.1): nothing releases until it passes. Appended, so no stored value moves.
+    /// </summary>
+    Ready = 8,
+
+    /// <summary>
+    /// The pacer stopped it because its failure ratio crossed the policy's threshold (R3.6):
+    /// it claims nothing until an operator resumes or aborts it. Appended, so no stored value moves.
+    /// </summary>
+    Suspended = 9,
+}
+
+/// <summary>Which ceiling a <see cref="GoldpathCampaignCeiling"/> row holds (campaign RFC R3.2).</summary>
+public enum GoldpathCampaignCeilingKind
+{
+    /// <summary>The one global release ceiling; its row's name is empty.</summary>
+    Global = 0,
+
+    /// <summary>A named target system's ceiling, shared by every campaign type that calls it.</summary>
+    TargetSystem = 1,
 }
 
 /// <summary>
@@ -137,6 +159,27 @@ public class GoldpathCampaign
     /// <summary>Share of a contended shared ceiling (R2.5); live-adjustable like the rest of the policy.</summary>
     public GoldpathCampaignPriority Priority { get; set; }
 
+    /// <summary>The earliest instant the campaign may start releasing, in UTC (R3.1); null = as soon as its snapshot is ready.</summary>
+    public DateTimeOffset? StartAt { get; set; }
+
+    /// <summary>Ceiling on items awaiting a callback, counted apart from <see cref="MaxInFlight"/> (R3.4); null = R2's single ceiling.</summary>
+    public int? MaxAwaitingAck { get; set; }
+
+    /// <summary>Failure ratio at or above which the pacer suspends the campaign (R3.6); null = never.</summary>
+    public double? SuspendOnFailureRatio { get; set; }
+
+    /// <summary>Outcomes the failure ratio is measured over (R3.6); null = the module default.</summary>
+    public int? SuspendWindow { get; set; }
+
+    /// <summary>Outcomes needed before the ratio may suspend (R3.6); null = the module default.</summary>
+    public int? SuspendMinSample { get; set; }
+
+    /// <summary>
+    /// Incremented by one on every APPLIED throttle and by nothing else (R3.5). Deliberately not
+    /// an EF concurrency token: the throttle compares it in its own conditional update.
+    /// </summary>
+    public long PolicyVersion { get; set; }
+
     // ---- watermarks & durable truth (D3) ----
 
     /// <summary>Items materialized so far (enumeration watermark = the next Seq).</summary>
@@ -167,6 +210,18 @@ public class GoldpathCampaign
     /// <summary>The policy-timezone calendar day <see cref="ReleasedToday"/> counts for.</summary>
     public DateOnly QuotaDay { get; set; }
 
+    /// <summary>Items awaiting a callback, kept by the sink and re-counted at each slice start (R3.4).</summary>
+    public long AwaitingAckCount { get; set; }
+
+    /// <summary>Outcomes counted in the current failure-ratio window (R3.6).</summary>
+    public long WindowOutcomes { get; set; }
+
+    /// <summary>Failures counted in the current failure-ratio window (R3.6).</summary>
+    public long WindowFailures { get; set; }
+
+    /// <summary>When the current failure-ratio window began (R3.6); null = no window yet.</summary>
+    public DateTimeOffset? WindowStartedAt { get; set; }
+
     // ---- evidence ----
 
     /// <summary>Creation timestamp + actor.</summary>
@@ -183,6 +238,9 @@ public class GoldpathCampaign
 
     /// <summary>Owning tenant, when tenant-bound.</summary>
     public string? Tenant { get; set; }
+
+    /// <summary>Why the pacer suspended it, in words an operator acts on (R3.6; bounded); null unless suspended by the system.</summary>
+    public string? SuspendedReason { get; set; }
 }
 
 /// <summary>One target's row — LEAN: this table is the 30M-row one.</summary>
@@ -291,10 +349,35 @@ public class GoldpathCampaignAudit
     public string? Detail { get; set; }
 }
 
+/// <summary>
+/// A live release ceiling (campaign RFC R3.2): WHICH target systems exist is code, how fast one
+/// may be called is this row, changed by an operator with audit. The leader seeds it from code.
+/// </summary>
+public class GoldpathCampaignCeiling
+{
+    /// <summary>Global or a target system.</summary>
+    public GoldpathCampaignCeilingKind Kind { get; set; }
+
+    /// <summary>The target system's name; empty on the global row.</summary>
+    public string Name { get; set; } = "";
+
+    /// <summary>The live ceiling the pacer reads (releases per second); null on the global row = off.</summary>
+    public int? MaxTps { get; set; }
+
+    /// <summary>The code value last seeded; a row whose live value still equals it follows the code.</summary>
+    public int? SeedMaxTps { get; set; }
+
+    /// <summary>When the row last changed (UTC).</summary>
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    /// <summary>Who changed it last: an operator's principal, or the leader's seed.</summary>
+    public string UpdatedBy { get; set; } = "";
+}
+
 /// <summary>Maps the campaign tables onto the app's own DbContext (same database).</summary>
 public static class GoldpathCampaignModel
 {
-    /// <summary>Adds campaigns, items, parked callbacks and the audit trail to the model.</summary>
+    /// <summary>Adds campaigns, items, parked callbacks, the live ceilings and the audit trail to the model.</summary>
     public static ModelBuilder AddGoldpathCampaign(this ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<GoldpathCampaign>(campaign =>
@@ -310,6 +393,7 @@ public static class GoldpathCampaignModel
             campaign.Property(c => c.LastVerb).HasMaxLength(512);
             campaign.Property(c => c.Tenant).HasMaxLength(128);
             campaign.Property(c => c.EnumeratedKey).HasMaxLength(256);
+            campaign.Property(c => c.SuspendedReason).HasMaxLength(512);
             campaign.Property(c => c.ParametersJson).HasMaxLength(-1);   // caller's selector parameters — a DOCUMENT (#198)
             campaign.Property(c => c.State).IsConcurrencyToken();
             campaign.HasIndex(c => new { c.State, c.CreatedAt });
@@ -339,6 +423,15 @@ public static class GoldpathCampaignModel
             parked.Property(p => p.ErrorCode).HasMaxLength(64);
             parked.Property(p => p.Error).HasMaxLength(1024);
             parked.HasIndex(p => p.ReceivedAt);   // the expiry sweep
+        });
+
+        // R3.2: a handful of rows, read whole once per tick — no index beyond the key.
+        modelBuilder.Entity<GoldpathCampaignCeiling>(ceiling =>
+        {
+            ceiling.ToTable("GoldpathCampaignCeilings");
+            ceiling.HasKey(c => new { c.Kind, c.Name });
+            ceiling.Property(c => c.Name).HasMaxLength(128);
+            ceiling.Property(c => c.UpdatedBy).HasMaxLength(256);
         });
 
         modelBuilder.Entity<GoldpathCampaignAudit>(audit =>
