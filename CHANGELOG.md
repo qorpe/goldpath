@@ -16,6 +16,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   carry `# expect-warning:` lines that the CLI tests hold the finding to. `specdrift validate`
   itself does not warn yet (open-threads T45), and a service's `providers.db: oracle` has no
   annotation to derive from (T46).
+- **Campaign: a real-broker bench at 1000 TPS (S-FLEET-02a, #283).** Measurement only, no
+  package change. `CampaignBrokerBenchTests` drives one campaign through the whole release path
+  on Testcontainers RabbitMQ + PostgreSQL with the package defaults, records published item
+  messages per one-second window and reconciles exactly-once. `scripts/bench-campaign.sh broker`
+  runs it for 15 minutes, `smoke` for 2. Today's baseline is in
+  `packages/Goldpath.Campaign/ops/campaign-benchmarks.md`; it is below the threshold, as
+  expected before Parts 2 and 3.
 - **The engine gate (GA gate G1, #321).** `scripts/engine-gate.sh` fails CI when a
   `PublicAPI.*.txt` outside a bus-engine adapter package names an engine type (`MassTransit.`,
   `Wolverine.`) that is not in its committed baseline, `scripts/engine-gate.baseline.txt`. The
