@@ -1,4 +1,3 @@
-using MassTransit;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting;
@@ -15,7 +14,8 @@ namespace Goldpath.Tests.Integration;
 /// THE full-square proof (MultiTenancy RFC D6): an HTTP request's tenant survives every
 /// seam on real infrastructure — middleware resolution → EF stamp → outbox publish →
 /// RabbitMQ → consume restoration → a second EF stamp in the consumer. Both rows end up
-/// owned by the ORIGIN tenant, and stay invisible without one.
+/// owned by the ORIGIN tenant, and stay invisible without one. Written in Goldpath's vocabulary
+/// only (RFC goldpath-messaging-engines §4.1, G1 Part 2/4): the builder, the publish seam, a seam handler.
 /// </summary>
 public sealed class TenantSquareTests : IAsyncLifetime
 {
@@ -42,20 +42,18 @@ public sealed class TenantSquareTests : IAsyncLifetime
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.ApplyGoldpathMultiTenancy(this);
-            modelBuilder.AddInboxStateEntity();
-            modelBuilder.AddOutboxMessageEntity();
-            modelBuilder.AddOutboxStateEntity();
+            modelBuilder.AddGoldpathOutboxEntities();
         }
     }
 
-    private sealed class InvoiceOnOrderPlaced(OrderDb db) : IConsumer<OrderPlaced>
+    private sealed class InvoiceOnOrderPlacedHandler(OrderDb db) : IIntegrationEventHandler<OrderPlaced>
     {
-        public async Task Consume(ConsumeContext<OrderPlaced> context)
+        public async Task HandleAsync(OrderPlaced integrationEvent, IntegrationEventContext context, CancellationToken cancellationToken = default)
         {
             // No explicit tenant anywhere: the stamp comes from the ambient flow the
-            // consume filter restored from the message headers.
-            db.Invoices.Add(new Invoice { Id = Guid.NewGuid(), OrderId = context.Message.OrderId });
-            await db.SaveChangesAsync();
+            // consume pipeline restored from the message headers.
+            db.Invoices.Add(new Invoice { Id = Guid.NewGuid(), OrderId = integrationEvent.OrderId });
+            await db.SaveChangesAsync(cancellationToken);
         }
     }
 
@@ -79,26 +77,24 @@ public sealed class TenantSquareTests : IAsyncLifetime
         builder.AddGoldpathMultiTenancy();
         builder.AddGoldpathData<WebApplicationBuilder, OrderDb>(o => o.UseNpgsql(_postgres.GetConnectionString()));
         builder.Services.WaitForTheBusOnStart();   // a publish right after StartAsync must find its queue bound
-        builder.AddGoldpathMessaging(bus =>
+        builder.Configuration["ConnectionStrings:messaging"] = _rabbit.GetConnectionString();
+        builder.AddGoldpathMessaging(messaging =>
         {
-            bus.AddConsumer<InvoiceOnOrderPlaced>();
-            bus.AddGoldpathOutbox<OrderDb>(outbox => outbox.UsePostgres());
-            bus.UsingRabbitMq((context, cfg) =>
-            {
-                cfg.Host(new Uri(_rabbit.GetConnectionString()));
-                cfg.ConfigureGoldpathEndpoints(context);
-            });
-        }, options => options.Retry.RedeliveryIntervals.Clear());
+            messaging.AddHandler<OrderPlaced, InvoiceOnOrderPlacedHandler>();
+            messaging.AddOutbox<OrderDb>();
+            messaging.UseRabbitMq();
+            messaging.Options.Retry.RedeliveryIntervals.Clear();
+        });
 
         await using var app = builder.Build();
         app.UseGoldpathMultiTenancy();
-        app.MapPost("/orders", async (OrderDb db, IPublishEndpoint publisher) =>
+        app.MapPost("/orders", async (OrderDb db, IIntegrationEventPublisher publisher) =>
         {
             // No explicit tenant here either — middleware resolved it from the header.
             var order = new Order { Id = Guid.NewGuid() };
             await using var transaction = await db.Database.BeginTransactionAsync();
             db.Orders.Add(order);
-            await publisher.Publish(new OrderPlaced(order.Id));
+            await publisher.PublishAsync(new OrderPlaced(order.Id));
             await db.SaveChangesAsync();
             await transaction.CommitAsync();
             return Results.Ok(order.Id);

@@ -13,11 +13,20 @@
     <PackageReference Include="MassTransit" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
     <PackageReference Include="MassTransit.EntityFrameworkCore" />
+    <!-- The RabbitMQ transport binding UseRabbitMq() composes (RFC goldpath-messaging-engines §2:
+         the adapter's, until Part 4/4 extracts it). -->
+    <PackageReference Include="MassTransit.RabbitMQ" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Goldpath.Messaging.Tests" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" VersionOverride="10.0.11" />
+    <!-- GoldpathMessagingTestHost builds a host (RFC goldpath-messaging-engines §4.3); aligned with Abstractions. -->
+    <PackageReference Include="Microsoft.Extensions.Hosting" VersionOverride="10.0.11" />
     <AdditionalFiles Include="PublicAPI.Shipped.txt" />
     <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
     <None Include="README.md" Pack="true" PackagePath="/" />

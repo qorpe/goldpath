@@ -5,11 +5,12 @@
     <IsPackable>false</IsPackable>
     <!-- The bus conformance suite (ADR-0013 §3, messaging-exit RFC §7.1 S2/S3): what a bus
          must do for Goldpath, proven on real RabbitMQ + PostgreSQL through the seam. The
-         oracle today is MassTransit 8.5.11; a second engine runs the SAME facts. -->
+         oracle today is MassTransit 8.5.11; a second engine runs the SAME facts. The suite
+         names no engine: it reaches the engine only through Goldpath.Messaging's vocabulary
+         (RFC goldpath-messaging-engines §4.3), and EngineFreeSuiteTests holds it there. -->
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="MassTransit.RabbitMQ" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="Testcontainers.RabbitMq" />

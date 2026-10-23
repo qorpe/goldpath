@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -12,7 +11,8 @@ namespace Goldpath.Tests.Integration;
 /// <summary>
 /// THE outbox atomicity proof (deferred-ledger item from the Messaging RFC), on real
 /// PostgreSQL + RabbitMQ: a rolled-back transaction publishes NOTHING; a committed one
-/// delivers the event exactly once to the consumer.
+/// delivers the event exactly once to the handler. Written in Goldpath's vocabulary only (RFC
+/// goldpath-messaging-engines §4.3, G1 Part 2/4): the publish seam, a seam handler, the test host.
 /// </summary>
 public sealed class OutboxAtomicityTests : IAsyncLifetime
 {
@@ -30,9 +30,7 @@ public sealed class OutboxAtomicityTests : IAsyncLifetime
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddInboxStateEntity();
-            modelBuilder.AddOutboxMessageEntity();
-            modelBuilder.AddOutboxStateEntity();
+            modelBuilder.AddGoldpathOutboxEntities();
         }
     }
 
@@ -41,11 +39,11 @@ public sealed class OutboxAtomicityTests : IAsyncLifetime
         public ConcurrentBag<Guid> Consumed { get; } = [];
     }
 
-    private sealed class ShipmentConsumer(Deliveries deliveries) : IConsumer<ShipmentRequested>
+    private sealed class ShipmentRequestedHandler(Deliveries deliveries) : IIntegrationEventHandler<ShipmentRequested>
     {
-        public Task Consume(ConsumeContext<ShipmentRequested> context)
+        public Task HandleAsync(ShipmentRequested integrationEvent, IntegrationEventContext context, CancellationToken cancellationToken = default)
         {
-            deliveries.Consumed.Add(context.Message.ShipmentId);
+            deliveries.Consumed.Add(integrationEvent.ShipmentId);
             return Task.CompletedTask;
         }
     }
@@ -62,24 +60,23 @@ public sealed class OutboxAtomicityTests : IAsyncLifetime
         await _rabbit.DisposeAsync();
     }
 
-    private async Task<IHost> StartHostAsync()
+    private async Task<GoldpathMessagingTestHost> StartHostAsync()
     {
-        var builder = Host.CreateApplicationBuilder();
-        builder.Services.AddSingleton<Deliveries>();
-        builder.AddGoldpathData<HostApplicationBuilder, ShipDb>(o => o.UseNpgsql(_postgres.GetConnectionString()));
-        builder.Services.WaitForTheBusOnStart();   // a publish right after StartAsync must find its queue bound
-        builder.AddGoldpathMessaging(bus =>
-        {
-            bus.AddConsumer<ShipmentConsumer>();
-            bus.AddGoldpathOutbox<ShipDb>(outbox => outbox.UsePostgres());
-            bus.UsingRabbitMq((context, cfg) =>
+        // The test host returns from its start once the bus is up, so a publish right after it finds its queue bound.
+        var host = GoldpathMessagingTestHost.Create(
+            messaging =>
             {
-                cfg.Host(new Uri(_rabbit.GetConnectionString()));
-                cfg.ConfigureGoldpathEndpoints(context);
+                messaging.AddHandler<ShipmentRequested, ShipmentRequestedHandler>();
+                messaging.AddOutbox<ShipDb>();
+                messaging.UseRabbitMq();
+                messaging.Options.Retry.RedeliveryIntervals.Clear();
+            },
+            builder =>
+            {
+                builder.Configuration["ConnectionStrings:messaging"] = _rabbit.GetConnectionString();
+                builder.Services.AddSingleton<Deliveries>();
+                builder.AddGoldpathData<HostApplicationBuilder, ShipDb>(o => o.UseNpgsql(_postgres.GetConnectionString()));
             });
-        }, options => options.Retry.RedeliveryIntervals.Clear());
-
-        var host = builder.Build();
         using (var scope = host.Services.CreateScope())
         {
             await scope.ServiceProvider.GetRequiredService<ShipDb>().Database.EnsureCreatedAsync();
@@ -92,17 +89,17 @@ public sealed class OutboxAtomicityTests : IAsyncLifetime
     [Fact]
     public async Task Rolled_back_transaction_publishes_nothing()
     {
-        using var host = await StartHostAsync();
+        await using var host = await StartHostAsync();
         var deliveries = host.Services.GetRequiredService<Deliveries>();
 
         using (var scope = host.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ShipDb>();
-            var publisher = scope.ServiceProvider.GetRequiredService<IPublishEndpoint>();
+            var publisher = scope.ServiceProvider.GetRequiredService<IIntegrationEventPublisher>();
 
             await using var transaction = await db.Database.BeginTransactionAsync();
             db.Shipments.Add(new Shipment { Id = Guid.NewGuid(), Reference = "doomed" });
-            await publisher.Publish(new ShipmentRequested(Guid.NewGuid()));
+            await publisher.PublishAsync(new ShipmentRequested(Guid.NewGuid()));
             await db.SaveChangesAsync();                    // outbox row written INSIDE the tx
             await transaction.RollbackAsync();              // business data + outbox die together
         }
@@ -119,18 +116,18 @@ public sealed class OutboxAtomicityTests : IAsyncLifetime
     [Fact]
     public async Task Committed_transaction_delivers_exactly_once()
     {
-        using var host = await StartHostAsync();
+        await using var host = await StartHostAsync();
         var deliveries = host.Services.GetRequiredService<Deliveries>();
         var shipmentId = Guid.NewGuid();
 
         using (var scope = host.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ShipDb>();
-            var publisher = scope.ServiceProvider.GetRequiredService<IPublishEndpoint>();
+            var publisher = scope.ServiceProvider.GetRequiredService<IIntegrationEventPublisher>();
 
             await using var transaction = await db.Database.BeginTransactionAsync();
             db.Shipments.Add(new Shipment { Id = shipmentId, Reference = "real" });
-            await publisher.Publish(new ShipmentRequested(shipmentId));
+            await publisher.PublishAsync(new ShipmentRequested(shipmentId));
             await db.SaveChangesAsync();
             await transaction.CommitAsync();
         }

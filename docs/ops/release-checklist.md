@@ -44,7 +44,13 @@ only after that PR merges green.
       templates and CLI recipes may only consume once the pins move (the templates must
       generate apps on the PUBLISHED train, `template-pins.sh`; a CLI recipe writes into an
       adopter's app on that train too). Wire each in the release PR, then delete its line:
-      - *(none open — preview.9's one adoption is wired: `GmCleanFeatures` carries `audittrail`.)*
+      - **preview.11 — the message path in Goldpath vocabulary (#327, G1 Part 2/4).** The two
+        solution layouts, the worker template, the CLI's worker skeleton and outbox recipe, and
+        CorPay (when it takes the train) move from `AddGoldpathMessaging(bus => …)` to
+        `AddGoldpathMessaging(messaging => …)` with `UseRabbitMq()`, and their `DbContext`s from
+        the three `modelBuilder.Add…Entity()` lines to `AddGoldpathOutboxEntities()`. Proof: every
+        broker GM shape green, and `goldpath db add` on one of them yields an empty migration
+        (RFC goldpath-messaging-engines §4.2). The upgrade guide's steps 1, 2 and 4 (§8 there).
 
 ## After the merge
 
