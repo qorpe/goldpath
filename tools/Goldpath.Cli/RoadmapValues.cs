@@ -36,13 +36,16 @@ public static partial class RoadmapValues
         return findings;
     }
 
-    /// <summary>The values a <c>$comment</c> declares roadmap-only: the backticked names before "is/are SCHEMA-ONLY|RESERVED".</summary>
+    /// <summary>
+    /// The values a <c>$comment</c> declares roadmap-only: the backticked names before "is/are SCHEMA-ONLY|RESERVED"
+    /// (<see cref="RoadmapClausePattern"/>).
+    /// </summary>
     public static IReadOnlySet<string> Declared(string comment)
     {
         var values = new HashSet<string>(StringComparer.Ordinal);
         foreach (Match clause in RoadmapClause().Matches(comment))
         {
-            foreach (Match name in Backticked().Matches(clause.Groups["names"].Value))
+            foreach (Match name in Backticked().Matches(clause.Groups[1].Value))
             {
                 values.Add(name.Groups[1].Value);
             }
@@ -153,8 +156,9 @@ public static partial class RoadmapValues
             return false;
         }
 
+        // JSON Schema applies `required` to objects only; any other value satisfies it.
         if (schema["required"] is JsonArray required
-            && (value is not JsonObject present || required.Any(r => !present.ContainsKey(r?.GetValue<string>() ?? ""))))
+            && value is JsonObject present && required.Any(r => !present.ContainsKey(r?.GetValue<string>() ?? "")))
         {
             return false;
         }
@@ -189,8 +193,15 @@ public static partial class RoadmapValues
         return node;
     }
 
-    // "`kafka` and `inmemory` are SCHEMA-ONLY", "`prometheus` is SCHEMA-ONLY", "`eventstream` is RESERVED".
-    [GeneratedRegex(@"(?<names>(?:`[^`]+`(?:\s*,\s*|\s+and\s+|\s+or\s+)?)+)\s+(?:is|are)\s+(?:SCHEMA-ONLY|RESERVED)\b", RegexOptions.CultureInvariant)]
+    /// <summary>
+    /// "`kafka` and `inmemory` are SCHEMA-ONLY", "`a`, `b`, and `c` are RESERVED", "`prometheus` is SCHEMA-ONLY".
+    /// <c>scripts/schema-honesty.sh</c> holds the annotation with this SAME pattern (its <c>CLAUSE</c>, pinned
+    /// equal by a test), so a value the gate accepts as annotated is a value this finds. The marker word is
+    /// upper case by design: "schema-only" in prose is not the annotation, and the gate refuses it too.
+    /// </summary>
+    public const string RoadmapClausePattern = @"((?:`[^`]+`(?:\s*,\s*(?:(?:and|or)\s+)?|\s+and\s+|\s+or\s+)?)+)\s+(?:is|are)\s+(?:SCHEMA-ONLY|RESERVED)\b";
+
+    [GeneratedRegex(RoadmapClausePattern, RegexOptions.CultureInvariant)]
     private static partial Regex RoadmapClause();
 
     [GeneratedRegex("`([^`]+)`", RegexOptions.CultureInvariant)]

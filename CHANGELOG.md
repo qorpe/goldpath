@@ -12,7 +12,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   quoting the schema `$comment` that owns it. The check still passes: the schema accepts these
   values on purpose. The list is derived from the annotation `schema-honesty.sh` already holds
   (`` `x` is/are SCHEMA-ONLY|RESERVED ``), walked with the manifest so a `then` applies only when
-  its `if` holds, so a new roadmap value needs a `$comment` and no code. Five manifest corpus rows
+  its `if` holds, so a new roadmap value needs a `$comment` and no code. `schema-honesty.sh` now
+  reads that annotation with the same pattern (pinned equal by a test), so a value the gate
+  accepts as annotated is one the CLI warns about: a marker elsewhere in the comment, or in lower
+  case, no longer satisfies the gate. Five manifest corpus rows
   carry `# expect-warning:` lines that the CLI tests hold the finding to. `specdrift validate`
   itself does not warn yet (open-threads T45), and a service's `providers.db: oracle` has no
   annotation to derive from (T46).

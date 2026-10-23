@@ -1,4 +1,4 @@
-# GA gate G3: valid, and `goldpath check` warns that no code runs it (RoadmapCorpusTests).
+# GA gate G3: valid, and `goldpath check` warns that no code runs it (RoadmapValuesTests).
 # expect-warning: providers.broker: inmemory
 schemaVersion: 1
 kind: solution

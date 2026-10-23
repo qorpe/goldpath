@@ -73,11 +73,28 @@ public class RoadmapValuesTests
     [InlineData("`a`, `b` or `c` are RESERVED", "a,b,c")]
     [InlineData("`postgresql` is the default; nothing here is roadmap-only.", "")]
     [InlineData("`x` is schema-only in lower case, which is not the annotation", "")]
+    [InlineData("`a`, `b`, and `c` are SCHEMA-ONLY", "a,b,c")]                // the Oxford comma
+    [InlineData("`a`, `b`, or `c` are RESERVED", "a,b,c")]
+    [InlineData("`kafka` is schema-only for now", "")]                          // schema-honesty.sh refuses it too
+    [InlineData("`kafka` (SCHEMA-ONLY) has no wiring", "")]                     // likewise: not the clause
     public void The_annotation_declares_the_backticked_values_before_is_or_are_SCHEMA_ONLY_or_RESERVED(string comment, string expected)
     {
         Assert.Equal(
             expected.Split(',', StringSplitOptions.RemoveEmptyEntries).Order(StringComparer.Ordinal),
             RoadmapValues.Declared(comment).Order(StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// The gate that holds the annotation and the CLI that reads it use ONE pattern, so a value
+    /// <c>schema-honesty.sh</c> accepts as annotated is always a value <c>goldpath check</c> warns about.
+    /// </summary>
+    [Fact]
+    public void Schema_honesty_reads_the_annotation_with_the_same_pattern()
+    {
+        var script = File.ReadAllLines(Path.Combine(RepoRoot(), "scripts", "schema-honesty.sh"));
+
+        var line = Assert.Single(script, l => l.StartsWith("CLAUSE = r\"", StringComparison.Ordinal));
+        Assert.Equal($"CLAUSE = r\"{RoadmapValues.RoadmapClausePattern}\"", line);
     }
 
     /// <summary>A new roadmap value needs an annotation and no code; a value annotated but no longer accepted warns nothing.</summary>
@@ -158,6 +175,7 @@ public class RoadmapValuesTests
     [InlineData("""{ "if": { "required": ["kind", "flag"] }, "then": { "properties": { "q": { "$ref": "#/$defs/q" } } } }""", "kind: a\nq: beta\n", 0)]
     [InlineData("""{ "if": { "allOf": [ { "required": ["kind"] }, { "properties": { "kind": { "const": "a" } } } ] }, "then": { "properties": { "q": { "$ref": "#/$defs/q" } } } }""", "kind: b\nq: beta\n", 0)]
     [InlineData("""{ "if": { "allOf": [ { "required": ["kind"] }, { "properties": { "kind": { "const": "a" } } } ] }, "then": { "properties": { "q": { "$ref": "#/$defs/q" } } } }""", "kind: a\nq: beta\n", 1)]
+    [InlineData("""{ "properties": { "q": { "if": { "required": ["x"] }, "then": { "$ref": "#/$defs/q" } } } }""", "q: beta\n", 1)]                // `required` holds for a non-object
     public void The_walk_follows_the_schema_keywords_that_place_a_value(string body, string manifest, int warnings)
     {
         var schema = JsonNode.Parse(body)!.AsObject();
