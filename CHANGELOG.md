@@ -24,6 +24,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   `engine-gate.sh` is unchanged at 13. `Goldpath.Messaging` now references
   `MassTransit.RabbitMQ` 8.5.11 (the transport `UseRabbitMq()` composes) and
   `Microsoft.Extensions.Hosting` 10.0.11 (the test host). What Part 2 leaves is open-threads T44.
+  A present but blank `ConnectionStrings:messaging` is refused at the bus's start in words (an
+  absent one still means the engine's local default), and the test host refuses a tenant stamp
+  outside `TenantId`'s alphabet, which the consume filter would otherwise drop silently.
 - **Campaign: a real-broker bench at 1000 TPS (S-FLEET-02a, #283).** Measurement only, no
   package change. `CampaignBrokerBenchTests` drives one campaign through the whole release path
   on Testcontainers RabbitMQ + PostgreSQL with the package defaults, records published item
@@ -52,6 +55,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   [docs/ops/agent-pipeline.md](docs/ops/agent-pipeline.md).
 
 ### Fixed
+- **`Goldpath.Messaging`: assembly scanning skips an open generic handler (#327).**
+  `AddGoldpathHandlers(assemblies)` (and the new `AddHandlers`) kept every non-abstract class,
+  so an open generic `IIntegrationEventHandler<T>` implementation in a scanned assembly failed the
+  host's composition with an opaque reflection error ("Late bound operations cannot be performed
+  on types … ContainsGenericParameters"). A generic definition cannot be an endpoint, so it is
+  now skipped; closed handlers, including one deriving from it, are registered as before.
 - **Dependabot moves vitest and its `@vitest/*` plugins together.** Repository governance,
   no package changes. The console's catch-all group takes minor/patch only, so a major
   arrived per package: #359 bumped `@vitest/coverage-v8` to 5.0.5 alone, and against

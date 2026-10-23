@@ -66,8 +66,16 @@ internal static class MassTransitMessagingEngine
             case GoldpathMessagingTransport.RabbitMq:
                 bus.UsingRabbitMq((registration, cfg) =>
                 {
-                    if (configuration.GetConnectionString(messaging.RabbitMqConnectionName) is { Length: > 0 } connection)
+                    // Absent means the engine's local default; present and blank is a mistake, refused in words.
+                    if (configuration.GetConnectionString(messaging.RabbitMqConnectionName) is { } connection)
                     {
+                        if (string.IsNullOrWhiteSpace(connection))
+                        {
+                            throw new InvalidOperationException(
+                                $"ConnectionStrings:{messaging.RabbitMqConnectionName} is present but empty. Set the broker's " +
+                                "address, or remove the entry to use the engine's local default.");
+                        }
+
                         cfg.Host(new Uri(connection));
                     }
 

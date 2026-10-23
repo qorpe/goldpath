@@ -112,6 +112,17 @@ public sealed class GoldpathMessagingTestHost : IAsyncDisposable
     {
         var outgoing = new GoldpathOutgoingMessage();
         stamp?.Invoke(outgoing);
+
+        // The consume filter drops a tenant outside TenantId's alphabet, so a test stamped with one would
+        // pass with a tenant that never arrived. An invalid header on purpose goes through Headers.
+        if (outgoing.Tenant is { } tenant && !TenantId.TryCreate(tenant, out _))
+        {
+            throw new ArgumentException(
+                $"'{tenant}' is not a valid tenant id: 1-{TenantId.MaxLength} chars from [a-z0-9-]. To send an invalid " +
+                $"tenant header deliberately, set Headers[\"{GoldpathHeaders.TenantId}\"].",
+                nameof(stamp));
+        }
+
         return outgoing;
     }
 
@@ -145,7 +156,10 @@ public sealed class GoldpathOutgoingMessage
     /// <summary>The message id the inbox deduplicates on; the engine assigns one when null.</summary>
     public Guid? MessageId { get; set; }
 
-    /// <summary>The tenant the message carries (<see cref="GoldpathHeaders.TenantId"/>).</summary>
+    /// <summary>
+    /// The tenant the message carries (<see cref="GoldpathHeaders.TenantId"/>); a value <see cref="TenantId"/>
+    /// would refuse is refused at publish.
+    /// </summary>
     public string? Tenant { get; set; }
 
     /// <summary>The correlation the message carries (<see cref="GoldpathHeaders.CorrelationId"/>).</summary>

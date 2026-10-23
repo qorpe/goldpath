@@ -51,6 +51,16 @@ public class MessagingBuilderTests
         }
     }
 
+    /// <summary>An open generic handler: a definition the scan must pass over, never an endpoint.</summary>
+    public sealed class AuditHandler<TMarker>(Seen seen) : IIntegrationEventHandler<ShipmentBooked>
+    {
+        public Task HandleAsync(ShipmentBooked integrationEvent, IntegrationEventContext context, CancellationToken cancellationToken = default)
+        {
+            seen.Booked.TrySetResult((integrationEvent, context));
+            return Task.CompletedTask;
+        }
+    }
+
     public sealed class FirstDb(DbContextOptions<FirstDb> options) : DbContext(options);
 
     public sealed class SecondDb(DbContextOptions<SecondDb> options) : DbContext(options);
@@ -98,6 +108,45 @@ public class MessagingBuilderTests
         Assert.Equal(shipment, delayed.ShipmentId);
         Assert.Equal("", delayed.Reason);
         await host.StopAsync();
+    }
+
+    [Fact]
+    public void An_open_generic_handler_in_a_scanned_assembly_is_skipped_and_the_closed_ones_join()
+    {
+        Host.CreateApplicationBuilder().AddGoldpathMessaging(messaging =>
+        {
+            messaging.AddHandlers(typeof(MessagingBuilderTests).Assembly);
+
+            Assert.DoesNotContain(messaging.Handlers, h => h.Handler == typeof(AuditHandler<>));
+            Assert.Contains((typeof(ShipmentBooked), typeof(ShipmentBookedHandler)), messaging.Handlers);
+            Assert.Contains((typeof(ShipmentDelayed), typeof(ShipmentDelayedHandler)), messaging.Handlers);
+            messaging.UseRabbitMq();
+        });
+    }
+
+    [Fact]
+    public async Task A_tenant_stamp_the_consume_filter_would_drop_is_refused_at_publish()
+    {
+        await using var host = GoldpathMessagingTestHost.Create(_ => { });
+
+        var refusal = await Assert.ThrowsAsync<ArgumentException>(() =>
+            host.PublishAsync(new ShipmentBooked(Guid.NewGuid()), message => message.Tenant = "İstanbul-ı"));
+
+        Assert.Contains("'İstanbul-ı'", refusal.Message, StringComparison.Ordinal);
+        Assert.Contains(GoldpathHeaders.TenantId, refusal.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_present_but_empty_broker_connection_string_is_refused_in_words()
+    {
+        await using var host = GoldpathMessagingTestHost.Create(
+            messaging => messaging.UseRabbitMq(),
+            builder => builder.Configuration["ConnectionStrings:messaging"] = " ");
+
+        var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => host.StartAsync());
+
+        Assert.Contains("ConnectionStrings:messaging", refusal.Message, StringComparison.Ordinal);
+        Assert.Contains("empty", refusal.Message, StringComparison.Ordinal);
     }
 
     [Fact]
