@@ -296,6 +296,9 @@ public sealed class GoldpathBulkOptions
     /// <summary>File-chunk row inserts per SaveChanges during validation (batched writes).</summary>
     public int InsertBatchSize { get; set; } = 1_000;
 
+    /// <summary>The duplicate check's key hash; null is the production hash (a test forces collisions with it).</summary>
+    internal Func<string, long>? DuplicateKeyHash { get; set; }
+
     /// <summary>Registers one batch shape.</summary>
     public GoldpathBulkOptions AddBatch<TRow>(string name, Action<GoldpathBulkBatchBuilder<TRow>> configure)
         where TRow : class, new()

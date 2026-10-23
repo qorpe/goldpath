@@ -104,7 +104,7 @@ public sealed class GoldpathBulkEngine<TContext>
         await db.Set<GoldpathBulkRowError>().Where(e => e.BatchId == batch.Id).ExecuteDeleteAsync(cancellationToken);
 
         var started = _time.GetUtcNow();
-        var duplicates = new GoldpathBulkDuplicateKeys();
+        var duplicates = new GoldpathBulkDuplicateKeys(_options.DuplicateKeyHash);
         var pendingRows = new List<GoldpathBulkRow>();
         var pendingErrors = new List<GoldpathBulkRowError>();
         int total = 0, valid = 0, invalid = 0;
