@@ -52,6 +52,7 @@ RFC. Next: the pilot product module (step 6.1), then the scenario campaign and t
 Insurance/Telco/Factoring samples as the full-set exam (1.0 gates: `docs/rfc/goldpath-ga-readiness.md`, accepted 2026-10-21). Live status ledgers —
 keep them updated in the same PR that changes reality: `docs/strategy/ai-sdlc-status.md`
 (AI-assisted SDLC vs reality), `docs/strategy/coverage-matrix.md` (capability × sample),
-and `docs/strategy/open-threads.md` (deferred work with its TRIGGER and the proof that
+`docs/strategy/ga-gate-status.md` (each 1.0 gate's status today — the RFC holds only the
+gate's decisions), and `docs/strategy/open-threads.md` (deferred work with its TRIGGER and the proof that
 must run before the thread closes — nothing is postponed without landing there).
 Roadmap gates: `docs/strategy/foundation.md` §12.

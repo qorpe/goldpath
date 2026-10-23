@@ -128,6 +128,28 @@
       "expect": "A"
     },
     {
+      "name": "a mutation config (thresholds, exclusions) is Tier C",
+      "files": [{"filename": "stryker/Goldpath.Jobs.json", "status": "modified", "patch": "@@ -1 +1 @@\n+text"}],
+      "expect": "C",
+      "because": ["stryker/Goldpath.Jobs.json"]
+    },
+    {
+      "name": "the mutation score ledger (stryker/README.md) is Tier A",
+      "files": [{"filename": "stryker/README.md", "status": "modified", "patch": "@@ -1 +1 @@\n+text"}],
+      "expect": "A"
+    },
+    {
+      "name": "a GA gate status row (the ledger) is Tier A",
+      "files": [{"filename": "docs/strategy/ga-gate-status.md", "status": "modified", "patch": "@@ -1 +1 @@\n+text"}],
+      "expect": "A"
+    },
+    {
+      "name": "the GA-readiness RFC itself stays Tier C",
+      "files": [{"filename": "docs/rfc/goldpath-ga-readiness.md", "status": "modified", "patch": "@@ -1 +1 @@\n+text"}],
+      "expect": "C",
+      "because": ["docs/rfc/goldpath-ga-readiness.md"]
+    },
+    {
       "name": "an empty file list is Tier A",
       "files": [],
       "expect": "A"

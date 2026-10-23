@@ -83,6 +83,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
 ### Fixed
+- **Recording a gate's progress no longer needs the owner's merge.** Repository governance, no
+  package changes. Column (b), "Today (evidence)", of the GA-readiness RFC's gate tables, and the
+  "Exists today" column of its summary, move to a ledger, `docs/strategy/ga-gate-status.md`. The
+  RFC keeps each gate's criterion, proof, owner, effort and dependency. Under ADR-0014 every
+  `docs/rfc/**` change is Tier C, so a code PR that only updated its gate's status row (#362,
+  #379) waited for the owner. The same holds for `stryker/README.md`: the tier rule
+  `stryker/**` narrows to `stryker/*.json`, the configs that enforce the thresholds and the
+  exclusions, which is what ADR-0014 names ("`stryker/**` configs and thresholds"). The score
+  ledger beside them is now Tier A. The new ledger is in `ledger-check.sh`'s list, and four
+  merge-tier fixtures pin both moves (the README fixture is red under the old rule).
 - **`train-freshness.sh` holds a release PR that leaves CorPay behind (#312).** Run from
   this repository while its own train is not on nuget.org yet (the release PR, and `main`
   between merge and publish), the gate now requires the product to pin exactly that train.

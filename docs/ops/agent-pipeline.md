@@ -23,7 +23,7 @@ old name); a pull request takes the highest tier of its files.
 
 | Tier | In short | How it merges |
 |---|---|---|
-| **C** | decisions (`docs/adr/**`, `docs/rfc/**`), releases (version, template pins, upgrade guides, CHANGELOG version headings, `release.yml`), the gates (`.github/**`, the gate scripts, `stryker/**`, suppressions), licence and security policy, the agent layer (`.claude/**`, `CLAUDE.md`) | **the owner merges.** An `agent-pr` here fails `merge-policy` until the owner adds `owner-approved` |
+| **C** | decisions (`docs/adr/**`, `docs/rfc/**`), releases (version, template pins, upgrade guides, CHANGELOG version headings, `release.yml`), the gates (`.github/**`, the gate scripts, the mutation configs `stryker/*.json`, suppressions), licence and security policy, the agent layer (`.claude/**`, `CLAUDE.md`) | **the owner merges.** An `agent-pr` here fails `merge-policy` until the owner adds `owner-approved` |
 | **B** | packages, analyzers, the CLI, schemas, the console, samples, templates' code, dependencies, migrations | automatically, once `agent-verified` and every required check is green |
 | **A** | anything else — tests, docs outside the C paths, small fixes | same as B |
 

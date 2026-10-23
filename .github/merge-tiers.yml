@@ -46,7 +46,8 @@ C:
   - 'scripts/skills-parity.sh'
   - 'scripts/template-pins.sh'
   - 'scripts/merge-tier*'          # this gate and its fixtures
-  - 'stryker/**'                   # mutation configs and thresholds
+  - 'stryker/*.json'               # mutation configs: the thresholds and the exclusions (stryker/README.md
+                                   # is the score ledger, Tier A: what it records, a config enforces)
   # EXTENSION: every other script a workflow runs is a gate too. The self-test fails if a
   # workflow ever runs a script these rules leave below C.
   - 'scripts/corpus-check.sh'
