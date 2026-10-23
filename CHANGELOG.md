@@ -27,6 +27,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   A present but blank `ConnectionStrings:messaging` is refused at the bus's start in words (an
   absent one still means the engine's local default), and the test host refuses a tenant stamp
   outside `TenantId`'s alphabet, which the consume filter would otherwise drop silently.
+- **`goldpath check` warns a manifest that selects a roadmap-only value (GA gate G3, #336).**
+  After `specdrift validate` passes, every value the schema accepts but no code runs
+  (`broker: kafka|inmemory`, `exporters: prometheus`, `auditTrail.store: eventstream`, and
+  `db: oracle` until G7 lands) is reported as a `WARNING` naming its place in the manifest and
+  quoting the schema `$comment` that owns it. The check still passes: the schema accepts these
+  values on purpose. The list is derived from the annotation `schema-honesty.sh` already holds
+  (`` `x` is/are SCHEMA-ONLY|RESERVED ``), walked with the manifest so a `then` applies only when
+  its `if` holds, so a new roadmap value needs a `$comment` and no code. `schema-honesty.sh` now
+  reads that annotation with the same pattern (pinned equal by a test), so a value the gate
+  accepts as annotated is one the CLI warns about: a marker elsewhere in the comment, or in lower
+  case, no longer satisfies the gate. Five manifest corpus rows
+  carry `# expect-warning:` lines that the CLI tests hold the finding to. `specdrift validate`
+  itself does not warn yet (open-threads T45), and a service's `providers.db: oracle` has no
+  annotation to derive from (T46).
 - **Campaign: a real-broker bench at 1000 TPS (S-FLEET-02a, #283).** Measurement only, no
   package change. `CampaignBrokerBenchTests` drives one campaign through the whole release path
   on Testcontainers RabbitMQ + PostgreSQL with the package defaults, records published item

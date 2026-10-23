@@ -79,6 +79,16 @@ public static class SpecdriftGate
 
     private static string ExtractEmbeddedSchema() => ExtractEmbedded(ManifestSchema);
 
+    /// <summary>The embedded manifest schema's text: the same bytes <see cref="Validate"/> hands the engine.</summary>
+    public static string ManifestSchemaText()
+    {
+        using var stream = Assembly.GetExecutingAssembly()
+            .GetManifestResourceStream($"Goldpath.Cli.{ManifestSchema}")
+            ?? throw new InvalidOperationException($"The embedded schema '{ManifestSchema}' is missing from this build.");
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    }
+
     // Each schema lands under its own name: the manifest keeps the file name it always had,
     // the authoring schemas sit beside it with theirs.
     private static string ExtractEmbedded(string resource)
