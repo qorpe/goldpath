@@ -1,10 +1,11 @@
 # RFC: Oracle as a first-class database provider (a Data revision)
 
-- Status: **PROPOSED** (2026-10-22). Asked for by [#305](https://github.com/qorpe/goldpath/issues/305)
+- Status: **ACCEPTED** (2026-10-23, owner decision; the merge of #369 records it). The three open
+  questions are answered as recommended (see the end of this RFC). Proposed 2026-10-22; asked for by [#305](https://github.com/qorpe/goldpath/issues/305)
   after the owner's decision on [#287](https://github.com/qorpe/goldpath/issues/287) (2026-10-20):
   **Oracle is IN for 1.0**. The decision was confirmed on 2026-10-21 as Q3 of
   [goldpath-ga-readiness](goldpath-ga-readiness.md), where it is gate **G7**. **Merging this RFC
-  is its acceptance.** Documents only: nothing here moves code, a dependency or a default.
+  was its acceptance.** Documents only: nothing here moves code, a dependency or a default.
 - Revises: [goldpath-data](goldpath-data.md), which says the provider "stays the caller's
   choice", by naming a third provider the golden path ships and proves. It also revises
   [goldpath-jobs](goldpath-jobs.md) §11, whose Oracle trigger has fired.
@@ -376,7 +377,11 @@ needs real Oracle, its tests are `Category=Oracle` and run in their own CI lane.
 O-1 to O-6 land before G4 freezes the public API (GA readiness RFC), because O-3 and O-4 append
 enum values.
 
-## Open questions for the owner
+## Open questions for the owner — answered 2026-10-23
+
+The owner accepted all three as recommended when merging #369: **19c is the floor**, **no
+broker-on Oracle before G5**, and **`Goldpath.Locking.Oracle` ships as a separate package**.
+The questions are kept as asked:
 
 1. **The 19c floor.** Recommended: 19c. Is any committed adopter on 12.2 or 18c? If so, the
    identifier, `FETCH FIRST` and `DateOnly` proofs need an older container, and none is freely

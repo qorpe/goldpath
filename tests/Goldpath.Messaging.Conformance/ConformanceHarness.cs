@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -34,8 +33,6 @@ public sealed class Observed
     public ConcurrentBag<(Ping Event, IntegrationEventContext Context)> Pings { get; } = [];
 
     public ConcurrentBag<int> PoisonAttempts { get; } = [];
-
-    public TaskCompletionSource PoisonFaulted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <summary>While set and not completed, every Ping handler waits here — the drain scenario holds its window full.</summary>
     public Task? HandlerGate { get; set; }
@@ -120,26 +117,14 @@ public sealed class PoisonHandler(Observed observed) : IIntegrationEventHandler<
     }
 }
 
-/// <summary>The engine's own fault message — proves the poison left through the pipeline's door.</summary>
-public sealed class PoisonFaultConsumer(Observed observed) : IConsumer<Fault<Poison>>
-{
-    public Task Consume(ConsumeContext<Fault<Poison>> context)
-    {
-        observed.PoisonFaulted.TrySetResult();
-        return Task.CompletedTask;
-    }
-}
-
-/// <summary>The app's own context with the outbox/inbox tables, as the template maps them.</summary>
+/// <summary>The app's own context with the Goldpath outbox schema (RFC goldpath-messaging-engines §4.2).</summary>
 public sealed class ConformanceDb(DbContextOptions<ConformanceDb> options) : DbContext(options)
 {
     public DbSet<Row> Rows => Set<Row>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.AddInboxStateEntity();
-        modelBuilder.AddOutboxMessageEntity();
-        modelBuilder.AddOutboxStateEntity();
+        modelBuilder.AddGoldpathOutboxEntities();
     }
 }
 
@@ -188,43 +173,37 @@ public sealed class ConformanceContainers : IAsyncLifetime
     }
 
     /// <summary>
-    /// Builds a host through the floor exactly as a generated app would: data, the outbox on
-    /// the app's context, handlers through the seam, the transport block. Not started — a
-    /// scenario decides when (the crash scenario commits BEFORE the bus exists).
+    /// Builds a host through the floor exactly as a generated app would, in Goldpath's vocabulary only
+    /// (RFC goldpath-messaging-engines §4.3): data, the outbox on the app's context, handlers through the
+    /// seam, RabbitMQ at the connection string the AppHost would give. Not started — a scenario decides
+    /// when (the crash scenario commits BEFORE the bus exists). The test host returns from its start
+    /// only once the bus has started (#371), so no fact has to know how an engine says that.
     /// </summary>
-    public async Task<IHost> BuildHostAsync(Observed observed, Action<GoldpathMessagingOptions>? options = null, string? tenant = null)
+    public async Task<GoldpathMessagingTestHost> BuildHostAsync(Observed observed, Action<GoldpathMessagingOptions>? options = null, string? tenant = null)
     {
-        var builder = Host.CreateApplicationBuilder();
-        builder.Services.AddSingleton(observed);
-        if (tenant is not null)
-        {
-            builder.Services.AddSingleton<ITenantContext>(new FixedTenant(tenant));
-        }
-
-        builder.AddGoldpathData<HostApplicationBuilder, ConformanceDb>(o => o.UseNpgsql(Postgres.GetConnectionString()));
-        // Engine wiring, so it lives in the harness, never in a fact: StartAsync returns only
-        // once the bus has started. Every fact publishes right after it, and on a fresh broker
-        // a publish that beats its queue's binding is dropped without an error (#371).
-        builder.Services.Configure<MassTransitHostOptions>(o => o.WaitUntilStarted = true);
-        builder.AddGoldpathMessaging(bus =>
-        {
-            bus.AddGoldpathHandler<Ping, PingHandler>();
-            bus.AddGoldpathHandler<Poison, PoisonHandler>();
-            bus.AddConsumer<PoisonFaultConsumer>();
-            bus.AddGoldpathOutbox<ConformanceDb>(outbox => outbox.UsePostgres());
-            bus.UsingRabbitMq((context, cfg) =>
+        var host = GoldpathMessagingTestHost.Create(
+            messaging =>
             {
-                cfg.Host(new Uri(Rabbit.GetConnectionString()));
-                cfg.ConfigureGoldpathEndpoints(context);
-            });
-        }, o =>
-        {
-            o.Retry.ImmediateCount = 2;
-            o.Retry.RedeliveryIntervals.Clear();   // the suite proves the immediate ladder; delayed redelivery needs the scheduler plugin
-            options?.Invoke(o);
-        });
+                messaging.AddHandler<Ping, PingHandler>();
+                messaging.AddHandler<Poison, PoisonHandler>();
+                messaging.AddOutbox<ConformanceDb>();
+                messaging.UseRabbitMq();
+                messaging.Options.Retry.ImmediateCount = 2;
+                messaging.Options.Retry.RedeliveryIntervals.Clear();   // the suite proves the immediate ladder; delayed redelivery needs the scheduler plugin
+                options?.Invoke(messaging.Options);
+            },
+            builder =>
+            {
+                builder.Configuration["ConnectionStrings:messaging"] = Rabbit.GetConnectionString();
+                builder.Services.AddSingleton(observed);
+                if (tenant is not null)
+                {
+                    builder.Services.AddSingleton<ITenantContext>(new FixedTenant(tenant));
+                }
 
-        var host = builder.Build();
+                builder.AddGoldpathData<HostApplicationBuilder, ConformanceDb>(o => o.UseNpgsql(Postgres.GetConnectionString()));
+            });
+
         using var scope = host.Services.CreateScope();
         await scope.ServiceProvider.GetRequiredService<ConformanceDb>().Database.EnsureCreatedAsync();
         return host;
@@ -239,7 +218,7 @@ public sealed class ConformanceContainers : IAsyncLifetime
 public static class HostExtensions
 {
     /// <summary>Publishes through the seam inside a committed transaction — the outbox path an app takes.</summary>
-    public static async Task PublishCommittedAsync<TEvent>(this IHost host, TEvent integrationEvent, string note = "row")
+    public static async Task PublishCommittedAsync<TEvent>(this GoldpathMessagingTestHost host, TEvent integrationEvent, string note = "row")
         where TEvent : class, IIntegrationEvent
     {
         using var scope = host.Services.CreateScope();
@@ -248,24 +227,6 @@ public static class HostExtensions
         await using var transaction = await db.Database.BeginTransactionAsync();
         db.Rows.Add(new Row { Id = Guid.NewGuid(), Note = note });
         await publisher.PublishAsync(integrationEvent);
-        await db.SaveChangesAsync();
-        await transaction.CommitAsync();
-    }
-
-    /// <summary>
-    /// The same committed path with the ENGINE's publish endpoint, for the facts that need
-    /// to shape the message itself (a fixed message id, a wider or narrower body). The
-    /// outbox still carries it — a publish from a root scope would sit in the bus outbox
-    /// with nobody to flush it, which is how the first run of this suite delivered nothing.
-    /// </summary>
-    public static async Task PublishCommittedRawAsync(this IHost host, Func<IPublishEndpoint, Task> publish)
-    {
-        using var scope = host.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<ConformanceDb>();
-        var endpoint = scope.ServiceProvider.GetRequiredService<IPublishEndpoint>();
-        await using var transaction = await db.Database.BeginTransactionAsync();
-        db.Rows.Add(new Row { Id = Guid.NewGuid(), Note = "raw" });
-        await publish(endpoint);
         await db.SaveChangesAsync();
         await transaction.CommitAsync();
     }

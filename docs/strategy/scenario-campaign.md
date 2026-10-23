@@ -58,6 +58,21 @@ S-FLEET-02 — 30M inventory: one campaign sustains the configured TPS for an ho
   needs:    scale-rig — SPEC TO BE WRITTEN WITH THE OWNER before any claim
   evidence: —
 
+S-FLEET-02a — One leader sustains 1000 TPS on a real broker (local profile of S-FLEET-02)
+  modules:  campaign (pacer, item consumer, outcome sink), jobs, broker, store
+  given:    Testcontainers RabbitMQ 4 + PostgreSQL 17; one campaign, tps=1000, the package
+            defaults for tick, slice and pacer cron; 32 competing item consumers; a simulated
+            target answering after 20 ms; enough synthetic targets to stay busy throughout
+  when:     release for 15 minutes under measurement (a 2-minute smoke proves the bench only),
+            then pause and let claimed work drain
+  then:     at least 95% of one-second windows within ±5% of 1000; zero windows above 1000
+            (needs #292); exactly-once: sink outcomes = durable terminal items = handler
+            executions, nothing executed twice
+  needs:    local (thresholds approved by the owner on #283, 2026-10-20)
+  evidence: CampaignBrokerBenchTests via scripts/bench-campaign.sh broker; numbers in
+            packages/Goldpath.Campaign/ops/campaign-benchmarks.md. RED on today's release
+            path (2026-10-22 baseline): the rate thresholds fail, exactly-once holds
+
 S-FLEET-03 — Two campaigns under one GlobalTps never jointly exceed it
   modules:  campaign R1.4
   given:    GlobalTps=1000; two campaigns tps=800 each
@@ -94,7 +109,12 @@ S-FIN-02 — A litigation hold survives an erasure request, and the chain still 
   then:     the refusal is explicit while held; after erasure the document is gone, the
             chain verifies, and the erasure receipt names actor+time
   needs:    local
-  evidence: —
+  evidence: tests/Goldpath.IntegrationTests/ScenarioFin02Tests.cs — replay with
+            `dotnet test --filter FullyQualifiedName~ScenarioFin02` (2026-10-21, green in
+            ~1 s after the container: erasure refused under hold with a reason naming it and
+            the document untouched; the hold lifted by counsel, stamped on its own row;
+            erasure redacts the classified field; admin verification returns no finding;
+            the receipt names the requester and time. Red when the hold guard is removed)
 
 S-OPS-01 — The 03:00 incident: stop the world, fix, resume, answer for it
   modules:  jobs, console
@@ -103,7 +123,13 @@ S-OPS-01 — The 03:00 incident: stop the world, fix, resume, answer for it
   then:     durable cluster-wide stop (survives a host restart while paused); the audit
             answers "who stopped the night"
   needs:    local
-  evidence: —
+  evidence: tests/Goldpath.IntegrationTests/ScenarioOps01Tests.cs — replay with
+            `dotnet test --filter FullyQualifiedName~ScenarioOps01` (2026-10-21, 28 s green:
+            a one-second cron fleet on real PostgreSQL; pause-all, six quiet seconds; the
+            host stopped and a new one started on the same store, six more quiet seconds
+            and the fleet status still paused; resume-all and runs land again; the admin
+            audit holds pause-all by the night operator and resume-all by the morning one.
+            Red when pause-all is replaced by an in-process standby)
 
 S-OPS-02 — A mid-flight operator mistake is refused in the server's words, not a 500
   modules:  every admin surface

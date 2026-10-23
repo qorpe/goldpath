@@ -219,10 +219,12 @@ lines, open until each proof runs:
 - [x] CorPay consumes through it (2026-09-07, on the day preview.8 published: three
       handlers, same queue names, smoke green on real containers).
       api-portal has no consumers of its own.
-- [ ] The outbox/inbox configuration and the test harness in Goldpath vocabulary (today
-      `AddGoldpathOutbox` takes the library's configurator; the smoke tests publish with a
-      raw bus) — the conformance suite's work. Designed in
-      [goldpath-messaging-engines](goldpath-messaging-engines.md) §4.1–§4.3 (PROPOSED 2026-10-21).
+- [x] The outbox/inbox configuration and the test harness in Goldpath vocabulary (#327, G1
+      Part 2/4, as designed in [goldpath-messaging-engines](goldpath-messaging-engines.md)
+      §4.1–§4.3): `GoldpathMessagingBuilder.AddOutbox<TContext>` with `GoldpathOutboxOptions`,
+      `AddGoldpathOutboxEntities()` and `GoldpathMessagingTestHost`. The conformance suite and
+      the outbox and tenant-square integration tests name no engine. The MassTransit-typed
+      overloads stay until Part 4/4; what Part 2 leaves is open-threads T44.
 - [x] The bus conformance suite exists in this repo (2026-09-05, `tests/Goldpath.Messaging.Conformance`,
       eight facts through the seam, green against MassTransit 8.5.10 on real containers, in the
       CI integration job) — its scenario list grows with §7.1's gaps; owner review pending.

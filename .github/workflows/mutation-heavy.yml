@@ -3,21 +3,51 @@
 # solution mode ran every test project referencing the package (Jobs: 457 tests, the
 # integration host among them). Since the 2026-10-20 scope fix each job runs only its
 # configured suites, all six finish in under 30 min, and they run in the NIGHTLY matrix
-# with the rest. Dispatch this to re-score one of them without waiting for the night.
+# with the rest. Dispatch this to re-score one of them without waiting for the night: the
+# `package` input names one (#311), and its default re-scores all six.
 name: mutation-heavy
 
 on:
   workflow_dispatch:
+    inputs:
+      package:
+        description: 'The package to re-score, or all six'
+        type: choice
+        default: all
+        options: [all, Goldpath.Jobs, Goldpath.Archival, Goldpath.Bulk,
+                  Goldpath.Notification, Goldpath.Campaign, Goldpath.Caching]
 
 jobs:
+  # The matrix, from the input. A `choice` is already refused by GitHub outside its options; the
+  # step refuses it again, because `gh workflow run -f package=…` is the one place a typo would
+  # otherwise turn into an empty matrix that "passes".
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.plan.outputs.packages }}
+    steps:
+      - id: plan
+        env:
+          PACKAGE: ${{ inputs.package || 'all' }}
+        run: |
+          all='["Goldpath.Jobs","Goldpath.Archival","Goldpath.Bulk","Goldpath.Notification","Goldpath.Campaign","Goldpath.Caching"]'
+          case "$PACKAGE" in
+            all) packages="$all" ;;
+            Goldpath.Jobs|Goldpath.Archival|Goldpath.Bulk|Goldpath.Notification|Goldpath.Campaign|Goldpath.Caching)
+              packages="[\"$PACKAGE\"]" ;;
+            *) echo "::error::package '$PACKAGE' is not one of the six heavy packages (or all): $all"; exit 1 ;;
+          esac
+          echo "packages=$packages" >> "$GITHUB_OUTPUT"
+          echo "mutation-heavy re-scores: $packages" >> "$GITHUB_STEP_SUMMARY"
+
   mutation:
+    needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 340
     strategy:
       fail-fast: false
       matrix:
-        package: [Goldpath.Jobs, Goldpath.Archival, Goldpath.Bulk,
-                  Goldpath.Notification, Goldpath.Campaign, Goldpath.Caching]
+        package: ${{ fromJSON(needs.plan.outputs.packages) }}
     env:
       GOLDPATH_MUTATION_CONCURRENCY: "1"
     steps:

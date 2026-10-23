@@ -2,7 +2,9 @@
 
 One config per package (`Goldpath.<Package>.json`), all at the same thresholds: high 85,
 low 75, **break 70** — `scripts/mutation-gate.sh <Package>` runs one, the nightly matrix
-runs all of them, `mutation-heavy.yml` re-runs the six long-running ones on demand. Stryker JSON
+runs all of them, `mutation-heavy.yml` re-runs the six long-running ones on demand — all six by
+default, or one through its `package` input (`gh workflow run mutation-heavy.yml -f
+package=Goldpath.Campaign`; a name outside the six is refused). Stryker JSON
 cannot carry comments, so every `mutate` exclusion and every `ignore-methods` entry is
 justified HERE (ADR-0005: suppression is visible and justified at every layer). An
 exclusion without a row below is a finding.
@@ -66,6 +68,13 @@ number in brackets. The other seventeen rows, all but Console and Campaign (belo
 f459fe2 — their code and tests did not change, and the same nightly re-scored them within the
 noise band below.
 
+**Messaging was re-measured 2026-10-22**, a full run of `mutation-gate.sh Goldpath.Messaging` at
+da89aa4 on the #327 branch (G1 Part 2/4: the builder, the outbox options, the test host): 80.72 % →
+81.53 % (151 mutants scored). Minutes are the local sandbox's, which another repository's Stryker
+run shared, not the CI profile's. Survivors left: the test host's dispose branches and its
+`WaitUntilStarted` line, which the in-memory transport cannot tell apart. The argument guards
+that also survived are pinned by a test added after the run.
+
 **Console was re-measured 2026-10-19**, a full run on the #272 branch, after the product
 console link tiles (#257) put the package's first real decision logic in it — the link URL
 rule and the registry's links-only shape. 75.00 % → 91.46 % (75 killed, 6 survived, 1 without
@@ -87,7 +96,7 @@ at f459fe2, so its row carries it (minutes not recorded).
 | AuditTrail | 81.97 % | 11.97 | 5.1 | 81.97 %, 5.7 |
 | MultiTenancy | 81.40 % (72.09) | 11.40 | 6.1 | 75.58 %, 38.5 |
 | Notification | 81.23 % | 11.23 | 5.9 | never finished (OOM) |
-| Messaging | 80.72 % | 10.72 | 26.9 | 80.72 %, 69.4 |
+| Messaging | 81.53 % (80.72) | 11.53 | 68.3 | 80.72 %, 69.4 |
 | DataProtection | 78.95 % | 8.95 | 1.5 | 78.95 %, 33.0 |
 | ServiceDefaults | 78.48 % (72.15) | 8.48 | 1.4 | 72.15 %, 4.3 |
 | Approvals | 77.78 % (74.84) | 7.78 | 3.4 | 74.84 %, 217.7 |

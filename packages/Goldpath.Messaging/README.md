@@ -20,6 +20,37 @@ builder.AddGoldpathMessaging(bus =>
 });
 ```
 
+## In Goldpath's vocabulary (G1, no engine type)
+
+The same path, declared without naming the engine (RFC `goldpath-messaging-engines` §4.1). The
+templates move to it at the preview.11 train; the block above keeps working until then.
+
+```csharp
+builder.AddGoldpathMessaging(messaging =>
+{
+    messaging.AddHandler<OrderConfirmed, OrderConfirmedHandler>();   // or messaging.AddHandlers(typeof(Program).Assembly)
+    messaging.AddOutbox<OrdersDbContext>();                          // lock statements follow the context's EF provider
+    messaging.UseRabbitMq();                                         // ConnectionStrings:messaging; the pipeline is applied to every endpoint
+});
+
+// OrdersDbContext.OnModelCreating — the same three tables as before, so no migration:
+modelBuilder.AddGoldpathOutboxEntities();
+```
+
+`AddOutbox` takes `GoldpathOutboxOptions`: `DuplicateDetectionWindow` (30 min), `Inbox` (on) and
+`DeliveryPollInterval` (the engine's default unless set).
+
+**Testing:** `GoldpathMessagingTestHost` runs the same registrations on the in-memory transport
+(or the one the block selects), returns from its start once the bus is up, and publishes the way
+an upstream service would:
+
+```csharp
+await using var host = await GoldpathMessagingTestHost.StartAsync(
+    messaging => messaging.AddHandler<OrderConfirmed, OrderConfirmedHandler>(),
+    builder => builder.Services.AddSingleton(probe));
+await host.PublishAsync(new OrderConfirmed(id), message => { message.Tenant = "acme"; message.MessageId = messageId; });
+```
+
 ## Consuming through the seam (ADR-0013)
 
 ```csharp
