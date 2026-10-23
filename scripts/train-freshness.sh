@@ -72,6 +72,36 @@ if [ -z "$LATEST" ]; then
   exit 0
 fi
 
+# The release PR, in THIS repository only (#312). The release PR bumps the train to a version
+# nuget.org does not have yet, and it must move CorPay's pins to that version itself: when the
+# pins moved after the tag instead, the publish turned this gate red on main and on every open
+# pull request until a follow-up PR caught up (v0.1.0-preview.9, #307). So, when this script
+# runs from the goldpath repository (its own packages/ beside it — an adopter's copy has none)
+# and the repository's train is not on the feed yet, the product must pin exactly that train.
+# An adopter's run never enters this branch, so the gate means the same thing for them.
+SELF_ROOT=$(cd "$(dirname "$0")/.." && pwd)
+if [ -d "$SELF_ROOT/packages/$PACKAGE" ] && [ -f "$SELF_ROOT/Directory.Build.props" ]; then
+  TRAIN=$(python3 - "$SELF_ROOT/Directory.Build.props" <<'PY'
+import re, sys
+props = open(sys.argv[1]).read()
+prefix = re.search(r"<VersionPrefix>([^<]+)</VersionPrefix>", props)
+suffix = re.search(r"<VersionSuffix>([^<]*)</VersionSuffix>", props)
+print((prefix.group(1) if prefix else "") + ("-" + suffix.group(1) if suffix and suffix.group(1) else ""))
+PY
+)
+  PUBLISHED=$(printf '%s' "$FEED" | python3 -c "import json,sys; v=json.load(sys.stdin)['versions']; print('yes' if sys.argv[1] in v else 'no')" "$TRAIN")
+  if [ -n "$TRAIN" ] && [ "$PUBLISHED" = "no" ]; then
+    if [ "$PINNED" = "$TRAIN" ]; then
+      echo "train-freshness: release in flight — pinned $PINNED is this repository's train, not published yet (latest $LATEST)."
+      exit 0
+    fi
+    echo "train-freshness: this repository's train is $TRAIN (not published yet), but the product pins $PINNED." >&2
+    echo "  The release PR moves the product's Goldpath.* pins to $TRAIN in the same PR" >&2
+    echo "  (docs/ops/release-checklist.md); after the tag it would turn every PR red." >&2
+    exit 1
+  fi
+fi
+
 if [ "$PINNED" = "$LATEST" ]; then
   echo "train-freshness: pinned $PINNED == latest — on the current train."
   exit 0

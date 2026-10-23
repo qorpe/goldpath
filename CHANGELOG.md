@@ -83,6 +83,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
 ### Fixed
+- **`train-freshness.sh` holds a release PR that leaves CorPay behind (#312).** Run from
+  this repository while its own train is not on nuget.org yet (the release PR, and `main`
+  between merge and publish), the gate now requires the product to pin exactly that train.
+  Before, it accepted a stale pin there and refused the new one, so CorPay's pins could only
+  move after the tag, and `main` went red until they did (v0.1.0-preview.9, #307). An
+  adopter's copy of the script behaves as before. The release checklist moves CorPay's pins
+  into the release PR. No package changes.
 - **`Goldpath.Messaging`: assembly scanning skips an open generic handler (#327).**
   `AddGoldpathHandlers(assemblies)` (and the new `AddHandlers`) kept every non-abstract class,
   so an open generic `IIntegrationEventHandler<T>` implementation in a scanned assembly failed the
