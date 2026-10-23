@@ -1,0 +1,10 @@
+# GA gate G3: valid, and `goldpath check` warns that no code runs it (RoadmapCorpusTests).
+# expect-warning: features.auditTrail.store: eventstream
+schemaVersion: 1
+kind: solution
+name: OrderPlatform
+description: Order management modernization
+owner: team-orders
+features:
+  auditTrail:
+    store: eventstream

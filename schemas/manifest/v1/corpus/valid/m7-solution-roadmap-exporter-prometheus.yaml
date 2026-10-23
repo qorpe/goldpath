@@ -1,0 +1,9 @@
+# GA gate G3: valid, and `goldpath check` warns that no code runs it (RoadmapCorpusTests).
+# expect-warning: observability.exporters[1]: prometheus
+schemaVersion: 1
+kind: solution
+name: OrderPlatform
+description: Order management modernization
+owner: team-orders
+observability:
+  exporters: [otlp, prometheus]

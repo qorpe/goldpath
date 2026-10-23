@@ -5,6 +5,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **`goldpath check` warns a manifest that selects a roadmap-only value (GA gate G3, #336).**
+  After `specdrift validate` passes, every value the schema accepts but no code runs
+  (`broker: kafka|inmemory`, `exporters: prometheus`, `auditTrail.store: eventstream`, and
+  `db: oracle` until G7 lands) is reported as a `WARNING` naming its place in the manifest and
+  quoting the schema `$comment` that owns it. The check still passes: the schema accepts these
+  values on purpose. The list is derived from the annotation `schema-honesty.sh` already holds
+  (`` `x` is/are SCHEMA-ONLY|RESERVED ``), walked with the manifest so a `then` applies only when
+  its `if` holds, so a new roadmap value needs a `$comment` and no code. Five manifest corpus rows
+  carry `# expect-warning:` lines that the CLI tests hold the finding to. `specdrift validate`
+  itself does not warn yet (open-threads T45), and a service's `providers.db: oracle` has no
+  annotation to derive from (T46).
 - **The engine gate (GA gate G1, #321).** `scripts/engine-gate.sh` fails CI when a
   `PublicAPI.*.txt` outside a bus-engine adapter package names an engine type (`MassTransit.`,
   `Wolverine.`) that is not in its committed baseline, `scripts/engine-gate.baseline.txt`. The
