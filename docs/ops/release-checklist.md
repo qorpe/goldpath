@@ -15,7 +15,8 @@ only after that PR merges green.
 - [ ] Mutation scores current for every package whose engine paths changed since the
       last release. The nightly matrix scores every gated package — twenty-two packages since
       2026-10-20, when the big six (Jobs, Archival, Bulk, Notification, Campaign, Caching)
-      joined it; `mutation-heavy.yml` re-scores those six on demand. A local run is
+      joined it; `mutation-heavy.yml` re-scores those six on demand, or one of them with its
+      `package` input (`-f package=Goldpath.Campaign`). A local run is
       `scripts/mutation-gate.sh Goldpath.<Package>` — the FULL config name; the script refuses a
       name that matches no config, because `mutation-gate.sh Jobs` once ran nothing and printed
       GREEN.

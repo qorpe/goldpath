@@ -54,6 +54,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   not by identity; the hardening is open-threads T38. Operator page:
   [docs/ops/agent-pipeline.md](docs/ops/agent-pipeline.md).
 
+- **`mutation-heavy.yml` re-scores one package on demand (#311).** Repository CI, no package
+  changes. A `package` dispatch input (default `all`) names one of the six heavy packages, and a
+  `plan` job turns it into the matrix, refusing a name outside the six rather than running an
+  empty matrix that passes. `stryker/README.md` and the release checklist name it.
+
 ### Fixed
 - **`Goldpath.Messaging`: assembly scanning skips an open generic handler (#327).**
   `AddGoldpathHandlers(assemblies)` (and the new `AddHandlers`) kept every non-abstract class,
