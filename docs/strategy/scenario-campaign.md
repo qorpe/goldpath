@@ -109,7 +109,12 @@ S-FIN-02 — A litigation hold survives an erasure request, and the chain still 
   then:     the refusal is explicit while held; after erasure the document is gone, the
             chain verifies, and the erasure receipt names actor+time
   needs:    local
-  evidence: —
+  evidence: tests/Goldpath.IntegrationTests/ScenarioFin02Tests.cs — replay with
+            `dotnet test --filter FullyQualifiedName~ScenarioFin02` (2026-10-21, green in
+            ~1 s after the container: erasure refused under hold with a reason naming it and
+            the document untouched; the hold lifted by counsel, stamped on its own row;
+            erasure redacts the classified field; admin verification returns no finding;
+            the receipt names the requester and time. Red when the hold guard is removed)
 
 S-OPS-01 — The 03:00 incident: stop the world, fix, resume, answer for it
   modules:  jobs, console
@@ -118,7 +123,13 @@ S-OPS-01 — The 03:00 incident: stop the world, fix, resume, answer for it
   then:     durable cluster-wide stop (survives a host restart while paused); the audit
             answers "who stopped the night"
   needs:    local
-  evidence: —
+  evidence: tests/Goldpath.IntegrationTests/ScenarioOps01Tests.cs — replay with
+            `dotnet test --filter FullyQualifiedName~ScenarioOps01` (2026-10-21, 28 s green:
+            a one-second cron fleet on real PostgreSQL; pause-all, six quiet seconds; the
+            host stopped and a new one started on the same store, six more quiet seconds
+            and the fleet status still paused; resume-all and runs land again; the admin
+            audit holds pause-all by the night operator and resume-all by the morning one.
+            Red when pause-all is replaced by an in-process standby)
 
 S-OPS-02 — A mid-flight operator mistake is refused in the server's words, not a 500
   modules:  every admin surface
