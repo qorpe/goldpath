@@ -26,4 +26,8 @@
     <None Include="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Goldpath.Bulk.Tests" />
+  </ItemGroup>
+
 </Project>
