@@ -2,7 +2,9 @@
 
 One config per package (`Goldpath.<Package>.json`), all at the same thresholds: high 85,
 low 75, **break 70** — `scripts/mutation-gate.sh <Package>` runs one, the nightly matrix
-runs all of them, `mutation-heavy.yml` re-runs the six long-running ones on demand. Stryker JSON
+runs all of them, `mutation-heavy.yml` re-runs the six long-running ones on demand — all six by
+default, or one through its `package` input (`gh workflow run mutation-heavy.yml -f
+package=Goldpath.Campaign`; a name outside the six is refused). Stryker JSON
 cannot carry comments, so every `mutate` exclusion and every `ignore-methods` entry is
 justified HERE (ADR-0005: suppression is visible and justified at every layer). An
 exclusion without a row below is a finding.

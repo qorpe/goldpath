@@ -25,6 +25,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   not by identity; the hardening is open-threads T38. Operator page:
   [docs/ops/agent-pipeline.md](docs/ops/agent-pipeline.md).
 
+- **`mutation-heavy.yml` re-scores one package on demand (#311).** Repository CI, no package
+  changes. A `package` dispatch input (default `all`) names one of the six heavy packages, and a
+  `plan` job turns it into the matrix, refusing a name outside the six rather than running an
+  empty matrix that passes. `stryker/README.md` and the release checklist name it.
+
 ### Fixed
 - **Dependabot moves vitest and its `@vitest/*` plugins together.** Repository governance,
   no package changes. The console's catch-all group takes minor/patch only, so a major
