@@ -83,6 +83,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
 ### Fixed
+- **`Goldpath.Bulk`: in-file duplicate detection no longer keeps every key (#300).** Validation
+  kept each distinct `RowKey` as a string, so a 10M-row device list held them all: 1,226 MiB
+  peak managed heap on a 10M-row run. It now keeps a 64-bit hash and the first row per key
+  (about 40 bytes, whatever the key's length; 541 MiB on the same run) and confirms a hash hit
+  exactly by re-deriving the first row's key from its staged payload, so two keys that share a
+  hash are never reported as duplicates. The report, its first-row numbers and the counts are
+  unchanged. The confirmation costs one read per duplicate whose first row is already written:
+  the 10M run with 99,951 such repeats validated at 12,079 rows/s against 14,773 (open-threads
+  T49). No public API, schema or dependency change. `scripts/bench-bulk.sh intake` runs the
+  10M bench; the numbers are in `packages/Goldpath.Bulk/ops/bulk-benchmarks.md`.
 - **Recording a gate's progress no longer needs the owner's merge.** Repository governance, no
   package changes. Column (b), "Today (evidence)", of the GA-readiness RFC's gate tables, and the
   "Exists today" column of its summary, move to a ledger, `docs/strategy/ga-gate-status.md`. The

@@ -29,8 +29,9 @@ public class DuplicateKeyTests
     [Fact]
     public async Task Keys_that_differ_only_in_case_or_culture_are_different_keys()
     {
-        // Ordinal, as the string table was: no culture folds İ/i/ı, and "e1" is not "E1".
-        var duplicates = new GoldpathBulkDuplicateKeys();
+        // Ordinal, as the string table was: no culture folds İ/i/ı, and "e1" is not "E1". Every
+        // key shares one hash, so each of them reaches the exact comparison.
+        var duplicates = new GoldpathBulkDuplicateKeys(_ => 1);
         var byRow = new Dictionary<int, string> { [1] = "E1", [2] = "e1", [3] = "İ", [4] = "i", [5] = "ı" };
         foreach (var (row, key) in byRow)
         {
