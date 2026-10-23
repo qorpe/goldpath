@@ -14,7 +14,7 @@ public static class GoldpathCampaignMigrations
     /// <see cref="GoldpathCampaignItemState.AwaitingRetry"/> row that predates the column, with
     /// the R1 rung it was waiting on — 30 seconds after its first failure, 2 minutes after a
     /// later one, measured from <c>CompletedAt</c> (R1's "last failure instant"). Call it at the
-    /// end of <c>Up</c> in the migration <c>goldpath db add CampaignR2</c> generated. It touches
+    /// end of <c>Up</c> in the migration <c>goldpath db add CampaignR2R3</c> generated. It touches
     /// only rows still waiting, so it is cheap and safe to run twice.
     /// </summary>
     /// <param name="migrationBuilder">The generated migration's builder.</param>

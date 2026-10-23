@@ -230,10 +230,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   (Error): the callback surface mapped while no campaign type signs.
 - **[schema]** Campaign R2: two columns on `GoldpathCampaigns`, five nullable columns on
   `GoldpathCampaignItems`, the `GoldpathCampaignParkedCallbacks` table, and the items'
-  `(CampaignId, State)` index replaced by three. `goldpath db add CampaignR2`, then one line —
+  `(CampaignId, State)` index replaced by three. `goldpath db add CampaignR2R3` (one migration
+  for R2 and R3 — see the next entry), then one line —
   `migrationBuilder.GoldpathCampaignR2Backfill()` — stamps the retries R1 left waiting. The
   three `CREATE INDEX` statements block writes on a large items table: apply between
   campaigns, or build them concurrently (the upgrade guide has both providers' statements).
+- **[schema]** Campaign R3's schema, no behaviour yet (campaign RFC R3, slice R3-S1, #314).
+  Eleven columns on `GoldpathCampaigns` (`StartAt`, `MaxAwaitingAck`, `AwaitingAckCount`,
+  `PolicyVersion`, `SuspendOnFailureRatio`, `SuspendWindow`, `SuspendMinSample`,
+  `WindowOutcomes`, `WindowFailures`, `WindowStartedAt`, `SuspendedReason`), the
+  `GoldpathCampaignCeilings` table (`GoldpathCampaignCeiling`, `GoldpathCampaignCeilingKind`;
+  primary key `(Kind, Name)`), and two appended campaign states, `Ready = 8` and
+  `Suspended = 9`. Nothing changes on `GoldpathCampaignItems`, and there is no data step:
+  every default is R2's behaviour, so the columns can be applied while campaigns run. R2 is
+  unpublished, so preview.9 adopters generate ONE migration for both:
+  `goldpath db add CampaignR2R3` (owner decision Q1). Nothing reads or writes the new columns
+  until the behaviour slices R3-S2..S11 land.
 
 ### Changed
 - **Three removed public members** in `Goldpath.Campaign`, all shipped in preview.8:

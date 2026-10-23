@@ -42,6 +42,80 @@ public class ModelContractTests
         Assert.Equal(512, entity.FindProperty("LastVerb")!.GetMaxLength());
         Assert.Equal(128, entity.FindProperty("Tenant")!.GetMaxLength());
         Assert.Equal(256, entity.FindProperty("EnumeratedKey")!.GetMaxLength());
+        // R3.6: the reason an auto-suspend names, bounded like LastVerb.
+        Assert.Equal(512, entity.FindProperty("SuspendedReason")!.GetMaxLength());
+    }
+
+    /// <summary>
+    /// Campaign R3, "The one migration": exactly these eleven columns join GoldpathCampaigns, each
+    /// with the CLR type whose default reproduces R2 (null = off, 0 = nothing counted yet), so the
+    /// generated migration needs no data step.
+    /// </summary>
+    [Fact]
+    public void CampaignR3ColumnsGolden()
+    {
+        var entity = FreshModel().FindEntityType(typeof(GoldpathCampaign))!;
+        var r3 = new (string Name, Type Clr)[]
+        {
+            ("StartAt", typeof(DateTimeOffset?)),
+            ("MaxAwaitingAck", typeof(int?)),
+            ("AwaitingAckCount", typeof(long)),
+            ("PolicyVersion", typeof(long)),
+            ("SuspendOnFailureRatio", typeof(double?)),
+            ("SuspendWindow", typeof(int?)),
+            ("SuspendMinSample", typeof(int?)),
+            ("WindowOutcomes", typeof(long)),
+            ("WindowFailures", typeof(long)),
+            ("WindowStartedAt", typeof(DateTimeOffset?)),
+            ("SuspendedReason", typeof(string)),
+        };
+        foreach (var (name, clr) in r3)
+        {
+            var property = entity.FindProperty(name);
+            Assert.True(property is not null, $"GoldpathCampaigns has no {name} column");
+            Assert.Equal(clr, property!.ClrType);
+            Assert.Equal(clr != typeof(long), property.IsNullable);
+            Assert.False(property.IsConcurrencyToken);   // R3.5: PolicyVersion is NOT an EF token
+        }
+    }
+
+    /// <summary>R3.2: the ceilings table — one row per (kind, name), the global row's name empty.</summary>
+    [Fact]
+    public void CeilingTableContract()
+    {
+        var entity = FreshModel().FindEntityType(typeof(GoldpathCampaignCeiling))!;
+        Assert.Equal("GoldpathCampaignCeilings", entity.GetTableName());
+        Assert.Equal(["Kind", "Name"], entity.FindPrimaryKey()!.Properties.Select(p => p.Name));
+        Assert.Equal(128, entity.FindProperty("Name")!.GetMaxLength());
+        Assert.Equal(256, entity.FindProperty("UpdatedBy")!.GetMaxLength());
+        Assert.True(entity.FindProperty("MaxTps")!.IsNullable);
+        Assert.True(entity.FindProperty("SeedMaxTps")!.IsNullable);
+        Assert.Empty(entity.GetIndexes());
+        Assert.Equal(
+            ["Kind", "MaxTps", "Name", "SeedMaxTps", "UpdatedAt", "UpdatedBy"],
+            entity.GetProperties().Select(p => p.Name).Order());
+    }
+
+    /// <summary>R3 adds nothing to the 30M-row table: no column, no index (the migration is metadata-only there).</summary>
+    [Fact]
+    public void ItemTableIsUntouchedByR3()
+    {
+        var entity = FreshModel().FindEntityType(typeof(GoldpathCampaignItem))!;
+        Assert.Equal(
+            ["AckDeadline", "Attempts", "CampaignId", "ClaimedAt", "CompletedAt", "CorrelationId", "Error", "ErrorCode",
+             "NextAttemptAt", "ReleasedAt", "Seq", "State", "TargetJson"],
+            entity.GetProperties().Select(p => p.Name).Order());
+    }
+
+    [Fact]
+    public void CeilingEntityDefaults()
+    {
+        var ceiling = new GoldpathCampaignCeiling();
+        Assert.Equal(GoldpathCampaignCeilingKind.Global, ceiling.Kind);
+        Assert.Equal("", ceiling.Name);
+        Assert.Null(ceiling.MaxTps);
+        Assert.Null(ceiling.SeedMaxTps);
+        Assert.Equal("", ceiling.UpdatedBy);
     }
 
     [Fact]
@@ -110,6 +184,18 @@ public class ModelContractTests
         Assert.Null(campaign.Tenant);
         Assert.Equal(GoldpathCampaignPriority.Normal, campaign.Priority);
         Assert.Null(campaign.EnumeratedKey);
+        // R3: every new column's default is R2's behaviour.
+        Assert.Null(campaign.StartAt);
+        Assert.Null(campaign.MaxAwaitingAck);
+        Assert.Equal(0, campaign.AwaitingAckCount);
+        Assert.Equal(0, campaign.PolicyVersion);
+        Assert.Null(campaign.SuspendOnFailureRatio);
+        Assert.Null(campaign.SuspendWindow);
+        Assert.Null(campaign.SuspendMinSample);
+        Assert.Equal(0, campaign.WindowOutcomes);
+        Assert.Equal(0, campaign.WindowFailures);
+        Assert.Null(campaign.WindowStartedAt);
+        Assert.Null(campaign.SuspendedReason);
     }
 
     [Fact]
@@ -148,6 +234,11 @@ public class ModelContractTests
         Assert.Equal(6, (int)GoldpathCampaignItemState.AwaitingRetry);
         Assert.Equal(7, (int)GoldpathCampaignItemState.AwaitingAck);
         Assert.Equal(7, (int)GoldpathCampaignState.ExpiredIncomplete);
+        // R3: appended, so no stored value moves.
+        Assert.Equal(8, (int)GoldpathCampaignState.Ready);
+        Assert.Equal(9, (int)GoldpathCampaignState.Suspended);
+        Assert.Equal(0, (int)GoldpathCampaignCeilingKind.Global);
+        Assert.Equal(1, (int)GoldpathCampaignCeilingKind.TargetSystem);
         // R2.5: Normal must stay 0 — every pre-R2 row reads as Normal through the new column.
         Assert.Equal(0, (int)GoldpathCampaignPriority.Normal);
         Assert.Equal(1, (int)GoldpathCampaignPriority.High);
