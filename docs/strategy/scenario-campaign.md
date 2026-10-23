@@ -82,6 +82,25 @@ S-FLEET-03 — Two campaigns under one GlobalTps never jointly exceed it
   needs:    local
   evidence: —
 
+S-FLEET-04 — Pause stops every worker within three seconds
+  modules:  campaign (R2.6 claim guard, pause/resume verbs, orphan sweep), broker, store
+  given:    Testcontainers RabbitMQ 4 + PostgreSQL 17; two hosts on one item queue — a leader
+            (pacer + consumers) and a worker (consumers only), four consumer slots each; a
+            device answering after 600 ms; tps=200, so the queue is at least ten times deeper
+            than the eight slots when the operator acts
+  when:     the operator pauses through the admin verb; eight seconds later resumes
+  then:     no item's ClaimedAt and no handler call later than the pause commit + 3 s; the
+            calls in flight at the pause are no more than the slots; the backlog stays queued;
+            after resume every device is called exactly once and the campaign completes
+  needs:    local (the 3-second bar is a device-fleet adopter's acceptance number)
+  evidence: tests/Goldpath.IntegrationTests/ScenarioFleet04Tests.cs — replay with
+            `dotnet test --filter FullyQualifiedName~ScenarioFleet04` (2026-10-23, ~44 s green
+            six runs out of six: no claim after the pause commit in any run, the last in-flight
+            call returned within 423 ms, a 164-item backlog left untouched; numbers in
+            packages/Goldpath.Campaign/ops/campaign-benchmarks.md. Red when the claim guard
+            checks only the item's state: 64 claims after +3 s, the first at +3.4 s, the queue
+            still draining at +7.8 s)
+
 S-FIN-01 — A salary file with one bad row pays everyone except that row, after a second pair of eyes
   modules:  bulk, jobs, notification, console
   given:    a 10K-row payment file, row 4 121 refused by core banking at EXECUTION
