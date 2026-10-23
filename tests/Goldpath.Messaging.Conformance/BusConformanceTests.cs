@@ -1,7 +1,4 @@
 using System.Diagnostics;
-using MassTransit;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Xunit;
 
 namespace Goldpath.Messaging.Conformance;
@@ -21,15 +18,15 @@ public sealed class BusConformanceTests(ConformanceContainers containers)
     public async Task S2_1_exactly_once_the_same_message_delivered_twice_handles_once()
     {
         var observed = new Observed();
-        using var host = await containers.BuildHostAsync(observed);
+        await using var host = await containers.BuildHostAsync(observed);
         await host.StartAsync();
         var id = Guid.NewGuid();
         var messageId = Guid.NewGuid();
 
         // Two deliveries with ONE message id — what a re-delivering broker or a retrying
         // publisher produces. The inbox dedups on the id the context exposes.
-        await host.PublishCommittedRawAsync(bus => bus.Publish(new Ping { Id = id, Payload = "once" }, ctx => ctx.MessageId = messageId));
-        await host.PublishCommittedRawAsync(bus => bus.Publish(new Ping { Id = id, Payload = "once" }, ctx => ctx.MessageId = messageId));
+        await host.PublishAsync(new Ping { Id = id, Payload = "once" }, message => message.MessageId = messageId);
+        await host.PublishAsync(new Ping { Id = id, Payload = "once" }, message => message.MessageId = messageId);
 
         await observed.WaitForPingsAsync(1, Wait);
         await Task.Delay(TimeSpan.FromSeconds(3));   // grace for a wrong second delivery
@@ -48,7 +45,7 @@ public sealed class BusConformanceTests(ConformanceContainers containers)
         };
         ActivitySource.AddActivityListener(listener);
         var observed = new Observed();
-        using var host = await containers.BuildHostAsync(observed, tenant: "acme");
+        await using var host = await containers.BuildHostAsync(observed, tenant: "acme");
         await host.StartAsync();
 
         using (var activity = new ActivitySource("conformance").StartActivity("request"))
@@ -69,7 +66,7 @@ public sealed class BusConformanceTests(ConformanceContainers containers)
     public async Task S2_3_a_poison_message_walks_the_retry_ladder_then_faults_out()
     {
         var observed = new Observed();
-        using var host = await containers.BuildHostAsync(observed);
+        await using var host = await containers.BuildHostAsync(observed);
         await host.StartAsync();
 
         await host.PublishCommittedAsync(new Poison { Id = Guid.NewGuid() });
@@ -101,7 +98,7 @@ public sealed class BusConformanceTests(ConformanceContainers containers)
     public async Task S2_4_a_large_payload_round_trips_intact()
     {
         var observed = new Observed();
-        using var host = await containers.BuildHostAsync(observed);
+        await using var host = await containers.BuildHostAsync(observed);
         await host.StartAsync();
         var payload = new string('x', 1024 * 1024);   // 1 MiB — a bordereau, not a ping
 
@@ -116,15 +113,15 @@ public sealed class BusConformanceTests(ConformanceContainers containers)
     public async Task S2_5_a_wider_message_is_tolerated_and_a_narrower_one_defaults()
     {
         var observed = new Observed();
-        using var host = await containers.BuildHostAsync(observed);
+        await using var host = await containers.BuildHostAsync(observed);
         await host.StartAsync();
         var wide = Guid.NewGuid();
         var narrow = Guid.NewGuid();
 
         // A producer on a NEWER contract adds a field; an older one omits Payload. Both must
         // reach a handler compiled against today's shape — versioning by tolerance.
-        await host.PublishCommittedRawAsync(bus => bus.Publish<Ping>(new { Id = wide, Payload = "wide", Extra = "ignored" }));
-        await host.PublishCommittedRawAsync(bus => bus.Publish<Ping>(new { Id = narrow }));
+        await host.PublishAsAsync<Ping>(new { Id = wide, Payload = "wide", Extra = "ignored" });
+        await host.PublishAsAsync<Ping>(new { Id = narrow });
 
         await observed.WaitForPingsAsync(2, Wait);
         Assert.Equal("wide", observed.Pings.Single(p => p.Event.Id == wide).Event.Payload);
@@ -139,7 +136,7 @@ public sealed class BusConformanceTests(ConformanceContainers containers)
         // that dies after the commit hands the row to the next process; here the "next
         // process" is the same host, started only after the commit.
         var observed = new Observed();
-        using var host = await containers.BuildHostAsync(observed);
+        await using var host = await containers.BuildHostAsync(observed);
         var id = Guid.NewGuid();
 
         await host.PublishCommittedAsync(new Ping { Id = id, Payload = "after-crash" });   // no bus running yet
@@ -155,7 +152,7 @@ public sealed class BusConformanceTests(ConformanceContainers containers)
     public async Task S2_7_a_broker_outage_delays_delivery_and_loses_nothing()
     {
         var observed = new Observed();
-        using var host = await containers.BuildHostAsync(observed);
+        await using var host = await containers.BuildHostAsync(observed);
         await host.StartAsync();
         var id = Guid.NewGuid();
 
@@ -191,7 +188,7 @@ public sealed class BusConformanceTests(ConformanceContainers containers)
         var observed = new Observed { HandlerGate = gate.Task, HandlerDelay = TimeSpan.FromSeconds(1) };
         var published = 0;
         int window;
-        using (var first = await containers.BuildHostAsync(observed))
+        await using (var first = await containers.BuildHostAsync(observed))
         {
             await first.StartAsync();
             var target = 40;
@@ -224,7 +221,7 @@ public sealed class BusConformanceTests(ConformanceContainers containers)
         Assert.True(afterFirst >= window, $"{afterFirst} handled before the stop, but {window} were in flight — a graceful stop finishes them");
         Assert.True(afterFirst < published, $"all {published} handled by the first process — nothing was left queued, so the handover went unproven");
 
-        using var second = await containers.BuildHostAsync(observed);
+        await using var second = await containers.BuildHostAsync(observed);
         await second.StartAsync();
         await observed.WaitForPingsAsync(published, TimeSpan.FromSeconds(120));
         Assert.Equal(published, observed.PingCount);
