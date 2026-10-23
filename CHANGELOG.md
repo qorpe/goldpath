@@ -5,6 +5,49 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **`Goldpath.Messaging`: the message path in Goldpath's own vocabulary (GA gate G1 Part 2/4,
+  #327).** `builder.AddGoldpathMessaging(messaging => …)` takes a `GoldpathMessagingBuilder`:
+  `AddHandler<TEvent, THandler>()`, `AddHandlers(assemblies)`, `AddOutbox<TContext>(…)` with
+  `GoldpathOutboxOptions` (`DuplicateDetectionWindow` 30 min, `Inbox` on, `DeliveryPollInterval`
+  the engine's default unless set), `UseRabbitMq(connectionName = "messaging")` and `Options`.
+  The outbox's row-lock statements follow the context's EF provider, so the
+  `UsePostgres()`/`UseSqlServer()` line goes away, and an outbox on any other provider fails the
+  host's start in words instead of the delivery loop later; a non-positive outbox interval is
+  refused at registration. The pipeline is applied to every endpoint
+  without a `ConfigureGoldpathEndpoints` call. `modelBuilder.AddGoldpathOutboxEntities()` maps
+  the same three tables and columns as the engine-named calls (no migration).
+  `GoldpathMessagingTestHost` starts a host on the in-memory transport (or the one the block
+  selects), returns once the bus is up, and publishes as an upstream service would
+  (`PublishAsync` with a `GoldpathOutgoingMessage` stamp, `PublishAsAsync<TEvent>(shape)`). The
+  conformance suite and the outbox and tenant-square integration tests now use only this
+  vocabulary. **Additive:** the MassTransit-typed overloads stay until Part 4/4, so
+  `engine-gate.sh` is unchanged at 13. `Goldpath.Messaging` now references
+  `MassTransit.RabbitMQ` 8.5.11 (the transport `UseRabbitMq()` composes) and
+  `Microsoft.Extensions.Hosting` 10.0.11 (the test host). What Part 2 leaves is open-threads T44.
+  A present but blank `ConnectionStrings:messaging` is refused at the bus's start in words (an
+  absent one still means the engine's local default), and the test host refuses a tenant stamp
+  outside `TenantId`'s alphabet, which the consume filter would otherwise drop silently.
+- **`goldpath check` warns a manifest that selects a roadmap-only value (GA gate G3, #336).**
+  After `specdrift validate` passes, every value the schema accepts but no code runs
+  (`broker: kafka|inmemory`, `exporters: prometheus`, `auditTrail.store: eventstream`, and
+  `db: oracle` until G7 lands) is reported as a `WARNING` naming its place in the manifest and
+  quoting the schema `$comment` that owns it. The check still passes: the schema accepts these
+  values on purpose. The list is derived from the annotation `schema-honesty.sh` already holds
+  (`` `x` is/are SCHEMA-ONLY|RESERVED ``), walked with the manifest so a `then` applies only when
+  its `if` holds, so a new roadmap value needs a `$comment` and no code. `schema-honesty.sh` now
+  reads that annotation with the same pattern (pinned equal by a test), so a value the gate
+  accepts as annotated is one the CLI warns about: a marker elsewhere in the comment, or in lower
+  case, no longer satisfies the gate. Five manifest corpus rows
+  carry `# expect-warning:` lines that the CLI tests hold the finding to. `specdrift validate`
+  itself does not warn yet (open-threads T45), and a service's `providers.db: oracle` has no
+  annotation to derive from (T46).
+- **Campaign: a real-broker bench at 1000 TPS (S-FLEET-02a, #283).** Measurement only, no
+  package change. `CampaignBrokerBenchTests` drives one campaign through the whole release path
+  on Testcontainers RabbitMQ + PostgreSQL with the package defaults, records published item
+  messages per one-second window and reconciles exactly-once. `scripts/bench-campaign.sh broker`
+  runs it for 15 minutes, `smoke` for 2. Today's baseline is in
+  `packages/Goldpath.Campaign/ops/campaign-benchmarks.md`; it is below the threshold, as
+  expected before Parts 2 and 3.
 - **The engine gate (GA gate G1, #321).** `scripts/engine-gate.sh` fails CI when a
   `PublicAPI.*.txt` outside a bus-engine adapter package names an engine type (`MassTransit.`,
   `Wolverine.`) that is not in its committed baseline, `scripts/engine-gate.baseline.txt`. The
@@ -25,6 +68,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   not by identity; the hardening is open-threads T38. Operator page:
   [docs/ops/agent-pipeline.md](docs/ops/agent-pipeline.md).
 
+- **`mutation-heavy.yml` re-scores one package on demand (#311).** Repository CI, no package
+  changes. A `package` dispatch input (default `all`) names one of the six heavy packages, and a
+  `plan` job turns it into the matrix, refusing a name outside the six rather than running an
+  empty matrix that passes. `stryker/README.md` and the release checklist name it.
+
 ### Fixed
 - **`train-freshness.sh` holds a release PR that leaves CorPay behind (#312).** Run from
   this repository while its own train is not on nuget.org yet (the release PR, and `main`
@@ -33,6 +81,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   move after the tag, and `main` went red until they did (v0.1.0-preview.9, #307). An
   adopter's copy of the script behaves as before. The release checklist moves CorPay's pins
   into the release PR. No package changes.
+- **`Goldpath.Messaging`: assembly scanning skips an open generic handler (#327).**
+  `AddGoldpathHandlers(assemblies)` (and the new `AddHandlers`) kept every non-abstract class,
+  so an open generic `IIntegrationEventHandler<T>` implementation in a scanned assembly failed the
+  host's composition with an opaque reflection error ("Late bound operations cannot be performed
+  on types … ContainsGenericParameters"). A generic definition cannot be an endpoint, so it is
+  now skipped; closed handlers, including one deriving from it, are registered as before.
 - **Dependabot moves vitest and its `@vitest/*` plugins together.** Repository governance,
   no package changes. The console's catch-all group takes minor/patch only, so a major
   arrived per package: #359 bumped `@vitest/coverage-v8` to 5.0.5 alone, and against
@@ -202,10 +256,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   (Error): the callback surface mapped while no campaign type signs.
 - **[schema]** Campaign R2: two columns on `GoldpathCampaigns`, five nullable columns on
   `GoldpathCampaignItems`, the `GoldpathCampaignParkedCallbacks` table, and the items'
-  `(CampaignId, State)` index replaced by three. `goldpath db add CampaignR2`, then one line —
+  `(CampaignId, State)` index replaced by three. `goldpath db add CampaignR2R3` (one migration
+  for R2 and R3 — see the next entry), then one line —
   `migrationBuilder.GoldpathCampaignR2Backfill()` — stamps the retries R1 left waiting. The
   three `CREATE INDEX` statements block writes on a large items table: apply between
   campaigns, or build them concurrently (the upgrade guide has both providers' statements).
+- **[schema]** Campaign R3's schema, no behaviour yet (campaign RFC R3, slice R3-S1, #314).
+  Eleven columns on `GoldpathCampaigns` (`StartAt`, `MaxAwaitingAck`, `AwaitingAckCount`,
+  `PolicyVersion`, `SuspendOnFailureRatio`, `SuspendWindow`, `SuspendMinSample`,
+  `WindowOutcomes`, `WindowFailures`, `WindowStartedAt`, `SuspendedReason`), the
+  `GoldpathCampaignCeilings` table (`GoldpathCampaignCeiling`, `GoldpathCampaignCeilingKind`;
+  primary key `(Kind, Name)`), and two appended campaign states, `Ready = 8` and
+  `Suspended = 9`. Nothing changes on `GoldpathCampaignItems`, and there is no data step:
+  every default is R2's behaviour, so the columns can be applied while campaigns run. R2 is
+  unpublished, so preview.9 adopters generate ONE migration for both:
+  `goldpath db add CampaignR2R3` (owner decision Q1). Nothing reads or writes the new columns
+  until the behaviour slices R3-S2..S11 land.
 
 ### Changed
 - **Three removed public members** in `Goldpath.Campaign`, all shipped in preview.8:

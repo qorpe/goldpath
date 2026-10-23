@@ -30,6 +30,13 @@ public static class GoldpathMessagingExtensions
         var options = new GoldpathMessagingOptions();
         builder.Configuration.GetSection("Goldpath:Messaging").Bind(options);
         configureOptions?.Invoke(options);
+        return builder.AddGoldpathMessagingCore(configureBus, options);
+    }
+
+    /// <summary>What both registrations share: the options as given, the tenant holder, the publish seam and the bus.</summary>
+    private static TBuilder AddGoldpathMessagingCore<TBuilder>(this TBuilder builder, Action<IBusRegistrationConfigurator> configureBus, GoldpathMessagingOptions options)
+        where TBuilder : IHostApplicationBuilder
+    {
         builder.Services.AddSingleton(options);
 
         builder.Services.TryAddScoped<GoldpathMessageTenantContext>();
@@ -47,6 +54,32 @@ public static class GoldpathMessagingExtensions
         });
 
         return builder;
+    }
+
+    /// <summary>
+    /// Registers the message path in Goldpath's own vocabulary (RFC goldpath-messaging-engines §4.1 row 5):
+    /// handlers, the outbox and the transport are declared on a <see cref="GoldpathMessagingBuilder"/>, and
+    /// the engine composes them with the corporate pipeline on every endpoint it creates (guard and
+    /// propagation filters, retry, redelivery, endpoint conventions), so no transport callback has to
+    /// remember to apply it. Options bind from <c>Goldpath:Messaging</c> first; <see cref="GoldpathMessagingBuilder.Options"/>
+    /// changes made in <paramref name="configure"/> win.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">No transport was selected (call <see cref="GoldpathMessagingBuilder.UseRabbitMq"/>).</exception>
+    public static TBuilder AddGoldpathMessaging<TBuilder>(this TBuilder builder, Action<GoldpathMessagingBuilder> configure)
+        where TBuilder : IHostApplicationBuilder
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        var messaging = new GoldpathMessagingBuilder(new GoldpathMessagingOptions());
+        builder.Configuration.GetSection("Goldpath:Messaging").Bind(messaging.Options);
+        configure(messaging);
+        if (messaging.Transport == GoldpathMessagingTransport.None)
+        {
+            throw new InvalidOperationException(
+                "AddGoldpathMessaging: the message path has no transport. Call messaging.UseRabbitMq() (the manifest's providers.broker).");
+        }
+
+        MassTransitMessagingEngine.Validate(messaging, builder.Services);
+        return builder.AddGoldpathMessagingCore(bus => MassTransitMessagingEngine.Compose(messaging, bus, builder.Configuration), messaging.Options);
     }
 
     /// <summary>
@@ -82,6 +115,14 @@ public static class GoldpathMessagingExtensions
         this IBusRegistrationConfigurator configurator,
         Action<IEntityFrameworkOutboxConfigurator>? configure = null)
         where TContext : DbContext
+        => ComposeOutbox<TContext>(configurator, configure, inbox: true);
+
+    /// <summary>The outbox composition both registrations share; <paramref name="inbox"/> adds the consumer-side dedup.</summary>
+    internal static void ComposeOutbox<TContext>(
+        IBusRegistrationConfigurator configurator,
+        Action<IEntityFrameworkOutboxConfigurator>? configure,
+        bool inbox)
+        where TContext : DbContext
     {
         configurator.AddEntityFrameworkOutbox<TContext>(outbox =>
         {
@@ -90,9 +131,12 @@ public static class GoldpathMessagingExtensions
             configure?.Invoke(outbox);
         });
 
-        // Consumer-side inbox: every receive endpoint gets exactly-once-processing dedup
-        // automatically — without this callback only the publish side would be outboxed.
-        configurator.AddConfigureEndpointsCallback((context, _, endpointConfigurator) =>
-            endpointConfigurator.UseEntityFrameworkOutbox<TContext>(context));
+        if (inbox)
+        {
+            // Consumer-side inbox: every receive endpoint gets exactly-once-processing dedup
+            // automatically — without this callback only the publish side would be outboxed.
+            configurator.AddConfigureEndpointsCallback((context, _, endpointConfigurator) =>
+                endpointConfigurator.UseEntityFrameworkOutbox<TContext>(context));
+        }
     }
 }
