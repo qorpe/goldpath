@@ -96,7 +96,7 @@ builder.AddGoldpathMessaging(messaging => messaging
 ```
 
 A batch is delivered when `MessageLimit` (10) or `TimeLimit` (1 s) is reached, whichever is
-first; at most `ConcurrencyLimit` (1) batches run at once per endpoint; a throw fails the whole
+first (`MessageLimit × ConcurrencyLimit` at most 65,535, a broker's prefetch window); at most `ConcurrencyLimit` (1) batches run at once per endpoint; a throw fails the whole
 batch into the retry ladder, so the sink must be idempotent per message. A queue that must keep
 a name a running fleet already drains is named explicitly — `AddHandler<TEvent, THandler>("orders-db")`,
 or `AddBatchHandler`'s `endpointName` — and handlers given one name share one queue.

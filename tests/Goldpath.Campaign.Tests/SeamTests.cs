@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Reflection;
 using MassTransit;
+using Microsoft.Extensions.Hosting;
 using Xunit;
 
 namespace Goldpath.Campaign.Tests;
@@ -78,6 +79,17 @@ public class SeamTests
         Assert.Equal(TimeSpan.FromMilliseconds(500), grouping.TimeLimit);
         Assert.Equal(1, grouping.ConcurrencyLimit);
         Assert.NotSame(grouping, GoldpathCampaignEndpoints.OutcomeBatch);   // a fresh copy each time: no caller can retune the sink
+    }
+
+    [Fact]
+    public void Campaign_registered_twice_on_one_message_path_is_refused_in_words()
+    {
+        var refusal = Assert.Throws<InvalidOperationException>(() => Host.CreateApplicationBuilder().AddGoldpathMessaging(messaging => messaging
+            .AddGoldpathCampaign<CampaignTestContext>()
+            .AddGoldpathCampaign<CampaignTestContext>()
+            .UseRabbitMq()));
+
+        Assert.Contains("GoldpathCampaignOutcomeHandler", refusal.Message, StringComparison.Ordinal);
     }
 
     /// <summary>

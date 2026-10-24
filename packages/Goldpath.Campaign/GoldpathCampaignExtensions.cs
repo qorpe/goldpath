@@ -55,7 +55,9 @@ public static class GoldpathCampaignExtensions
     /// handler on YOUR message path — call this inside the AddGoldpathMessaging configure block.
     /// Both drain the queue the fleet already has, named after <typeparamref name="TContext"/>,
     /// and the sink takes outcomes 200 at a time or every 500 ms, one batch in flight.
+    /// Call it once per message path.
     /// </summary>
+    /// <exception cref="InvalidOperationException">Campaign is already registered on this message path.</exception>
     public static GoldpathMessagingBuilder AddGoldpathCampaign<TContext>(this GoldpathMessagingBuilder messaging)
         where TContext : DbContext
     {

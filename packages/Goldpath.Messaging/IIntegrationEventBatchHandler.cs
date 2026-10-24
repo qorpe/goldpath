@@ -30,10 +30,10 @@ public sealed record IntegrationEvent<TEvent>(TEvent Message, IntegrationEventCo
 /// </summary>
 public sealed class GoldpathBatchOptions
 {
-    /// <summary>The most messages one batch holds. Positive; 10 by default.</summary>
+    /// <summary>The most messages one batch holds. Positive; 10 by default. Times <see cref="ConcurrencyLimit"/>, at most 65,535.</summary>
     public int MessageLimit { get; set; } = 10;
 
-    /// <summary>How long a partial batch waits for more before it is delivered. Positive; one second by default.</summary>
+    /// <summary>How long a partial batch waits for more before it is delivered. Positive, at most about 24.8 days; one second by default.</summary>
     public TimeSpan TimeLimit { get; set; } = TimeSpan.FromSeconds(1);
 
     /// <summary>How many batches one endpoint handles at once. Positive; 1 by default, which serialises the handler.</summary>
@@ -56,7 +56,25 @@ public sealed class GoldpathBatchOptions
         {
             throw new ArgumentOutOfRangeException(nameof(ConcurrencyLimit), ConcurrencyLimit, $"The batch handler '{handler.Name}' needs a ConcurrencyLimit of at least 1.");
         }
+
+        // A timer cannot wait longer than int.MaxValue milliseconds (about 24.8 days); past it the batch would
+        // fail when its first message arrives, not here.
+        if (TimeLimit.TotalMilliseconds > int.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(TimeLimit), TimeLimit, $"The batch handler '{handler.Name}' needs a TimeLimit of at most {TimeSpan.FromMilliseconds(int.MaxValue)}.");
+        }
+
+        // Every message of every batch in flight is held unacknowledged at once, and a broker's prefetch window
+        // is 16-bit (AMQP basic.qos): a larger product cannot be granted, and multiplied in int it can overflow.
+        if ((long)MessageLimit * ConcurrencyLimit > MaxInFlight)
+        {
+            throw new ArgumentOutOfRangeException(nameof(MessageLimit), MessageLimit,
+                $"The batch handler '{handler.Name}' would hold MessageLimit × ConcurrencyLimit = {(long)MessageLimit * ConcurrencyLimit} messages in flight; at most {MaxInFlight} fit a broker's prefetch window.");
+        }
     }
+
+    /// <summary>The most unacknowledged messages one endpoint can hold: AMQP's 16-bit prefetch count.</summary>
+    internal const int MaxInFlight = ushort.MaxValue;
 }
 
 /// <summary>

@@ -134,6 +134,9 @@ public class BatchHandlerTests
     [InlineData(10, 0, 1, "TimeLimit")]
     [InlineData(10, -1, 1, "TimeLimit")]
     [InlineData(10, 1000, 0, "ConcurrencyLimit")]
+    [InlineData(65_536, 1000, 1, "MessageLimit")]
+    [InlineData(int.MaxValue, 1000, 2, "MessageLimit")]   // the product overflows int; refused, not wrapped
+    [InlineData(256, 1000, 256, "MessageLimit")]
     public void A_grouping_no_engine_can_honour_is_refused_at_registration(int messages, int milliseconds, int concurrency, string option)
     {
         var refusal = Assert.Throws<ArgumentOutOfRangeException>(() => Host.CreateApplicationBuilder().AddGoldpathMessaging(messaging => messaging
@@ -147,6 +150,24 @@ public class BatchHandlerTests
 
         Assert.Equal(option, refusal.ParamName);
         Assert.Contains("'ReadingBatchHandler'", refusal.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_largest_grouping_a_broker_can_grant_is_accepted_and_a_time_limit_past_the_timers_is_refused()
+    {
+        Host.CreateApplicationBuilder().AddGoldpathMessaging(messaging => messaging
+            .AddBatchHandler<Reading, ReadingBatchHandler>(new GoldpathBatchOptions
+            {
+                MessageLimit = 255,
+                ConcurrencyLimit = 257,   // 65,535: the whole prefetch window
+                TimeLimit = TimeSpan.FromMilliseconds(int.MaxValue),
+            })
+            .UseRabbitMq());
+
+        var refusal = Assert.Throws<ArgumentOutOfRangeException>(() => Host.CreateApplicationBuilder().AddGoldpathMessaging(messaging => messaging
+            .AddBatchHandler<Reading, ReadingBatchHandler>(new GoldpathBatchOptions { TimeLimit = TimeSpan.FromMilliseconds(int.MaxValue + 1L) })
+            .UseRabbitMq()));
+        Assert.Equal("TimeLimit", refusal.ParamName);
     }
 
     [Fact]

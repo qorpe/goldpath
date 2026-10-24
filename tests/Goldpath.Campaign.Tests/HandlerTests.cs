@@ -54,7 +54,7 @@ public class HandlerTests
 
         var outcome = Assert.Single(fixture.Publisher.Published.OfType<GoldpathCampaignOutcomeMessage>());
         Assert.Equal((message.CampaignId, message.Seq, true, 1), (outcome.CampaignId, outcome.Seq, outcome.Succeeded, outcome.Attempt));
-        Assert.Single(fixture.Executed);
+        Assert.False(Assert.Single(fixture.Executed).Context.Replay);   // a delivery, not the replay verb
 
         // The broker delivers the same coordinate again: the claim finds nothing to take.
         using (var scope = fixture.Services.CreateScope())

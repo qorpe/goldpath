@@ -43,7 +43,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   headers per delivery, so one batch may carry several tenants). It is registered with
   `messaging.AddBatchHandler<TEvent, THandler>(GoldpathBatchOptions)`: `MessageLimit` (10),
   `TimeLimit` (1 s) and `ConcurrencyLimit` (1), the engine's defaults; a limit that is not
-  positive is refused at registration, naming the handler. A batch is delivered when either
+  positive, a `MessageLimit × ConcurrencyLimit` above 65,535 (a broker's 16-bit prefetch window)
+  or a `TimeLimit` beyond a timer's ~24.8 days is refused at registration, naming the handler. A batch is delivered when either
   limit is reached, at most `ConcurrencyLimit` batches run at once per endpoint, and a throw
   fails the whole batch into the retry ladder. Conformance facts S2.9–S2.11 prove the size
   bound, the time bound and one batch in flight on real RabbitMQ. `AddHandler<TEvent,
@@ -109,7 +110,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 - **BREAKING (`Goldpath.Campaign`, preview.11): campaign consumes through the seam, and its
   public surface names no bus engine (GA gate G1 Part 3/4, #328).**
   `bus.AddGoldpathCampaignConsumers<TContext>()` (on MassTransit's `IBusRegistrationConfigurator`)
-  is replaced by `messaging.AddGoldpathCampaign<TContext>()` on the `GoldpathMessagingBuilder`.
+  is replaced by `messaging.AddGoldpathCampaign<TContext>()` on the `GoldpathMessagingBuilder`, so an
+  app that registers campaign moves to the `AddGoldpathMessaging(messaging => …)` form (#327) in the
+  same step; the MassTransit-typed block has no campaign registration any more.
   `GoldpathCampaignItemConsumer<TContext>` becomes `GoldpathCampaignItemHandler<TContext>`
   (an `IIntegrationEventHandler<GoldpathCampaignItemMessage>`), and
   `GoldpathCampaignOutcomeSink<TContext>` with its `GoldpathCampaignOutcomeSinkDefinition<TContext>`

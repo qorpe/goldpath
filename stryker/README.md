@@ -102,7 +102,7 @@ at f459fe2, so its row carries it (minutes not recorded).
 | Approvals | 77.78 % (74.84) | 7.78 | 3.4 | 74.84 %, 217.7 |
 | Data | 77.38 % | 7.38 | 2.3 | 77.38 %, 38.0 |
 | FileExchange | 76.92 % | 6.92 | 3.6 | 76.92 %, 31.8 |
-| Campaign | 74.77 % (75.13) | 4.77 | 56.4 | never finished (OOM) |
+| Campaign | 76.30 % (74.77) | 6.30 | 50.6 | never finished (OOM) |
 | Archival | 74.49 % | 4.49 | 10.6 | never finished (OOM) |
 | Analyzers | 72.55 % | 2.55 | 3.9 | 72.55 %, 5.4 |
 | Jobs | 72.52 % | 2.52 | 9.1 | never finished (OOM) |
@@ -151,6 +151,15 @@ answer says, the body limit, the timestamp window and the fair share's edges:
 [run 39454180800](https://github.com/qorpe/goldpath/actions/runs/39454180800/job/118736572505),
 74.77 % at concurrency 1 (minutes as measured there). The pacer (`GoldpathCampaignJobs.cs`,
 59.2 % in the first run) is the next place to add facts.
+
+**Campaign on the seam (#328, G1 Part 3/4), 2026-10-24.** A full local run of
+`mutation-gate.sh Goldpath.Campaign` at 5c59165 on the #328 branch: 74.77 % → 76.30 % (1,081
+mutants tested, 211 tests; minutes are the agent sandbox's, not the CI profile's). The MassTransit
+consumers file, excluded as adapter plumbing, is gone; its successor `GoldpathCampaignHandlers.cs`
+(the item and outcome handlers, the queue name) is scored, with unit tests of its own: 17 killed,
+2 survived. One survivor (`replay: false` → `true`) is pinned by a test added after the run; the
+other (`Length > 1000` → `>= 1000`) is equivalent, since a 1,000-character message cut at 1,000 is
+unchanged.
 
 ## Excluded files
 

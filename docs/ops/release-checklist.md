@@ -75,7 +75,8 @@ only after that PR merges green.
         block. Proof: the campaign GM shape green, and its broker queue still named after the
         context. Upgrade guide step 3, drafted: *"Campaign: replace
         `bus.AddGoldpathCampaignConsumers<YourDbContext>()` with
-        `messaging.AddGoldpathCampaign<YourDbContext>()` in the `AddGoldpathMessaging` block. Queue
+        `messaging.AddGoldpathCampaign<YourDbContext>()` in the `AddGoldpathMessaging(messaging => …)` block
+        — campaign needs that form (step 1); the `bus => …` block has no campaign registration. Queue
         names and bindings do not change — both handlers still drain the queue named after your
         context — so hosts may be rolled one at a time. If you referenced
         `GoldpathCampaignItemConsumer<T>` or `GoldpathCampaignOutcomeSink<T>` (for example to tune a
