@@ -256,6 +256,27 @@ public class EnumerationAheadTests
     }
 
     [Fact]
+    public async Task TwoSnapshotsShareTheTimeLeftInEachTick_TheOldestDoesNotTakeEveryExtraStep()
+    {
+        // The same 100 ms step, two snapshots, nothing releasing. Phase 1 takes one batch of
+        // each (200 ms), so each tick has room for ONE extra step: it must alternate between
+        // them across ticks rather than always go to the campaign created first.
+        TickClock? clock = null;
+        using var fixture = FleetFixture(_ => clock?.Advance(TimeSpan.FromTicks(500)));
+        var first = await CreateFleetAsync(fixture);
+        var second = await CreateFleetAsync(fixture);
+        clock = new TickClock(DateTimeOffset.UtcNow);
+
+        await RunSliceAsync(fixture, clock, Guid.Empty);
+
+        var a = fixture.Reload(first.Id).EnumeratedThrough;
+        var b = fixture.Reload(second.Id).EnumeratedThrough;
+        Assert.True(a > SliceTicks / 2 * fixture.Options.EnumerationBatchSize && b > SliceTicks / 2 * fixture.Options.EnumerationBatchSize,
+            $"first {a}, second {b}");
+        Assert.True(Math.Abs(a - b) <= fixture.Options.EnumerationBatchSize, $"first {a}, second {b}: one campaign took the extra steps");
+    }
+
+    [Fact]
     public async Task ATargetCeilingBreachedAheadPausesTheCampaign_AndItStepsNoFurther()
     {
         // Phase 1 takes 1..2,000; the ceiling (7,000) is crossed in Phase 5 of the first tick.
