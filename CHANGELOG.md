@@ -128,6 +128,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   preview.11 release PR on (they generate on the published train). `scripts/engine-gate.sh`'s
   baseline drops from 13 lines to 10 and its ceiling with it; the gate now treats a Shipped line
   that the sibling Unshipped file marks `*REMOVED*` as gone, and dropping the marker fails it.
+- **The public 1.0 sample exam is Insurance + Telco (GA readiness Q6/G12, amended 2026-10-25).**
+  Documents only, no package change. The Factoring sample the owner added on 2026-10-21 moves
+  out of this public repository. It is built from scratch in a private qorpe repository as a
+  generic, clean-room sample, under a provenance rule: public domain sources only, cited; nothing
+  from any engagement; its agents never read an engagement repository. It is not a public 1.0
+  gate. The RFC's G12 row, the rc.2 row and Q6, `ga-gate-status.md` G12, the coverage matrix,
+  the master plan's step 8 and CLAUDE.md say so. The ten planned Factoring parts (#438–#447)
+  are closed here with that reason.
 
 ### Fixed
 - **The nightly ZAP baseline no longer changes its rules overnight.** Repository CI, no package
