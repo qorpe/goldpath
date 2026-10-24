@@ -49,7 +49,7 @@ F1–F3** (2026-08-09) closed the paperwork the engineering had outrun: five led
 reconciled with GitHub behind two new gates (`ledger-check.sh`, `schema-honesty.sh`), an
 SBOM + signed provenance on every train with `SECURITY.md`, and the measured messaging-exit
 RFC. Next: the pilot product module (step 6.1), then the scenario campaign and the
-Insurance/Telco/Factoring samples as the full-set exam (1.0 gates: `docs/rfc/goldpath-ga-readiness.md`, accepted 2026-10-21). Live status ledgers —
+Insurance/Telco samples as the full-set exam (1.0 gates: `docs/rfc/goldpath-ga-readiness.md`, accepted 2026-10-21). Live status ledgers —
 keep them updated in the same PR that changes reality: `docs/strategy/ai-sdlc-status.md`
 (AI-assisted SDLC vs reality), `docs/strategy/coverage-matrix.md` (capability × sample),
 `docs/strategy/ga-gate-status.md` (each 1.0 gate's status today — the RFC holds only the
