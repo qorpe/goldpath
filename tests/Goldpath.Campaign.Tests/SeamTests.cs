@@ -114,6 +114,11 @@ public class SeamTests
 
             foreach (var member in type.GetMembers(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
             {
+                if (member.Name == nameof(GoldpathCampaignExtensions.AddGoldpathCampaignConsumers) && type == typeof(GoldpathCampaignExtensions))
+                {
+                    continue;   // the one baselined line (engine-gate.baseline.txt): it leaves with Messaging's in G1 Part 4/4
+                }
+
                 switch (member)
                 {
                     case MethodBase method:

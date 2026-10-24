@@ -256,8 +256,10 @@ through the same runbook links. SECURITY.md's engine posture is G5's to write, n
       exactly that name" is carried by `AddHandler<TEvent, THandler>(endpointName)` and `AddBatchHandler`'s
       `endpointName`: both handlers share one queue named the way the 8.x kebab formatter names a
       consumer generic over the context, proven against the formatter for a corpus of context names and
-      on a real broker. Part 2 kept Messaging's old overloads (#327), so the baseline went 13 → 10, not
-      3 → 0; Part 4/4 takes it to 0.
+      on a real broker. The two consumer lines left; `AddGoldpathCampaignConsumers` stays, now registering
+      the same handlers, because the templates write it until the preview.11 release and the GM matrix
+      builds them against this repository's packages — the reason Part 2 kept Messaging's old overloads
+      (#327). So the baseline went 13 → 11, not 3 → 0; Part 4/4 takes it to 0.
 - [ ] Part 4/4: `Goldpath.Messaging.MassTransit` extracted; `Goldpath.Messaging` engine-free.
 - [x] messaging-exit §8's open line ("the outbox/inbox configuration and the test harness in
       Goldpath vocabulary") is ticked by Part 2 (#327), pointing here.

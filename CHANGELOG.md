@@ -107,27 +107,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
 ### Changed
-- **BREAKING (`Goldpath.Campaign`, preview.11): campaign consumes through the seam, and its
-  public surface names no bus engine (GA gate G1 Part 3/4, #328).**
-  `bus.AddGoldpathCampaignConsumers<TContext>()` (on MassTransit's `IBusRegistrationConfigurator`)
-  is replaced by `messaging.AddGoldpathCampaign<TContext>()` on the `GoldpathMessagingBuilder`, so an
-  app that registers campaign moves to the `AddGoldpathMessaging(messaging => …)` form (#327) in the
-  same step; the MassTransit-typed block has no campaign registration any more.
-  `GoldpathCampaignItemConsumer<TContext>` becomes `GoldpathCampaignItemHandler<TContext>`
-  (an `IIntegrationEventHandler<GoldpathCampaignItemMessage>`), and
-  `GoldpathCampaignOutcomeSink<TContext>` with its `GoldpathCampaignOutcomeSinkDefinition<TContext>`
-  becomes `GoldpathCampaignOutcomeHandler<TContext>` (an `IIntegrationEventBatchHandler`, still 200
+- **`Goldpath.Campaign`: campaign consumes through the seam (GA gate G1 Part 3/4, #328).**
+  `messaging.AddGoldpathCampaign<TContext>()` on the `GoldpathMessagingBuilder` registers
+  `GoldpathCampaignItemHandler<TContext>` (an `IIntegrationEventHandler<GoldpathCampaignItemMessage>`)
+  and `GoldpathCampaignOutcomeHandler<TContext>` (an `IIntegrationEventBatchHandler`, still 200
   outcomes or 500 ms, one batch at a time). Claim-before-execute, the outcome shapes and the
   set-based outcome write are unchanged. **No queue moves:** both handlers drain the queue the
-  replaced consumers drained, named after the context (`OrdersDbContext` drains
+  previous consumers drained, named after the context (`OrdersDbContext` drains
   `orders-db-context`), with the same exchange bindings, so a fleet can roll host by host; a test
-  reads the queue and bindings from the broker and the same test passes against the previous
-  registration. The engine, the pacer and the callback endpoint publish through
-  `IIntegrationEventPublisher` instead of MassTransit's `IPublishEndpoint`, so a test double now
-  implements the seam. The templates and the CLI's campaign recipe write the new line from the
-  preview.11 release PR on (they generate on the published train). `scripts/engine-gate.sh`'s
-  baseline drops from 13 lines to 10 and its ceiling with it; the gate now treats a Shipped line
-  that the sibling Unshipped file marks `*REMOVED*` as gone, and dropping the marker fails it.
+  reads the queue and bindings from the broker, and the same test passes against the previous
+  registration. `bus.AddGoldpathCampaignConsumers<TContext>()` on the MassTransit-typed block keeps
+  working and now registers the same two handlers on the same queue; it leaves with Messaging's
+  MassTransit-typed overloads in Part 4/4, and the templates and the CLI recipe move to the builder
+  line at the preview.11 release PR. **BREAKING for code that names the consumer types:**
+  `GoldpathCampaignItemConsumer<TContext>`, `GoldpathCampaignOutcomeSink<TContext>` and
+  `GoldpathCampaignOutcomeSinkDefinition<TContext>` are removed (use the handlers above). The
+  engine, the pacer and the callback endpoint publish through `IIntegrationEventPublisher` instead
+  of MassTransit's `IPublishEndpoint`, so a test double of the campaign engine implements the seam.
+  `scripts/engine-gate.sh`'s baseline drops from 13 lines to 11 and its ceiling with it; the gate
+  now treats a Shipped line that the sibling Unshipped file marks `*REMOVED*` as gone, and dropping
+  the marker fails it.
 - **The public 1.0 sample exam is Insurance + Telco (GA readiness Q6/G12, amended 2026-10-25).**
   Documents only, no package change. The Factoring sample the owner added on 2026-10-21 moves
   out of this public repository. It is built from scratch in a private qorpe repository as a

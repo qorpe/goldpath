@@ -1,3 +1,4 @@
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -66,5 +67,54 @@ public static class GoldpathCampaignExtensions
         messaging.AddHandler<GoldpathCampaignItemMessage, GoldpathCampaignItemHandler<TContext>>(queue);
         messaging.AddBatchHandler<GoldpathCampaignOutcomeMessage, GoldpathCampaignOutcomeHandler<TContext>>(GoldpathCampaignEndpoints.OutcomeBatch, queue);
         return messaging;
+    }
+
+    /// <summary>
+    /// The MassTransit-typed registration, kept so an app still on the <c>AddGoldpathMessaging(bus =&gt; …)</c>
+    /// block (the templates, until the preview.11 release moves them) composes campaign unchanged: it registers
+    /// the same two handlers on the same queue as <see cref="AddGoldpathCampaign{TContext}(GoldpathMessagingBuilder)"/>.
+    /// It leaves with the other MassTransit-typed overloads in G1 Part 4/4 (RFC goldpath-messaging-engines §4.1 row 13).
+    /// </summary>
+    public static IBusRegistrationConfigurator AddGoldpathCampaignConsumers<TContext>(this IBusRegistrationConfigurator configurator)
+        where TContext : DbContext
+    {
+        var queue = GoldpathCampaignEndpoints.QueueOf<TContext>();
+        configurator.TryAddScoped<GoldpathCampaignItemHandler<TContext>>();
+        configurator.AddConsumer<GoldpathIntegrationEventConsumer<GoldpathCampaignItemMessage, GoldpathCampaignItemHandler<TContext>>>()
+            .Endpoint(endpoint => endpoint.Name = queue);
+        configurator.TryAddScoped<GoldpathCampaignOutcomeHandler<TContext>>();
+        var grouping = GoldpathCampaignEndpoints.OutcomeBatch;
+        configurator.AddConsumer<GoldpathCampaignOutcomeBatchConsumer<TContext>>((_, consumer) => consumer.Options<BatchOptions>(batch => batch
+                .SetMessageLimit(grouping.MessageLimit)
+                .SetTimeLimit(grouping.TimeLimit)
+                .SetConcurrencyLimit(grouping.ConcurrencyLimit)))
+            .Endpoint(endpoint => endpoint.Name = queue);
+        return configurator;
+    }
+}
+
+/// <summary>
+/// The outcome handler behind <see cref="GoldpathCampaignExtensions.AddGoldpathCampaignConsumers{TContext}"/>: the
+/// MassTransit batch delivered to the seam's batch handler, as the builder's engine does. Leaves with that overload
+/// (G1 Part 4/4).
+/// </summary>
+internal sealed class GoldpathCampaignOutcomeBatchConsumer<TContext>(GoldpathCampaignOutcomeHandler<TContext> handler)
+    : IConsumer<Batch<GoldpathCampaignOutcomeMessage>>
+    where TContext : DbContext
+{
+    public Task Consume(ConsumeContext<Batch<GoldpathCampaignOutcomeMessage>> context)
+    {
+        var attempt = context.GetRetryAttempt();
+        var batch = context.Message
+            .Select(delivery => new IntegrationEvent<GoldpathCampaignOutcomeMessage>(
+                delivery.Message,
+                new IntegrationEventContext(
+                    delivery.MessageId,
+                    delivery.Headers.Get<string>(GoldpathHeaders.CorrelationId),
+                    delivery.Headers.Get<string>(GoldpathHeaders.TenantId) is { } raw && TenantId.TryCreate(raw, out var tenant) ? tenant : null,
+                    attempt,
+                    delivery.Headers.GetAll().ToDictionary(h => h.Key, h => (object?)h.Value, StringComparer.Ordinal))))
+            .ToList();
+        return handler.HandleAsync(batch, context.CancellationToken);
     }
 }

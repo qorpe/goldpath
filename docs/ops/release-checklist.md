@@ -68,15 +68,17 @@ only after that PR merges green.
         the three `modelBuilder.Add…Entity()` lines to `AddGoldpathOutboxEntities()`. Proof: every
         broker GM shape green, and `goldpath db add` on one of them yields an empty migration
         (RFC goldpath-messaging-engines §4.2). The upgrade guide's steps 1, 2 and 4 (§8 there).
-      - **preview.11 — campaign on the seam (#328, G1 Part 3/4). BREAKING.** The solution
+      - **preview.11 — campaign on the seam (#328, G1 Part 3/4).** The solution
         layouts' `Program.cs` (`bus.AddGoldpathCampaignConsumers<OrdersDbContext>();`) and the
         CLI's campaign recipe (`FeatureRecipes.cs`, with its golden in `RecipeGoldenTests`/
         `AddFeatureTests`) move to `messaging.AddGoldpathCampaign<TContext>();` inside the new
         block. Proof: the campaign GM shape green, and its broker queue still named after the
-        context. Upgrade guide step 3, drafted: *"Campaign: replace
+        context. `AddGoldpathCampaignConsumers` itself goes in Part 4/4, with Messaging's
+        MassTransit-typed overloads. Upgrade guide step 3, drafted: *"Campaign: replace
         `bus.AddGoldpathCampaignConsumers<YourDbContext>()` with
         `messaging.AddGoldpathCampaign<YourDbContext>()` in the `AddGoldpathMessaging(messaging => …)` block
-        — campaign needs that form (step 1); the `bus => …` block has no campaign registration. Queue
+        — campaign's builder line needs that form (step 1); the old line keeps working on the `bus => …`
+        block until Part 4/4 removes it. Queue
         names and bindings do not change — both handlers still drain the queue named after your
         context — so hosts may be rolled one at a time. If you referenced
         `GoldpathCampaignItemConsumer<T>` or `GoldpathCampaignOutcomeSink<T>` (for example to tune a

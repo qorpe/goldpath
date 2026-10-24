@@ -41,8 +41,8 @@ and downstream systems that reacted to `Requested` learn nothing they must undo.
 | `GoldpathCampaignOutcomeMessage` | `CampaignId, Seq, Succeeded, Error` | The executing consumer reports back — success, or the handler's failure with its error text. The batching outcome sink folds these into the campaign's counters and the repair queue. |
 
 These two are the campaign's INTERNAL rails: an adopter's app composes their handlers
-(`messaging.AddGoldpathCampaign<TContext>()`; `bus.AddGoldpathCampaignConsumers<TContext>()` up to
-preview.10) and never publishes them by hand.
+(`messaging.AddGoldpathCampaign<TContext>()`, or `bus.AddGoldpathCampaignConsumers<TContext>()` on the
+MassTransit-typed block until G1 Part 4/4) and never publishes them by hand.
 
 ## The other packages
 

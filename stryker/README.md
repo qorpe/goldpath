@@ -155,7 +155,8 @@ answer says, the body limit, the timestamp window and the fair share's edges:
 **Campaign on the seam (#328, G1 Part 3/4), 2026-10-24.** A full local run of
 `mutation-gate.sh Goldpath.Campaign` at 5c59165 on the #328 branch: 74.77 % → 76.30 % (1,081
 mutants tested, 211 tests; minutes are the agent sandbox's, not the CI profile's). The MassTransit
-consumers file, excluded as adapter plumbing, is gone; its successor `GoldpathCampaignHandlers.cs`
+consumers file, excluded as adapter plumbing, is gone (the MassTransit-typed registration kept for the
+templates until G1 Part 4/4 sits in the excluded composition file); its successor `GoldpathCampaignHandlers.cs`
 (the item and outcome handlers, the queue name) is scored, with unit tests of its own: 17 killed,
 2 survived. One survivor (`replay: false` → `true`) is pinned by a test added after the run; the
 other (`Length > 1000` → `>= 1000`) is equivalent, since a 1,000-character message cut at 1,000 is

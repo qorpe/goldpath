@@ -1,3 +1,4 @@
+using MassTransit;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Testcontainers.RabbitMq;
@@ -19,14 +20,36 @@ public sealed class CampaignQueueTests : IAsyncLifetime
 
     public Task DisposeAsync() => _rabbit.DisposeAsync().AsTask();
 
-    [Fact]
-    public async Task Campaign_on_the_seam_declares_the_queue_and_bindings_the_replaced_consumers_did()
+    /// <param name="engineTyped">
+    /// The MassTransit-typed registration the templates still write until preview.11 (kept until G1 Part 4/4)
+    /// must declare exactly what the builder does.
+    /// </param>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Campaign_on_the_seam_declares_the_queue_and_bindings_the_replaced_consumers_did(bool engineTyped)
     {
         var builder = Host.CreateApplicationBuilder();
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
         builder.Configuration["ConnectionStrings:messaging"] = _rabbit.GetConnectionString();
         builder.Services.WaitForTheBusOnStart();
-        builder.AddGoldpathMessaging(messaging => messaging.AddGoldpathCampaign<CampaignTests.CampDb>().UseRabbitMq());
+        if (engineTyped)
+        {
+            builder.AddGoldpathMessaging(bus =>
+            {
+                bus.AddGoldpathCampaignConsumers<CampaignTests.CampDb>();
+                bus.UsingRabbitMq((context, cfg) =>
+                {
+                    cfg.Host(new Uri(_rabbit.GetConnectionString()));
+                    cfg.ConfigureGoldpathEndpoints(context);
+                });
+            });
+        }
+        else
+        {
+            builder.AddGoldpathMessaging(messaging => messaging.AddGoldpathCampaign<CampaignTests.CampDb>().UseRabbitMq());
+        }
+
         using var host = builder.Build();
         await host.StartAsync();
 

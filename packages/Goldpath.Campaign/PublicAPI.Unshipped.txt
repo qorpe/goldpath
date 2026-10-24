@@ -7,7 +7,6 @@
 *REMOVED*Goldpath.GoldpathCampaignOutcomeSink<TContext>.GoldpathCampaignOutcomeSink(Goldpath.GoldpathCampaignEngine<TContext!>! engine, TContext! db) -> void
 *REMOVED*Goldpath.GoldpathCampaignOutcomeSinkDefinition<TContext>
 *REMOVED*Goldpath.GoldpathCampaignOutcomeSinkDefinition<TContext>.GoldpathCampaignOutcomeSinkDefinition() -> void
-*REMOVED*static Goldpath.GoldpathCampaignExtensions.AddGoldpathCampaignConsumers<TContext>(this MassTransit.IBusRegistrationConfigurator! configurator) -> MassTransit.IBusRegistrationConfigurator!
 *REMOVED*Goldpath.GoldpathCampaignEngine<TContext>.ExecuteItemAsync(System.IServiceProvider! services, string! typeKey, System.Guid campaignId, long seq, string! targetJson, string? tenant, bool replay, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
 Goldpath.GoldpathCampaignActionAccepted
 Goldpath.GoldpathCampaignActionAccepted.AckTimeout.get -> System.TimeSpan
