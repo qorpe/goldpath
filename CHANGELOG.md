@@ -92,6 +92,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
 ### Fixed
+- **The nightly ZAP baseline no longer changes its rules overnight.** Repository CI, no package
+  changes. `scripts/zap-baseline.sh` pinned the ZAP image by digest, but the packaged scans
+  start ZAP with `-addonupdate`, install `pscanrulesBeta` from the internet and check ZAP's
+  own version online unless `-silent` is passed. So the rule set moved with no change here:
+  2026-10-24's nightly ran more rules than the PR's own run had (PASS 104 → 111 on the API leg,
+  53 → 58 on the console leg) and failed on four alerts that are in no rules-file line. Both
+  scans now pass `-z -silent`: the image's own add-ons, no unsolicited request, the same rules
+  every night, and a run an air-gapped network can repeat. The G15 row of
+  `docs/strategy/ga-gate-status.md` now records the CodeQL and ZAP jobs from #366.
 - **Recording a gate's progress no longer needs the owner's merge.** Repository governance, no
   package changes. Column (b), "Today (evidence)", of the GA-readiness RFC's gate tables, and the
   "Exists today" column of its summary, move to a ledger, `docs/strategy/ga-gate-status.md`. The
