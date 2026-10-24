@@ -47,7 +47,7 @@ change.
 
 | # | Gate | Today (evidence) |
 |---|---|---|
-| G15 | **Threat model per module with an auth surface** | **None exists.** No threat model in `docs/` or any `ops/` pack. The defences exist piecemeal (fail-closed admin, boundary masking + console re-masking, R2.8 signing). No CodeQL or ZAP job exists in `.github/workflows/` |
+| G15 | **Threat model per module with an auth surface** | **Part 1/2 in place, Part 2/2 open.** Scans: since [#366](https://github.com/qorpe/goldpath/pull/366) (2026-10-23) `codeql.yml` runs CodeQL (C#, JS/TS) on every PR, and the nightly `zap-baseline` job runs a passive ZAP baseline against a generated app and its served console. Every alert is settled in `scripts/zap-baseline.conf`, and the open header findings are [T43](open-threads.md). Threat models: **none exists** — no threat model in `docs/` or any `ops/` pack ([#340](https://github.com/qorpe/goldpath/issues/340), Part 2/2). The defences exist piecemeal (a deny-by-default admin surface, boundary masking + console re-masking, R2.8 signing) |
 | G16 | **Dependency/CVE gate** (exists) **+ a patch-train path** | Gate: **exists**. Path: the 2026-10-13 advisories broke every app generated from published preview.8. `main` was fixed 2026-10-19 ([#269](https://github.com/qorpe/goldpath/pull/269)), and adopters are still waiting on [#271](https://github.com/qorpe/goldpath/pull/271) on 2026-10-20 |
 | G17 | **SBOM + provenance** (exists) | **Exists** since preview.7 (F2, [#156](https://github.com/qorpe/goldpath/pull/156)): syft CycloneDX, `attest-build-provenance`, OIDC trusted publishing. The stale `preview.6` lines in SECURITY.md are fixed in this RFC's PR |
 
@@ -71,6 +71,6 @@ change.
 | Contract | G1–G4 | ledgers + roll, schema-honesty |
 | Runtime | G5–G7 | seam + 8-fact suite |
 | Proof | G8–G14 | **G8 met**, GM nightly + PR subset, mutation gate, 3/7 scenarios, 5 bench tables |
-| Security | G15–G17 | CVE gate, SBOM, provenance |
+| Security | G15–G17 | CVE gate, SBOM, provenance, CodeQL + ZAP baseline |
 | Docs | G18 | getting-started, upgrade guides |
 | Business | G19–G20 | — |
