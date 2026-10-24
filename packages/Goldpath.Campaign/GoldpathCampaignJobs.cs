@@ -120,7 +120,8 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
 
                 // Phase 5 — what is left of the tick enumerates ahead (#288): releases went first,
                 // so a snapshot no longer waits one batch per tick, and no release waits on it.
-                await EnumerateAheadAsync(tickScope.ServiceProvider, campaigns, streams, tickStart, cancellationToken);
+                await EnumerateAheadAsync(tickScope.ServiceProvider, campaigns, streams, tickStart,
+                    releasing: demands.Any(d => d >= 0), cancellationToken);
 
                 var elapsed = _time.GetElapsedTime(tickStart);
                 if (elapsed < _options.LeaderTick)
@@ -327,15 +328,19 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
     /// Phase 1 materializes one batch per campaign, which capped a snapshot at
     /// <see cref="GoldpathCampaignOptions.EnumerationBatchSize"/> per tick — 35M targets an
     /// hour before the first release. Here every campaign still enumerating takes further
-    /// steps, round-robin, while the slowest step seen this tick still fits before the tick
-    /// ends: releases ran first, so the next tick's releases start on time unless one step
-    /// alone outlasts a tick. A verb that changed the row since the tick loaded it (pause,
+    /// steps, round-robin. While any campaign releases this tick, a step starts only if the
+    /// slowest step seen this tick still fits before the tick ends: releases ran first, so the
+    /// next tick's releases start on time unless one step alone outlasts a tick (and the TPS
+    /// budgets, which accrue one <see cref="GoldpathCampaignOptions.LeaderTick"/> per tick,
+    /// are not stretched). While none does, a step starts whenever the tick has time left, so
+    /// the next tick may start up to one step late and nothing it would release waits longer.
+    /// A verb that changed the row since the tick loaded it (pause,
     /// abort) loses the race on the state token; that campaign's stream is then AHEAD of
     /// its durable watermark, so it is closed and reopened at the watermark next tick.
     /// </summary>
     private async Task EnumerateAheadAsync(
         IServiceProvider services, List<GoldpathCampaign> campaigns, Dictionary<Guid, LeaderStream> streams,
-        long tickStart, CancellationToken cancellationToken)
+        long tickStart, bool releasing, CancellationToken cancellationToken)
     {
         var lostRace = new HashSet<Guid>();
         while (true)
@@ -349,7 +354,8 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
                     continue;
                 }
 
-                if (_time.GetElapsedTime(tickStart) + _slowestStep > _options.LeaderTick)
+                var elapsed = _time.GetElapsedTime(tickStart);
+                if (elapsed >= _options.LeaderTick || (releasing && elapsed + _slowestStep > _options.LeaderTick))
                 {
                     return;
                 }

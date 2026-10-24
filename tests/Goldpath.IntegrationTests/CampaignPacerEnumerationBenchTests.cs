@@ -90,7 +90,7 @@ public sealed class CampaignPacerEnumerationBenchTests : IAsyncLifetime
             new Dictionary<string, string> { ["count"] = count.ToString(CultureInfo.InvariantCulture) },
             new GoldpathCampaignPolicy(1, null, 1, null, null, "UTC"), null, "bench", CancellationToken.None);
         var pacer = new GoldpathCampaignPacerJob<CampaignTests.CampDb>(
-            Engine, _options, TimeProvider.System, NullLogger<GoldpathCampaignPacerJob<CampaignTests.CampDb>>.Instance);
+            _engine, _options, TimeProvider.System, NullLogger<GoldpathCampaignPacerJob<CampaignTests.CampDb>>.Instance);
         var context = CampaignFixtureLike.CreateContext(scope.ServiceProvider);
 
         GC.Collect();

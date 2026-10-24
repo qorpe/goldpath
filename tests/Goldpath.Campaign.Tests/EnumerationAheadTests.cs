@@ -219,6 +219,24 @@ public class EnumerationAheadTests
     }
 
     [Fact]
+    public async Task WithNothingReleasing_EnumerationTakesTheWholeTick_AndOverrunsByAtMostOneStep()
+    {
+        // The same 100 ms step, no other campaign: steps start at 0, 100 and 200 ms (200 is
+        // still inside the 250 ms tick), the tick ends at 300 ms and the pacer does not sleep.
+        // The 2,500 ms slice then starts ticks at 0, 300, ..., 2,400: nine ticks, three steps each.
+        TickClock? clock = null;
+        using var fixture = FleetFixture(_ => clock?.Advance(TimeSpan.FromTicks(500)));
+        var fleet = await CreateFleetAsync(fixture);
+        clock = new TickClock(DateTimeOffset.UtcNow);
+        var sliceStart = clock.GetUtcNow();
+
+        await RunSliceAsync(fixture, clock, Guid.Empty);
+
+        Assert.Equal(9L * 3 * fixture.Options.EnumerationBatchSize, fixture.Reload(fleet.Id).EnumeratedThrough);
+        Assert.Equal(TimeSpan.FromMilliseconds(2_700), clock.GetUtcNow() - sliceStart);   // the last tick overran by 50 ms, under one step
+    }
+
+    [Fact]
     public async Task APauseThatLandsMidTick_StopsTheSnapshot_AndAResumeInTheSameSliceLosesAndDoublesNothing()
     {
         CampaignFixture? fixture = null;
