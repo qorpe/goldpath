@@ -30,7 +30,11 @@ the pacer's run health lives on the goldpath-jobs dashboard. This board owns the
 - The old→new policy lands in `LastVerb` AND the audit trail; the released items already
   on the wire drain through the sink.
 - Provider hard-down: `POST /{id}/pause` — in-flight items drain, nothing new releases;
-  resume when the provider recovers.
+  resume when the provider recovers. Pause means now (R2.6): an item message still on the
+  queue reaches a consumer that claims nothing, so only the calls already in flight finish
+  — at most one per consumer slot. Measured on a real broker (S-FLEET-04, two hosts, eight
+  slots, a 600 ms device): no claim after the pause committed, the fleet quiet within 423 ms,
+  against a 3-second acceptance bar ([campaign-benchmarks.md](campaign-benchmarks.md)).
 
 ## 4. "The campaign isn't sending" (but the window is closed)
 

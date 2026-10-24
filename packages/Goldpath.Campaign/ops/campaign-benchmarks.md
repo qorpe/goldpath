@@ -142,3 +142,48 @@ first (claim accepts `Pending`) leaves the stamp's `State == Pending` guard noth
 so on a fast consumer most settled items carry `ReleasedAt = null`. A first smoke run that used
 the stamps counted 18,494 releases in its window, against 63,480 items executed overall. The
 bench therefore stamps every item message at the bus with a publish observer.
+
+## S-FLEET-04 — pause stops every worker within three seconds (2026-10-23)
+
+`ScenarioFleet04Tests` (#286; not a bench — it runs with the integration suite and asserts the
+bar): two hosts on one RabbitMQ 4 item queue and one PostgreSQL 17 store, a leader (pacer +
+consumers) and a worker (consumers only), **four consumer slots each**, a simulated device
+answering after **600 ms**, `Tps = 200`, 400 targets. The operator pauses through the admin
+verb once the queue holds at least 20 times the eight slots, watches for eight seconds, then
+resumes. Every latency below is measured from the instant read just before the verb was called,
+a lower bound on the commit (the pause's audit row landed 28–49 ms later).
+
+**Profile:** the overnight agent's cloud sandbox, Linux x64, 4 logical CPUs / 15 GB, Docker
+Engine 29, everything co-located. Code: `main` at `e9b2e4c` plus the test only. **Run id: none**
+— local runs, not CI runs.
+
+| Run | Backlog at the pause | Last claim | Last handler start | Last in-flight call returned | In flight at the pause | Peak concurrent calls | Claims after +3 s |
+|---|---|---|---|---|---|---|---|
+| 1 | 164 | −258 ms | −247 ms | +358 ms | 8 | 8 | 0 |
+| 2 | 164 | −354 ms | −310 ms | +293 ms | 8 | 8 | 0 |
+| 3 | 164 | −372 ms | −313 ms | +317 ms | 8 | 8 | 0 |
+| 4 | 164 | −295 ms | −252 ms | +365 ms | 8 | 8 | 0 |
+| 5 | 164 | −224 ms | −216 ms | +410 ms | 8 | 8 | 0 |
+| 6 | 164 | −237 ms | −189 ms | +423 ms | 8 | 8 | 0 |
+
+**Worst case over the six runs:** no item was claimed after the pause in any run, and the last
+call in flight at the pause returned **423 ms** after it — under one device latency, against
+the **3-second** bar. After resume, every run completed all 400 devices exactly once across
+both hosts.
+
+**The same test with the claim guard checking only the item's state** (the guard before R2.6):
+**64** items claimed later than the pause + 3 s, the first at **+3.4 s**, the last at **+7.8 s**
+with the queue still draining. That is the red the bar exists to catch.
+
+### Reading the numbers
+
+- **"Last claim" is negative by design.** With every slot busy when the operator acts, the last
+  claim lands before the pause; the next free slot meets a paused campaign and claims nothing.
+- **What the operator waits for is the calls already in flight**, at most one per slot, each
+  bounded by the target's own latency. A target answering in 10 s means a pause that settles in
+  about 10 s, though nothing new starts after the commit.
+- **Slots are set on the item consumer** (`ConcurrentMessageLimit`). A bus-level
+  `PrefetchCount` / `ConcurrentMessageLimit` did not reach the item endpoint in this test's
+  first run (98 calls at once on two hosts configured for four each), and the item consumer
+  shares its endpoint with the outcome sink. T48 tracks what that means for the S-FLEET-02a
+  numbers above, whose "32 consumers" were set at the bus level.

@@ -21,7 +21,12 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 if [ -d "$HOME/.dotnet/sdk" ]; then export DOTNET_ROOT="$HOME/.dotnet"; export PATH="$HOME/.dotnet:$PATH"; fi
 
 # Pinned by digest (2.16.1): the scanner's own rules change between releases, and an
-# unpinned scanner would turn a green night red with no change on our side.
+# unpinned scanner would turn a green night red with no change on our side. The digest alone
+# does not pin the rules: without -silent the packaged scans start ZAP with -addonupdate and
+# install pscanrulesBeta from the internet, and ZAP checks its own version online. That is
+# how 2026-10-24's night went red with no change here. -silent (ZAP_SILENT below) runs the
+# image's own add-ons and makes no unsolicited request, so the rule set moves only when a
+# reviewed PR moves this digest. It is also what an air-gapped run can do.
 ZAP_IMAGE="ghcr.io/zaproxy/zaproxy:2.16.1@sha256:7840969c7c9fead565bf9734b12f49f6886db90b1d35b1f74d79710bbd081dab"
 SHAPE=GmBulkOnly
 PG_NAME="goldpath-zap-pg"
@@ -77,13 +82,14 @@ zap() {
   docker run --rm --network host -v "$ROOT/scripts:/zap/rules:ro" -v "$OUT:/zap/wrk:rw" "$ZAP_IMAGE" "$@"
 }
 
+ZAP_SILENT="-silent"   # see the pin above: no add-on update, no version check
 status=0
 cp "$APP/src/$SHAPE.Api/openapi/$SHAPE.Api.json" "$OUT/openapi.json"
 echo "── zap api scan (passive, from the app's OpenAPI document)"
 zap zap-api-scan.py -t /zap/wrk/openapi.json -f openapi -S -O "$TARGET" -c /zap/rules/zap-baseline.conf \
-  -r zap-api.html -J zap-api.json -w zap-api.md || status=$?
+  -z "$ZAP_SILENT" -r zap-api.html -J zap-api.json -w zap-api.md || status=$?
 echo "── zap baseline: the served console"
 zap zap-baseline.py -t "$TARGET/goldpath/console/" -c /zap/rules/zap-baseline.conf -m 2 \
-  -r zap-console.html -J zap-console.json -w zap-console.md || status=$?
+  -z "$ZAP_SILENT" -r zap-console.html -J zap-console.json -w zap-console.md || status=$?
 echo "── reports: $OUT"
 exit "$status"
