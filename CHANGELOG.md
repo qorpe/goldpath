@@ -50,6 +50,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   carry `# expect-warning:` lines that the CLI tests hold the finding to. `specdrift validate`
   itself does not warn yet (open-threads T45), and a service's `providers.db: oracle` has no
   annotation to derive from (T46).
+- **Campaign: pause proven within three seconds on a real broker (S-FLEET-04, #286).** Test and
+  documentation only, no package change. `ScenarioFleet04Tests` runs two hosts on Testcontainers
+  RabbitMQ + PostgreSQL, four consumer slots each and a 600 ms target, pauses through the admin
+  verb with the queue at least ten times deeper than the slots, and asserts no claim later than
+  the pause + 3 s, no more calls in flight than slots, and every item exactly once after resume.
+  It is red on the claim guard before R2.6. The measured worst case (no claim after the pause,
+  the fleet quiet within 423 ms) is in `ops/campaign-benchmarks.md` and the runbook's pause text.
+  Writing it found that a bus-level consumer limit does not reach the campaign's item endpoint,
+  which it shares with the outcome sink (open-threads T48).
 - **Campaign: a real-broker bench at 1000 TPS (S-FLEET-02a, #283).** Measurement only, no
   package change. `CampaignBrokerBenchTests` drives one campaign through the whole release path
   on Testcontainers RabbitMQ + PostgreSQL with the package defaults, records published item
