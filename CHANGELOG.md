@@ -36,6 +36,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   A present but blank `ConnectionStrings:messaging` is refused at the bus's start in words (an
   absent one still means the engine's local default), and the test host refuses a tenant stamp
   outside `TenantId`'s alphabet, which the consume filter would otherwise drop silently.
+- **`Goldpath.Messaging`: the batch half of the consume seam (GA gate G1 Part 3/4, #328).**
+  `IIntegrationEventBatchHandler<TEvent>` takes deliveries in groups
+  (`HandleAsync(IReadOnlyList<IntegrationEvent<TEvent>>, …)`, each `IntegrationEvent<TEvent>`
+  pairing the event with its own `IntegrationEventContext`: message id, correlation, tenant and
+  headers per delivery, so one batch may carry several tenants). It is registered with
+  `messaging.AddBatchHandler<TEvent, THandler>(GoldpathBatchOptions)`: `MessageLimit` (10),
+  `TimeLimit` (1 s) and `ConcurrencyLimit` (1), the engine's defaults; a limit that is not
+  positive is refused at registration, naming the handler. A batch is delivered when either
+  limit is reached, at most `ConcurrencyLimit` batches run at once per endpoint, and a throw
+  fails the whole batch into the retry ladder. Conformance facts S2.9–S2.11 prove the size
+  bound, the time bound and one batch in flight on real RabbitMQ. `AddHandler<TEvent,
+  THandler>(endpointName)` and `AddBatchHandler`'s optional `endpointName` register a handler
+  on a queue that must keep the name a running fleet already drains; handlers given one name
+  share one queue, and moving a handler to a second name is refused.
 - **`goldpath check` warns a manifest that selects a roadmap-only value (GA gate G3, #336).**
   After `specdrift validate` passes, every value the schema accepts but no code runs
   (`broker: kafka|inmemory`, `exporters: prometheus`, `auditTrail.store: eventstream`, and
@@ -90,6 +104,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   changes. A `package` dispatch input (default `all`) names one of the six heavy packages, and a
   `plan` job turns it into the matrix, refusing a name outside the six rather than running an
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
+
+### Changed
+- **BREAKING (`Goldpath.Campaign`, preview.11): campaign consumes through the seam, and its
+  public surface names no bus engine (GA gate G1 Part 3/4, #328).**
+  `bus.AddGoldpathCampaignConsumers<TContext>()` (on MassTransit's `IBusRegistrationConfigurator`)
+  is replaced by `messaging.AddGoldpathCampaign<TContext>()` on the `GoldpathMessagingBuilder`.
+  `GoldpathCampaignItemConsumer<TContext>` becomes `GoldpathCampaignItemHandler<TContext>`
+  (an `IIntegrationEventHandler<GoldpathCampaignItemMessage>`), and
+  `GoldpathCampaignOutcomeSink<TContext>` with its `GoldpathCampaignOutcomeSinkDefinition<TContext>`
+  becomes `GoldpathCampaignOutcomeHandler<TContext>` (an `IIntegrationEventBatchHandler`, still 200
+  outcomes or 500 ms, one batch at a time). Claim-before-execute, the outcome shapes and the
+  set-based outcome write are unchanged. **No queue moves:** both handlers drain the queue the
+  replaced consumers drained, named after the context (`OrdersDbContext` drains
+  `orders-db-context`), with the same exchange bindings, so a fleet can roll host by host; a test
+  reads the queue and bindings from the broker and the same test passes against the previous
+  registration. The engine, the pacer and the callback endpoint publish through
+  `IIntegrationEventPublisher` instead of MassTransit's `IPublishEndpoint`, so a test double now
+  implements the seam. The templates and the CLI's campaign recipe write the new line from the
+  preview.11 release PR on (they generate on the published train). `scripts/engine-gate.sh`'s
+  baseline drops from 13 lines to 10 and its ceiling with it; the gate now treats a Shipped line
+  that the sibling Unshipped file marks `*REMOVED*` as gone, and dropping the marker fails it.
 
 ### Fixed
 - **The nightly ZAP baseline no longer changes its rules overnight.** Repository CI, no package

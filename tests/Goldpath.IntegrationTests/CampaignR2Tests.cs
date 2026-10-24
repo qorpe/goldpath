@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
-using MassTransit;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
@@ -104,15 +103,13 @@ public sealed class CampaignR2Tests : IAsyncLifetime
                     .AsAsyncEnumerable()));
         });
         builder.Services.WaitForTheBusOnStart();   // a publish right after StartAsync must find its queue bound
-        builder.AddGoldpathMessaging(bus =>
+        builder.Configuration["ConnectionStrings:messaging"] = _rabbit.GetConnectionString();
+        builder.AddGoldpathMessaging(messaging =>
         {
-            bus.AddGoldpathCampaignConsumers<CampaignTests.CampDb>();
-            bus.UsingRabbitMq((context, cfg) =>
-            {
-                cfg.Host(new Uri(_rabbit.GetConnectionString()));
-                cfg.ConfigureGoldpathEndpoints(context);
-            });
-        }, options => options.Retry.RedeliveryIntervals.Clear());
+            messaging.AddGoldpathCampaign<CampaignTests.CampDb>();
+            messaging.UseRabbitMq();
+            messaging.Options.Retry.RedeliveryIntervals.Clear();
+        });
         builder.AddGoldpathJobs<WebApplicationBuilder, CampaignTests.CampDb>(jobs =>
         {
             jobs.ConnectionName = "campdb";

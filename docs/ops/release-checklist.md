@@ -68,6 +68,20 @@ only after that PR merges green.
         the three `modelBuilder.Add…Entity()` lines to `AddGoldpathOutboxEntities()`. Proof: every
         broker GM shape green, and `goldpath db add` on one of them yields an empty migration
         (RFC goldpath-messaging-engines §4.2). The upgrade guide's steps 1, 2 and 4 (§8 there).
+      - **preview.11 — campaign on the seam (#328, G1 Part 3/4). BREAKING.** The solution
+        layouts' `Program.cs` (`bus.AddGoldpathCampaignConsumers<OrdersDbContext>();`) and the
+        CLI's campaign recipe (`FeatureRecipes.cs`, with its golden in `RecipeGoldenTests`/
+        `AddFeatureTests`) move to `messaging.AddGoldpathCampaign<TContext>();` inside the new
+        block. Proof: the campaign GM shape green, and its broker queue still named after the
+        context. Upgrade guide step 3, drafted: *"Campaign: replace
+        `bus.AddGoldpathCampaignConsumers<YourDbContext>()` with
+        `messaging.AddGoldpathCampaign<YourDbContext>()` in the `AddGoldpathMessaging` block. Queue
+        names and bindings do not change — both handlers still drain the queue named after your
+        context — so hosts may be rolled one at a time. If you referenced
+        `GoldpathCampaignItemConsumer<T>` or `GoldpathCampaignOutcomeSink<T>` (for example to tune a
+        consumer), they are now `GoldpathCampaignItemHandler<T>` and `GoldpathCampaignOutcomeHandler<T>`;
+        a test double of MassTransit's `IPublishEndpoint` for the campaign engine becomes one of
+        `IIntegrationEventPublisher`."*
 
 ## After the merge
 

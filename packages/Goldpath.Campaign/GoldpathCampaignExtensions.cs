@@ -1,4 +1,3 @@
-using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -10,8 +9,8 @@ namespace Goldpath;
 /// Composition entry points — the ladder's fourth rider (campaign RFC D2/D4). Declare
 /// types with <c>AddGoldpathCampaign</c>, map the store with <c>modelBuilder.AddGoldpathCampaign()</c>,
 /// schedule the pacer through Jobs with <c>jobs.AddGoldpathCampaignJobs&lt;TContext&gt;()</c>, and
-/// register the consumers inside YOUR AddGoldpathMessaging bus block with
-/// <c>configurator.AddGoldpathCampaignConsumers&lt;TContext&gt;()</c> — campaign REQUIRES a broker (D8).
+/// register the handlers inside YOUR AddGoldpathMessaging block with
+/// <c>messaging.AddGoldpathCampaign&lt;TContext&gt;()</c> — campaign REQUIRES a broker (D8).
 /// </summary>
 public static class GoldpathCampaignExtensions
 {
@@ -52,14 +51,18 @@ public static class GoldpathCampaignExtensions
     }
 
     /// <summary>
-    /// Registers the item consumer (competing, claim-before-execute) and the batching
-    /// outcome sink on YOUR bus — call this inside the AddGoldpathMessaging configure block.
+    /// Registers the item handler (competing, claim-before-execute) and the batching outcome
+    /// handler on YOUR message path — call this inside the AddGoldpathMessaging configure block.
+    /// Both drain the queue the fleet already has, named after <typeparamref name="TContext"/>,
+    /// and the sink takes outcomes 200 at a time or every 500 ms, one batch in flight.
     /// </summary>
-    public static IBusRegistrationConfigurator AddGoldpathCampaignConsumers<TContext>(this IBusRegistrationConfigurator configurator)
+    public static GoldpathMessagingBuilder AddGoldpathCampaign<TContext>(this GoldpathMessagingBuilder messaging)
         where TContext : DbContext
     {
-        configurator.AddConsumer<GoldpathCampaignItemConsumer<TContext>>();
-        configurator.AddConsumer<GoldpathCampaignOutcomeSink<TContext>, GoldpathCampaignOutcomeSinkDefinition<TContext>>();
-        return configurator;
+        ArgumentNullException.ThrowIfNull(messaging);
+        var queue = GoldpathCampaignEndpoints.QueueOf<TContext>();
+        messaging.AddHandler<GoldpathCampaignItemMessage, GoldpathCampaignItemHandler<TContext>>(queue);
+        messaging.AddBatchHandler<GoldpathCampaignOutcomeMessage, GoldpathCampaignOutcomeHandler<TContext>>(GoldpathCampaignEndpoints.OutcomeBatch, queue);
+        return messaging;
     }
 }

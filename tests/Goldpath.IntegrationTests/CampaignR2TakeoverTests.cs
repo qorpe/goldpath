@@ -94,15 +94,13 @@ public sealed class CampaignR2TakeoverTests : IAsyncLifetime
                 }, target => target.Id.ToString(CultureInfo.InvariantCulture)));
         });
         builder.Services.WaitForTheBusOnStart();   // a publish right after StartAsync must find its queue bound
-        builder.AddGoldpathMessaging(bus =>
+        builder.Configuration["ConnectionStrings:messaging"] = _rabbit.GetConnectionString();
+        builder.AddGoldpathMessaging(messaging =>
         {
-            bus.AddGoldpathCampaignConsumers<CampaignTests.CampDb>();
-            bus.UsingRabbitMq((context, cfg) =>
-            {
-                cfg.Host(new Uri(_rabbit.GetConnectionString()));
-                cfg.ConfigureGoldpathEndpoints(context);
-            });
-        }, options => options.Retry.RedeliveryIntervals.Clear());
+            messaging.AddGoldpathCampaign<CampaignTests.CampDb>();
+            messaging.UseRabbitMq();
+            messaging.Options.Retry.RedeliveryIntervals.Clear();
+        });
         builder.AddGoldpathJobs<HostApplicationBuilder, CampaignTests.CampDb>(jobs =>
         {
             jobs.ConnectionName = "campdb";

@@ -15,6 +15,10 @@
 #   - a baseline holding more lines than the ceiling below fails, so the 13 cannot be traded
 #     for 13 different ones by editing the baseline alone.
 #
+# A Shipped line that the sibling PublicAPI.Unshipped.txt marks `*REMOVED*` is gone from the
+# surface (the analyzers' own convention; roll-shipped.sh deletes it at the train boundary), so
+# it no longer counts — and dropping the marker brings it back, which fails like any new line.
+#
 # `engine-gate.sh --selftest` plants each of those faults in a scratch copy and proves the
 # check goes red for each, and green on an unplanted copy.
 set -euo pipefail
@@ -30,7 +34,7 @@ ADAPTER_DIRS = {
 }
 ENGINE_TYPE = re.compile(r"(?<![A-Za-z0-9_.])(MassTransit|Wolverine)\.")
 BASELINE = "scripts/engine-gate.baseline.txt"
-CEILING = 13            # the count on 2026-10-20 (GA readiness §7.1 G1). Lower it, never raise it.
+CEILING = 10            # 13 on 2026-10-20 (GA readiness §7.1 G1); 10 since Campaign's three left (#328). Lower it, never raise it.
 SKIP_DIRS = {".git", "bin", "obj", "node_modules"}
 
 
@@ -60,6 +64,17 @@ def read_baseline(root):
     return entries
 
 
+def removed_from(root, path):
+    """The Shipped lines the sibling Unshipped file marks *REMOVED*; empty for any other file."""
+    if not path.endswith("PublicAPI.Shipped.txt"):
+        return set()
+    unshipped = os.path.join(root, path[: -len("Shipped.txt")] + "Unshipped.txt")
+    if not os.path.exists(unshipped):
+        return set()
+    with open(unshipped, encoding="utf-8") as f:
+        return {raw.rstrip("\n")[len("*REMOVED*"):] for raw in f if raw.startswith("*REMOVED*")}
+
+
 def check(root):
     """Returns the list of findings; empty means green."""
     findings = []
@@ -75,11 +90,14 @@ def check(root):
     for path in sorted(public_api_files(root)):
         if in_adapter(path):
             continue
+        removed = removed_from(root, path)
         with open(os.path.join(root, path), encoding="utf-8") as f:
             for number, raw in enumerate(f, 1):
                 line = raw.rstrip("\n")
                 if line.startswith("*REMOVED*") or not ENGINE_TYPE.search(line):
                     continue          # a removal is the ratchet working, not a new promise
+                if line in removed:
+                    continue          # shipped, and removed by this train: no longer on the surface
                 key = (path, line)
                 found[key] = found.get(key, 0) + 1
                 if found[key] > allowed.get(key, 0):
@@ -128,7 +146,21 @@ def selftest():
         open(full, "w", encoding="utf-8").write("\n".join(lines))
 
     messaging = "packages/Goldpath.Messaging/PublicAPI.Unshipped.txt"
+    gone = "Goldpath.Gone.Old(MassTransit.ConsumeContext<Goldpath.X!>! context) -> void"
+
+    def ship_and_remove(root):
+        append(root, "packages/Goldpath.Messaging/PublicAPI.Shipped.txt", gone)
+        append(root, messaging, "*REMOVED*" + gone)
+
+    def drop_removal_marker(root):
+        ship_and_remove(root)
+        full = os.path.join(root, messaging)
+        lines = open(full, encoding="utf-8").read().split("\n")
+        lines.remove("*REMOVED*" + gone)
+        open(full, "w", encoding="utf-8").write("\n".join(lines))
+
     planted = [
+        ("a removed engine line brought back (its *REMOVED* marker dropped)", drop_removal_marker),
         ("a 14th MassTransit line in an Unshipped file",
          lambda r: append(r, messaging, "static Goldpath.X.Y(this MassTransit.IBusRegistrationConfigurator! c) -> void")),
         ("a Wolverine type outside its adapter",
@@ -151,6 +183,10 @@ def selftest():
            "static Goldpath.MassTransitAdapter.Use(MassTransit.IBusRegistrationConfigurator! c) -> void")
     if check(adapter):
         failures.append(f"an engine type INSIDE its adapter package went red: {check(adapter)}")
+    removal = scratch()
+    ship_and_remove(removal)
+    if check(removal):
+        failures.append(f"a shipped engine line marked *REMOVED* went red: {check(removal)}")
 
     for name, plant in planted:
         root = scratch()
@@ -161,14 +197,14 @@ def selftest():
             print(f"engine-gate selftest: red as it should be — {name}")
         shutil.rmtree(root)
 
-    for root in (clean, adapter):
+    for root in (clean, adapter, removal):
         shutil.rmtree(root)
     if failures:
         print("engine-gate selftest FAILED:")
         for f in failures:
             print(f"  - {f}")
         return 1
-    print("engine-gate selftest: green on the real tree and inside an adapter package; every planted fault red.")
+    print("engine-gate selftest: green on the real tree, inside an adapter package and on a removed line; every planted fault red.")
     return 0
 
 

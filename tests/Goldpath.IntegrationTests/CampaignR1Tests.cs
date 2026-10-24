@@ -1,4 +1,3 @@
-using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -54,15 +53,13 @@ public sealed class CampaignR1Tests : IAsyncLifetime
                     .AsAsyncEnumerable()));
         });
         builder.Services.WaitForTheBusOnStart();   // a publish right after StartAsync must find its queue bound
-        builder.AddGoldpathMessaging(bus =>
+        builder.Configuration["ConnectionStrings:messaging"] = _rabbit.GetConnectionString();
+        builder.AddGoldpathMessaging(messaging =>
         {
-            bus.AddGoldpathCampaignConsumers<CampaignTests.CampDb>();
-            bus.UsingRabbitMq((context, cfg) =>
-            {
-                cfg.Host(new Uri(_rabbit.GetConnectionString()));
-                cfg.ConfigureGoldpathEndpoints(context);
-            });
-        }, options => options.Retry.RedeliveryIntervals.Clear());
+            messaging.AddGoldpathCampaign<CampaignTests.CampDb>();
+            messaging.UseRabbitMq();
+            messaging.Options.Retry.RedeliveryIntervals.Clear();
+        });
         builder.AddGoldpathJobs<HostApplicationBuilder, CampaignTests.CampDb>(jobs =>
         {
             jobs.ConnectionName = "campdb";

@@ -176,7 +176,6 @@ answer says, the body limit, the timestamp window and the fair share's edges:
 | Cli | `Prompter.cs` | The interactive shell (`Console.ReadLine` + menu rendering) behind `IPrompter` — a unit loop cannot answer a prompt. The wizard's QUESTIONS, defaults and multi-select parsing are pinned against a recording fake in `WizardDiscoverRunnerMutationTests`; the derivation it feeds is a pure function under full mutation. **Weakest exclusion in this ledger** (open-threads: no e2e run drives the real prompter either). |
 | Campaign | `GoldpathCampaignExtensions.cs` | DI composition (see Jobs). |
 | Campaign | `GoldpathCampaignMetrics.cs` | Meter/counter declarations — names are pinned by the dashboard's queries, not by mutants. |
-| Campaign | `GoldpathCampaignConsumers.cs` | MassTransit consumers — exercised against a real broker in the integration suite. |
 | Campaign | `GoldpathCampaignAdminEndpoints.cs` | Route table (see Jobs). |
 | Notification | `GoldpathNotificationExtensions.cs` | DI composition. |
 | Notification | `GoldpathNotificationMetrics.cs` | Meter declarations. |

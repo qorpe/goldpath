@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Net;
 using System.Text;
-using MassTransit;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -555,7 +554,7 @@ public class R2CallbackTests
             builder.Services.AddDbContext<CampaignTestContext>(o => o.UseSqlite(fixture.Connection));
             builder.Services.AddSingleton(fixture.Options);
             builder.Services.AddSingleton(fixture.Engine);
-            builder.Services.AddSingleton<IPublishEndpoint>(fixture.Publisher);
+            builder.Services.AddSingleton<IIntegrationEventPublisher>(fixture.Publisher);
             var app = builder.Build();
             app.MapGoldpathCampaignCallbacks<CampaignTestContext>();
             await app.StartAsync();

@@ -40,8 +40,9 @@ and downstream systems that reacted to `Requested` learn nothing they must undo.
 | `GoldpathCampaignItemMessage` | `CampaignId, Seq, Type` | The pacer RELEASES an item: coordinates only — the target payload stays in the durable item row (a message is delivery plumbing). Competing consumers claim-before-execute; one of them runs the item. |
 | `GoldpathCampaignOutcomeMessage` | `CampaignId, Seq, Succeeded, Error` | The executing consumer reports back — success, or the handler's failure with its error text. The batching outcome sink folds these into the campaign's counters and the repair queue. |
 
-These two are the campaign's INTERNAL rails: an adopter's app composes their consumers
-(`bus.AddGoldpathCampaignConsumers<TContext>()`) and never publishes them by hand.
+These two are the campaign's INTERNAL rails: an adopter's app composes their handlers
+(`messaging.AddGoldpathCampaign<TContext>()`; `bus.AddGoldpathCampaignConsumers<TContext>()` up to
+preview.10) and never publishes them by hand.
 
 ## The other packages
 
