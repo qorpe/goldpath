@@ -219,6 +219,25 @@ public class EnumerationAheadTests
     }
 
     [Fact]
+    public async Task ACampaignAllowedNothingThisTick_StillCountsAsReleasing()
+    {
+        // At 1 TPS a 250 ms tick banks a quarter unit: the running campaign's allowance is 0 in
+        // most ticks and 1 in every fourth. It is still releasing, so every tick keeps the
+        // estimate guard (2 steps, never the third that would push the next tick late).
+        TickClock? clock = null;
+        using var fixture = FleetFixture(_ => clock?.Advance(TimeSpan.FromTicks(500)));
+        var running = await fixture.CreateAsync(new GoldpathCampaignPolicy(1, null, 1_000_000, null, null, "UTC"));
+        await fixture.EnumerateAllAsync(running);
+        var fleet = await CreateFleetAsync(fixture);
+        clock = new TickClock(DateTimeOffset.UtcNow);
+
+        var releaseTicks = await RunSliceAsync(fixture, clock, running.Id);
+
+        Assert.NotEmpty(releaseTicks);
+        Assert.Equal(2L * fixture.Options.EnumerationBatchSize * SliceTicks, fixture.Reload(fleet.Id).EnumeratedThrough);
+    }
+
+    [Fact]
     public async Task WithNothingReleasing_EnumerationTakesTheWholeTick_AndOverrunsByAtMostOneStep()
     {
         // The same 100 ms step, no other campaign: steps start at 0, 100 and 200 ms (200 is
