@@ -48,6 +48,11 @@ S-FLEET-01 — A 2.3M-device config push finishes in five working days without m
             log carries every throttle with its actor
   needs:    scale-rig (targets can be synthetic; timing compressed via clock control where honest)
   evidence: —
+  notes:    the list-targeted variant (targets uploaded as a device list through Goldpath.Bulk,
+            the app's selector reading the batch's staged rows) has its INTAKE leg measured:
+            10M rows uploaded, validated and reported in 828 s on the agent's sandbox, peak
+            managed heap 541 MiB (#300, packages/Goldpath.Bulk/ops/bulk-benchmarks.md). The
+            campaign over that list is not run
 
 S-FLEET-02 — 30M inventory: one campaign sustains the configured TPS for an hour, flat
   modules:  campaign, jobs, broker, store

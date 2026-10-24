@@ -104,7 +104,8 @@ public sealed class GoldpathBulkEngine<TContext>
         await db.Set<GoldpathBulkRowError>().Where(e => e.BatchId == batch.Id).ExecuteDeleteAsync(cancellationToken);
 
         var started = _time.GetUtcNow();
-        var seenKeys = new Dictionary<string, int>(StringComparer.Ordinal);
+        var duplicates = new GoldpathBulkDuplicateKeys(definition.Name, _options.DuplicateKeyHash);
+        var keyChecked = false;
         var pendingRows = new List<GoldpathBulkRow>();
         var pendingErrors = new List<GoldpathBulkRowError>();
         int total = 0, valid = 0, invalid = 0;
@@ -128,6 +129,21 @@ public sealed class GoldpathBulkEngine<TContext>
             pendingErrors.Clear();
         }
 
+        // The key a staged row was recorded under, re-derived from its payload: still in this
+        // flush's buffer, or already written. Only a row that recorded a key is ever asked for,
+        // and only valid rows record one, so the row is always staged.
+        async ValueTask<string?> KeyOfRowAsync(int rowNumber)
+        {
+            var payload = pendingRows.Find(r => r.RowNumber == rowNumber)?.Payload
+                ?? await db.Set<GoldpathBulkRow>().AsNoTracking()
+                    .Where(r => r.BatchId == batch.Id && r.RowNumber == rowNumber)
+                    .Select(r => r.Payload)
+                    .SingleOrDefaultAsync(cancellationToken)
+                ?? throw new InvalidOperationException(
+                    $"Bulk batch {batch.Id}: row {rowNumber} recorded a row key but is not staged.");
+            return definition.KeyOfPayload(payload);
+        }
+
         try
         {
             await using var stream = _store.OpenRead(db, batch.FileId);
@@ -144,16 +160,25 @@ public sealed class GoldpathBulkEngine<TContext>
 
                     var result = definition.ValidateRow(raw, services);
                     var errors = result.Errors;
-                    if (errors.Count == 0 && result.RowKey is { } key)
+                    if (errors.Count == 0 && result.RowKey is { } recorded && !keyChecked)
                     {
-                        if (seenKeys.TryGetValue(key, out var first))
+                        // Once per pass, on the first key recorded: a key its payload cannot give
+                        // back cannot confirm a hash hit, so this pass keeps keys in full instead.
+                        keyChecked = true;
+                        if (!string.Equals(definition.KeyOfPayload(result.Payload!), recorded, StringComparison.Ordinal))
                         {
-                            errors = [("(row key)", $"duplicate of row {first} within the file")];
+                            duplicates.KeepKeysInFull();
+                            _logger.LogWarning(
+                                "The row key of bulk definition {Definition} is not reproducible from its staged payload; "
+                                + "batch {BatchId} keeps every key in full for duplicate detection. Derive the key from public, serialized properties.",
+                                definition.Name, batch.Id);
                         }
-                        else
-                        {
-                            seenKeys[key] = raw.RowNumber;
-                        }
+                    }
+
+                    if (errors.Count == 0 && result.RowKey is { } key
+                        && await duplicates.FirstRowOfAsync(key, raw.RowNumber, KeyOfRowAsync) is { } first)
+                    {
+                        errors = [("(row key)", $"duplicate of row {first} within the file")];
                     }
 
                     if (errors.Count == 0)

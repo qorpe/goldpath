@@ -75,6 +75,13 @@ run shared, not the CI profile's. Survivors left: the test host's dispose branch
 `WaitUntilStarted` line, which the in-memory transport cannot tell apart. The argument guards
 that also survived are pinned by a test added after the run.
 
+**Bulk was re-measured 2026-10-24**, a full run of `mutation-gate.sh Goldpath.Bulk` at 6b97bc3 on
+the #300 branch (the duplicate check keeps hashes, not keys), at concurrency 1 on the local
+sandbox: 88.38 % → 88.37 % (577 mutants tested). The new `GoldpathBulkDuplicateKeys` leaves one
+survivor, `unit >> 8` → `unit >>> 8` in the hash, which is equivalent: a `char` is unsigned, so the
+two shifts agree. The other survivors are in lines the change did not touch. Minutes are the
+sandbox's, not the CI profile's.
+
 **Console was re-measured 2026-10-19**, a full run on the #272 branch, after the product
 console link tiles (#257) put the package's first real decision logic in it — the link URL
 rule and the registry's links-only shape. 75.00 % → 91.46 % (75 killed, 6 survived, 1 without
@@ -91,7 +98,7 @@ at f459fe2, so its row carries it (minutes not recorded).
 | Locking | 91.67 % | 21.67 | 7.1 | 91.67 %, 59.5 |
 | Cli | 91.48 % | 21.48 | 7.6 | 91.44 %, 8.6 |
 | Console | 91.46 % (75.00) | 21.46 | — | 75.00 %, 24.3 |
-| Bulk | 88.38 % (70.09) | 18.38 | 15.2 | never finished (timeout) |
+| Bulk | 88.37 % (88.38) | 18.37 | 19.7 | never finished (timeout) |
 | Idempotency | 84.91 % (73.58) | 14.91 | 1.8 | 73.58 %, 3.3 |
 | AuditTrail | 81.97 % | 11.97 | 5.1 | 81.97 %, 5.7 |
 | MultiTenancy | 81.40 % (72.09) | 11.40 | 6.1 | 75.58 %, 38.5 |
