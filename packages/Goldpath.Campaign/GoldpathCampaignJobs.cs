@@ -334,9 +334,11 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
     /// budgets, which accrue one <see cref="GoldpathCampaignOptions.LeaderTick"/> per tick,
     /// are not stretched). While none does, a step starts whenever the tick has time left, so
     /// the next tick may start up to one step late and nothing it would release waits longer.
-    /// A verb that changed the row since the tick loaded it (pause,
-    /// abort) loses the race on the state token; that campaign's stream is then AHEAD of
-    /// its durable watermark, so it is closed and reopened at the watermark next tick.
+    /// A target ceiling breached here pauses the campaign as it does in Phase 1, and a paused
+    /// campaign takes no further step. A verb that changed the row since the tick loaded it
+    /// (pause, abort) loses the race on the state token; that campaign's stream is then AHEAD
+    /// of its durable watermark, so it is closed, and the next tick that works the campaign
+    /// reopens it at the watermark.
     /// </summary>
     private async Task EnumerateAheadAsync(
         IServiceProvider services, List<GoldpathCampaign> campaigns, Dictionary<Guid, LeaderStream> streams,

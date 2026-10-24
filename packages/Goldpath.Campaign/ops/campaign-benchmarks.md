@@ -6,15 +6,17 @@ Re-run and update this file whenever the enumeration, release or sink path chang
 
 | Proof | Budget | Measured (2026-07-10) | Verdict |
 |---|---|---|---|
-| Enumeration: 1M targets materialized into item rows | memory flat, minutes not hours | **15.3 s = 65,266 rows/s** | a 30M campaign enumerates in ~8 min |
+| Enumeration: 1M targets materialized into item rows (the engine loop, not the pacer) | memory flat, minutes not hours | **15.3 s = 65,266 rows/s** | the engine loop takes 30M in ~8 min; a campaign enumerates through the pacer, measured in the #288 section below |
 | Pacer precision: configured 200 TPS, measured over 15 s | ±5% steady-state | **186.7 released/s** (−6.7%, includes cold-start slice) | governor holds; see note |
 | LIVE throttle: 200 → 50 TPS mid-run, next 15 s | takes effect within one tick | **50.0 released/s** — exact | D6 delivered |
 | Outcome sink: 100k outcomes, batches of 200 | 30M items never mean 30M writes | **1.7 s = 57,462 outcomes/s** | set-based flushes hold |
 
 ## Reading the numbers
 
-- **Enumeration is not the bottleneck:** 65k rows/s means even a device-fleet-scale 30M
-  plan materializes inside a coffee break — and it streams, so memory stays flat.
+- **The engine loop is not the bottleneck:** 65k rows/s means the loop materializes a
+  device-fleet-scale 30M plan inside a coffee break, and it streams, so memory stays flat. Until
+  #288 an adopter's campaign did NOT get that rate: the pacer took one 2,000-row batch per
+  250 ms tick, a ceiling of 8,000 rows/s. The #288 section below measures the pacer path.
 - **The pacer's −6.7% includes the cold start:** the measured window opens BEFORE the
   first tick banks budget and while the same slice is still enumerating; steady-state
   ticks track the ceiling (the throttle phase — pure steady-state — measured EXACTLY
@@ -32,7 +34,7 @@ run 29228081113; the dev-machine numbers above/below are the fast point, not the
 
 | Proof | Budget | CI measured | Verdict |
 |---|---|---|---|
-| Enumeration: 1M targets materialized | minutes not hours | **70.0 s = 14,277 rows/s** | a 30M campaign enumerates in ~35 min on 4 vCPU |
+| Enumeration: 1M targets materialized (the engine loop, not the pacer) | minutes not hours | **70.0 s = 14,277 rows/s** | the engine loop takes 30M in ~35 min on 4 vCPU; the pacer path is in the #288 section below |
 | Pacer precision: configured 200 TPS over 15 s | ±5% steady-state | **140.0 released/s** | CPU/IO-bound below target on 4 vCPU — the governor UNDERSHOOTS, never over-releases; size TPS to the hardware |
 | LIVE throttle: → 50 TPS, next 15 s | within one tick | **50.8 released/s** | exact on CI too — D6 holds everywhere |
 | Outcome sink: 100k outcomes (batches of 200) | set-based writes | **5.5 s = 18,119 outcomes/s** | holds |

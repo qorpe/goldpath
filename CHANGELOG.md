@@ -83,6 +83,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
 ### Fixed
+- **`Goldpath.Campaign`: a snapshot is no longer bound to the leader tick (#288).** The pacer
+  materialized one `EnumerationBatchSize` batch per campaign per tick, so at the defaults (2,000
+  rows, 250 ms) a snapshot ran at about 8,000 rows/s. 35M targets took over 70 minutes before
+  the first release. Each tick now spends the time it would otherwise sleep enumerating further,
+  after its releases and while the slowest step seen in that tick still fits before the tick
+  ends. A running campaign's releases keep their cadence. A pause or abort that lands mid-tick
+  stops the snapshot at its last durable batch, and resume continues from there with nothing
+  lost or doubled. No public API or option changes. `scripts/bench-campaign.sh enum` measures
+  enumeration through the pacer (`CampaignPacerEnumerationBenchTests`), and
+  `ops/campaign-benchmarks.md` now says which path each enumeration number measured.
 - **Recording a gate's progress no longer needs the owner's merge.** Repository governance, no
   package changes. Column (b), "Today (evidence)", of the GA-readiness RFC's gate tables, and the
   "Exists today" column of its summary, move to a ledger, `docs/strategy/ga-gate-status.md`. The

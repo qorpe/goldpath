@@ -67,13 +67,13 @@ public class EnumerationAheadTests
         await Task.CompletedTask;
     }
 
-    private static CampaignFixture FleetFixture(Action<int>? onYield = null)
+    private static CampaignFixture FleetFixture(Action<int>? onYield = null, int maxTargets = FleetSize * 2)
         => new(o =>
         {
             o.LeaderTick = Tick;
             o.LeadershipSlice = Tick * SliceTicks;
             o.AddCampaign<TestTarget>("fleet", c => c
-                .MaxTargets(FleetSize * 2)
+                .MaxTargets(maxTargets)
                 .Targets((_, _) => Fleet(FleetSize, onYield)));
         }, sourceSize: 500);
 
@@ -234,6 +234,23 @@ public class EnumerationAheadTests
 
         Assert.Equal(9L * 3 * fixture.Options.EnumerationBatchSize, fixture.Reload(fleet.Id).EnumeratedThrough);
         Assert.Equal(TimeSpan.FromMilliseconds(2_700), clock.GetUtcNow() - sliceStart);   // the last tick overran by 50 ms, under one step
+    }
+
+    [Fact]
+    public async Task ATargetCeilingBreachedAheadPausesTheCampaign_AndItStepsNoFurther()
+    {
+        // Phase 1 takes 1..2,000; the ceiling (7,000) is crossed in Phase 5 of the first tick.
+        using var fixture = FleetFixture(maxTargets: 7_000);
+        var fleet = await CreateFleetAsync(fixture);
+
+        await RunSliceAsync(fixture, new TickClock(DateTimeOffset.UtcNow), Guid.Empty);
+
+        var stopped = fixture.Reload(fleet.Id);
+        Assert.Equal(GoldpathCampaignState.Paused, stopped.State);
+        Assert.False(stopped.EnumerationComplete);   // a step on the paused row would read the stream dry and say "complete"
+        Assert.Equal(7_000, stopped.EnumeratedThrough);
+        Assert.Contains("target ceiling (7000) exceeded", stopped.LastVerb);
+        Assert.Equal(7_000, fixture.Query(db => db.Set<GoldpathCampaignItem>().Count(i => i.CampaignId == fleet.Id)));
     }
 
     [Fact]
