@@ -60,8 +60,8 @@ clock stops when the row flips to enumeration-complete. The target payload is th
 Engine 29, everything co-located. It is neither the dev reference profile above nor the CI one;
 the owner allowed the 35M number off the CI profile, labelled as such (#288). Code: `56cee73` on
 `agent/288-enumeration-off-the-tick` (the "before" row: `main` at `e9b2e4c`). **Run id: none**,
-one local run each. The CI-profile 1M row comes from the first `bench.yml` dispatch that
-includes this class.
+one local run each. The CI-profile row is `bench.yml` dispatched on that branch at `a36532e`
+(same pacer code), [run 40049231143](https://github.com/qorpe/goldpath/actions/runs/40049231143).
 
 | Run | Code | Wall time | Rows/s | Items table + indexes | Leader peak (managed / working set) |
 |---|---|---|---|---|---|
@@ -70,12 +70,15 @@ includes this class.
 | 1M through the pacer | `56cee73` | 59.5 s | **16,801** | 81 + 62 MiB | 122 / 310 MiB |
 | 5M through the pacer | `56cee73` | 294.5 s | 16,975 | 403 + 310 MiB | 142 / 324 MiB |
 | **35M through the pacer** | `56cee73` | **2,239.9 s = 37.3 min** | **15,625** | **2,820 + 2,168 MiB** (149 B/item) | **162 / 341 MiB** |
+| 1M through the pacer, **CI reference profile** (ubuntu-latest, 4 vCPU / 16 GB) | `a36532e` | 71.4 s | **14,008** | 81 + 61 MiB | 146 / 483 MiB (the working set includes the benches that ran before it in the same process) |
 
 ### Reading the numbers
 
 - **The pacer now runs at the engine loop's rate:** 16,801 against 17,429 rows/s at 1M on the
   same machine (96%). Before #288 it ran at the one-batch-per-tick ceiling (7,895 measured,
-  8,000 in theory).
+  8,000 in theory). On the CI profile it took 1M in 71.4 s, against the engine loop's 70.0 s
+  published above (the same run's engine-loop bench gave 10,539 rows/s, but that one runs in
+  parallel with the other benches and the pacer bench runs alone, so it is not compared here).
 - **35M is S-FLEET-02's enumeration leg on PostgreSQL** on this profile: 37 minutes to `Running`.
   It is not the 30M rig run (G10c), which is still where a promise-grade number comes from.
 - **Memory stays flat with size:** the leader's managed heap peaked at 122, 142 and 162 MiB for 1M,
