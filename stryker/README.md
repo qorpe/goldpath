@@ -75,6 +75,13 @@ run shared, not the CI profile's. Survivors left: the test host's dispose branch
 `WaitUntilStarted` line, which the in-memory transport cannot tell apart. The argument guards
 that also survived are pinned by a test added after the run.
 
+**Messaging was re-measured 2026-10-24**, a full run at 421f47d on the #328 branch (G1 Part 3/4: the
+batch seam, named endpoints, the engine's batch composition): 81.53 % → 86.09 % (222 mutants tested;
+the agent sandbox's minutes). Of the new code's survivors, four are pinned by tests added after the
+run — the duplicate-batch check's `&&`, the explicit endpoint name, a `MessageLimit` of exactly 1, and
+the refusal naming the in-flight product — and so is the engine test hook's registration callback.
+Left without coverage: the hook's RabbitMQ transport callback, which only the broker bench reaches.
+
 **Console was re-measured 2026-10-19**, a full run on the #272 branch, after the product
 console link tiles (#257) put the package's first real decision logic in it — the link URL
 rule and the registry's links-only shape. 75.00 % → 91.46 % (75 killed, 6 survived, 1 without
@@ -96,7 +103,7 @@ at f459fe2, so its row carries it (minutes not recorded).
 | AuditTrail | 81.97 % | 11.97 | 5.1 | 81.97 %, 5.7 |
 | MultiTenancy | 81.40 % (72.09) | 11.40 | 6.1 | 75.58 %, 38.5 |
 | Notification | 81.23 % | 11.23 | 5.9 | never finished (OOM) |
-| Messaging | 81.53 % (80.72) | 11.53 | 68.3 | 80.72 %, 69.4 |
+| Messaging | 86.09 % (81.53) | 16.09 | 57.0 | 80.72 %, 69.4 |
 | DataProtection | 78.95 % | 8.95 | 1.5 | 78.95 %, 33.0 |
 | ServiceDefaults | 78.48 % (72.15) | 8.48 | 1.4 | 72.15 %, 4.3 |
 | Approvals | 77.78 % (74.84) | 7.78 | 3.4 | 74.84 %, 217.7 |

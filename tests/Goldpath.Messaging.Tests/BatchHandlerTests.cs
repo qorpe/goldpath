@@ -50,6 +50,12 @@ public class BatchHandlerTests
         }
     }
 
+    /// <summary>A second sink for the same event: two batch handlers of one event are two registrations, not a duplicate.</summary>
+    public sealed class ReadingArchiveHandler : IIntegrationEventBatchHandler<Reading>
+    {
+        public Task HandleAsync(IReadOnlyList<IntegrationEvent<Reading>> batch, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
     public sealed class AlarmHandler(Seen seen) : IIntegrationEventHandler<Alarm>
     {
         public Task HandleAsync(Alarm integrationEvent, IntegrationEventContext context, CancellationToken cancellationToken = default)
@@ -150,12 +156,17 @@ public class BatchHandlerTests
 
         Assert.Equal(option, refusal.ParamName);
         Assert.Contains("'ReadingBatchHandler'", refusal.Message, StringComparison.Ordinal);
+        if (option == "MessageLimit" && messages > 1)
+        {
+            Assert.Contains($"= {(long)messages * concurrency} messages", refusal.Message, StringComparison.Ordinal);   // the product, named
+        }
     }
 
     [Fact]
     public void The_largest_grouping_a_broker_can_grant_is_accepted_and_a_time_limit_past_the_timers_is_refused()
     {
         Host.CreateApplicationBuilder().AddGoldpathMessaging(messaging => messaging
+            .AddBatchHandler<Reading, ReadingArchiveHandler>(new GoldpathBatchOptions { MessageLimit = 1, ConcurrencyLimit = 1, TimeLimit = TimeSpan.FromTicks(1) })   // the smallest grouping
             .AddBatchHandler<Reading, ReadingBatchHandler>(new GoldpathBatchOptions
             {
                 MessageLimit = 255,
@@ -168,6 +179,41 @@ public class BatchHandlerTests
             .AddBatchHandler<Reading, ReadingBatchHandler>(new GoldpathBatchOptions { TimeLimit = TimeSpan.FromMilliseconds(int.MaxValue + 1L) })
             .UseRabbitMq()));
         Assert.Equal("TimeLimit", refusal.ParamName);
+        Assert.Contains("'ReadingBatchHandler'", refusal.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Two_batch_handlers_of_one_event_both_register_each_on_its_own_or_its_named_queue()
+    {
+        Host.CreateApplicationBuilder().AddGoldpathMessaging(messaging =>
+        {
+            messaging
+                .AddBatchHandler<Reading, ReadingBatchHandler>(new GoldpathBatchOptions())
+                .AddBatchHandler<Reading, ReadingArchiveHandler>(new GoldpathBatchOptions(), "meter-archive");
+
+            Assert.Equal(
+                [("reading-batch", typeof(ReadingBatchHandler)), ("meter-archive", typeof(ReadingArchiveHandler))],
+                messaging.BatchHandlers.Select(b => (b.EndpointName, b.Handler)));
+            messaging.UseRabbitMq();
+        });
+    }
+
+    [Fact]
+    public async Task The_engine_test_hook_sees_the_registration_of_its_own_builder_only()
+    {
+        var seen = new List<string>();
+        await using var hooked = await GoldpathMessagingTestHost.StartAsync(messaging =>
+        {
+            messaging.AddHandler<Alarm, AlarmHandler>();
+            MassTransitMessagingEngine.TestHooks.Add(messaging, new(_ => seen.Add("hooked"), null));
+        }, builder => builder.Services.AddSingleton(new Seen()));
+        await using var plain = await GoldpathMessagingTestHost.StartAsync(
+            messaging => messaging.AddHandler<Alarm, AlarmHandler>(),
+            builder => builder.Services.AddSingleton(new Seen()));
+
+        Assert.Equal(["hooked"], seen);
+        await hooked.StopAsync();
+        await plain.StopAsync();
     }
 
     [Fact]
