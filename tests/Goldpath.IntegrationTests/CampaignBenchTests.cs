@@ -21,7 +21,7 @@ public sealed class CampaignBenchTests : IAsyncLifetime
     public sealed record BenchTarget(long Id);
 
     /// <summary>Counts publishes; the wire is not what this bench measures.</summary>
-    private sealed class CountingPublisher : IPublishEndpoint
+    internal sealed class CountingPublisher : IPublishEndpoint
     {
         public long Published;
 
