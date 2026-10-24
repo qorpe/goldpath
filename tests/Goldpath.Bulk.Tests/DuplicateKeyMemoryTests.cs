@@ -39,7 +39,7 @@ public class DuplicateKeyMemoryTests(ITestOutputHelper output)
     private static async Task<long> RetainedAsync(int count)
     {
         var before = GC.GetTotalMemory(forceFullCollection: true);
-        var duplicates = new GoldpathBulkDuplicateKeys();
+        var duplicates = new GoldpathBulkDuplicateKeys("test");
         for (var row = 1; row <= count; row++)
         {
             Assert.Null(await duplicates.FirstRowOfAsync(Key(row), row, NeverAsked));

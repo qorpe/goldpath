@@ -104,7 +104,8 @@ public sealed class GoldpathBulkEngine<TContext>
         await db.Set<GoldpathBulkRowError>().Where(e => e.BatchId == batch.Id).ExecuteDeleteAsync(cancellationToken);
 
         var started = _time.GetUtcNow();
-        var duplicates = new GoldpathBulkDuplicateKeys(_options.DuplicateKeyHash);
+        var duplicates = new GoldpathBulkDuplicateKeys(definition.Name, _options.DuplicateKeyHash);
+        var keyChecked = false;
         var pendingRows = new List<GoldpathBulkRow>();
         var pendingErrors = new List<GoldpathBulkRowError>();
         int total = 0, valid = 0, invalid = 0;
@@ -137,7 +138,9 @@ public sealed class GoldpathBulkEngine<TContext>
                 ?? await db.Set<GoldpathBulkRow>().AsNoTracking()
                     .Where(r => r.BatchId == batch.Id && r.RowNumber == rowNumber)
                     .Select(r => r.Payload)
-                    .SingleAsync(cancellationToken);
+                    .SingleOrDefaultAsync(cancellationToken)
+                ?? throw new InvalidOperationException(
+                    $"Bulk batch {batch.Id}: row {rowNumber} recorded a row key but is not staged.");
             return definition.KeyOfPayload(payload);
         }
 
@@ -157,6 +160,21 @@ public sealed class GoldpathBulkEngine<TContext>
 
                     var result = definition.ValidateRow(raw, services);
                     var errors = result.Errors;
+                    if (errors.Count == 0 && result.RowKey is { } recorded && !keyChecked)
+                    {
+                        // Once per pass, on the first key recorded: a key its payload cannot give
+                        // back cannot confirm a hash hit, so this pass keeps keys in full instead.
+                        keyChecked = true;
+                        if (!string.Equals(definition.KeyOfPayload(result.Payload!), recorded, StringComparison.Ordinal))
+                        {
+                            duplicates.KeepKeysInFull();
+                            _logger.LogWarning(
+                                "The row key of bulk definition {Definition} is not reproducible from its staged payload; "
+                                + "batch {BatchId} keeps every key in full for duplicate detection. Derive the key from public, serialized properties.",
+                                definition.Name, batch.Id);
+                        }
+                    }
+
                     if (errors.Count == 0 && result.RowKey is { } key
                         && await duplicates.FirstRowOfAsync(key, raw.RowNumber, KeyOfRowAsync) is { } first)
                     {

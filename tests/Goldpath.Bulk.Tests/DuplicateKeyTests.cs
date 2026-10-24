@@ -16,7 +16,7 @@ public class DuplicateKeyTests
     [Fact]
     public async Task A_repeated_key_answers_the_row_that_carried_it_first()
     {
-        var duplicates = new GoldpathBulkDuplicateKeys();
+        var duplicates = new GoldpathBulkDuplicateKeys("test");
         var byRow = new Dictionary<int, string> { [1] = "E1", [2] = "E2" };
 
         Assert.Null(await duplicates.FirstRowOfAsync("E1", 1, row => Keys(byRow, row)));
@@ -31,7 +31,7 @@ public class DuplicateKeyTests
     {
         // Ordinal, as the string table was: no culture folds İ/i/ı, and "e1" is not "E1". Every
         // key shares one hash, so each of them reaches the exact comparison.
-        var duplicates = new GoldpathBulkDuplicateKeys(_ => 1);
+        var duplicates = new GoldpathBulkDuplicateKeys("test", _ => 1);
         var byRow = new Dictionary<int, string> { [1] = "E1", [2] = "e1", [3] = "İ", [4] = "i", [5] = "ı" };
         foreach (var (row, key) in byRow)
         {
@@ -43,7 +43,7 @@ public class DuplicateKeyTests
     public async Task Two_different_keys_that_share_a_hash_are_not_duplicates_and_each_one_repeats_on_its_own_first_row()
     {
         var asked = new List<int>();
-        var duplicates = new GoldpathBulkDuplicateKeys(_ => 42);
+        var duplicates = new GoldpathBulkDuplicateKeys("test", _ => 42);
         var byRow = new Dictionary<int, string> { [1] = "A", [2] = "B", [3] = "C" };
         ValueTask<string?> KeyOf(int row)
         {

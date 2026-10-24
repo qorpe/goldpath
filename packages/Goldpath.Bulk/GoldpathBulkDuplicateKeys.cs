@@ -8,17 +8,41 @@ namespace Goldpath;
 /// (#300): the cost per distinct key is one fixed-size table entry, whatever the key's length.
 /// A hash hit is confirmed EXACTLY by re-deriving the first row's key, so two different keys
 /// that share a hash are never reported as duplicates; a key that collides is then kept in
-/// full, which happens about once in tens of millions of keys.
+/// full. That practically never happens at the file sizes MaxRows allows: the exact path
+/// exists for correctness, not frequency.
+/// </para>
+/// <para>
+/// The confirmation relies on the key surviving its row's JSON round trip. A definition whose
+/// key does not (a private setter, a <c>[JsonIgnore]</c> property) is switched to
+/// <see cref="KeepKeysInFull"/> by the engine before its first key is recorded, and a hit whose
+/// re-derived key no longer hashes to the hit's own hash is refused loudly rather than read as
+/// a collision, so a genuine duplicate is never staged as valid.
 /// </para>
 /// </summary>
 internal sealed class GoldpathBulkDuplicateKeys
 {
     private readonly Dictionary<long, int> _firstRowByHash = [];
     private readonly Dictionary<string, int> _collided = new(StringComparer.Ordinal);
+    private readonly string _definition;
     private readonly Func<string, long> _hash;
+    private bool _keysInFull;
 
-    /// <summary>The production hash; <paramref name="hash"/> lets a test force a collision.</summary>
-    public GoldpathBulkDuplicateKeys(Func<string, long>? hash = null) => _hash = hash ?? Fnv1a64;
+    /// <summary>
+    /// The production hash for <paramref name="definition"/> (named in a refusal);
+    /// <paramref name="hash"/> lets a test force a collision.
+    /// </summary>
+    public GoldpathBulkDuplicateKeys(string definition, Func<string, long>? hash = null)
+    {
+        _definition = definition;
+        _hash = hash ?? Fnv1a64;
+    }
+
+    /// <summary>
+    /// Keeps every key in full for this pass, as the string table did: the definition's key
+    /// cannot be re-derived from its staged payload, so a hash hit could not be confirmed.
+    /// Called before any key is recorded.
+    /// </summary>
+    public void KeepKeysInFull() => _keysInFull = true;
 
     /// <summary>
     /// Records <paramref name="key"/> for <paramref name="rowNumber"/>, or answers the row that
@@ -27,6 +51,11 @@ internal sealed class GoldpathBulkDuplicateKeys
     /// </summary>
     public async ValueTask<int?> FirstRowOfAsync(string key, int rowNumber, Func<int, ValueTask<string?>> keyOfRow)
     {
+        if (_keysInFull)
+        {
+            return RememberInFull(key, rowNumber);
+        }
+
         var hash = _hash(key);
         if (!_firstRowByHash.TryGetValue(hash, out var first))
         {
@@ -34,15 +63,31 @@ internal sealed class GoldpathBulkDuplicateKeys
             return null;
         }
 
-        if (string.Equals(await keyOfRow(first), key, StringComparison.Ordinal))
+        var keyOfFirst = await keyOfRow(first);
+        if (string.Equals(keyOfFirst, key, StringComparison.Ordinal))
         {
             return first;
         }
 
-        // A different key with a taken hash: remembered exactly, so its own repeats are found.
-        if (_collided.TryGetValue(key, out var firstOfCollided))
+        // The first row's key hashed to this hash when it was recorded. If what its payload gives
+        // back does not, the payload lost the key, and reading this as a collision would stage a
+        // genuine duplicate as valid.
+        if (keyOfFirst is null || _hash(keyOfFirst) != hash)
         {
-            return firstOfCollided;
+            throw new InvalidOperationException(
+                $"The row key of bulk definition '{_definition}' is not reproducible from its staged payload (row {first}); "
+                + "the key must come from public, serialized properties of the row.");
+        }
+
+        // A different key with a taken hash: remembered exactly, so its own repeats are found.
+        return RememberInFull(key, rowNumber);
+    }
+
+    private int? RememberInFull(string key, int rowNumber)
+    {
+        if (_collided.TryGetValue(key, out var first))
+        {
+            return first;
         }
 
         _collided.Add(key, rowNumber);

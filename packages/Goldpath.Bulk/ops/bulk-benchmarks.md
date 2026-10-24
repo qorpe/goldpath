@@ -67,5 +67,10 @@ within the file" findings.
   about 1.5 ms per read on this co-located profile, but it was not measured separately. A
   file with no duplicates pays nothing, and a repeat within the same 1,000-row flush reads
   memory, not the database. T49 also tracks batching those reads.
+- **A key its payload cannot give back keeps the old cost.** The confirmation needs the key
+  to survive the row's JSON round trip. A definition whose key does not (a `[JsonIgnore]`
+  property, a private setter) is detected on the first keyed row of each pass, logged as a
+  warning, and validated with every key kept in full — the string table's memory, with the
+  same report. The bench's row type is not such a definition.
 - **Validation dominates, upload does not.** The 162 MiB file uploaded in under 10 s; the
   ~12,000 rows/s of validation is the per-row staging write (10M rows → 1.2 GiB of database).
