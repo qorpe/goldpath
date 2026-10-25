@@ -1,5 +1,5 @@
 # GA gate G1's baseline (scripts/engine-gate.sh; docs/rfc/goldpath-messaging-engines.md §4).
-# The thirteen shipped public signatures that named a bus engine's type on 2026-10-20. Each
+# The thirteen shipped public signatures that named a bus engine's type on 2026-10-20, less Campaign's two consumers (#328). Each
 # row of the engines RFC's §4 table replaces one of them. This file may only SHRINK: delete a
 # line in the same change that removes it from its PublicAPI file. Format: path | signature.
 packages/Goldpath.Messaging/PublicAPI.Shipped.txt | Goldpath.GoldpathConsumeFilter<T>.Probe(MassTransit.ProbeContext! context) -> void
@@ -12,6 +12,4 @@ packages/Goldpath.Messaging/PublicAPI.Shipped.txt | static Goldpath.GoldpathMess
 packages/Goldpath.Messaging/PublicAPI.Shipped.txt | static Goldpath.GoldpathHandlerRegistrationExtensions.AddGoldpathHandler<TEvent, THandler>(this MassTransit.IBusRegistrationConfigurator! configurator) -> MassTransit.IBusRegistrationConfigurator!
 packages/Goldpath.Messaging/PublicAPI.Shipped.txt | static Goldpath.GoldpathHandlerRegistrationExtensions.AddGoldpathHandlers(this MassTransit.IBusRegistrationConfigurator! configurator, params System.Reflection.Assembly![]! assemblies) -> MassTransit.IBusRegistrationConfigurator!
 packages/Goldpath.Messaging/PublicAPI.Shipped.txt | Goldpath.GoldpathIntegrationEventConsumer<TEvent, THandler>.Consume(MassTransit.ConsumeContext<TEvent!>! context) -> System.Threading.Tasks.Task!
-packages/Goldpath.Campaign/PublicAPI.Shipped.txt | Goldpath.GoldpathCampaignItemConsumer<TContext>.Consume(MassTransit.ConsumeContext<Goldpath.GoldpathCampaignItemMessage!>! context) -> System.Threading.Tasks.Task!
-packages/Goldpath.Campaign/PublicAPI.Shipped.txt | Goldpath.GoldpathCampaignOutcomeSink<TContext>.Consume(MassTransit.ConsumeContext<MassTransit.Batch<Goldpath.GoldpathCampaignOutcomeMessage!>!>! context) -> System.Threading.Tasks.Task!
 packages/Goldpath.Campaign/PublicAPI.Shipped.txt | static Goldpath.GoldpathCampaignExtensions.AddGoldpathCampaignConsumers<TContext>(this MassTransit.IBusRegistrationConfigurator! configurator) -> MassTransit.IBusRegistrationConfigurator!

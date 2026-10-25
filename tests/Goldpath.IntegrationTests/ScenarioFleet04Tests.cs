@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Globalization;
-using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -138,20 +137,22 @@ public sealed class ScenarioFleet04Tests : IAsyncLifetime
                 .Targets((_, _) => Devices()));
         });
         builder.Services.WaitForTheBusOnStart();
-        builder.AddGoldpathMessaging(bus =>
+        builder.Configuration["ConnectionStrings:messaging"] = _rabbit.GetConnectionString();
+        builder.AddGoldpathMessaging(messaging =>
         {
-            bus.AddGoldpathCampaignConsumers<CampaignTests.CampDb>();
+            messaging.AddGoldpathCampaign<CampaignTests.CampDb>();
+            messaging.UseRabbitMq();
+            messaging.Options.Retry.RedeliveryIntervals.Clear();
             // The slots: at most this many item messages handled at once per host. On the item
-            // CONSUMER, not the endpoint: the package puts the item consumer and the outcome sink
-            // on one endpoint (both are named after the DbContext), and the sink's batch needs its
-            // own concurrency. A bus-level limit would not reach it either way.
-            bus.AddConsumer<GoldpathCampaignItemConsumer<CampaignTests.CampDb>>((_, consumer) => consumer.ConcurrentMessageLimit = SlotsPerHost);
-            bus.UsingRabbitMq((context, cfg) =>
-            {
-                cfg.Host(new Uri(_rabbit.GetConnectionString()));
-                cfg.ConfigureGoldpathEndpoints(context);
-            });
-        }, options => options.Retry.RedeliveryIntervals.Clear());
+            // handler's CONSUMER, not the endpoint: the package puts the item handler and the outcome
+            // sink on one endpoint (both are named after the DbContext), and the sink's batch needs its
+            // own concurrency. A bus-level limit would not reach it either way. Engine tuning, reached
+            // through the engine's test hook until its public escape hatch lands (open-threads T44).
+            MassTransitMessagingEngine.TestHooks.Add(messaging, new(
+                bus => bus.AddConsumer<GoldpathIntegrationEventConsumer<GoldpathCampaignItemMessage, GoldpathCampaignItemHandler<CampaignTests.CampDb>>>(
+                    (_, consumer) => consumer.ConcurrentMessageLimit = SlotsPerHost),
+                null));
+        });
         if (leader)
         {
             builder.AddGoldpathJobs<HostApplicationBuilder, CampaignTests.CampDb>(jobs =>

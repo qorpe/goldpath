@@ -65,19 +65,28 @@ public sealed class GoldpathIntegrationEventConsumer<TEvent, THandler> : IConsum
     /// <inheritdoc />
     public Task Consume(ConsumeContext<TEvent> context)
     {
+        var eventContext = new IntegrationEventContext(
+            context.MessageId,
+            context.Headers.Get<string>(GoldpathHeaders.CorrelationId),
+            _tenant.Current,
+            context.GetRetryAttempt(),
+            IntegrationEventHeaders.Of(context));
+        return _handler.HandleAsync(context.Message, eventContext, context.CancellationToken);
+    }
+}
+
+/// <summary>Every header on a delivery, as delivered — what <see cref="IntegrationEventContext.Headers"/> carries.</summary>
+internal static class IntegrationEventHeaders
+{
+    public static IReadOnlyDictionary<string, object?> Of(ConsumeContext context)
+    {
         var headers = new Dictionary<string, object?>(StringComparer.Ordinal);
         foreach (var header in context.Headers.GetAll())
         {
             headers[header.Key] = header.Value;
         }
 
-        var eventContext = new IntegrationEventContext(
-            context.MessageId,
-            context.Headers.Get<string>(GoldpathHeaders.CorrelationId),
-            _tenant.Current,
-            context.GetRetryAttempt(),
-            headers);
-        return _handler.HandleAsync(context.Message, eventContext, context.CancellationToken);
+        return headers;
     }
 }
 
@@ -135,10 +144,18 @@ public static class GoldpathHandlerRegistrationExtensions
         where TEvent : class, IIntegrationEvent
         where THandler : class, IIntegrationEventHandler<TEvent>
     {
+        AddHandlerAt<TEvent, THandler>(configurator, GoldpathHandlerEndpoints.NameOf(typeof(THandler)));
+        return configurator;
+    }
+
+    /// <summary>Registers the handler on the endpoint named <paramref name="endpointName"/>; endpoints that share a name share a queue.</summary>
+    internal static void AddHandlerAt<TEvent, THandler>(IBusRegistrationConfigurator configurator, string endpointName)
+        where TEvent : class, IIntegrationEvent
+        where THandler : class, IIntegrationEventHandler<TEvent>
+    {
         configurator.TryAddScoped<THandler>();
         configurator.AddConsumer<GoldpathIntegrationEventConsumer<TEvent, THandler>>()
-            .Endpoint(endpoint => endpoint.Name = GoldpathHandlerEndpoints.NameOf(typeof(THandler)));
-        return configurator;
+            .Endpoint(endpoint => endpoint.Name = endpointName);
     }
 
     /// <summary>

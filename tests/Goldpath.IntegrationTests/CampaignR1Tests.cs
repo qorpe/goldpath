@@ -54,6 +54,8 @@ public sealed class CampaignR1Tests : IAsyncLifetime
                     .AsAsyncEnumerable()));
         });
         builder.Services.WaitForTheBusOnStart();   // a publish right after StartAsync must find its queue bound
+        // Through the MassTransit-typed registration ON PURPOSE: the templates write it until preview.11, so one
+        // campaign suite proves end to end that it reaches the same handlers (the others use the builder).
         builder.AddGoldpathMessaging(bus =>
         {
             bus.AddGoldpathCampaignConsumers<CampaignTests.CampDb>();

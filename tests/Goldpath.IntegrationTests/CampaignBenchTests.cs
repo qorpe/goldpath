@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -21,46 +20,16 @@ public sealed class CampaignBenchTests : IAsyncLifetime
     public sealed record BenchTarget(long Id);
 
     /// <summary>Counts publishes; the wire is not what this bench measures.</summary>
-    private sealed class CountingPublisher : IPublishEndpoint
+    internal sealed class CountingPublisher : IIntegrationEventPublisher
     {
         public long Published;
 
-        public Task Publish<T>(T message, CancellationToken cancellationToken = default)
-            where T : class
+        public Task PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken cancellationToken = default)
+            where TEvent : class, IIntegrationEvent
         {
             Interlocked.Increment(ref Published);
             return Task.CompletedTask;
         }
-
-        public Task Publish<T>(T message, IPipe<PublishContext<T>> publishPipe, CancellationToken cancellationToken = default)
-            where T : class => throw new NotSupportedException();
-
-        public Task Publish<T>(T message, IPipe<PublishContext> publishPipe, CancellationToken cancellationToken = default)
-            where T : class => throw new NotSupportedException();
-
-        public Task Publish(object message, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task Publish(object message, Type messageType, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task Publish(object message, IPipe<PublishContext> publishPipe, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task Publish(object message, Type messageType, IPipe<PublishContext> publishPipe, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task Publish<T>(object values, CancellationToken cancellationToken = default)
-            where T : class => throw new NotSupportedException();
-
-        public Task Publish<T>(object values, IPipe<PublishContext<T>> publishPipe, CancellationToken cancellationToken = default)
-            where T : class => throw new NotSupportedException();
-
-        public Task Publish<T>(object values, IPipe<PublishContext> publishPipe, CancellationToken cancellationToken = default)
-            where T : class => throw new NotSupportedException();
-
-        public ConnectHandle ConnectPublishObserver(IPublishObserver observer)
-            => throw new NotSupportedException();
     }
 
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17-alpine").Build();
@@ -84,7 +53,7 @@ public sealed class CampaignBenchTests : IAsyncLifetime
         services.AddDbContext<CampaignTests.CampDb>(o => o.UseNpgsql(_postgres.GetConnectionString()));
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton(_options);
-        services.AddSingleton<IPublishEndpoint>(_publisher);
+        services.AddSingleton<IIntegrationEventPublisher>(_publisher);
         services.AddSingleton(new GoldpathCampaignEngine<CampaignTests.CampDb>(
             _options, TimeProvider.System, NullLogger<GoldpathCampaignEngine<CampaignTests.CampDb>>.Instance));
         services.AddLogging();

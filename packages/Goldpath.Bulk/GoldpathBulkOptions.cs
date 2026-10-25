@@ -106,6 +106,9 @@ public sealed class GoldpathBulkDefinition
 
     internal Func<string, GoldpathBulkRowContext, CancellationToken, Task> ExecuteRow { get; set; } = null!;
 
+    /// <summary>The row key of a staged payload: the key its row was validated under (in-file duplicates).</summary>
+    internal Func<string, string?> KeyOfPayload { get; set; } = _ => null;
+
     /// <summary>Runs the baked conversion + validation pipeline for one raw row (contract-testable).</summary>
     public GoldpathBulkRowResult Validate(GoldpathBulkRawRow raw, IServiceProvider services)
         => ValidateRow(raw, services);
@@ -228,6 +231,11 @@ public sealed class GoldpathBulkBatchBuilder<TRow>
             };
         };
 
+        _definition.KeyOfPayload = payload => rowKey is null
+            ? null
+            : rowKey(JsonSerializer.Deserialize<TRow>(payload)
+                ?? throw new InvalidOperationException($"Bulk row payload of '{_definition.Name}' deserialized to null."));
+
         _definition.ExecuteRow = async (payload, context, cancellationToken) =>
         {
             var row = JsonSerializer.Deserialize<TRow>(payload)
@@ -287,6 +295,9 @@ public sealed class GoldpathBulkOptions
 
     /// <summary>File-chunk row inserts per SaveChanges during validation (batched writes).</summary>
     public int InsertBatchSize { get; set; } = 1_000;
+
+    /// <summary>The duplicate check's key hash; null is the production hash (a test forces collisions with it).</summary>
+    internal Func<string, long>? DuplicateKeyHash { get; set; }
 
     /// <summary>Registers one batch shape.</summary>
     public GoldpathBulkOptions AddBatch<TRow>(string name, Action<GoldpathBulkBatchBuilder<TRow>> configure)

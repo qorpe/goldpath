@@ -228,6 +228,74 @@ public sealed class BusConformanceTests(ConformanceContainers containers)
         Assert.Equal(published, observed.Pings.Select(p => p.Event.Id).Distinct().Count());   // no duplicates across the two lifetimes
         await second.StopAsync();
     }
+
+    // The batch contract (RFC goldpath-messaging-engines §4.1 row 12, §7 Part 3): delivery in batches
+    // bounded by size OR time, and one batch in flight per endpoint when the concurrency limit is 1.
+    // Campaign's outcome sink is built on all three; a second engine must hold each.
+
+    [Fact]
+    public async Task S2_9_a_batch_never_holds_more_than_its_message_limit()
+    {
+        var batches = new BatchesObserved();
+        await using var host = await containers.BuildHostAsync(
+            new Observed(), batches: (batches, new GoldpathBatchOptions { MessageLimit = 5, TimeLimit = TimeSpan.FromSeconds(2) }));
+        await host.StartAsync();
+
+        for (var i = 0; i < 23; i++)
+        {
+            await host.PublishAsync(new Tick { Number = i });
+        }
+
+        await batches.WaitForDeliveredAsync(23, Wait);
+        var sizes = batches.Batches.Select(b => b.Size).ToList();
+        Assert.Equal(23, batches.Delivered);
+        Assert.Equal(23, batches.Batches.SelectMany(b => b.Numbers).Distinct().Count());
+        Assert.All(sizes, size => Assert.InRange(size, 1, 5));
+        Assert.Contains(5, sizes);   // the limit is reached, not merely never exceeded: 23 queued deliveries fill a batch
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task S2_10_a_partial_batch_is_delivered_once_its_time_limit_passes()
+    {
+        var batches = new BatchesObserved();
+        await using var host = await containers.BuildHostAsync(
+            new Observed(), batches: (batches, new GoldpathBatchOptions { MessageLimit = 100, TimeLimit = TimeSpan.FromMilliseconds(500) }));
+        await host.StartAsync();
+
+        var published = DateTimeOffset.UtcNow;
+        for (var i = 0; i < 3; i++)
+        {
+            await host.PublishAsync(new Tick { Number = i });
+        }
+
+        // Three deliveries never fill a batch of a hundred; only the time limit can release them.
+        await batches.WaitForDeliveredAsync(3, Wait);
+        Assert.Equal(3, batches.Delivered);
+        var last = batches.Batches.Max(b => b.At);
+        Assert.True(last - published < TimeSpan.FromSeconds(10), $"the partial batch waited {(last - published).TotalSeconds:F1}s for a 500 ms time limit");
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task S2_11_with_a_concurrency_limit_of_one_batches_never_overlap()
+    {
+        var batches = new BatchesObserved { Hold = TimeSpan.FromMilliseconds(300) };
+        await using var host = await containers.BuildHostAsync(
+            new Observed(), batches: (batches, new GoldpathBatchOptions { MessageLimit = 4, TimeLimit = TimeSpan.FromMilliseconds(100), ConcurrencyLimit = 1 }));
+        await host.StartAsync();
+
+        for (var i = 0; i < 40; i++)
+        {
+            await host.PublishAsync(new Tick { Number = i });
+        }
+
+        await batches.WaitForDeliveredAsync(40, Wait);
+        Assert.Equal(40, batches.Delivered);
+        Assert.True(batches.Batches.Count >= 10, $"40 deliveries at four a batch took {batches.Batches.Count} batches");   // enough batches that overlap had every chance
+        Assert.Equal(1, batches.Peak);
+        await host.StopAsync();
+    }
 }
 
 [CollectionDefinition("conformance")]

@@ -116,7 +116,7 @@ builder.AddGoldpathCampaign<WebApplicationBuilder, OrdersDbContext>(campaign =>
 builder.Services.AddScoped<IGoldpathCampaignItemHandler<DeviceTarget>, ConfigPushHandler>();
 
 // Jobs wiring:  jobs.AddGoldpathCampaignJobs<OrdersDbContext>();   // pacer (leader) + reconciler
-// Messaging:    bus.AddGoldpathCampaignConsumers<OrdersDbContext>();
+// Messaging:    messaging.AddGoldpathCampaign<OrdersDbContext>();   // or bus.AddGoldpathCampaignConsumers<…>() until G1 Part 4/4 (#328)
 // DbContext:    modelBuilder.AddGoldpathCampaign();  modelBuilder.AddGoldpathJobs();
 ```
 

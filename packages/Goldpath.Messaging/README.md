@@ -76,6 +76,31 @@ Retry, redelivery, the inbox and tenant restoration are the pipeline's — a thr
 retry, then the error queue. `IConsumer<T>` still works (analyzer GP0405 says so, Info
 until the templates adopt the seam at the next train; Warning from then on).
 
+### In batches
+
+A handler whose work is set-based takes deliveries in groups, each with its own context:
+
+```csharp
+public sealed class ReadingSink(MeterDbContext db) : IIntegrationEventBatchHandler<MeterRead>
+{
+    public async Task HandleAsync(IReadOnlyList<IntegrationEvent<MeterRead>> batch, CancellationToken ct)
+    {
+        // batch[i].Message, batch[i].Context (MessageId, CorrelationId, Tenant, Headers): one write for the lot.
+        ...
+    }
+}
+
+builder.AddGoldpathMessaging(messaging => messaging
+    .AddBatchHandler<MeterRead, ReadingSink>(new GoldpathBatchOptions { MessageLimit = 200, TimeLimit = TimeSpan.FromMilliseconds(500) })
+    .UseRabbitMq());
+```
+
+A batch is delivered when `MessageLimit` (10) or `TimeLimit` (1 s) is reached, whichever is
+first (`MessageLimit × ConcurrencyLimit` at most 65,535, a broker's prefetch window); at most `ConcurrencyLimit` (1) batches run at once per endpoint; a throw fails the whole
+batch into the retry ladder, so the sink must be idempotent per message. A queue that must keep
+a name a running fleet already drains is named explicitly — `AddHandler<TEvent, THandler>("orders-db")`,
+or `AddBatchHandler`'s `endpointName` — and handlers given one name share one queue.
+
 ## Configuration
 
 Bound from `Goldpath:Messaging`:
