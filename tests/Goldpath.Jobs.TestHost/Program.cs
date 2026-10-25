@@ -383,6 +383,9 @@ static async Task RunConsoleHostAsync(
     {
         var approvals = scope.ServiceProvider.GetRequiredService<GoldpathApprovalEngine>();
         await approvals.RequestAsync("credit-limit", "Limit raise for ACME", 2_500_000m, "analyst@example.com", CancellationToken.None);
+        // A second request of its own for S-OPS-02 (ui/console/e2e/refusals.spec.ts), so its
+        // double approve never races the journey above for the same request's quorum.
+        await approvals.RequestAsync("credit-limit", "Limit raise for S-OPS-02", 2_500_000m, "analyst@example.com", CancellationToken.None);
     }
 
     // One real file through the rail: two rows apply, one quarantines with its reason —
