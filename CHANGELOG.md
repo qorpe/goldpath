@@ -102,6 +102,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **The console's npm advisories are closed: vitest 2 → 5, with the 97% coverage floor re-earned
+  (#356).** Console test tooling only; the shipped bundle and every package are unchanged.
+  `ui/console` takes `vitest` and `@vitest/coverage-v8` at 5.0.5 (exact pins, one family as
+  Dependabot groups it; supersedes #375), and `pnpm dedupe` drops the stale `source-map-js`.
+  `pnpm audit` goes from 26 advisories (3 critical, 11 high: `vitest`, `tinypool`, `vite` 5,
+  `esbuild`, `source-map-js`, `brace-expansion`) to none, with no override. vitest ≥4 maps v8
+  coverage back to the source AST-aware, so the same 274 tests measured 91.16% statements and
+  94.22% lines against floors of 97. The floors stay at 97 (open-threads T24). 35 new component
+  tests cover what the old counter credited and the new one does not: the throttle form's
+  every dial, resume and abort on a paused campaign, rerun, unticking and clearing each facet,
+  closing each sheet, the error line of every detail that fails to load, the erasure table's
+  columns, and the cross-section hop from a batch's run id to that run. Under vitest 5 the
+  console now measures 97.93% statements, 90.59% branches, 97.6% functions, 98.99% lines.
 - **The nightly ZAP baseline no longer changes its rules overnight.** Repository CI, no package
   changes. `scripts/zap-baseline.sh` pinned the ZAP image by digest, but the packaged scans
   start ZAP with `-addonupdate`, install `pscanrulesBeta` from the internet and check ZAP's
