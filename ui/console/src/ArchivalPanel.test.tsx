@@ -58,7 +58,7 @@ function client(routes: Routes = {}) {
     if (url.includes("/erasures")) return json(routes.erasures ?? []);
     if (url.includes("/entries/")) {
       const answer = routes.entry ?? { status: 200, body: entry() };
-      return answer.status === 404 ? new Response("", { status: 404 }) : json(answer.body);
+      return answer.status === 404 ? new Response("", { status: 404 }) : json(answer.body, answer.status);
     }
 
     if (url.includes("/archival/definitions")) {
@@ -305,5 +305,43 @@ describe("the archival panel (chain health, retrieval, lifecycle)", () => {
     const row = await screen.findByRole("row", { name: /CASE-2026-7/ });
     expect(row).toHaveTextContent("lifted by legal@example.com at 2026-07-27T05:00:00Z");
     expect(within(row).queryByText("Held")).toBeNull();
+  });
+});
+
+describe("the archival panel — the remaining doors", () => {
+  it("each erasure row says who asked, when, how much it touched — and a dash for no detail", async () => {
+    const { client: api } = client({
+      erasures: [
+        { id: 1, subjectKey: "CUST-9", requestedBy: "dpo@example.com", requestedAt: "2026-07-20T00:00:00Z", entriesAffected: 4, detail: "subject request 2026/17" },
+        { id: 2, subjectKey: "CUST-10", requestedBy: "dpo@example.com", requestedAt: "2026-07-21T00:00:00Z", entriesAffected: 1, detail: null },
+      ],
+    });
+    render(<ArchivalPanel client={api} now={NOW} />);
+
+    const first = await screen.findByRole("row", { name: /CUST-9/ });
+    expect(first).toHaveTextContent("dpo@example.com");
+    expect(first).toHaveTextContent("2026-07-20T00:00:00Z");
+    expect(first).toHaveTextContent("4");
+    expect(first).toHaveTextContent("subject request 2026/17");
+    expect(screen.getByRole("row", { name: /CUST-10/ })).toHaveTextContent("—");
+  });
+
+  it("a blank key retrieves nothing — no request for an empty id", async () => {
+    const { client: api, fetched } = client();
+    render(<ArchivalPanel client={api} now={NOW} />);
+
+    await userEvent.type(await screen.findByLabelText("aggregate key"), "   ");
+    await userEvent.click(screen.getByRole("button", { name: "retrieve" }));
+    expect(fetched.some((url) => url.includes("/entries/"))).toBe(false);
+    expect(screen.queryByTestId("archive-entry")).toBeNull();
+  });
+
+  it("an entry that cannot be read says which key, instead of an empty answer", async () => {
+    const { client: api } = client({ entry: { status: 500, body: {} } });
+    render(<ArchivalPanel client={api} now={NOW} />);
+
+    await retrieve("P-42");
+    expect(await screen.findByText("entry P-42 could not be read")).toBeInTheDocument();
+    expect(screen.queryByTestId("archive-entry")).toBeNull();
   });
 });
