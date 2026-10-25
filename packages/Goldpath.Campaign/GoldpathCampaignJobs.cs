@@ -61,6 +61,7 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
                 cancellationToken.ThrowIfCancellationRequested();
                 var tickStart = _time.GetTimestamp();
                 tick++;
+                _slowestStep = TimeSpan.Zero;
                 // Each tick gets its OWN scope: the runner tracks its checkpoint entities
                 // in the fire's scope, and the engine's tracker hygiene must never detach
                 // them (a cleared checkpoint = a run that resumes forever).
@@ -116,6 +117,11 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
                     await DrainSweepAsync(db, swept, chunk, cancellationToken);
                     nextDrainSweep = _time.GetUtcNow() + DrainSweepEvery;
                 }
+
+                // Phase 5 — what is left of the tick enumerates ahead (#288): releases went first,
+                // so a snapshot no longer waits one batch per tick, and no release waits on it.
+                await EnumerateAheadAsync(tickScope.ServiceProvider, campaigns, streams, tickStart,
+                    releasing: demands.Any(d => d >= 0), cancellationToken);
 
                 var elapsed = _time.GetElapsedTime(tickStart);
                 if (elapsed < _options.LeaderTick)
@@ -260,7 +266,7 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
                 streams[campaign.Id] = stream;
             }
 
-            await _engine.EnumerateStepAsync(services, campaign, stream.Stream, cancellationToken);
+            await EnumerateTimedAsync(services, campaign, stream, cancellationToken);
             if (campaign.EnumerationComplete && streams.Remove(campaign.Id, out var done))
             {
                 await done.DisposeAsync();
@@ -299,6 +305,98 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
         return (int)Math.Floor(Math.Min(budget, Math.Max(0,
             Math.Min(policy.MaxInFlight - inFlight,
                 policy.DailyQuota is { } quota ? quota - campaign.ReleasedToday : long.MaxValue))));
+    }
+
+    /// <summary>The slowest enumeration step of the current tick — the estimate Phase 5 budgets the next step by.</summary>
+    private TimeSpan _slowestStep;
+
+    /// <summary>
+    /// The campaign Phase 5 stepped last in this slice: the next tick's Phase 5 starts after
+    /// it, so when the tick has room for fewer steps than there are snapshots, the oldest one
+    /// does not take every extra step.
+    /// </summary>
+    private Guid? _lastSteppedAhead;
+
+    /// <summary>One enumeration step, its cost measured on the pacer's clock.</summary>
+    private async Task EnumerateTimedAsync(
+        IServiceProvider services, GoldpathCampaign campaign, LeaderStream stream, CancellationToken cancellationToken)
+    {
+        var started = _time.GetTimestamp();
+        await _engine.EnumerateStepAsync(services, campaign, stream.Stream, cancellationToken);
+        var cost = _time.GetElapsedTime(started);
+        if (cost > _slowestStep)
+        {
+            _slowestStep = cost;
+        }
+    }
+
+    /// <summary>
+    /// Phase 5 of a tick (#288): enumeration takes the time the tick would otherwise sleep.
+    /// Phase 1 materializes one batch per campaign, which capped a snapshot at
+    /// <see cref="GoldpathCampaignOptions.EnumerationBatchSize"/> per tick — 35M targets an
+    /// hour before the first release. Here every campaign still enumerating takes further
+    /// steps, round-robin, and the rotation carries across ticks (it resumes after the
+    /// campaign stepped last), so the campaigns share a tick that has room for fewer steps
+    /// than there are snapshots. While any campaign releases this tick, a step starts only if the
+    /// slowest step seen this tick still fits before the tick ends: releases ran first, so the
+    /// next tick's releases start on time unless one step alone outlasts a tick (and the TPS
+    /// budgets, which accrue one <see cref="GoldpathCampaignOptions.LeaderTick"/> per tick,
+    /// are not stretched). While none does, a step starts whenever the tick has time left, so
+    /// the next tick may start up to one step late and nothing it would release waits longer.
+    /// A target ceiling breached here pauses the campaign as it does in Phase 1, and a paused
+    /// campaign takes no further step. A verb that changed the row since the tick loaded it
+    /// (pause, abort) loses the race on the state token; that campaign's stream is then AHEAD
+    /// of its durable watermark, so it is closed, and the next tick that works the campaign
+    /// reopens it at the watermark.
+    /// </summary>
+    private async Task EnumerateAheadAsync(
+        IServiceProvider services, List<GoldpathCampaign> campaigns, Dictionary<Guid, LeaderStream> streams,
+        long tickStart, bool releasing, CancellationToken cancellationToken)
+    {
+        var lostRace = new HashSet<Guid>();
+
+        // The rotation carries across ticks: start after the campaign this phase stepped last
+        // (the start of the list when that one is gone), and stop once a whole round in a row
+        // has nothing to step.
+        var next = _lastSteppedAhead is { } last ? campaigns.FindIndex(c => c.Id == last) + 1 : 0;
+        for (var idle = 0; idle < campaigns.Count; next++)
+        {
+            var campaign = campaigns[next % campaigns.Count];
+            if (campaign.EnumerationComplete || campaign.State != GoldpathCampaignState.Enumerating
+                || lostRace.Contains(campaign.Id) || !streams.TryGetValue(campaign.Id, out var stream))
+            {
+                idle++;
+                continue;
+            }
+
+            var elapsed = _time.GetElapsedTime(tickStart);
+            if (elapsed >= _options.LeaderTick || (releasing && elapsed + _slowestStep > _options.LeaderTick))
+            {
+                return;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                await EnumerateTimedAsync(services, campaign, stream, cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                services.GetRequiredService<TContext>().ChangeTracker.Clear();
+                streams.Remove(campaign.Id);
+                await stream.DisposeAsync();
+                lostRace.Add(campaign.Id);
+                idle++;
+                continue;
+            }
+
+            idle = 0;
+            _lastSteppedAhead = campaign.Id;
+            if (campaign.EnumerationComplete && streams.Remove(campaign.Id, out var done))
+            {
+                await done.DisposeAsync();
+            }
+        }
     }
 
     /// <summary>

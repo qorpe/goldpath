@@ -102,6 +102,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **`Goldpath.Campaign`: a snapshot is no longer bound to the leader tick (#288).** The pacer
+  materialized one `EnumerationBatchSize` batch per campaign per tick, so at the defaults (2,000
+  rows, 250 ms) a snapshot ran at about 8,000 rows/s. 35M targets took over 70 minutes before
+  the first release. Each tick now spends the time it would otherwise sleep enumerating further,
+  after its releases and while the slowest step seen in that tick still fits before the tick
+  ends. Several snapshots share that time in a rotation that carries across ticks, so when a
+  tick has room for fewer extra steps than there are snapshots, the oldest does not take them
+  all. A running campaign's releases keep their cadence. A pause or abort that lands mid-tick
+  stops the snapshot at its last durable batch, and resume continues from there with nothing
+  lost or doubled. No public API or option changes. `scripts/bench-campaign.sh enum` measures
+  enumeration through the pacer (`CampaignPacerEnumerationBenchTests`), and
+  `ops/campaign-benchmarks.md` now says which path each enumeration number measured.
 - **The nightly ZAP baseline no longer changes its rules overnight.** Repository CI, no package
   changes. `scripts/zap-baseline.sh` pinned the ZAP image by digest, but the packaged scans
   start ZAP with `-addonupdate`, install `pscanrulesBeta` from the internet and check ZAP's
