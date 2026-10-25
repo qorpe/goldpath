@@ -55,9 +55,11 @@ internal sealed class WolverineMessagingEngine : IGoldpathMessagingEngine
                 composition.Options.Retry.ImmediateCount, "Immediate retries cannot be negative.");
         }
 
-        var wire = new GoldpathWire(GoldpathWire.BrokerOf(composition, configuration));
+        var broker = GoldpathWire.BrokerOf(composition, configuration);
         var state = new WolverineEngineState(composition.OutboxContext, composition.Outbox);
-        services.AddSingleton(wire);
+
+        // Built by the container, so the container disposes its connection with the host.
+        services.AddSingleton(_ => new GoldpathWire(broker));
         services.AddSingleton(state);
         services.TryAddScoped<IIntegrationEventPublisher, WolverineIntegrationEventPublisher>();
 
@@ -103,7 +105,7 @@ internal sealed class WolverineMessagingEngine : IGoldpathMessagingEngine
 
             // Every handler is a hand-written sticky handler: no code is generated, so no runtime compiler ships.
             options.CodeGeneration.TypeLoadMode = JasperFx.CodeGeneration.TypeLoadMode.Static;
-            options.UseRabbitMq(wire.Broker).DisableSystemRequestReplyQueueDeclaration();
+            options.UseRabbitMq(broker).DisableSystemRequestReplyQueueDeclaration();
             options.Policies.OnAnyException().RetryTimes(retries).Then.MoveToErrorQueue();
 
             foreach (var (endpoint, registrations) in endpoints)

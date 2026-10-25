@@ -7,8 +7,9 @@ namespace Goldpath;
 /// A batch handler on Wolverine (RFC goldpath-messaging-engines §4.1 row 12): deliveries the listener holds in
 /// flight are gathered into a batch that closes at <see cref="GoldpathBatchOptions.MessageLimit"/> or once
 /// <see cref="GoldpathBatchOptions.TimeLimit"/> has passed since its first delivery, whichever comes first; at
-/// most <see cref="GoldpathBatchOptions.ConcurrencyLimit"/> batches run at once. Each delivery is acknowledged
-/// only when its batch has run, and a throw fails every delivery in the batch into Wolverine's retry ladder.
+/// most <see cref="GoldpathBatchOptions.ConcurrencyLimit"/> batches run at once. A delivery's handling completes
+/// only when its batch has run (the listener acknowledges after handling), and a throw fails every delivery in
+/// the batch into Wolverine's retry ladder.
 /// </summary>
 internal abstract class BatchSeamHandler : SeamHandler
 {

@@ -26,7 +26,24 @@ internal sealed class GoldpathWire : IAsyncDisposable
     private IConnection? _connection;
     private IChannel? _channel;
 
-    public GoldpathWire(Uri broker) => _broker = broker;
+    public GoldpathWire(Uri broker)
+    {
+        _broker = broker;
+
+        // The addresses an envelope carries name the broker, never its credentials: the connection string's
+        // user and password would otherwise travel in every message and sit in every outbox row. AMQP's own
+        // port is left out, as 8.x addresses leave it out.
+        Address = new UriBuilder(broker) { Scheme = "rabbitmq", UserName = "", Password = "", Port = broker.IsDefaultPort || broker.Port == 5672 ? -1 : broker.Port }.Uri;
+    }
+
+    /// <summary>The broker's address as envelopes name it: <c>rabbitmq://host[:port]/vhost</c>, with no credentials.</summary>
+    public Uri Address { get; }
+
+    /// <summary>
+    /// An exchange's or queue's address under the broker, <c>rabbitmq://host[:port]/vhost/name</c>. Composed, not
+    /// resolved as a relative URI: <c>Namespace:Type</c> would read as a scheme.
+    /// </summary>
+    public Uri AddressOf(string name) => new($"{Address.GetLeftPart(UriPartial.Path).TrimEnd('/')}/{name}");
 
     /// <summary>The broker the composition names: the connection string when present, the engine's local default when absent.</summary>
     public static Uri BrokerOf(GoldpathMessagingComposition composition, IConfiguration configuration)
@@ -75,8 +92,8 @@ internal sealed class GoldpathWire : IAsyncDisposable
         {
             ["messageId"] = messageId.ToString(),
             ["conversationId"] = messageId.ToString(),
-            ["sourceAddress"] = new Uri(_broker, "goldpath").ToString(),
-            ["destinationAddress"] = new Uri(_broker, exchange).ToString(),
+            ["sourceAddress"] = AddressOf("goldpath").ToString(),
+            ["destinationAddress"] = AddressOf(exchange).ToString(),
             ["messageType"] = new JsonArray(UrnOf(contract)),
             ["message"] = JsonSerializer.SerializeToNode(body, body.GetType(), s_body),
             ["sentTime"] = sentTime.UtcDateTime.ToString("O"),

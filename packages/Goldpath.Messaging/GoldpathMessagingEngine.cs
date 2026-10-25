@@ -37,8 +37,8 @@ public interface IGoldpathMessagingEngine
 }
 
 /// <summary>
-/// Declares the <see cref="IGoldpathMessagingEngine"/> an adapter assembly carries. The type needs a public
-/// parameterless constructor. Exactly one adapter may be referenced; with none, the MassTransit engine
+/// Declares the <see cref="IGoldpathMessagingEngine"/> an adapter assembly carries. The type needs a
+/// parameterless constructor, which may be internal. Exactly one adapter may be referenced; with none, the MassTransit engine
 /// <c>Goldpath.Messaging</c> carries until its adapter package is extracted is the default.
 /// </summary>
 [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false)]
@@ -75,8 +75,10 @@ public sealed record GoldpathHandlerRegistration(Type Event, Type Handler, strin
 public sealed record GoldpathBatchHandlerRegistration(Type Event, Type Handler, GoldpathBatchOptions Options, string EndpointName);
 
 /// <summary>
-/// What a <see cref="GoldpathMessagingBuilder"/> recorded, read-only, as an engine receives it in
-/// <see cref="IGoldpathMessagingEngine.Compose"/>.
+/// What a <see cref="GoldpathMessagingBuilder"/> recorded, as an engine receives it in
+/// <see cref="IGoldpathMessagingEngine.Compose"/>. The handler lists are snapshots taken when the messaging
+/// block returned; <see cref="Options"/> and <see cref="Outbox"/> are the application's own objects, which an
+/// engine reads and does not change.
 /// </summary>
 public sealed class GoldpathMessagingComposition
 {

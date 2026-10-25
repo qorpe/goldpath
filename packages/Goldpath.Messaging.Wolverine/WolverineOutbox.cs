@@ -64,7 +64,7 @@ internal sealed class WolverineIntegrationEventPublisher(IServiceProvider servic
             Body = System.Text.Encoding.UTF8.GetString(envelope),
             Headers = JsonSerializer.Serialize(headers),
             SentTime = now.UtcDateTime,
-            DestinationAddress = new Uri(wire.Broker, GoldpathWire.ExchangeOf(typeof(TEvent))),
+            DestinationAddress = wire.AddressOf(GoldpathWire.ExchangeOf(typeof(TEvent))),
         });
     }
 

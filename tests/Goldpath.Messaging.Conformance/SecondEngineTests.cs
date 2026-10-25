@@ -56,6 +56,20 @@ public sealed class SecondEngineTests
     }
 
     [Fact]
+    public void The_envelope_names_the_broker_without_its_credentials()
+    {
+        var wire = new GoldpathWire(new Uri("amqp://app-user:s3cret-pass@broker.internal:5673/fleet"));
+        var envelope = System.Text.Encoding.UTF8.GetString(wire.Envelope(
+            typeof(Ping), new Ping { Id = Guid.NewGuid() }, Guid.NewGuid(), new Dictionary<string, string>(), DateTimeOffset.UtcNow));
+
+        Assert.DoesNotContain("s3cret-pass", envelope, StringComparison.Ordinal);
+        Assert.DoesNotContain("app-user", envelope, StringComparison.Ordinal);
+        Assert.Contains("\"destinationAddress\":\"rabbitmq://broker.internal:5673/fleet/Goldpath.Messaging.Conformance:Ping\"", envelope, StringComparison.Ordinal);
+        Assert.Equal("rabbitmq://broker.internal:5673/fleet", wire.Address.ToString());
+        Assert.Equal("rabbitmq://localhost/orders", new GoldpathWire(new Uri("amqp://guest:guest@localhost:5672/")).AddressOf("orders").ToString());
+    }
+
+    [Fact]
     public void Delayed_redelivery_is_refused_until_it_is_durable()
     {
         var refused = Assert.Throws<InvalidOperationException>(() => Create(messaging =>
