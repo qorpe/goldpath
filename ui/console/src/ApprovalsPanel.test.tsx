@@ -177,6 +177,29 @@ describe("ApprovalsPanel — the remaining doors", () => {
     await waitFor(() => expect(screen.getByLabelText("Reason")).toHaveValue(""));
   });
 
+  it("approving sends the typed role too, and a blank reason is left out rather than sent empty", async () => {
+    const bodies: unknown[] = [];
+    const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+      if (url.includes("/approve")) {
+        bodies.push(JSON.parse(String(init?.body)));
+        return json({ ok: true, message: "Applied" });
+      }
+      if (/\/requests\/[^/?]+$/.test(url)) return json(detail());
+      return json([row()]);
+    }) as typeof fetch;
+    render(<ApprovalsPanel client={new AdminClient({ fetcher })} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "P26-1" }));
+    const role = await screen.findByLabelText("Decider role");
+    await userEvent.clear(role);
+    await userEvent.type(role, "deputy-manager");
+    await userEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+    await waitFor(() => expect(bodies).toEqual([{ role: "deputy-manager" }]));
+  });
+
   it("unticking a status and clearing the facet each re-read the worklist without it", async () => {
     const { api, fetched } = client();
     render(<ApprovalsPanel client={api} />);

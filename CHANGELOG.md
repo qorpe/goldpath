@@ -103,9 +103,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ### Fixed
 - **The console's npm advisories are closed: vitest 2 → 5, with the 97% coverage floor re-earned
-  (#356).** Console test tooling only; the shipped bundle and every package are unchanged.
-  `ui/console` takes `vitest` and `@vitest/coverage-v8` at 5.0.5 (exact pins, one family as
-  Dependabot groups it; supersedes #375), and `pnpm dedupe` drops the stale `source-map-js`.
+  (#356).** Console test tooling only; the shipped bundle is byte-identical to the one before
+  (the same `pnpm build` output hashes) and every package is unchanged. `ui/console` takes
+  `vitest` and `@vitest/coverage-v8` at 5.0.5 (exact pins, one family as Dependabot groups it;
+  supersedes #375), and `pnpm update source-map-js` lifts the last stale `source-map-js`
+  (under the `@tailwindcss/vite` dev plugin) to 1.2.2, with no other resolution re-chosen.
   `pnpm audit` goes from 26 advisories (3 critical, 11 high: `vitest`, `tinypool`, `vite` 5,
   `esbuild`, `source-map-js`, `brace-expansion`) to none, with no override. vitest ≥4 maps v8
   coverage back to the source AST-aware, so the same 274 tests measured 91.16% statements and
