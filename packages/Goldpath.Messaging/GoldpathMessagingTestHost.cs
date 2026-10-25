@@ -1,4 +1,3 @@
-using MassTransit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -29,6 +28,16 @@ public sealed class GoldpathMessagingTestHost : IAsyncDisposable
     public static GoldpathMessagingTestHost Create(
         Action<GoldpathMessagingBuilder> configureMessaging,
         Action<HostApplicationBuilder>? configureHost = null)
+        => Create(configureMessaging, configureHost, engine: null);
+
+    /// <summary>
+    /// <see cref="Create(Action{GoldpathMessagingBuilder}, Action{HostApplicationBuilder}?)"/> on the engine named
+    /// <paramref name="engine"/> among those referenced: the conformance suite runs its facts once per engine.
+    /// </summary>
+    internal static GoldpathMessagingTestHost Create(
+        Action<GoldpathMessagingBuilder> configureMessaging,
+        Action<HostApplicationBuilder>? configureHost,
+        string? engine)
     {
         ArgumentNullException.ThrowIfNull(configureMessaging);
         var builder = Host.CreateApplicationBuilder();
@@ -37,19 +46,21 @@ public sealed class GoldpathMessagingTestHost : IAsyncDisposable
         // A test publishes right after the start; on a fresh broker a publish that beats its queue's
         // binding is dropped without an error, so the test host waits for the bus (the product default
         // is the owner's decision, open-threads T42).
-        builder.Services.Configure<MassTransitHostOptions>(options => options.WaitUntilStarted = true);
-        builder.AddGoldpathMessaging(messaging =>
-        {
-            configureMessaging(messaging);
-            if (messaging.Transport == GoldpathMessagingTransport.None)
+        builder.AddGoldpathMessaging(
+            messaging =>
             {
-                messaging.UseInMemory();
-            }
-        });
+                messaging.EngineName = engine;
+                configureMessaging(messaging);
+                if (messaging.Transport == GoldpathMessagingTransport.None)
+                {
+                    messaging.UseInMemory();
+                }
+            },
+            waitUntilStarted: true);
         return new GoldpathMessagingTestHost(builder.Build());
     }
 
-    /// <summary>Builds the host as <see cref="Create"/> does and starts it.</summary>
+    /// <summary>Builds the host as <see cref="Create(Action{GoldpathMessagingBuilder}, Action{HostApplicationBuilder}?)"/> does and starts it.</summary>
     public static async Task<GoldpathMessagingTestHost> StartAsync(
         Action<GoldpathMessagingBuilder> configureMessaging,
         Action<HostApplicationBuilder>? configureHost = null)
@@ -77,7 +88,7 @@ public sealed class GoldpathMessagingTestHost : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(integrationEvent);
         var outgoing = Stamp(stamp);
-        return _host.Services.GetRequiredService<IBus>().Publish(integrationEvent, context => Apply(outgoing, context), cancellationToken);
+        return _host.Services.GetRequiredService<IGoldpathMessagingEngine>().PublishAsync(_host.Services, typeof(TEvent), integrationEvent, outgoing, cancellationToken);
     }
 
     /// <summary>
@@ -92,7 +103,7 @@ public sealed class GoldpathMessagingTestHost : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(body);
         var outgoing = Stamp(stamp);
-        return _host.Services.GetRequiredService<IBus>().Publish<TEvent>(body, context => Apply(outgoing, context), cancellationToken);
+        return _host.Services.GetRequiredService<IGoldpathMessagingEngine>().PublishAsync(_host.Services, typeof(TEvent), body, outgoing, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -124,29 +135,6 @@ public sealed class GoldpathMessagingTestHost : IAsyncDisposable
         }
 
         return outgoing;
-    }
-
-    private static void Apply(GoldpathOutgoingMessage outgoing, PublishContext context)
-    {
-        if (outgoing.MessageId is { } messageId)
-        {
-            context.MessageId = messageId;
-        }
-
-        if (outgoing.Tenant is { } tenant)
-        {
-            context.Headers.Set(GoldpathHeaders.TenantId, tenant);
-        }
-
-        if (outgoing.CorrelationId is { } correlationId)
-        {
-            context.Headers.Set(GoldpathHeaders.CorrelationId, correlationId);
-        }
-
-        foreach (var (key, value) in outgoing.Headers)
-        {
-            context.Headers.Set(key, value);
-        }
     }
 }
 
