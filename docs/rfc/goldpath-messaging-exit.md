@@ -230,6 +230,9 @@ lines, open until each proof runs:
       CI integration job) — its scenario list grows with §7.1's gaps; owner review pending.
 - [ ] The Wolverine adapter passes §7.1 S1, S2, S3, S4 and S6 by **2026-12-31** (GA gate G5,
       owner decision 2026-10-21, ADR-0015); SECURITY.md states the engine posture.
+      **2026-10-25 (G5 Part 1/5, #330):** `Goldpath.Messaging.Wolverine` runs the suite's current
+      class, S2.1–S2.11, green beside 8.5.11 in the same CI job. S2 is not yet widened with the four
+      gaps above (Part 2/5), and S1, S3, S4 and S6 are open; what the adapter refuses is open-threads T51.
 - [ ] The family bus has its own RFC and repository (qorpe organisation, open source,
       clean-room per ADR-0013) in **December 2026**; its first adapter enters the suite in
       January–February 2027 (T40, milestone `family-bus`).
