@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type APIResponse, type Page } from "@playwright/test";
 
 /**
  * S-OPS-02 (GA gate G10a, docs/strategy/scenario-campaign.md): a mid-flight operator
@@ -96,6 +96,8 @@ test.describe("S-OPS-02 — every operator mistake is refused in the server's wo
   });
 
   test("the same approver's second signature is refused by the engine's rule, by name", async ({ page }) => {
+    // This consumes the request's first signature (0/2 to 1/2), so it runs once per host. The
+    // smoke starts a fresh host for every run and retries nothing.
     await open(page, "Approvals");
     const row = page.getByTestId("approvals-queue").getByRole("row", { name: /Limit raise for S-OPS-02/ });
     await expect(row).toContainText("0/2");
@@ -117,13 +119,20 @@ test.describe("S-OPS-02 — every operator mistake is refused in the server's wo
 
   test("an erase under a legal hold is refused with the reason, and the hold stands", async ({ page }) => {
     const entry = page.getByTestId("archive-entry");
-    // The archive job is real and runs every 5 s: retry until it has appended policy 3.
-    await expect(async () => {
-      await open(page, "Archival");
-      await page.getByLabel("aggregate key").fill("3");
-      await page.getByRole("button", { name: "retrieve" }).click();
-      await expect(entry).toBeVisible({ timeout: 5_000 });
-    }).toPass({ timeout: 90_000 });
+    // The archive job is real and runs every 5 s, so wait until it has appended policy 3.
+    // The wait goes through the API, not the page: re-navigating while the panel's 404 for
+    // a not-yet-archived entry is still unread aborts that request, and the watcher would
+    // count the abort as a 5xx. page.request raises no page events.
+    await expect
+      .poll(async () => (await page.request.get(`${service}/goldpath/admin/archival/entries/policies/3`)).status(), {
+        message: "the archive job appends policy 3",
+        timeout: 90_000,
+      })
+      .toBe(200);
+    await open(page, "Archival");
+    await page.getByLabel("aggregate key").fill("3");
+    await page.getByRole("button", { name: "retrieve" }).click();
+    await expect(entry).toBeVisible();
 
     await page.getByRole("button", { name: "hold", exact: true }).click();
     const holding = page.getByRole("alertdialog", { name: "confirm hold" });
@@ -131,6 +140,7 @@ test.describe("S-OPS-02 — every operator mistake is refused in the server's wo
     await holding.getByRole("button", { name: "hold", exact: true }).click();
     await expect(page.getByRole("row", { name: /CASE-S-OPS-02/ })).toBeVisible();
 
+    let lifted: APIResponse | undefined;
     try {
       await page.getByRole("button", { name: "erase" }).click();
       const erasing = page.getByRole("alertdialog", { name: "confirm erase" });
@@ -144,7 +154,8 @@ test.describe("S-OPS-02 — every operator mistake is refused in the server's wo
     } finally {
       // Leave the store as this spec found it. The hold is lifted through the API, so the
       // cleanup runs even when an assertion above is what failed.
-      await page.request.post(`${service}/goldpath/admin/archival/entries/policies/3/lift-hold`);
+      lifted = await page.request.post(`${service}/goldpath/admin/archival/entries/policies/3/lift-hold`);
     }
+    expect(lifted?.ok(), "the cleanup lifts the hold it placed").toBe(true);
   });
 });
