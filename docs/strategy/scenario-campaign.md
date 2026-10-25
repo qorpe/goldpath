@@ -157,7 +157,16 @@ S-OPS-02 — A mid-flight operator mistake is refused in the server's words, not
             from the SCREEN
   then:     every refusal arrives as the server's sentence in the UI; zero 500s
   needs:    local
-  evidence: —
+  evidence: ui/console/e2e/refusals.spec.ts, run by `scripts/console-smoke.sh` (the
+            `console-smoke` workflow and the nightly). Replay locally with
+            `bash scripts/console-smoke.sh`. 2026-10-25, local, green: three tests, beside
+            console.spec.ts and a11y.spec.ts (38 passed). A bad cron and an unknown timezone
+            are refused inside the reschedule form, in the host's words. A second signature
+            by the same approver answers `AlreadySigned`. An erase under a legal hold answers
+            "lift the hold first". Each verb is asserted to answer 400, and any 5xx or
+            unreadable request fails the run. Red proof: with the timezone refusal turned
+            back into an unhandled `TimeZoneNotFoundException`, the spec fails on "reschedule
+            answered nothing the browser could read (a 5xx without CORS headers)".
 
 ## Scale-rig note (for S-FLEET-02 class)
 

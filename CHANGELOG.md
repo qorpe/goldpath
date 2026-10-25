@@ -5,6 +5,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **S-OPS-02 runs in the console smoke: four operator mistakes refused from the screen, zero
+  5xx (GA gate G10a, #324).** Test-only; no package change.
+  - **The four mistakes:** `ui/console/e2e/refusals.spec.ts` attempts each one through the real
+    console against a real app: a bad cron and an unknown timezone in the reschedule form, a
+    second signature by the same approver, and an erase while a legal hold stands.
+  - **What it asserts:** each verb answers 400, and the console shows the server's own sentence.
+    Any 5xx, or any request the browser could not read, fails the run. The platform's
+    exception page carries no CORS headers, so a 500 to the cross-origin console arrives as a
+    failed request.
+  - **The smoke host** files a second approval request at startup, so this spec never races
+    the approvals journey for one quorum.
 - **Security scans in CI (GA gate G15 Part 1/2, #339).** Repository CI, no package changes.
   `.github/workflows/codeql.yml` runs CodeQL (`security-extended`) on the C# and the console's
   TypeScript on every pull request, on `main` and weekly, with its actions pinned to commits.
