@@ -35,3 +35,21 @@ Goldpath.GoldpathOutgoingMessage.Tenant.set -> void
 static Goldpath.GoldpathMessagingTestHost.Create(System.Action<Goldpath.GoldpathMessagingBuilder!>! configureMessaging, System.Action<Microsoft.Extensions.Hosting.HostApplicationBuilder!>? configureHost = null) -> Goldpath.GoldpathMessagingTestHost!
 static Goldpath.GoldpathMessagingTestHost.StartAsync(System.Action<Goldpath.GoldpathMessagingBuilder!>! configureMessaging, System.Action<Microsoft.Extensions.Hosting.HostApplicationBuilder!>? configureHost = null) -> System.Threading.Tasks.Task<Goldpath.GoldpathMessagingTestHost!>!
 static Goldpath.GoldpathOutboxModelExtensions.AddGoldpathOutboxEntities(this Microsoft.EntityFrameworkCore.ModelBuilder! modelBuilder) -> Microsoft.EntityFrameworkCore.ModelBuilder!
+Goldpath.GoldpathBatchOptions
+Goldpath.GoldpathBatchOptions.ConcurrencyLimit.get -> int
+Goldpath.GoldpathBatchOptions.ConcurrencyLimit.set -> void
+Goldpath.GoldpathBatchOptions.GoldpathBatchOptions() -> void
+Goldpath.GoldpathBatchOptions.MessageLimit.get -> int
+Goldpath.GoldpathBatchOptions.MessageLimit.set -> void
+Goldpath.GoldpathBatchOptions.TimeLimit.get -> System.TimeSpan
+Goldpath.GoldpathBatchOptions.TimeLimit.set -> void
+Goldpath.GoldpathMessagingBuilder.AddBatchHandler<TEvent, THandler>(Goldpath.GoldpathBatchOptions! options, string? endpointName = null) -> Goldpath.GoldpathMessagingBuilder!
+Goldpath.GoldpathMessagingBuilder.AddHandler<TEvent, THandler>(string! endpointName) -> Goldpath.GoldpathMessagingBuilder!
+Goldpath.IIntegrationEventBatchHandler<TEvent>
+Goldpath.IIntegrationEventBatchHandler<TEvent>.HandleAsync(System.Collections.Generic.IReadOnlyList<Goldpath.IntegrationEvent<TEvent!>!>! batch, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Goldpath.IntegrationEvent<TEvent>
+Goldpath.IntegrationEvent<TEvent>.Context.get -> Goldpath.IntegrationEventContext!
+Goldpath.IntegrationEvent<TEvent>.Context.init -> void
+Goldpath.IntegrationEvent<TEvent>.IntegrationEvent(TEvent! Message, Goldpath.IntegrationEventContext! Context) -> void
+Goldpath.IntegrationEvent<TEvent>.Message.get -> TEvent!
+Goldpath.IntegrationEvent<TEvent>.Message.init -> void

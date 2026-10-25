@@ -1,5 +1,4 @@
 using System.Text.Json;
-using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -9,7 +8,7 @@ namespace Goldpath;
 /// <summary>
 /// The campaign engine (campaign RFC §2): instance creation, streaming enumeration under
 /// the ceiling, policy-governed release, outcome application, completion math. The engine
-/// owns STATE; leadership/scheduling belongs to the pacer run, delivery to MassTransit.
+/// owns STATE; leadership/scheduling belongs to the pacer run, delivery to the message seam.
 /// </summary>
 public sealed class GoldpathCampaignEngine<TContext>
     where TContext : DbContext
@@ -244,14 +243,14 @@ public sealed class GoldpathCampaignEngine<TContext>
         }
 
         var db = services.GetRequiredService<TContext>();
-        var publisher = services.GetRequiredService<IPublishEndpoint>();
+        var publisher = services.GetRequiredService<IIntegrationEventPublisher>();
         var now = _time.GetUtcNow();
         var from = campaign.ReleasedThrough + 1;
         var to = campaign.ReleasedThrough + count;
 
         for (var seq = from; seq <= to; seq++)
         {
-            await publisher.Publish(new GoldpathCampaignItemMessage(campaign.Id, seq, campaign.Type), cancellationToken);
+            await publisher.PublishAsync(new GoldpathCampaignItemMessage(campaign.Id, seq, campaign.Type), cancellationToken);
         }
 
         await db.Set<GoldpathCampaignItem>()
@@ -302,10 +301,10 @@ public sealed class GoldpathCampaignEngine<TContext>
             return 0;
         }
 
-        var publisher = services.GetRequiredService<IPublishEndpoint>();
+        var publisher = services.GetRequiredService<IIntegrationEventPublisher>();
         foreach (var seq in due)
         {
-            await publisher.Publish(new GoldpathCampaignItemMessage(campaign.Id, seq, campaign.Type), cancellationToken);
+            await publisher.PublishAsync(new GoldpathCampaignItemMessage(campaign.Id, seq, campaign.Type), cancellationToken);
         }
 
         await db.Set<GoldpathCampaignItem>()
@@ -349,10 +348,10 @@ public sealed class GoldpathCampaignEngine<TContext>
             return 0;
         }
 
-        var publisher = services.GetRequiredService<IPublishEndpoint>();
+        var publisher = services.GetRequiredService<IIntegrationEventPublisher>();
         foreach (var seq in orphans)
         {
-            await publisher.Publish(new GoldpathCampaignItemMessage(campaign.Id, seq, campaign.Type), cancellationToken);
+            await publisher.PublishAsync(new GoldpathCampaignItemMessage(campaign.Id, seq, campaign.Type), cancellationToken);
         }
 
         await db.Set<GoldpathCampaignItem>()

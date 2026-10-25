@@ -22,7 +22,6 @@
     "mutate": [
       "!**/GoldpathCampaignExtensions.cs",
       "!**/GoldpathCampaignMetrics.cs",
-      "!**/GoldpathCampaignConsumers.cs",
       "!**/GoldpathCampaignAdminEndpoints.cs"
     ]
   }

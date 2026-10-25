@@ -21,6 +21,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   - `SECURITY.md` links the model, and `ga-gate-status.md` G15 records 4 of 10 surfaces. The
     other six (Approvals, FileExchange, Notification, DataProtection, Idempotency,
     MultiTenancy) remain the issue's checklist.
+- **S-OPS-02 runs in the console smoke: four operator mistakes refused from the screen, zero
+  5xx (GA gate G10a, #324).** Test-only; no package change.
+  - **The four mistakes:** `ui/console/e2e/refusals.spec.ts` attempts each one through the real
+    console against a real app: a bad cron and an unknown timezone in the reschedule form, a
+    second signature by the same approver, and an erase while a legal hold stands.
+  - **What it asserts:** each verb answers 400, and the console shows the server's own sentence.
+    Any 5xx, or any request the browser could not read, fails the run. The platform's
+    exception page carries no CORS headers, so a 500 to the cross-origin console arrives as a
+    failed request.
+  - **The smoke host** files a second approval request at startup, so this spec never races
+    the approvals journey for one quorum.
 - **Security scans in CI (GA gate G15 Part 1/2, #339).** Repository CI, no package changes.
   `.github/workflows/codeql.yml` runs CodeQL (`security-extended`) on the C# and the console's
   TypeScript on every pull request, on `main` and weekly, with its actions pinned to commits.
@@ -52,6 +63,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   A present but blank `ConnectionStrings:messaging` is refused at the bus's start in words (an
   absent one still means the engine's local default), and the test host refuses a tenant stamp
   outside `TenantId`'s alphabet, which the consume filter would otherwise drop silently.
+- **`Goldpath.Messaging`: the batch half of the consume seam (GA gate G1 Part 3/4, #328).**
+  `IIntegrationEventBatchHandler<TEvent>` takes deliveries in groups
+  (`HandleAsync(IReadOnlyList<IntegrationEvent<TEvent>>, …)`, each `IntegrationEvent<TEvent>`
+  pairing the event with its own `IntegrationEventContext`: message id, correlation, tenant and
+  headers per delivery, so one batch may carry several tenants). It is registered with
+  `messaging.AddBatchHandler<TEvent, THandler>(GoldpathBatchOptions)`: `MessageLimit` (10),
+  `TimeLimit` (1 s) and `ConcurrencyLimit` (1), the engine's defaults; a limit that is not
+  positive, a `MessageLimit × ConcurrencyLimit` above 65,535 (a broker's 16-bit prefetch window)
+  or a `TimeLimit` beyond a timer's ~24.8 days is refused at registration, naming the handler. A batch is delivered when either
+  limit is reached, at most `ConcurrencyLimit` batches run at once per endpoint, and a throw
+  fails the whole batch into the retry ladder. Conformance facts S2.9–S2.11 prove the size
+  bound, the time bound and one batch in flight on real RabbitMQ. `AddHandler<TEvent,
+  THandler>(endpointName)` and `AddBatchHandler`'s optional `endpointName` register a handler
+  on a queue that must keep the name a running fleet already drains; handlers given one name
+  share one queue, and moving a handler to a second name is refused.
 - **`goldpath check` warns a manifest that selects a roadmap-only value (GA gate G3, #336).**
   After `specdrift validate` passes, every value the schema accepts but no code runs
   (`broker: kafka|inmemory`, `exporters: prometheus`, `auditTrail.store: eventstream`, and
@@ -108,6 +134,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
 ### Changed
+- **`Goldpath.Campaign`: campaign consumes through the seam (GA gate G1 Part 3/4, #328).**
+  `messaging.AddGoldpathCampaign<TContext>()` on the `GoldpathMessagingBuilder` registers
+  `GoldpathCampaignItemHandler<TContext>` (an `IIntegrationEventHandler<GoldpathCampaignItemMessage>`)
+  and `GoldpathCampaignOutcomeHandler<TContext>` (an `IIntegrationEventBatchHandler`, still 200
+  outcomes or 500 ms, one batch at a time). Claim-before-execute, the outcome shapes and the
+  set-based outcome write are unchanged. **No queue moves:** both handlers drain the queue the
+  previous consumers drained, named after the context (`OrdersDbContext` drains
+  `orders-db-context`), with the same exchange bindings, so a fleet can roll host by host; a test
+  reads the queue and bindings from the broker, and the same test passes against the previous
+  registration. `bus.AddGoldpathCampaignConsumers<TContext>()` on the MassTransit-typed block keeps
+  working and now registers the same two handlers on the same queue; it leaves with Messaging's
+  MassTransit-typed overloads in Part 4/4, and the templates and the CLI recipe move to the builder
+  line at the preview.11 release PR. **BREAKING for code that names the consumer types:**
+  `GoldpathCampaignItemConsumer<TContext>`, `GoldpathCampaignOutcomeSink<TContext>` and
+  `GoldpathCampaignOutcomeSinkDefinition<TContext>` are removed (use the handlers above). The
+  engine, the pacer and the callback endpoint publish through `IIntegrationEventPublisher` instead
+  of MassTransit's `IPublishEndpoint`, so a test double of the campaign engine implements the seam.
+  `scripts/engine-gate.sh`'s baseline drops from 13 lines to 11 and its ceiling with it; the gate
+  now treats a Shipped line that the sibling Unshipped file marks `*REMOVED*` as gone, and dropping
+  the marker fails it.
 - **The public 1.0 sample exam is Insurance + Telco (GA readiness Q6/G12, amended 2026-10-25).**
   Documents only, no package change. The Factoring sample the owner added on 2026-10-21 moves
   out of this public repository. It is built from scratch in a private qorpe repository as a
@@ -118,6 +164,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **`Goldpath.Bulk`: in-file duplicate detection no longer keeps every key (#300).** Validation
+  kept each distinct `RowKey` as a string, so a 10M-row device list held them all: 1,226 MiB
+  peak managed heap on a 10M-row run. It now keeps a 64-bit hash and the first row per key
+  (about 40 bytes, whatever the key's length; 541 MiB on the same run) and confirms a hash hit
+  exactly by re-deriving the first row's key from its staged payload, so two keys that share a
+  hash are never reported as duplicates. The report, its first-row numbers and the counts are
+  unchanged, including for a row key that does not survive the payload's JSON round trip (a
+  `[JsonIgnore]` property or a private setter): such a definition is detected on the first
+  keyed row of a pass, logged as a warning, and keeps every key in full for that pass, as
+  before. A key that only SOME rows lose (a conditional `[JsonIgnore]` over a non-default
+  initializer) passes that first-row check and is caught at its first repeat; the pass is
+  then taken again from the start with every key kept in full, with the same warning, so the
+  report is still the string table's and the batch never stays `Validating`. The
+  confirmation costs one read per duplicate whose first row is already written:
+  the 10M run with 99,951 such repeats validated at 12,079 rows/s against 14,773 (open-threads
+  T49). No public API, schema or dependency change. `scripts/bench-bulk.sh intake` runs the
+  10M bench; the numbers are in `packages/Goldpath.Bulk/ops/bulk-benchmarks.md`.
 - **`Goldpath.Campaign`: a snapshot is no longer bound to the leader tick (#288).** The pacer
   materialized one `EnumerationBatchSize` batch per campaign per tick, so at the defaults (2,000
   rows, 250 ms) a snapshot ran at about 8,000 rows/s. 35M targets took over 70 minutes before

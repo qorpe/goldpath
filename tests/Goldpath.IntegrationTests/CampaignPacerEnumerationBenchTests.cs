@@ -41,7 +41,7 @@ public sealed class CampaignPacerEnumerationBenchTests : IAsyncLifetime
         services.AddDbContext<CampaignTests.CampDb>(o => o.UseNpgsql(_postgres.GetConnectionString()));
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton(_options);
-        services.AddSingleton<MassTransit.IPublishEndpoint>(new CampaignBenchTests.CountingPublisher());
+        services.AddSingleton<IIntegrationEventPublisher>(new CampaignBenchTests.CountingPublisher());
         services.AddSingleton(_engine);
         services.AddLogging();
         _services = services.BuildServiceProvider();

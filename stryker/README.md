@@ -75,6 +75,20 @@ run shared, not the CI profile's. Survivors left: the test host's dispose branch
 `WaitUntilStarted` line, which the in-memory transport cannot tell apart. The argument guards
 that also survived are pinned by a test added after the run.
 
+**Messaging was re-measured 2026-10-24**, a full run at 421f47d on the #328 branch (G1 Part 3/4: the
+batch seam, named endpoints, the engine's batch composition): 81.53 % → 86.09 % (222 mutants tested;
+the agent sandbox's minutes). Of the new code's survivors, four are pinned by tests added after the
+run — the duplicate-batch check's `&&`, the explicit endpoint name, a `MessageLimit` of exactly 1, and
+the refusal naming the in-flight product — and so is the engine test hook's registration callback.
+Left without coverage: the hook's RabbitMQ transport callback, which only the broker bench reaches.
+
+**Bulk was re-measured 2026-10-24**, a full run of `mutation-gate.sh Goldpath.Bulk` at 6b97bc3 on
+the #300 branch (the duplicate check keeps hashes, not keys), at concurrency 1 on the local
+sandbox: 88.38 % → 88.37 % (577 mutants tested). The new `GoldpathBulkDuplicateKeys` leaves one
+survivor, `unit >> 8` → `unit >>> 8` in the hash, which is equivalent: a `char` is unsigned, so the
+two shifts agree. The other survivors are in lines the change did not touch. Minutes are the
+sandbox's, not the CI profile's.
+
 **Console was re-measured 2026-10-19**, a full run on the #272 branch, after the product
 console link tiles (#257) put the package's first real decision logic in it — the link URL
 rule and the registry's links-only shape. 75.00 % → 91.46 % (75 killed, 6 survived, 1 without
@@ -91,18 +105,18 @@ at f459fe2, so its row carries it (minutes not recorded).
 | Locking | 91.67 % | 21.67 | 7.1 | 91.67 %, 59.5 |
 | Cli | 91.48 % | 21.48 | 7.6 | 91.44 %, 8.6 |
 | Console | 91.46 % (75.00) | 21.46 | — | 75.00 %, 24.3 |
-| Bulk | 88.38 % (70.09) | 18.38 | 15.2 | never finished (timeout) |
+| Bulk | 88.37 % (88.38) | 18.37 | 19.7 | never finished (timeout) |
 | Idempotency | 84.91 % (73.58) | 14.91 | 1.8 | 73.58 %, 3.3 |
 | AuditTrail | 81.97 % | 11.97 | 5.1 | 81.97 %, 5.7 |
 | MultiTenancy | 81.40 % (72.09) | 11.40 | 6.1 | 75.58 %, 38.5 |
 | Notification | 81.23 % | 11.23 | 5.9 | never finished (OOM) |
-| Messaging | 81.53 % (80.72) | 11.53 | 68.3 | 80.72 %, 69.4 |
+| Messaging | 86.09 % (81.53) | 16.09 | 57.0 | 80.72 %, 69.4 |
 | DataProtection | 78.95 % | 8.95 | 1.5 | 78.95 %, 33.0 |
 | ServiceDefaults | 78.48 % (72.15) | 8.48 | 1.4 | 72.15 %, 4.3 |
 | Approvals | 77.78 % (74.84) | 7.78 | 3.4 | 74.84 %, 217.7 |
 | Data | 77.38 % | 7.38 | 2.3 | 77.38 %, 38.0 |
 | FileExchange | 76.92 % | 6.92 | 3.6 | 76.92 %, 31.8 |
-| Campaign | 74.77 % (75.13) | 4.77 | 56.4 | never finished (OOM) |
+| Campaign | 76.30 % (74.77) | 6.30 | 50.6 | never finished (OOM) |
 | Archival | 74.49 % | 4.49 | 10.6 | never finished (OOM) |
 | Analyzers | 72.55 % | 2.55 | 3.9 | 72.55 %, 5.4 |
 | Jobs | 72.52 % | 2.52 | 9.1 | never finished (OOM) |
@@ -152,6 +166,16 @@ answer says, the body limit, the timestamp window and the fair share's edges:
 74.77 % at concurrency 1 (minutes as measured there). The pacer (`GoldpathCampaignJobs.cs`,
 59.2 % in the first run) is the next place to add facts.
 
+**Campaign on the seam (#328, G1 Part 3/4), 2026-10-24.** A full local run of
+`mutation-gate.sh Goldpath.Campaign` at 5c59165 on the #328 branch: 74.77 % → 76.30 % (1,081
+mutants tested, 211 tests; minutes are the agent sandbox's, not the CI profile's). The MassTransit
+consumers file, excluded as adapter plumbing, is gone (the MassTransit-typed registration kept for the
+templates until G1 Part 4/4 sits in the excluded composition file); its successor `GoldpathCampaignHandlers.cs`
+(the item and outcome handlers, the queue name) is scored, with unit tests of its own: 17 killed,
+2 survived. One survivor (`replay: false` → `true`) is pinned by a test added after the run; the
+other (`Length > 1000` → `>= 1000`) is equivalent, since a 1,000-character message cut at 1,000 is
+unchanged.
+
 ## Excluded files
 
 | Package | Excluded file | Why it is not scored |
@@ -176,7 +200,6 @@ answer says, the body limit, the timestamp window and the fair share's edges:
 | Cli | `Prompter.cs` | The interactive shell (`Console.ReadLine` + menu rendering) behind `IPrompter` — a unit loop cannot answer a prompt. The wizard's QUESTIONS, defaults and multi-select parsing are pinned against a recording fake in `WizardDiscoverRunnerMutationTests`; the derivation it feeds is a pure function under full mutation. **Weakest exclusion in this ledger** (open-threads: no e2e run drives the real prompter either). |
 | Campaign | `GoldpathCampaignExtensions.cs` | DI composition (see Jobs). |
 | Campaign | `GoldpathCampaignMetrics.cs` | Meter/counter declarations — names are pinned by the dashboard's queries, not by mutants. |
-| Campaign | `GoldpathCampaignConsumers.cs` | MassTransit consumers — exercised against a real broker in the integration suite. |
 | Campaign | `GoldpathCampaignAdminEndpoints.cs` | Route table (see Jobs). |
 | Notification | `GoldpathNotificationExtensions.cs` | DI composition. |
 | Notification | `GoldpathNotificationMetrics.cs` | Meter declarations. |

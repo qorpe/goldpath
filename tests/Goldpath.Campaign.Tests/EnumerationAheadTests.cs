@@ -97,49 +97,22 @@ public class EnumerationAheadTests
     /// <summary>Publishes of one campaign, stamped with the tick they happened in (1-based).</summary>
     private sealed class TickStampingPublisher(
         RecordingPublisher inner, TickClock clock, DateTimeOffset sliceStart, Guid campaignId, Action<int>? onRelease)
-        : MassTransit.IPublishEndpoint
+        : IIntegrationEventPublisher
     {
         public List<int> Ticks { get; } = [];
 
-        public Task Publish<T>(T message, CancellationToken cancellationToken = default)
-            where T : class
+        public Task PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken cancellationToken = default)
+            where TEvent : class, IIntegrationEvent
         {
-            if (message is GoldpathCampaignItemMessage item && item.CampaignId == campaignId)
+            if (integrationEvent is GoldpathCampaignItemMessage item && item.CampaignId == campaignId)
             {
                 var tick = (int)((clock.GetUtcNow() - sliceStart).Ticks / Tick.Ticks) + 1;
                 Ticks.Add(tick);
                 onRelease?.Invoke(tick);
             }
 
-            return inner.Publish(message, cancellationToken);
+            return inner.PublishAsync(integrationEvent, cancellationToken);
         }
-
-        public Task Publish<T>(T message, MassTransit.IPipe<MassTransit.PublishContext<T>> publishPipe, CancellationToken cancellationToken = default)
-            where T : class => throw new NotSupportedException();
-
-        public Task Publish<T>(T message, MassTransit.IPipe<MassTransit.PublishContext> publishPipe, CancellationToken cancellationToken = default)
-            where T : class => throw new NotSupportedException();
-
-        public Task Publish(object message, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-
-        public Task Publish(object message, Type messageType, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-
-        public Task Publish(object message, MassTransit.IPipe<MassTransit.PublishContext> publishPipe, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task Publish(object message, Type messageType, MassTransit.IPipe<MassTransit.PublishContext> publishPipe, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task Publish<T>(object values, CancellationToken cancellationToken = default)
-            where T : class => throw new NotSupportedException();
-
-        public Task Publish<T>(object values, MassTransit.IPipe<MassTransit.PublishContext<T>> publishPipe, CancellationToken cancellationToken = default)
-            where T : class => throw new NotSupportedException();
-
-        public Task Publish<T>(object values, MassTransit.IPipe<MassTransit.PublishContext> publishPipe, CancellationToken cancellationToken = default)
-            where T : class => throw new NotSupportedException();
-
-        public MassTransit.ConnectHandle ConnectPublishObserver(MassTransit.IPublishObserver observer) => throw new NotSupportedException();
     }
 
     /// <summary>Runs one slice on <paramref name="clock"/>, recording which ticks released <paramref name="watched"/>.</summary>
@@ -155,11 +128,11 @@ public class EnumerationAheadTests
     }
 
     /// <summary>The fixture's services, with the publisher swapped for the tick-stamping one in every scope.</summary>
-    private sealed class OverlayProvider(IServiceProvider inner, MassTransit.IPublishEndpoint publisher)
+    private sealed class OverlayProvider(IServiceProvider inner, IIntegrationEventPublisher publisher)
         : IServiceProvider, IServiceScopeFactory, IDisposable
     {
         public object? GetService(Type serviceType)
-            => serviceType == typeof(MassTransit.IPublishEndpoint) ? publisher
+            => serviceType == typeof(IIntegrationEventPublisher) ? publisher
                 : serviceType == typeof(IServiceScopeFactory) ? this
                 : inner.GetService(serviceType);
 
@@ -169,7 +142,7 @@ public class EnumerationAheadTests
         {
         }
 
-        private sealed class OverlayScope(IServiceScope scope, MassTransit.IPublishEndpoint publisher) : IServiceScope
+        private sealed class OverlayScope(IServiceScope scope, IIntegrationEventPublisher publisher) : IServiceScope
         {
             public IServiceProvider ServiceProvider { get; } = new OverlayProvider(scope.ServiceProvider, publisher);
 

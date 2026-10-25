@@ -117,6 +117,73 @@ public sealed class PoisonHandler(Observed observed) : IIntegrationEventHandler<
     }
 }
 
+/// <summary>The batch facts' event: one per delivery, grouped by the engine before the handler sees it.</summary>
+public sealed class Tick : IIntegrationEvent
+{
+    public int Number { get; set; }
+}
+
+/// <summary>What the batch handler observed: each batch's size and arrival, and how many ran at once.</summary>
+public sealed class BatchesObserved
+{
+    private int _inFlight;
+    private int _peak;
+
+    public ConcurrentQueue<(int Size, DateTimeOffset At, IReadOnlyList<int> Numbers)> Batches { get; } = new();
+
+    /// <summary>How long each batch holds the handler — the one-in-flight fact needs batches that overlap if allowed to.</summary>
+    public TimeSpan Hold { get; set; }
+
+    /// <summary>The most batches ever inside the handler at once.</summary>
+    public int Peak => Volatile.Read(ref _peak);
+
+    public int Delivered => Batches.Sum(b => b.Size);
+
+    public int Enter()
+    {
+        var now = Interlocked.Increment(ref _inFlight);
+        int seen;
+        while (now > (seen = Volatile.Read(ref _peak)) && Interlocked.CompareExchange(ref _peak, now, seen) != seen)
+        {
+        }
+
+        return now;
+    }
+
+    public void Leave() => Interlocked.Decrement(ref _inFlight);
+
+    public async Task WaitForDeliveredAsync(int count, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (Delivered < count && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(50);
+        }
+    }
+}
+
+/// <summary>The seam's batch handler under test: names no engine type.</summary>
+public sealed class TickBatchHandler(BatchesObserved observed) : IIntegrationEventBatchHandler<Tick>
+{
+    public async Task HandleAsync(IReadOnlyList<IntegrationEvent<Tick>> batch, CancellationToken cancellationToken = default)
+    {
+        observed.Enter();
+        try
+        {
+            if (observed.Hold > TimeSpan.Zero)
+            {
+                await Task.Delay(observed.Hold, cancellationToken);
+            }
+
+            observed.Batches.Enqueue((batch.Count, DateTimeOffset.UtcNow, [.. batch.Select(e => e.Message.Number)]));
+        }
+        finally
+        {
+            observed.Leave();
+        }
+    }
+}
+
 /// <summary>The app's own context with the Goldpath outbox schema (RFC goldpath-messaging-engines §4.2).</summary>
 public sealed class ConformanceDb(DbContextOptions<ConformanceDb> options) : DbContext(options)
 {
@@ -179,13 +246,20 @@ public sealed class ConformanceContainers : IAsyncLifetime
     /// when (the crash scenario commits BEFORE the bus exists). The test host returns from its start
     /// only once the bus has started (#371), so no fact has to know how an engine says that.
     /// </summary>
-    public async Task<GoldpathMessagingTestHost> BuildHostAsync(Observed observed, Action<GoldpathMessagingOptions>? options = null, string? tenant = null)
+    public async Task<GoldpathMessagingTestHost> BuildHostAsync(
+        Observed observed, Action<GoldpathMessagingOptions>? options = null, string? tenant = null,
+        (BatchesObserved Observed, GoldpathBatchOptions Grouping)? batches = null)
     {
         var host = GoldpathMessagingTestHost.Create(
             messaging =>
             {
                 messaging.AddHandler<Ping, PingHandler>();
                 messaging.AddHandler<Poison, PoisonHandler>();
+                if (batches is { } batch)
+                {
+                    messaging.AddBatchHandler<Tick, TickBatchHandler>(batch.Grouping);
+                }
+
                 messaging.AddOutbox<ConformanceDb>();
                 messaging.UseRabbitMq();
                 messaging.Options.Retry.ImmediateCount = 2;
@@ -196,6 +270,10 @@ public sealed class ConformanceContainers : IAsyncLifetime
             {
                 builder.Configuration["ConnectionStrings:messaging"] = Rabbit.GetConnectionString();
                 builder.Services.AddSingleton(observed);
+                if (batches is { } batch)
+                {
+                    builder.Services.AddSingleton(batch.Observed);
+                }
                 if (tenant is not null)
                 {
                     builder.Services.AddSingleton<ITenantContext>(new FixedTenant(tenant));

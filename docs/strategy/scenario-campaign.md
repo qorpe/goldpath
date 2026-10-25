@@ -48,6 +48,11 @@ S-FLEET-01 — A 2.3M-device config push finishes in five working days without m
             log carries every throttle with its actor
   needs:    scale-rig (targets can be synthetic; timing compressed via clock control where honest)
   evidence: —
+  notes:    the list-targeted variant (targets uploaded as a device list through Goldpath.Bulk,
+            the app's selector reading the batch's staged rows) has its INTAKE leg measured:
+            10M rows uploaded, validated and reported in 828 s on the agent's sandbox, peak
+            managed heap 541 MiB (#300, packages/Goldpath.Bulk/ops/bulk-benchmarks.md). The
+            campaign over that list is not run
 
 S-FLEET-02 — 30M inventory: one campaign sustains the configured TPS for an hour, flat
   modules:  campaign, jobs, broker, store
@@ -157,7 +162,16 @@ S-OPS-02 — A mid-flight operator mistake is refused in the server's words, not
             from the SCREEN
   then:     every refusal arrives as the server's sentence in the UI; zero 500s
   needs:    local
-  evidence: —
+  evidence: ui/console/e2e/refusals.spec.ts, run by `scripts/console-smoke.sh` (the
+            `console-smoke` workflow and the nightly). Replay locally with
+            `bash scripts/console-smoke.sh`. 2026-10-25, local, green: three tests, beside
+            console.spec.ts and a11y.spec.ts (38 passed). A bad cron and an unknown timezone
+            are refused inside the reschedule form, in the host's words. A second signature
+            by the same approver answers `AlreadySigned`. An erase under a legal hold answers
+            "lift the hold first". Each verb is asserted to answer 400, and any 5xx or
+            unreadable request fails the run. Red proof: with the timezone refusal turned
+            back into an unhandled `TimeZoneNotFoundException`, the spec fails on "reschedule
+            answered nothing the browser could read (a 5xx without CORS headers)".
 
 ## Scale-rig note (for S-FLEET-02 class)
 
