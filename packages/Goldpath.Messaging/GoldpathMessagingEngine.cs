@@ -146,7 +146,8 @@ internal static class GoldpathMessagingEngines
     /// </summary>
     internal static IGoldpathMessagingEngine Choose(IEnumerable<(string Assembly, Type Engine)> declared, string? named = null)
     {
-        var all = declared.Distinct().ToList();
+        // Ordered by assembly name, so the decision and its refusal read the same however the declarations were found.
+        var all = declared.Distinct().OrderBy(d => d.Assembly, StringComparer.Ordinal).ToList();
         var engines = all.Select(d => (d.Assembly, Engine: Create(d.Engine, d.Assembly))).ToList();
         if (named is not null)
         {
@@ -181,8 +182,8 @@ internal static class GoldpathMessagingEngines
                 $"{assembly} declares '{engineType.FullName}' as its messaging engine, which is not a concrete {nameof(IGoldpathMessagingEngine)}.");
         }
 
-        return (IGoldpathMessagingEngine)(Activator.CreateInstance(engineType, nonPublic: true)
-            ?? throw new InvalidOperationException($"{assembly}: '{engineType.FullName}' could not be created."));
+        // Null only for a Nullable<T>, which cannot be an engine: the type check above has refused it.
+        return (IGoldpathMessagingEngine)Activator.CreateInstance(engineType, nonPublic: true)!;
     }
 
     private static IEnumerable<(string Assembly, Type Engine)> Declared()
@@ -212,8 +213,7 @@ internal static class GoldpathMessagingEngines
             }
         }
 
-        assemblies.TryAdd(s_floor.GetName().Name!, s_floor);
-        foreach (var (name, assembly) in assemblies.OrderBy(a => a.Key, StringComparer.Ordinal))
+        foreach (var (name, assembly) in assemblies)
         {
             if (DeclarationOf(assembly) is { } declaration)
             {
@@ -239,9 +239,9 @@ internal static class GoldpathMessagingEngines
     {
         try
         {
-            return Directory.Exists(directory) ? Directory.GetFiles(directory, pattern) : [];
+            return Directory.GetFiles(directory, pattern);
         }
-        catch (Exception e) when (e is UnauthorizedAccessException or IOException)
+        catch (Exception e) when (e is UnauthorizedAccessException or IOException)   // a missing directory is an IOException too
         {
             return [];
         }
