@@ -244,10 +244,11 @@ public sealed class ConformanceContainers : IAsyncLifetime
     /// (RFC goldpath-messaging-engines §4.3): data, the outbox on the app's context, handlers through the
     /// seam, RabbitMQ at the connection string the AppHost would give. Not started — a scenario decides
     /// when (the crash scenario commits BEFORE the bus exists). The test host returns from its start
-    /// only once the bus has started (#371), so no fact has to know how an engine says that.
+    /// only once the bus has started (#371), so no fact has to know how an engine says that. Every engine
+    /// the suite references is in this process, so <paramref name="engine"/> names the one this host runs on.
     /// </summary>
     public async Task<GoldpathMessagingTestHost> BuildHostAsync(
-        Observed observed, Action<GoldpathMessagingOptions>? options = null, string? tenant = null,
+        string engine, Observed observed, Action<GoldpathMessagingOptions>? options = null, string? tenant = null,
         (BatchesObserved Observed, GoldpathBatchOptions Grouping)? batches = null)
     {
         var host = GoldpathMessagingTestHost.Create(
@@ -280,7 +281,8 @@ public sealed class ConformanceContainers : IAsyncLifetime
                 }
 
                 builder.AddGoldpathData<HostApplicationBuilder, ConformanceDb>(o => o.UseNpgsql(Postgres.GetConnectionString()));
-            });
+            },
+            engine);
 
         using var scope = host.Services.CreateScope();
         await scope.ServiceProvider.GetRequiredService<ConformanceDb>().Database.EnsureCreatedAsync();

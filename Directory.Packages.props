@@ -40,6 +40,24 @@
     <PackageVersion Include="YamlDotNet" Version="18.1.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageVersion Include="MassTransit.RabbitMQ" Version="8.5.11" />
+    <!-- The Wolverine engine adapter (G5, #330): the newest release targeting net10.0 on 2026-10-25, all MIT.
+         The adapter project pins the transitive family exactly (CentralPackageTransitivePinningEnabled). -->
+    <PackageVersion Include="WolverineFx" Version="6.53.0" />
+    <PackageVersion Include="WolverineFx.RabbitMQ" Version="6.53.0" />
+    <PackageVersion Include="WolverineFx.Newtonsoft" Version="6.53.0" />
+    <PackageVersion Include="JasperFx" Version="2.95.1" />
+    <PackageVersion Include="JasperFx.Events" Version="2.95.1" />
+    <PackageVersion Include="JasperFx.SourceGenerator" Version="2.95.1" />
+    <PackageVersion Include="RabbitMQ.Client" Version="7.2.2" />
+    <PackageVersion Include="Cronos" Version="0.11.0" />
+    <PackageVersion Include="FastExpressionCompiler" Version="5.4.1" />
+    <PackageVersion Include="ImTools" Version="4.0.0" />
+    <PackageVersion Include="NewId" Version="4.0.1" />
+    <PackageVersion Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageVersion Include="Polly.Core" Version="8.6.5" />
+    <PackageVersion Include="Spectre.Console" Version="0.55.0" />
+    <PackageVersion Include="Spectre.Console.Ansi" Version="0.55.0" />
+    <PackageVersion Include="System.Linq.Dynamic.Core" Version="1.7.4" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.16.0" />
     <PackageVersion Include="Testcontainers.RabbitMq" Version="4.16.0" />
     <PackageVersion Include="OpenTelemetry.Exporter.Console" Version="1.19.1" />

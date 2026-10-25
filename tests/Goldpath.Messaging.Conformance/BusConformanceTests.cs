@@ -7,10 +7,10 @@ namespace Goldpath.Messaging.Conformance;
 /// The bus conformance suite — the facts a bus must hold for Goldpath, proven on real
 /// RabbitMQ + PostgreSQL THROUGH THE SEAM (ADR-0013 §3; messaging-exit RFC §7.1 S2). The
 /// oracle is MassTransit 8.5.11; a second engine must pass every fact here unchanged before
-/// it can become the default (S3 is the same list run on both).
+/// it can become the default (S3 is the same list run on both). The class runs once per
+/// engine: each concrete class below names one by its manifest value, nothing more.
 /// </summary>
-[Collection("conformance")]
-public sealed class BusConformanceTests(ConformanceContainers containers)
+public abstract class BusConformanceTests(ConformanceContainers containers, string engine)
 {
     private static readonly TimeSpan Wait = TimeSpan.FromSeconds(30);
 
@@ -18,7 +18,7 @@ public sealed class BusConformanceTests(ConformanceContainers containers)
     public async Task S2_1_exactly_once_the_same_message_delivered_twice_handles_once()
     {
         var observed = new Observed();
-        await using var host = await containers.BuildHostAsync(observed);
+        await using var host = await containers.BuildHostAsync(engine, observed);
         await host.StartAsync();
         var id = Guid.NewGuid();
         var messageId = Guid.NewGuid();
@@ -45,7 +45,7 @@ public sealed class BusConformanceTests(ConformanceContainers containers)
         };
         ActivitySource.AddActivityListener(listener);
         var observed = new Observed();
-        await using var host = await containers.BuildHostAsync(observed, tenant: "acme");
+        await using var host = await containers.BuildHostAsync(engine, observed, tenant: "acme");
         await host.StartAsync();
 
         using (var activity = new ActivitySource("conformance").StartActivity("request"))
@@ -66,7 +66,7 @@ public sealed class BusConformanceTests(ConformanceContainers containers)
     public async Task S2_3_a_poison_message_walks_the_retry_ladder_then_faults_out()
     {
         var observed = new Observed();
-        await using var host = await containers.BuildHostAsync(observed);
+        await using var host = await containers.BuildHostAsync(engine, observed);
         await host.StartAsync();
 
         await host.PublishCommittedAsync(new Poison { Id = Guid.NewGuid() });
@@ -98,7 +98,7 @@ public sealed class BusConformanceTests(ConformanceContainers containers)
     public async Task S2_4_a_large_payload_round_trips_intact()
     {
         var observed = new Observed();
-        await using var host = await containers.BuildHostAsync(observed);
+        await using var host = await containers.BuildHostAsync(engine, observed);
         await host.StartAsync();
         var payload = new string('x', 1024 * 1024);   // 1 MiB — a bordereau, not a ping
 
@@ -113,7 +113,7 @@ public sealed class BusConformanceTests(ConformanceContainers containers)
     public async Task S2_5_a_wider_message_is_tolerated_and_a_narrower_one_defaults()
     {
         var observed = new Observed();
-        await using var host = await containers.BuildHostAsync(observed);
+        await using var host = await containers.BuildHostAsync(engine, observed);
         await host.StartAsync();
         var wide = Guid.NewGuid();
         var narrow = Guid.NewGuid();
@@ -136,7 +136,7 @@ public sealed class BusConformanceTests(ConformanceContainers containers)
         // that dies after the commit hands the row to the next process; here the "next
         // process" is the same host, started only after the commit.
         var observed = new Observed();
-        await using var host = await containers.BuildHostAsync(observed);
+        await using var host = await containers.BuildHostAsync(engine, observed);
         var id = Guid.NewGuid();
 
         await host.PublishCommittedAsync(new Ping { Id = id, Payload = "after-crash" });   // no bus running yet
@@ -152,7 +152,7 @@ public sealed class BusConformanceTests(ConformanceContainers containers)
     public async Task S2_7_a_broker_outage_delays_delivery_and_loses_nothing()
     {
         var observed = new Observed();
-        await using var host = await containers.BuildHostAsync(observed);
+        await using var host = await containers.BuildHostAsync(engine, observed);
         await host.StartAsync();
         var id = Guid.NewGuid();
 
@@ -188,7 +188,7 @@ public sealed class BusConformanceTests(ConformanceContainers containers)
         var observed = new Observed { HandlerGate = gate.Task, HandlerDelay = TimeSpan.FromSeconds(1) };
         var published = 0;
         int window;
-        await using (var first = await containers.BuildHostAsync(observed))
+        await using (var first = await containers.BuildHostAsync(engine, observed))
         {
             await first.StartAsync();
             var target = 40;
@@ -221,13 +221,21 @@ public sealed class BusConformanceTests(ConformanceContainers containers)
         Assert.True(afterFirst >= window, $"{afterFirst} handled before the stop, but {window} were in flight — a graceful stop finishes them");
         Assert.True(afterFirst < published, $"all {published} handled by the first process — nothing was left queued, so the handover went unproven");
 
-        await using var second = await containers.BuildHostAsync(observed);
+        await using var second = await containers.BuildHostAsync(engine, observed);
         await second.StartAsync();
         await observed.WaitForPingsAsync(published, TimeSpan.FromSeconds(120));
         Assert.Equal(published, observed.PingCount);
         Assert.Equal(published, observed.Pings.Select(p => p.Event.Id).Distinct().Count());   // no duplicates across the two lifetimes
         await second.StopAsync();
     }
+}
+
+/// <summary>
+/// The batch contract's facts (RFC goldpath-messaging-engines §4.1 row 12, §7 Part 3), once per engine.
+/// </summary>
+public abstract class BatchConformanceTests(ConformanceContainers containers, string engine)
+{
+    private static readonly TimeSpan Wait = TimeSpan.FromSeconds(30);
 
     // The batch contract (RFC goldpath-messaging-engines §4.1 row 12, §7 Part 3): delivery in batches
     // bounded by size OR time, and one batch in flight per endpoint when the concurrency limit is 1.
@@ -238,7 +246,7 @@ public sealed class BusConformanceTests(ConformanceContainers containers)
     {
         var batches = new BatchesObserved();
         await using var host = await containers.BuildHostAsync(
-            new Observed(), batches: (batches, new GoldpathBatchOptions { MessageLimit = 5, TimeLimit = TimeSpan.FromSeconds(2) }));
+            engine, new Observed(), batches: (batches, new GoldpathBatchOptions { MessageLimit = 5, TimeLimit = TimeSpan.FromSeconds(2) }));
         await host.StartAsync();
 
         for (var i = 0; i < 23; i++)
@@ -260,7 +268,7 @@ public sealed class BusConformanceTests(ConformanceContainers containers)
     {
         var batches = new BatchesObserved();
         await using var host = await containers.BuildHostAsync(
-            new Observed(), batches: (batches, new GoldpathBatchOptions { MessageLimit = 100, TimeLimit = TimeSpan.FromMilliseconds(500) }));
+            engine, new Observed(), batches: (batches, new GoldpathBatchOptions { MessageLimit = 100, TimeLimit = TimeSpan.FromMilliseconds(500) }));
         await host.StartAsync();
 
         var published = DateTimeOffset.UtcNow;
@@ -282,7 +290,7 @@ public sealed class BusConformanceTests(ConformanceContainers containers)
     {
         var batches = new BatchesObserved { Hold = TimeSpan.FromMilliseconds(300) };
         await using var host = await containers.BuildHostAsync(
-            new Observed(), batches: (batches, new GoldpathBatchOptions { MessageLimit = 4, TimeLimit = TimeSpan.FromMilliseconds(100), ConcurrencyLimit = 1 }));
+            engine, new Observed(), batches: (batches, new GoldpathBatchOptions { MessageLimit = 4, TimeLimit = TimeSpan.FromMilliseconds(100), ConcurrencyLimit = 1 }));
         await host.StartAsync();
 
         for (var i = 0; i < 40; i++)
@@ -297,6 +305,22 @@ public sealed class BusConformanceTests(ConformanceContainers containers)
         await host.StopAsync();
     }
 }
+
+/// <summary>The suite on the oracle, MassTransit 8.5.11.</summary>
+[Collection("conformance")]
+public sealed class MassTransitBusConformance(ConformanceContainers containers) : BusConformanceTests(containers, "masstransit");
+
+/// <summary>The suite on the Wolverine adapter (G5): the same facts, unchanged.</summary>
+[Collection("conformance")]
+public sealed class WolverineBusConformance(ConformanceContainers containers) : BusConformanceTests(containers, "wolverine");
+
+/// <summary>The batch facts on the oracle.</summary>
+[Collection("conformance")]
+public sealed class MassTransitBatchConformance(ConformanceContainers containers) : BatchConformanceTests(containers, "masstransit");
+
+/// <summary>The batch facts on the Wolverine adapter.</summary>
+[Collection("conformance")]
+public sealed class WolverineBatchConformance(ConformanceContainers containers) : BatchConformanceTests(containers, "wolverine");
 
 [CollectionDefinition("conformance")]
 public sealed class ConformanceCollection : ICollectionFixture<ConformanceContainers>;

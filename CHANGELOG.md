@@ -5,6 +5,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **The second messaging engine runs the conformance suite: a Wolverine adapter, and the engine contract
+  it plugs into (GA gate G5 Part 1/5, #330).**
+  - **`Goldpath.Messaging`:** the engine contract of RFC goldpath-messaging-engines §4.1 row 5, built
+    ahead of Part 4/4 by owner decision (2026-10-25). `IGoldpathMessagingEngine` (`Name`, `Compose`,
+    `PublishAsync`), declared by an adapter assembly with `[assembly: GoldpathMessagingEngine(typeof(…))]`
+    and handed a read-only `GoldpathMessagingComposition`; `GoldpathMessagingTransport` becomes public.
+    `AddGoldpathMessaging(messaging => …)` finds the engine: an adapter package beside the application
+    wins over the MassTransit engine `Goldpath.Messaging` still carries, and two adapter packages fail
+    the start, naming both. An application that references no adapter (every one today) composes
+    exactly as before. Additions only; the MassTransit-typed overloads are unchanged.
+  - **`Goldpath.Messaging.Wolverine`** (new, not published: `IsPackable=false` until the switch proofs
+    are linked in open-threads T18). WolverineFx 6.53.0 and its transitive family pinned exactly, all
+    MIT; the licence gate passes with no new exception, and `dotnet list package --vulnerable` is clean.
+    Wolverine receives (a listener per endpoint, the immediate retry ladder, the move to
+    `<queue>_error`); the adapter writes the 8.x envelope, declares the 8.x topology and keeps the
+    outbox and inbox in the 8.x tables on PostgreSQL itself (RFC §4.4, §9 Q4). It refuses in words
+    what it does not do yet, among them delayed redelivery, which the default options enable
+    (open-threads T51).
+  - **The conformance suite runs once per engine:** S2.1–S2.11 green on MassTransit 8.5.11 and on
+    Wolverine, on real RabbitMQ + PostgreSQL; dropping the tenant header in the adapter turns S2.2
+    red on Wolverine only.
 - **S-OPS-02 runs in the console smoke: four operator mistakes refused from the screen, zero
   5xx (GA gate G10a, #324).** Test-only; no package change.
   - **The four mistakes:** `ui/console/e2e/refusals.spec.ts` attempts each one through the real
