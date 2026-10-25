@@ -327,6 +327,14 @@ new screen concept.
   (open-threads T37).
 - **Finer roles than the ops floor; exports of item outcomes.** The admin surface stays one
   policy; exports ride the failed-items drill-down and the app's own reporting.
+  *Reversed 2026-10-20 for roles (owner decision on #297).* Admin-contract
+  [revision R4.1](goldpath-admin-contract.md) (PROPOSED 2026-10-25,
+  [#304](https://github.com/qorpe/goldpath/issues/304)) adds a read role, `goldpath-ops-read`,
+  which `goldpath-ops` also satisfies. It reads every admin surface, and the verbs stay
+  `goldpath-ops`'s.
+  - The non-goal never had an open-threads row. What remains of it does now (T50): an
+    admin-only tier, and an approver role outside Approvals.
+  - Exports stay a non-goal.
 - **A distributed limiter, the Kafka rider, Oracle:** unchanged (R1, D4, T16).
 
 ### Compatibility
@@ -1034,7 +1042,7 @@ rule is a runtime invariant, and each has its verifier:
 - **Read and mutate roles** ([#297](https://github.com/qorpe/goldpath/issues/297)): reversing
   R2's "finer roles than the ops floor" non-goal (owner, 2026-10-20) is recorded in this RFC by
   [#304](https://github.com/qorpe/goldpath/issues/304), together with admin-contract R4 and its
-  ledger row, not by R3.
+  ledger row, not by R3. Recorded: see R2's *Deliberately NOT* and admin-contract R4.1; ledger row T50.
 
 ### Compatibility
 

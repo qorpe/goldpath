@@ -138,3 +138,39 @@ public sealed record ApproveLoanCommand : ICommand<Result>;
 - **D5 — Command-level authorization = Mediant's `[Authorize]`, composed** — no Goldpath
   authorization layer of our own; policy vocabulary lives in ASP.NET policies both levels
   share. **Recommendation: compose.**
+
+## 10. The read role — admin-contract R4 (PROPOSED 2026-10-25, [#304](https://github.com/qorpe/goldpath/issues/304))
+
+**Owner decision, 2026-10-20 (#297):** the admin floor splits into read and act, additively.
+Admin-contract [revision R4.1](goldpath-admin-contract.md) is the normative text. This module's
+share of it:
+
+- **A third policy.** `GoldpathPolicies.OpsRead` = `"goldpath-ops-read"`, registered as
+  `RequireRole(OpsReadRole, OpsRole)`: either role passes. The new option
+  `Goldpath:Auth:OpsReadRole` defaults to `goldpath-ops-read`.
+  - It is registered in both branches that register the ops policies today: the authenticated
+    strategies, and `Strategy = None`, where audit A4 keeps a refusal a `403` rather than a
+    `500`.
+- **How the three compose.**
+  - Reads demand `OpsRead`, and verbs demand `Ops`.
+  - R1's `OpsAllTenants` stacks on top of either one when a call crosses tenants.
+  - `goldpath-ops` satisfies `OpsRead`, so an identity provider that grants only today's role
+    sees no change.
+- **Which routes are which:** the HTTP method decides. `GET` is a read; `POST`, `PUT` and
+  `DELETE` are verbs, on every admin surface and the served console. There is no per-route
+  list (R4.1 says why).
+- **No new authorization layer** (D5 still holds). The policies are ASP.NET policies. The
+  worded `403` on a refused verb comes from the admin guard's endpoint filter in `Goldpath.Sdk`,
+  not from this module, so it holds under any authentication an adopter composes.
+- **An app that composes its own authentication without this module** and never registers
+  `goldpath-ops-read` keeps R3's behaviour: reads demand `Ops`, with one startup log line naming
+  the policy to register.
+
+```
+const Goldpath.GoldpathPolicies.OpsRead = "goldpath-ops-read" -> string!   (Goldpath.Abstractions)
+Goldpath.GoldpathAuthOptions.OpsReadRole.get -> string!
+Goldpath.GoldpathAuthOptions.OpsReadRole.set -> void
+```
+
+What R4 leaves out — an admin-only tier above `goldpath-ops`, and an approver role outside
+Approvals — is open-threads T50.

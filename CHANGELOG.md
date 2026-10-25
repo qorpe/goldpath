@@ -92,6 +92,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
 ### Changed
+- **Admin-contract revision R4 is written (#304), PROPOSED; merging it is its acceptance.**
+  Documents only, no package change. `docs/rfc/goldpath-admin-contract.md` gains R4, the shape of
+  the owner's 2026-10-20 approvals:
+  - **R4.1:** a read role, `goldpath-ops-read`, which `goldpath-ops` also satisfies. Every admin
+    `GET` and the served console demand it, and every verb keeps `goldpath-ops`. A verb refused
+    for want of the role answers `403` with the verb envelope.
+  - **R4.2:** campaign `/failures` walks by `afterSeq` and returns each item's `errorCode`.
+  - **R4.3:** campaign `/{id}/outcomes` counts the items by state and the failures by code.
+  - **R4.4:** the campaign detail's `ETag` is its `PolicyVersion`, and `throttle` takes an
+    optional `If-Match`; a stale one answers `412`.
+  - **R4.5:** Campaign R3.2's four ceiling routes.
+
+  The revision also states its compatibility case (additive, no migration), the rejected
+  alternatives, and seven ordered slices. Alongside it:
+  - the auth RFC (§10) and the console RFC (§3 auth, item 4) say how the three policies compose;
+  - the campaign RFC records that R2's "finer roles" non-goal is reversed for reads;
+  - open-threads T50 carries what R4 leaves out: an admin-only tier, and an approver outside
+    Approvals.
 - **The public 1.0 sample exam is Insurance + Telco (GA readiness Q6/G12, amended 2026-10-25).**
   Documents only, no package change. The Factoring sample the owner added on 2026-10-21 moves
   out of this public repository. It is built from scratch in a private qorpe repository as a
