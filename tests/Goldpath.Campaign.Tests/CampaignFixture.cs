@@ -1,4 +1,3 @@
-using MassTransit;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,15 +9,15 @@ namespace Goldpath.Campaign.Tests;
 public sealed record TestTarget(int Id, string Email);
 
 /// <summary>Records what the engine publishes; can be scripted to crash mid-batch.</summary>
-public sealed class RecordingPublisher : IPublishEndpoint
+public sealed class RecordingPublisher : IIntegrationEventPublisher
 {
     public List<object> Published { get; } = [];
 
     /// <summary>When positive, the publisher throws after this many more publishes.</summary>
     public int ThrowAfter { get; set; } = -1;
 
-    public Task Publish<T>(T message, CancellationToken cancellationToken = default)
-        where T : class
+    public Task PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken cancellationToken = default)
+        where TEvent : class, IIntegrationEvent
     {
         if (ThrowAfter == 0)
         {
@@ -30,39 +29,9 @@ public sealed class RecordingPublisher : IPublishEndpoint
             ThrowAfter--;
         }
 
-        Published.Add(message);
+        Published.Add(integrationEvent);
         return Task.CompletedTask;
     }
-
-    public Task Publish<T>(T message, IPipe<PublishContext<T>> publishPipe, CancellationToken cancellationToken = default)
-        where T : class => throw new NotSupportedException();
-
-    public Task Publish<T>(T message, IPipe<PublishContext> publishPipe, CancellationToken cancellationToken = default)
-        where T : class => throw new NotSupportedException();
-
-    public Task Publish(object message, CancellationToken cancellationToken = default)
-        => throw new NotSupportedException();
-
-    public Task Publish(object message, Type messageType, CancellationToken cancellationToken = default)
-        => throw new NotSupportedException();
-
-    public Task Publish(object message, IPipe<PublishContext> publishPipe, CancellationToken cancellationToken = default)
-        => throw new NotSupportedException();
-
-    public Task Publish(object message, Type messageType, IPipe<PublishContext> publishPipe, CancellationToken cancellationToken = default)
-        => throw new NotSupportedException();
-
-    public Task Publish<T>(object values, CancellationToken cancellationToken = default)
-        where T : class => throw new NotSupportedException();
-
-    public Task Publish<T>(object values, IPipe<PublishContext<T>> publishPipe, CancellationToken cancellationToken = default)
-        where T : class => throw new NotSupportedException();
-
-    public Task Publish<T>(object values, IPipe<PublishContext> publishPipe, CancellationToken cancellationToken = default)
-        where T : class => throw new NotSupportedException();
-
-    public ConnectHandle ConnectPublishObserver(IPublishObserver observer)
-        => throw new NotSupportedException();
 }
 
 /// <summary>Executes targets; fails the ids scripted into <see cref="FailIds"/>.</summary>
@@ -118,7 +87,7 @@ public sealed class CampaignFixture : IDisposable
         services.AddDbContext<CampaignTestContext>(o => o.UseSqlite(_connection));
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton(Options);
-        services.AddSingleton<IPublishEndpoint>(Publisher);
+        services.AddSingleton<IIntegrationEventPublisher>(Publisher);
         services.AddSingleton<GoldpathCampaignEngine<CampaignTestContext>>(
             _ => new GoldpathCampaignEngine<CampaignTestContext>(
                 Options, TimeProvider.System, NullLogger<GoldpathCampaignEngine<CampaignTestContext>>.Instance));

@@ -3,6 +3,7 @@ using MassTransit.EntityFrameworkCoreIntegration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
 namespace Goldpath;
@@ -16,7 +17,10 @@ namespace Goldpath;
 internal static class MassTransitMessagingEngine
 {
     private static readonly System.Reflection.MethodInfo s_addHandler =
-        typeof(GoldpathHandlerRegistrationExtensions).GetMethod(nameof(GoldpathHandlerRegistrationExtensions.AddGoldpathHandler))!;
+        typeof(GoldpathHandlerRegistrationExtensions).GetMethod(nameof(GoldpathHandlerRegistrationExtensions.AddHandlerAt), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+
+    private static readonly System.Reflection.MethodInfo s_addBatchHandler =
+        typeof(MassTransitMessagingEngine).GetMethod(nameof(AddBatchHandler), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
 
     private static readonly System.Reflection.MethodInfo s_composeOutbox =
         typeof(MassTransitMessagingEngine).GetMethod(nameof(ComposeOutbox), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
@@ -53,7 +57,17 @@ internal static class MassTransitMessagingEngine
     {
         foreach (var (eventType, handlerType) in messaging.Handlers)
         {
-            s_addHandler.MakeGenericMethod(eventType, handlerType).Invoke(null, [bus]);
+            s_addHandler.MakeGenericMethod(eventType, handlerType).Invoke(null, [bus, messaging.EndpointOf(eventType, handlerType)]);
+        }
+
+        foreach (var (eventType, handlerType, grouping, endpointName) in messaging.BatchHandlers)
+        {
+            s_addBatchHandler.MakeGenericMethod(eventType, handlerType).Invoke(null, [bus, grouping, endpointName]);
+        }
+
+        if (TestHooks.TryGetValue(messaging, out var hooks))
+        {
+            hooks.Registration?.Invoke(bus);
         }
 
         if (messaging.OutboxContext is { } context)
@@ -79,6 +93,11 @@ internal static class MassTransitMessagingEngine
                         cfg.Host(new Uri(connection));
                     }
 
+                    if (TestHooks.TryGetValue(messaging, out var transportHooks))
+                    {
+                        transportHooks.Transport?.Invoke(cfg);
+                    }
+
                     cfg.ConfigureGoldpathEndpoints(registration);
                 });
                 break;
@@ -88,6 +107,29 @@ internal static class MassTransitMessagingEngine
             default:
                 throw new InvalidOperationException($"No transport composition for {messaging.Transport}.");
         }
+    }
+
+    /// <summary>
+    /// Engine tuning reached only by Goldpath's own tests (the integration suites size a consumer's slots and a
+    /// bench's prefetch), until the adapter's public escape hatch lands (RFC §9 Q3, open-threads T44). Keyed by
+    /// builder, so two hosts in one process never see each other's.
+    /// </summary>
+    internal static readonly System.Runtime.CompilerServices.ConditionalWeakTable<GoldpathMessagingBuilder, EngineTestHooks> TestHooks = [];
+
+    /// <summary>What <see cref="TestHooks"/> holds: a registration callback and a RabbitMQ transport callback.</summary>
+    internal sealed record EngineTestHooks(Action<IBusRegistrationConfigurator>? Registration, Action<IBusFactoryConfigurator>? Transport);
+
+    /// <summary>Registers a batch handler: its scope, and one batch consumer grouped as the options say.</summary>
+    private static void AddBatchHandler<TEvent, THandler>(IBusRegistrationConfigurator bus, GoldpathBatchOptions grouping, string endpointName)
+        where TEvent : class, IIntegrationEvent
+        where THandler : class, IIntegrationEventBatchHandler<TEvent>
+    {
+        bus.TryAddScoped<THandler>();
+        bus.AddConsumer<GoldpathIntegrationEventBatchConsumer<TEvent, THandler>>((_, consumer) => consumer.Options<BatchOptions>(batch => batch
+                .SetMessageLimit(grouping.MessageLimit)
+                .SetTimeLimit(grouping.TimeLimit)
+                .SetConcurrencyLimit(grouping.ConcurrencyLimit)))
+            .Endpoint(endpoint => endpoint.Name = endpointName);
     }
 
     private static void ComposeOutbox<TContext>(IBusRegistrationConfigurator bus, GoldpathOutboxOptions options)

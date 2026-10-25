@@ -2,7 +2,6 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using MassTransit;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
@@ -195,7 +194,7 @@ public static class GoldpathCampaignCallbackEndpoints
                         $"'{correlationId}' answered before its acceptance landed — parked; it settles the moment the acceptance does."),
                         statusCode: StatusCodes.Status202Accepted);
                 default:
-                    await http.RequestServices.GetRequiredService<IPublishEndpoint>().Publish(resolution.Outcome!, ct);
+                    await http.RequestServices.GetRequiredService<IIntegrationEventPublisher>().PublishAsync(resolution.Outcome!, ct);
                     return Results.Json(new GoldpathAdminResult(true,
                         $"Outcome for '{correlationId}' published ({(request.Succeeded ? "succeeded" : "failed")})."), statusCode: StatusCodes.Status202Accepted);
             }

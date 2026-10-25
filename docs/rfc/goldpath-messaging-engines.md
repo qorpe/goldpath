@@ -248,7 +248,18 @@ through the same runbook links. SECURITY.md's engine posture is G5's to write, n
       the `providers.messagingEngine` key, engine discovery by attribute with a public
       `IGoldpathMessagingEngine`, `ConfigureEngine`, `AddBatchHandler` (Part 3) and the harness's
       `Handled`/`Faulted`/`Published` are open-threads T44.
-- [ ] Part 3/4: Campaign through the seam, with the batch contract. Baseline 3 → 0.
+- [x] Part 3/4: Campaign through the seam, with the batch contract. **Landed (#328):**
+      `IIntegrationEventBatchHandler<TEvent>`, `IntegrationEvent<TEvent>`, `GoldpathBatchOptions` and
+      `AddBatchHandler`; conformance facts S2.9–S2.11 (size bound, time bound, one in flight);
+      `AddGoldpathCampaign<TContext>(this GoldpathMessagingBuilder)` with the item and outcome handlers;
+      the §4.2 reflection check over Campaign's public surface. Row 11's "registers the handler under
+      exactly that name" is carried by `AddHandler<TEvent, THandler>(endpointName)` and `AddBatchHandler`'s
+      `endpointName`: both handlers share one queue named the way the 8.x kebab formatter names a
+      consumer generic over the context, proven against the formatter for a corpus of context names and
+      on a real broker. The two consumer lines left; `AddGoldpathCampaignConsumers` stays, now registering
+      the same handlers, because the templates write it until the preview.11 release and the GM matrix
+      builds them against this repository's packages — the reason Part 2 kept Messaging's old overloads
+      (#327). So the baseline went 13 → 11, not 3 → 0; Part 4/4 takes it to 0.
 - [ ] Part 4/4: `Goldpath.Messaging.MassTransit` extracted; `Goldpath.Messaging` engine-free.
 - [x] messaging-exit §8's open line ("the outbox/inbox configuration and the test harness in
       Goldpath vocabulary") is ticked by Part 2 (#327), pointing here.

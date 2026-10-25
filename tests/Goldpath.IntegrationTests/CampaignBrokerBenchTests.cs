@@ -119,18 +119,20 @@ public sealed class CampaignBrokerBenchTests : IAsyncLifetime
             campaign.AddCampaign<FleetTarget>("fleet", c => c
                 .MaxTargets(50_000_000)
                 .Targets((_, parameters) => Synthetic(long.Parse(parameters["count"], CultureInfo.InvariantCulture)))));
-        builder.AddGoldpathMessaging(bus =>
+        builder.Configuration["ConnectionStrings:messaging"] = _rabbit.GetConnectionString();
+        builder.AddGoldpathMessaging(messaging =>
         {
-            bus.AddGoldpathCampaignConsumers<CampaignTests.CampDb>();
-            bus.UsingRabbitMq((context, cfg) =>
+            messaging.AddGoldpathCampaign<CampaignTests.CampDb>();
+            messaging.UseRabbitMq();
+            messaging.Options.Retry.RedeliveryIntervals.Clear();
+            // N competing item consumers on the one endpoint — the same bus-level knob as before
+            // (open-threads T48: it is not proven to reach the endpoint), through the engine's test hook.
+            MassTransitMessagingEngine.TestHooks.Add(messaging, new(null, cfg =>
             {
-                cfg.Host(new Uri(_rabbit.GetConnectionString()));
-                // N competing item consumers on the one endpoint.
                 cfg.PrefetchCount = Consumers;
                 cfg.ConcurrentMessageLimit = Consumers;
-                cfg.ConfigureGoldpathEndpoints(context);
-            });
-        }, options => options.Retry.RedeliveryIntervals.Clear());
+            }));
+        });
         builder.AddGoldpathJobs<WebApplicationBuilder, CampaignTests.CampDb>(jobs =>
         {
             jobs.ConnectionName = "campdb";

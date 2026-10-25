@@ -1,4 +1,12 @@
 #nullable enable
+*REMOVED*Goldpath.GoldpathCampaignItemConsumer<TContext>
+*REMOVED*Goldpath.GoldpathCampaignItemConsumer<TContext>.Consume(MassTransit.ConsumeContext<Goldpath.GoldpathCampaignItemMessage!>! context) -> System.Threading.Tasks.Task!
+*REMOVED*Goldpath.GoldpathCampaignItemConsumer<TContext>.GoldpathCampaignItemConsumer(Goldpath.GoldpathCampaignEngine<TContext!>! engine, TContext! db, System.IServiceProvider! services, Microsoft.Extensions.Logging.ILogger<Goldpath.GoldpathCampaignItemConsumer<TContext!>!>! logger) -> void
+*REMOVED*Goldpath.GoldpathCampaignOutcomeSink<TContext>
+*REMOVED*Goldpath.GoldpathCampaignOutcomeSink<TContext>.Consume(MassTransit.ConsumeContext<MassTransit.Batch<Goldpath.GoldpathCampaignOutcomeMessage!>!>! context) -> System.Threading.Tasks.Task!
+*REMOVED*Goldpath.GoldpathCampaignOutcomeSink<TContext>.GoldpathCampaignOutcomeSink(Goldpath.GoldpathCampaignEngine<TContext!>! engine, TContext! db) -> void
+*REMOVED*Goldpath.GoldpathCampaignOutcomeSinkDefinition<TContext>
+*REMOVED*Goldpath.GoldpathCampaignOutcomeSinkDefinition<TContext>.GoldpathCampaignOutcomeSinkDefinition() -> void
 *REMOVED*Goldpath.GoldpathCampaignEngine<TContext>.ExecuteItemAsync(System.IServiceProvider! services, string! typeKey, System.Guid campaignId, long seq, string! targetJson, string? tenant, bool replay, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
 Goldpath.GoldpathCampaignActionAccepted
 Goldpath.GoldpathCampaignActionAccepted.AckTimeout.get -> System.TimeSpan
@@ -177,3 +185,10 @@ Goldpath.GoldpathCampaign.WindowStartedAt.get -> System.DateTimeOffset?
 Goldpath.GoldpathCampaign.WindowStartedAt.set -> void
 Goldpath.GoldpathCampaign.SuspendedReason.get -> string?
 Goldpath.GoldpathCampaign.SuspendedReason.set -> void
+Goldpath.GoldpathCampaignItemHandler<TContext>
+Goldpath.GoldpathCampaignItemHandler<TContext>.GoldpathCampaignItemHandler(Goldpath.GoldpathCampaignEngine<TContext!>! engine, TContext! db, System.IServiceProvider! services, Goldpath.IIntegrationEventPublisher! publisher, Microsoft.Extensions.Logging.ILogger<Goldpath.GoldpathCampaignItemHandler<TContext!>!>! logger) -> void
+Goldpath.GoldpathCampaignItemHandler<TContext>.HandleAsync(Goldpath.GoldpathCampaignItemMessage! integrationEvent, Goldpath.IntegrationEventContext! context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Goldpath.GoldpathCampaignOutcomeHandler<TContext>
+Goldpath.GoldpathCampaignOutcomeHandler<TContext>.GoldpathCampaignOutcomeHandler(Goldpath.GoldpathCampaignEngine<TContext!>! engine, TContext! db) -> void
+Goldpath.GoldpathCampaignOutcomeHandler<TContext>.HandleAsync(System.Collections.Generic.IReadOnlyList<Goldpath.IntegrationEvent<Goldpath.GoldpathCampaignOutcomeMessage!>!>! batch, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+static Goldpath.GoldpathCampaignExtensions.AddGoldpathCampaign<TContext>(this Goldpath.GoldpathMessagingBuilder! messaging) -> Goldpath.GoldpathMessagingBuilder!
