@@ -70,10 +70,11 @@ green → merge → ledgers updated in the same PR.
    All seven seeded scenarios get evidence. **2026-10-21 (GA readiness Q11):** zero budget —
    the 30M run uses the full dataset, never a shrunk one, overnight on the owner's Mac in a
    dedicated Lima VM, with GitHub-hosted free runners as the repeatable lane.
-8. **The samples — LAST, as the full-set exam** — Insurance, Telco and **Factoring** from
-   scratch (Factoring added 2026-10-21 by the owner, [GA readiness](../rfc/goldpath-ga-readiness.md)
-   Q6/G12: a generic clean-room domain sample in this public repository, with no client or
-   engagement content; it is not T23's industry pack)
+8. **The samples — LAST, as the full-set exam** — Insurance and Telco from scratch. A
+   Factoring sample was added on 2026-10-21 and moved out of this public repository on
+   2026-10-25, both by the owner ([GA readiness](../rfc/goldpath-ga-readiness.md) Q6/G12): it is
+   built in a private qorpe repository under the RFC's provenance rule. T23's industry pack is
+   unaffected
    (with the step-5 wizard, proving it in anger) plus CorPay's open cells (SoftDelete,
    Caching, a real Contracts-idiom worker consumer, the Archival slice, SPEC-GAPS
    G3–G7, GAP-LEDGER #32/#33/#34). `add feature`, `db bundle`, the manifest skill —

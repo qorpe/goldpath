@@ -91,6 +91,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   `plan` job turns it into the matrix, refusing a name outside the six rather than running an
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
+### Changed
+- **The public 1.0 sample exam is Insurance + Telco (GA readiness Q6/G12, amended 2026-10-25).**
+  Documents only, no package change. The Factoring sample the owner added on 2026-10-21 moves
+  out of this public repository. It is built from scratch in a private qorpe repository as a
+  generic, clean-room sample, under a provenance rule: public domain sources only, cited; nothing
+  from any engagement; its agents never read an engagement repository. It is not a public 1.0
+  gate. The RFC's G12 row, the rc.2 row and Q6, `ga-gate-status.md` G12, the coverage matrix,
+  the master plan's step 8 and CLAUDE.md say so. The ten planned Factoring parts (#438–#447)
+  are closed here with that reason.
+
 ### Fixed
 - **`Goldpath.Bulk`: in-file duplicate detection no longer keeps every key (#300).** Validation
   kept each distinct `RowKey` as a string, so a 10M-row device list held them all: 1,226 MiB
@@ -104,10 +114,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   before. A key that only SOME rows lose (a conditional `[JsonIgnore]` over a non-default
   initializer) passes that first-row check and is caught at its first repeat; the pass is
   then taken again from the start with every key kept in full, with the same warning, so the
-  report is still the string table's and the batch never stays `Validating`. The confirmation costs one read per duplicate whose first row is already written:
+  report is still the string table's and the batch never stays `Validating`. The
+  confirmation costs one read per duplicate whose first row is already written:
   the 10M run with 99,951 such repeats validated at 12,079 rows/s against 14,773 (open-threads
   T49). No public API, schema or dependency change. `scripts/bench-bulk.sh intake` runs the
   10M bench; the numbers are in `packages/Goldpath.Bulk/ops/bulk-benchmarks.md`.
+- **`Goldpath.Campaign`: a snapshot is no longer bound to the leader tick (#288).** The pacer
+  materialized one `EnumerationBatchSize` batch per campaign per tick, so at the defaults (2,000
+  rows, 250 ms) a snapshot ran at about 8,000 rows/s. 35M targets took over 70 minutes before
+  the first release. Each tick now spends the time it would otherwise sleep enumerating further,
+  after its releases and while the slowest step seen in that tick still fits before the tick
+  ends. Several snapshots share that time in a rotation that carries across ticks, so when a
+  tick has room for fewer extra steps than there are snapshots, the oldest does not take them
+  all. A running campaign's releases keep their cadence. A pause or abort that lands mid-tick
+  stops the snapshot at its last durable batch, and resume continues from there with nothing
+  lost or doubled. No public API or option changes. `scripts/bench-campaign.sh enum` measures
+  enumeration through the pacer (`CampaignPacerEnumerationBenchTests`), and
+  `ops/campaign-benchmarks.md` now says which path each enumeration number measured.
 - **The nightly ZAP baseline no longer changes its rules overnight.** Repository CI, no package
   changes. `scripts/zap-baseline.sh` pinned the ZAP image by digest, but the packaged scans
   start ZAP with `-addonupdate`, install `pscanrulesBeta` from the internet and check ZAP's
