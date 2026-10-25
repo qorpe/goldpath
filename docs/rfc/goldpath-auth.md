@@ -159,6 +159,12 @@ share of it:
 - **Which routes are which:** the HTTP method decides. `GET` is a read; `POST`, `PUT` and
   `DELETE` are verbs, on every admin surface and the served console. There is no per-route
   list (R4.1 says why).
+- **What a viewer can read, said plainly** (owner decision 2026-10-25): every admin `GET`,
+  archival's `GET /archival/entries/{definition}/{key}` included, which returns the archived
+  document in full and unmasked within the caller's tenant scope. Answering a retrieval request
+  is the read role's duty and needs the content. Granting `goldpath-ops-read` therefore grants
+  archive retrieval: an adopter whose archive holds sensitive content withholds the role, and
+  R4-S1 must say so in its upgrade-guide line. A masking viewer is open-threads T50.
 - **No new authorization layer** (D5 still holds). The policies are ASP.NET policies. The
   worded `403` on a refused verb comes from the admin guard's endpoint filter in `Goldpath.Sdk`,
   not from this module, so it holds under any authentication an adopter composes.

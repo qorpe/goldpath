@@ -318,6 +318,19 @@ be, should a surface ever map one). `POST`, `PUT` and `DELETE` are verbs. This h
 seven surfaces (jobs, archival, bulk, notification, campaign, approvals, fileexchange) and on the
 served console (`MapGoldpathConsole`, every route a `GET`).
 - **A viewer can open the console and read every screen.**
+- **A viewer reads archived documents in full** (owner decision 2026-10-25, on this revision's
+  pull request). `GET /archival/entries/{definition}/{key}` returns `GoldpathArchiveEntry` as
+  stored, `Document` included: the archived aggregate, unmasked, within the caller's tenant
+  scope (R1). It is a `GET`, so the method rule makes it a read, and it stays one.
+  - **Why:** answering a retrieval request ("show me what we held on this customer") is
+    exactly the duty the read role exists for, and it needs the content, not its metadata.
+  - **What it means for an adopter:** granting `goldpath-ops-read` grants the content of every
+    archived document in the holder's scope — where personal data sits under legal hold and
+    erasure. Where that content is sensitive, withhold the role. R4-S1 must put this in the
+    upgrade guide (see *Compatibility*).
+  - **Not built:** a viewer that sees an entry's metadata but not its document. It would be a
+    masking reader like Notification's `MaskedRecipient`, not a route exception; open-threads
+    T50 carries it with its trigger.
 - **Every verb stays an operator's.** That includes archival's `verify`, a `POST` that changes no
   row: it walks a whole hash chain, and spending that cost is an operator's call. A rule that
   depends on reading each handler is a rule a new route can quietly break. The method is what the
@@ -395,6 +408,8 @@ Goldpath.GoldpathAuthOptions.OpsReadRole.set -> void
 - **Over real HTTP:**
   - a `goldpath-ops-read` identity reads every surface (`200`) and is refused every verb
     (`403` + envelope naming the role);
+  - that identity's `GET /archival/entries/{definition}/{key}` returns the entry's `Document`
+    (the disclosure above, pinned so that a later masking change is a decision, not a drift);
   - a `goldpath-ops` identity does both;
   - no identity gets `401`;
   - an app that never registers `OpsRead` gets R3's behaviour and the log line.
@@ -451,7 +466,9 @@ parameter is not part of the pattern; the contract table above gains `afterSeq` 
   - It answers from one `GROUP BY State` over the items of one campaign, which the
     `(CampaignId, State, …)` indexes serve.
 - **`failedByCode` counts the `Failed` items by `errorCode`.**
-  - It is ordered by count (descending), then by code.
+  - It is ordered by count (descending), then by code (ordinal), with `code: null` last among
+    equal counts. The order is fixed in the query, not left to the database: PostgreSQL and
+    SQL Server sort nulls at opposite ends.
   - At most 20 entries; `failedCodesTruncated: true` says when more codes exist.
   - Items with no code are counted under `code: null`, never dropped.
 - **The first aggregate route, by owner decision.** R2 said the contract "gains no aggregate
@@ -567,6 +584,10 @@ An unknown campaign id answers `404` with no body (the convention for a missing 
 - **Two behaviours change, both for the better and both said in the upgrade guide:**
   - a role refusal on a verb now has a body (an envelope `403` instead of an empty one);
   - a `GET` that refused `goldpath-ops-read` with `403` now answers it.
+- **One disclosure the upgrade guide states in words** (owner decision 2026-10-25): granting
+  `goldpath-ops-read` grants archive retrieval, every archived document's full content in the
+  holder's tenant scope (R4.1). An adopter whose archive holds sensitive content withholds the
+  role, or grants it only where that read is intended.
 - **No migration.** `PolicyVersion` and the ceilings table are Campaign R3-S1's (#314), already
   on `main`. `ErrorCode` has been on the items table since R2.1.
 - Ships with whichever train carries its slices. Each slice's PR moves its routes into the
@@ -601,7 +622,7 @@ In dependency order. Each slice carries:
 
 | Slice | R4 item | Issue | Depends on | Scope |
 |---|---|---|---|---|
-| R4-S1 | R4.1 | [#297](https://github.com/qorpe/goldpath/issues/297) | acceptance | `GoldpathPolicies.OpsRead`, `OpsReadRole`, the registration in both strategy branches, `AdminSurfaceGuard`'s split and its worded `403` filter, the unregistered-policy fallback, the cross-surface route-table test, the real-HTTP role matrix, and the *Conventions* mount line above ("every endpoint demands `GoldpathPolicies.Ops`") rewritten to the split |
+| R4-S1 | R4.1 | [#297](https://github.com/qorpe/goldpath/issues/297) | acceptance | `GoldpathPolicies.OpsRead`, `OpsReadRole`, the registration in both strategy branches, `AdminSurfaceGuard`'s split and its worded `403` filter, the unregistered-policy fallback, the cross-surface route-table test, the real-HTTP role matrix (the viewer's archive retrieval included), the *Conventions* mount line above ("every endpoint demands `GoldpathPolicies.Ops`") rewritten to the split, and the upgrade-guide line that granting `goldpath-ops-read` grants archive retrieval |
 | R4-S2 | R4.1 | filed on acceptance (#297's console half) | S1 | `AdminClient.send` reads `403`/`412` envelopes; the viewer's refused verb on every verb button; console smoke S-OPS-02's viewer journey; axe |
 | R4-S3 | R4.2 | [#296](https://github.com/qorpe/goldpath/issues/296) (part 1) | acceptance | `afterSeq`, `ErrorCode` on the row, the overload, the 1,203-row walk |
 | R4-S4 | R4.3 | filed on acceptance (#296 part 2) | acceptance | `/outcomes`, its two records, the route-freeze line, the measured cost on the 1M-item bench campaign |
