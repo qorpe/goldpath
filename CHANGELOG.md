@@ -102,6 +102,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **`Goldpath.Bulk`: in-file duplicate detection no longer keeps every key (#300).** Validation
+  kept each distinct `RowKey` as a string, so a 10M-row device list held them all: 1,226 MiB
+  peak managed heap on a 10M-row run. It now keeps a 64-bit hash and the first row per key
+  (about 40 bytes, whatever the key's length; 541 MiB on the same run) and confirms a hash hit
+  exactly by re-deriving the first row's key from its staged payload, so two keys that share a
+  hash are never reported as duplicates. The report, its first-row numbers and the counts are
+  unchanged, including for a row key that does not survive the payload's JSON round trip (a
+  `[JsonIgnore]` property or a private setter): such a definition is detected on the first
+  keyed row of a pass, logged as a warning, and keeps every key in full for that pass, as
+  before. A key that only SOME rows lose (a conditional `[JsonIgnore]` over a non-default
+  initializer) passes that first-row check and is caught at its first repeat; the pass is
+  then taken again from the start with every key kept in full, with the same warning, so the
+  report is still the string table's and the batch never stays `Validating`. The
+  confirmation costs one read per duplicate whose first row is already written:
+  the 10M run with 99,951 such repeats validated at 12,079 rows/s against 14,773 (open-threads
+  T49). No public API, schema or dependency change. `scripts/bench-bulk.sh intake` runs the
+  10M bench; the numbers are in `packages/Goldpath.Bulk/ops/bulk-benchmarks.md`.
 - **`Goldpath.Campaign`: a snapshot is no longer bound to the leader tick (#288).** The pacer
   materialized one `EnumerationBatchSize` batch per campaign per tick, so at the defaults (2,000
   rows, 250 ms) a snapshot ran at about 8,000 rows/s. 35M targets took over 70 minutes before
