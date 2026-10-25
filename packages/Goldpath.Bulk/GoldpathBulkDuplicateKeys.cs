@@ -14,9 +14,11 @@ namespace Goldpath;
 /// <para>
 /// The confirmation relies on the key surviving its row's JSON round trip. A definition whose
 /// key does not (a private setter, a <c>[JsonIgnore]</c> property) is switched to
-/// <see cref="KeepKeysInFull"/> by the engine before its first key is recorded, and a hit whose
-/// re-derived key no longer hashes to the hit's own hash is refused loudly rather than read as
-/// a collision, so a genuine duplicate is never staged as valid.
+/// <see cref="KeepKeysInFull"/> by the engine before its first key is recorded. A hit whose
+/// re-derived key no longer hashes to the hit's own hash — a key lost by SOME rows only, which
+/// the first-row check cannot see — throws <see cref="GoldpathBulkKeyNotReproducibleException"/>
+/// rather than being read as a collision, and the engine takes the pass again keeping keys in
+/// full, so a genuine duplicate is never staged as valid.
 /// </para>
 /// </summary>
 internal sealed class GoldpathBulkDuplicateKeys
@@ -74,7 +76,7 @@ internal sealed class GoldpathBulkDuplicateKeys
         // genuine duplicate as valid.
         if (keyOfFirst is null || _hash(keyOfFirst) != hash)
         {
-            throw new InvalidOperationException(
+            throw new GoldpathBulkKeyNotReproducibleException(
                 $"The row key of bulk definition '{_definition}' is not reproducible from its staged payload (row {first}); "
                 + "the key must come from public, serialized properties of the row.");
         }
@@ -109,3 +111,9 @@ internal sealed class GoldpathBulkDuplicateKeys
         return unchecked((long)hash);
     }
 }
+
+/// <summary>
+/// A hash hit whose first row's payload no longer gives its key back: the pass cannot confirm hits
+/// on hashes and is taken again with <see cref="GoldpathBulkDuplicateKeys.KeepKeysInFull"/>.
+/// </summary>
+internal sealed class GoldpathBulkKeyNotReproducibleException(string message) : InvalidOperationException(message);

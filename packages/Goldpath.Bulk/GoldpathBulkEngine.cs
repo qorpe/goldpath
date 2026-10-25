@@ -100,12 +100,41 @@ public sealed class GoldpathBulkEngine<TContext>
             await db.SaveChangesAsync(cancellationToken);
         }
 
+        var started = _time.GetUtcNow();
+        try
+        {
+            await ValidatePassAsync(db, batch, definition, services, keysInFull: false, started, cancellationToken);
+        }
+        catch (GoldpathBulkKeyNotReproducibleException)
+        {
+            // A key lost by some rows' payloads only passes the first-row check and is caught at its
+            // first repeat. Validation is wipe-and-rewrite, so the pass is taken again keeping every key
+            // in full — the string table's report — instead of leaving the batch Validating for good.
+            WarnKeysKeptInFull(definition, batch);
+            db.ChangeTracker.Clear();
+            db.Attach(batch);
+            await ValidatePassAsync(db, batch, definition, services, keysInFull: true, started, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// One validate pass over the batch's file: wipes its rows and errors, then stages the report.
+    /// <paramref name="keysInFull"/> keeps every row key in full for duplicate detection.
+    /// </summary>
+    private async Task ValidatePassAsync(
+        TContext db, GoldpathBulkBatch batch, GoldpathBulkDefinition definition, IServiceProvider services,
+        bool keysInFull, DateTimeOffset started, CancellationToken cancellationToken)
+    {
         await db.Set<GoldpathBulkRow>().Where(r => r.BatchId == batch.Id).ExecuteDeleteAsync(cancellationToken);
         await db.Set<GoldpathBulkRowError>().Where(e => e.BatchId == batch.Id).ExecuteDeleteAsync(cancellationToken);
 
-        var started = _time.GetUtcNow();
         var duplicates = new GoldpathBulkDuplicateKeys(definition.Name, _options.DuplicateKeyHash);
-        var keyChecked = false;
+        if (keysInFull)
+        {
+            duplicates.KeepKeysInFull();
+        }
+
+        var keyChecked = keysInFull;
         var pendingRows = new List<GoldpathBulkRow>();
         var pendingErrors = new List<GoldpathBulkRowError>();
         int total = 0, valid = 0, invalid = 0;
@@ -168,10 +197,7 @@ public sealed class GoldpathBulkEngine<TContext>
                         if (!string.Equals(definition.KeyOfPayload(result.Payload!), recorded, StringComparison.Ordinal))
                         {
                             duplicates.KeepKeysInFull();
-                            _logger.LogWarning(
-                                "The row key of bulk definition {Definition} is not reproducible from its staged payload; "
-                                + "batch {BatchId} keeps every key in full for duplicate detection. Derive the key from public, serialized properties.",
-                                definition.Name, batch.Id);
+                            WarnKeysKeptInFull(definition, batch);
                         }
                     }
 
@@ -254,6 +280,12 @@ public sealed class GoldpathBulkEngine<TContext>
             "Bulk batch {BatchId} validated: {Valid} valid, {Invalid} invalid of {Total} rows.",
             batch.Id, valid, invalid, total);
     }
+
+    private void WarnKeysKeptInFull(GoldpathBulkDefinition definition, GoldpathBulkBatch batch)
+        => _logger.LogWarning(
+            "The row key of bulk definition {Definition} is not reproducible from its staged payload; "
+            + "batch {BatchId} keeps every key in full for duplicate detection. Derive the key from public, serialized properties.",
+            definition.Name, batch.Id);
 
     /// <summary>
     /// The gate's YES (D2/D5): refuses non-validated states, and refuses invalid rows

@@ -33,6 +33,18 @@ public sealed class PlainKeyRow
     public string Label { get; set; } = "";
 }
 
+/// <summary>
+/// A device row whose key survives the payload only for SOME rows: a region of 0 is left out of the
+/// JSON and comes back as the initializer's 5, so the first row's round-trip check passes.
+/// </summary>
+public sealed class RowDependentKeyRow
+{
+    public string DeviceId { get; set; } = "";
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int Region { get; set; } = 5;
+}
+
 /// <summary>Collects the engine's warnings, so a test can see which path a pass took.</summary>
 public sealed class WarningLog<T> : ILogger<T>
 {
@@ -76,6 +88,29 @@ public class DuplicateKeyRoundTripTests
     public async Task A_key_that_survives_its_payload_keeps_hashes_and_warns_nothing(int insertBatchSize)
         => Assert.Empty(await AssertReportAsync<PlainKeyRow>(r => r.DeviceId, insertBatchSize));
 
+    [Theory]
+    [MemberData(nameof(FlushSizes))]
+    public async Task A_key_lost_by_some_rows_only_reruns_the_pass_in_full_and_reports_as_the_string_table_did(int insertBatchSize)
+    {
+        // Row 1's key survives its payload, so the pass starts on hashes; row 3 repeats row 2,
+        // whose payload gives back "B|5" for "B|0". The pass is taken again keeping keys in full.
+        var (validated, rows, errors, warnings) = await ValidateAsync<RowDependentKeyRow>(
+            r => r.DeviceId + "|" + r.Region, insertBatchSize, "DeviceId,Region\nA,3\nB,0\nB,0\nA,3\nC,0\n");
+
+        Assert.Equal(GoldpathBulkBatchState.Validated, validated.State);
+        Assert.Equal(5, validated.TotalRows);
+        Assert.Equal(3, validated.ValidRows);
+        Assert.Equal(2, validated.InvalidRows);
+        Assert.Equal([1, 2, 5], rows);
+        Assert.Equal(
+            [
+                (3, "duplicate of row 2 within the file"),
+                (4, "duplicate of row 1 within the file"),
+            ],
+            errors);
+        AssertKeptInFull(warnings);
+    }
+
     private static void AssertKeptInFull(List<string> warnings)
     {
         var warning = Assert.Single(warnings);
@@ -90,12 +125,12 @@ public class DuplicateKeyRoundTripTests
         // payload lost the key, and treating the repeat as a collision would stage it as valid.
         var duplicates = new GoldpathBulkDuplicateKeys("devices");
         Assert.Null(await duplicates.FirstRowOfAsync("D1", 1, _ => throw new InvalidOperationException("never asked")));
-        var lost = await Assert.ThrowsAsync<InvalidOperationException>(
+        var lost = await Assert.ThrowsAsync<GoldpathBulkKeyNotReproducibleException>(
             async () => await duplicates.FirstRowOfAsync("D1", 2, _ => ValueTask.FromResult<string?>("")));
         Assert.Contains("'devices'", lost.Message, StringComparison.Ordinal);
         Assert.Contains("(row 1)", lost.Message, StringComparison.Ordinal);
         Assert.Contains("public, serialized properties", lost.Message, StringComparison.Ordinal);
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        await Assert.ThrowsAsync<GoldpathBulkKeyNotReproducibleException>(
             async () => await duplicates.FirstRowOfAsync("D1", 3, _ => ValueTask.FromResult<string?>(null)));
 
         // A genuine collision — the first row's key DOES hash to the hit's hash — is not refused.
@@ -122,6 +157,28 @@ public class DuplicateKeyRoundTripTests
     private static async Task<List<string>> AssertReportAsync<TRow>(Func<TRow, string?> rowKey, int insertBatchSize)
         where TRow : class, new()
     {
+        var (validated, rows, errors, warnings) = await ValidateAsync(
+            rowKey, insertBatchSize, "DeviceId,Label\nD1,a\nD2,b\nD1,c\nD1,d\nD2,e\nD3,f\n");
+
+        Assert.Equal(GoldpathBulkBatchState.Validated, validated.State);
+        Assert.Equal(3, validated.ValidRows);
+        Assert.Equal(3, validated.InvalidRows);
+        Assert.Equal([1, 2, 6], rows);
+        Assert.Equal(
+            [
+                (3, "duplicate of row 1 within the file"),
+                (4, "duplicate of row 1 within the file"),
+                (5, "duplicate of row 2 within the file"),
+            ],
+            errors);
+        return warnings;
+    }
+
+    /// <summary>Ingests and validates <paramref name="csv"/>; answers the batch, its staged rows, its errors and the warnings.</summary>
+    private static async Task<(GoldpathBulkBatch Batch, List<int> Rows, List<(int, string)> Errors, List<string> Warnings)> ValidateAsync<TRow>(
+        Func<TRow, string?> rowKey, int insertBatchSize, string csv)
+        where TRow : class, new()
+    {
         using var connection = new SqliteConnection("DataSource=:memory:");
         connection.Open();
         var options = new GoldpathBulkOptions { InsertBatchSize = insertBatchSize };
@@ -137,23 +194,15 @@ public class DuplicateKeyRoundTripTests
         var engine = new GoldpathBulkEngine<BulkTestContext>(
             options, new GoldpathBulkFileStore<BulkTestContext>(TimeProvider.System), TimeProvider.System, log);
 
-        var csv = new MemoryStream(Encoding.UTF8.GetBytes("DeviceId,Label\nD1,a\nD2,b\nD1,c\nD1,d\nD2,e\nD3,f\n"));
-        var (batch, _) = await engine.IngestAsync(scope.ServiceProvider, "devices", csv, "devices.csv", null, CancellationToken.None);
+        var file = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+        var (batch, _) = await engine.IngestAsync(scope.ServiceProvider, "devices", file, "devices.csv", null, CancellationToken.None);
         await engine.ValidateBatchAsync(scope.ServiceProvider, batch.Id, CancellationToken.None);
 
         db.ChangeTracker.Clear();
-        var validated = db.Set<GoldpathBulkBatch>().AsNoTracking().Single(b => b.Id == batch.Id);
-        Assert.Equal(GoldpathBulkBatchState.Validated, validated.State);
-        Assert.Equal(3, validated.ValidRows);
-        Assert.Equal(3, validated.InvalidRows);
-        Assert.Equal([1, 2, 6], db.Set<GoldpathBulkRow>().OrderBy(r => r.RowNumber).Select(r => r.RowNumber).ToList());
-        Assert.Equal(
-            [
-                (3, "duplicate of row 1 within the file"),
-                (4, "duplicate of row 1 within the file"),
-                (5, "duplicate of row 2 within the file"),
-            ],
-            db.Set<GoldpathBulkRowError>().AsNoTracking().OrderBy(e => e.RowNumber).ToList().Select(e => (e.RowNumber, e.Message)).ToList());
-        return log.Warnings;
+        return (
+            db.Set<GoldpathBulkBatch>().AsNoTracking().Single(b => b.Id == batch.Id),
+            db.Set<GoldpathBulkRow>().OrderBy(r => r.RowNumber).Select(r => r.RowNumber).ToList(),
+            db.Set<GoldpathBulkRowError>().AsNoTracking().OrderBy(e => e.RowNumber).ToList().Select(e => (e.RowNumber, e.Message)).ToList(),
+            log.Warnings);
     }
 }

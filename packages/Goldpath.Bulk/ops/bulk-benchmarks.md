@@ -71,6 +71,8 @@ within the file" findings.
   to survive the row's JSON round trip. A definition whose key does not (a `[JsonIgnore]`
   property, a private setter) is detected on the first keyed row of each pass, logged as a
   warning, and validated with every key kept in full — the string table's memory, with the
-  same report. The bench's row type is not such a definition.
+  same report. A key lost by some rows only passes that check; its first repeat is caught
+  and the pass is validated again from the start keeping keys in full, so such a file pays
+  for the rows read before that repeat twice. The bench's row type is not such a definition.
 - **Validation dominates, upload does not.** The 162 MiB file uploaded in under 10 s; the
   ~12,000 rows/s of validation is the per-row staging write (10M rows → 1.2 GiB of database).

@@ -101,7 +101,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   unchanged, including for a row key that does not survive the payload's JSON round trip (a
   `[JsonIgnore]` property or a private setter): such a definition is detected on the first
   keyed row of a pass, logged as a warning, and keeps every key in full for that pass, as
-  before. The confirmation costs one read per duplicate whose first row is already written:
+  before. A key that only SOME rows lose (a conditional `[JsonIgnore]` over a non-default
+  initializer) passes that first-row check and is caught at its first repeat; the pass is
+  then taken again from the start with every key kept in full, with the same warning, so the
+  report is still the string table's and the batch never stays `Validating`. The confirmation costs one read per duplicate whose first row is already written:
   the 10M run with 99,951 such repeats validated at 12,079 rows/s against 14,773 (open-threads
   T49). No public API, schema or dependency change. `scripts/bench-bulk.sh intake` runs the
   10M bench; the numbers are in `packages/Goldpath.Bulk/ops/bulk-benchmarks.md`.
