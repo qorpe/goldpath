@@ -12,6 +12,8 @@ namespace Goldpath;
 public sealed class GoldpathMessagingBuilder
 {
     private readonly List<(Type Event, Type Handler)> _handlers = [];
+    private readonly Dictionary<(Type Event, Type Handler), string> _endpointNames = [];
+    private readonly List<(Type Event, Type Handler, GoldpathBatchOptions Options, string EndpointName)> _batchHandlers = [];
 
     internal GoldpathMessagingBuilder(GoldpathMessagingOptions options) => Options = options;
 
@@ -19,6 +21,8 @@ public sealed class GoldpathMessagingBuilder
     public GoldpathMessagingOptions Options { get; }
 
     internal IReadOnlyList<(Type Event, Type Handler)> Handlers => _handlers;
+
+    internal IReadOnlyList<(Type Event, Type Handler, GoldpathBatchOptions Options, string EndpointName)> BatchHandlers => _batchHandlers;
 
     internal Type? OutboxContext { get; private set; }
 
@@ -44,6 +48,70 @@ public sealed class GoldpathMessagingBuilder
 
         return this;
     }
+
+    /// <summary>
+    /// Registers <typeparamref name="THandler"/> for <typeparamref name="TEvent"/> on the endpoint named
+    /// <paramref name="endpointName"/> rather than the one <see cref="GoldpathHandlerEndpoints.NameOf"/> derives.
+    /// For a queue that must keep a name it already has on a running fleet (a mixed fleet drains one queue):
+    /// handlers given the same name share one queue.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The pair is already registered on another endpoint.</exception>
+    public GoldpathMessagingBuilder AddHandler<TEvent, THandler>(string endpointName)
+        where TEvent : class, IIntegrationEvent
+        where THandler : class, IIntegrationEventHandler<TEvent>
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(endpointName);
+        var pair = (typeof(TEvent), typeof(THandler));
+        var current = _endpointNames.TryGetValue(pair, out var named) ? named : _handlers.Contains(pair) ? GoldpathHandlerEndpoints.NameOf(typeof(THandler)) : null;
+        if (current is not null && current != endpointName)
+        {
+            throw new InvalidOperationException(
+                $"'{typeof(THandler).Name}' already handles '{typeof(TEvent).Name}' on the endpoint '{current}'; one handler drains one queue, not a second named '{endpointName}'.");
+        }
+
+        _endpointNames[pair] = endpointName;
+        return AddHandler<TEvent, THandler>();
+    }
+
+    /// <summary>
+    /// Registers <typeparamref name="THandler"/> to take <typeparamref name="TEvent"/> in batches grouped by
+    /// <paramref name="options"/> (RFC goldpath-messaging-engines §4.1 row 12). Its queue is named by
+    /// <see cref="GoldpathHandlerEndpoints.NameOf"/> unless <paramref name="endpointName"/> names it; handlers
+    /// given the same name share one queue.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">A limit in <paramref name="options"/> is not positive.</exception>
+    /// <exception cref="InvalidOperationException">The pair is already registered as a batch handler.</exception>
+    public GoldpathMessagingBuilder AddBatchHandler<TEvent, THandler>(GoldpathBatchOptions options, string? endpointName = null)
+        where TEvent : class, IIntegrationEvent
+        where THandler : class, IIntegrationEventBatchHandler<TEvent>
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        if (endpointName is not null)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(endpointName);
+        }
+
+        options.Validate(typeof(THandler));
+        if (_batchHandlers.Exists(b => b.Event == typeof(TEvent) && b.Handler == typeof(THandler)))
+        {
+            throw new InvalidOperationException(
+                $"'{typeof(THandler).Name}' is already registered as the batch handler of '{typeof(TEvent).Name}'.");
+        }
+
+        // A copy: the grouping is fixed at registration, so a caller changing the object later changes nothing.
+        var grouping = new GoldpathBatchOptions
+        {
+            MessageLimit = options.MessageLimit,
+            TimeLimit = options.TimeLimit,
+            ConcurrencyLimit = options.ConcurrencyLimit,
+        };
+        _batchHandlers.Add((typeof(TEvent), typeof(THandler), grouping, endpointName ?? GoldpathHandlerEndpoints.NameOf(typeof(THandler))));
+        return this;
+    }
+
+    /// <summary>The endpoint a registered single-message handler drains.</summary>
+    internal string EndpointOf(Type eventType, Type handlerType)
+        => _endpointNames.TryGetValue((eventType, handlerType), out var name) ? name : GoldpathHandlerEndpoints.NameOf(handlerType);
 
     /// <summary>
     /// Registers every <see cref="IIntegrationEventHandler{TEvent}"/> implementation found in

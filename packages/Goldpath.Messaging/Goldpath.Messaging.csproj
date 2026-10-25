@@ -20,6 +20,8 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Goldpath.Messaging.Tests" />
+    <!-- The campaign suites size a consumer's slots through the engine test hook (MassTransitMessagingEngine.TestHooks, open-threads T44). -->
+    <InternalsVisibleTo Include="Goldpath.IntegrationTests" />
   </ItemGroup>
 
   <ItemGroup>

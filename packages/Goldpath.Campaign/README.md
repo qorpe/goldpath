@@ -40,10 +40,9 @@ builder.AddGoldpathJobs<WebApplicationBuilder, OrdersDbContext>(jobs =>
     jobs.AddGoldpathCampaignJobs<OrdersDbContext>();          // the pacer leader
 });
 
-builder.AddGoldpathMessaging<WebApplicationBuilder>(bus =>    // campaign REQUIRES a broker
-{
-    bus.AddGoldpathCampaignConsumers<OrdersDbContext>();
-});
+builder.AddGoldpathMessaging(messaging => messaging          // campaign REQUIRES a broker
+    .AddGoldpathCampaign<OrdersDbContext>()                    // item handler + batching outcome handler, one queue
+    .UseRabbitMq());
 
 // DbContext: modelBuilder.AddGoldpathCampaign();  modelBuilder.AddGoldpathJobs();
 ```

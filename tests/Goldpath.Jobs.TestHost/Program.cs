@@ -15,7 +15,6 @@
 //        GOLDPATH_LINKS_ONLY_CONSOLE maps a second, links-only console at /linked/console.)
 using Goldpath;
 using Goldpath.Jobs.TestHost;
-using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -163,15 +162,10 @@ static async Task RunConsoleHostAsync(
                     .Select(x => new SmokeCustomer(x.Id, x.Email))
                     .AsAsyncEnumerable()));
         });
-        web.AddGoldpathMessaging(bus =>
-        {
-            bus.AddGoldpathCampaignConsumers<ClusterDb>();
-            bus.UsingRabbitMq((context, cfg) =>
-            {
-                cfg.Host(new Uri(brokerUri));
-                cfg.ConfigureGoldpathEndpoints(context);
-            });
-        });
+        web.Configuration["ConnectionStrings:messaging"] = brokerUri;
+        web.AddGoldpathMessaging(messaging => messaging
+            .AddGoldpathCampaign<ClusterDb>()
+            .UseRabbitMq());
     }
 
     // FileExchange joins unconditionally: its surface is READ-ONLY, so the gate proves the
