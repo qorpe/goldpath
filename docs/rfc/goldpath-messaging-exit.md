@@ -195,6 +195,43 @@ ordering (the seam promises none; a second engine may), OTel spans (needs an exp
 in the harness), consumer concurrency/prefetch limits. Every fact is written against the
 seam, so S3 is "register a second engine's adapter in the harness and run the class".
 
+**2026-10-26 — S4 in the suite (G5 Part 4/5, #333).** `MixedFleetTests` runs two hosts, one per
+engine, on one broker and one database, once per direction (MassTransit 8.5.11 → Wolverine and
+Wolverine → MassTransit), through the seam only: S4.1 what one engine publishes (committed
+through the outbox, and raw with its message id set) the other handles, with tenant,
+correlation and message id intact; S4.2 a message handled under one engine and redelivered
+under the other is not handled again; S4.3 an outbox row one engine committed and never
+relayed is delivered by the other after the restart; S4.4 a handler the new release adds runs
+for that redelivery while the one already there is skipped (one inbox row per handler); S4.5
+a message one engine faulted into `<queue>_error`, shovelled back as the runbook says, is
+handled by the other. Without Wolverine's MassTransit interop on the listener, S4.1 goes red.
+Writing the facts found three defects in the Wolverine adapter, each red first and fixed:
+its inbox keyed a consumer by the endpoint alone, so every cross-engine redelivery ran its
+handler twice (S4.2, S4.4, both ways); its relay published an 8.x outbox row to an exchange
+named after the whole `;`-separated `MessageType` column, where nothing is bound, and then
+deleted the row, a silent loss (S4.3); and its inbox sweep read `ExpirationTime`, which 8.x
+never writes, so the rows the old engine left would never be forgotten.
+
+**Retry and the error queue in a mixed fleet.** Measured by S2.3 on each engine and S4.5
+across them:
+
+- *Immediate retries* run in the process that received the delivery, on its engine, counted by
+  that engine (`IntegrationEventContext.RetryAttempt` starts at 0 on each); no attempt count
+  crosses the wire, as goldpath-messaging-engines §4.4 designs.
+- *The error queue* is the same `<queue>_error` for both engines. A message either one parks
+  there keeps its envelope, its message id and its `X-Goldpath-Tenant` / `X-Correlation-Id`
+  headers, so once the consumer is fixed the operator shovels it back and **either** engine
+  handles it, exactly once (a delivery that faulted was never recorded as consumed).
+- *Delayed redelivery* is the one stage a mixed fleet does not share. The Wolverine adapter
+  refuses it at registration (open-threads T51), so a fleet with a Wolverine process runs with
+  `Goldpath:Messaging:Retry:RedeliveryIntervals` empty on that process, and its exhausted
+  messages go straight to `<queue>_error`. A MassTransit process that keeps the stage schedules
+  its redelivery onto the shared queue, where a Wolverine process may receive it. Read from the
+  adapter's code, not measured (the suite's broker has no delayed-exchange plugin): that process
+  does not read `MT-Redelivery-Count`, runs a fresh immediate ladder, then parks the message, so
+  the remaining delayed stages are skipped and nothing is lost. This is T51's to close, and it
+  stays open until delayed redelivery is durable on Wolverine.
+
 ## 8. DoD — closed 2026-08-10
 
 - [x] Owner decides A–E → **A** (stay pinned on 8.x), fallback **D**. Decided 2026-08-10.
@@ -233,6 +270,9 @@ lines, open until each proof runs:
       **2026-10-25 (G5 Part 1/5, #330):** `Goldpath.Messaging.Wolverine` runs the suite's current
       class, S2.1–S2.12, green beside 8.5.11 in the same CI job. S2 is not yet widened with the four
       gaps above (Part 2/5), and S1, S3, S4 and S6 are open; what the adapter refuses is open-threads T51.
+      **2026-10-26 (G5 Part 4/5, #333):** S4's facts, S4.1–S4.5, run in the CI integration job in both
+      directions, on the 8.x envelope, topology and tables; delayed redelivery is the stage a mixed
+      fleet does not share (above, T51).
 - [ ] The family bus has its own RFC and repository (qorpe organisation, open source,
       clean-room per ADR-0013) in **December 2026**; its first adapter enters the suite in
       January–February 2027 (T40, milestone `family-bus`).

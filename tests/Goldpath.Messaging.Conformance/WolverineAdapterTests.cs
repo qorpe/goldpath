@@ -87,19 +87,21 @@ public sealed class WolverineAdapterTests(ConformanceContainers containers)
     }
 
     [Fact]
-    public async Task The_inbox_sweep_forgets_only_consumed_rows_past_their_window()
+    public async Task The_inbox_sweep_forgets_only_rows_delivered_before_the_window_whichever_engine_wrote_them()
     {
         await using var host = await containers.BuildHostAsync(Engine, new Observed());
         var now = DateTime.UtcNow;
         var expired = Guid.NewGuid();
         var live = Guid.NewGuid();
         var unconsumed = Guid.NewGuid();
+        var defaultEngines = Guid.NewGuid();
         using (var scope = host.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ConformanceDb>();
             AddInboxRow(db, expired, consumed: now.AddHours(-2), expires: now.AddHours(-1));
             AddInboxRow(db, live, consumed: now.AddMinutes(-1), expires: now.AddHours(1));
-            AddInboxRow(db, unconsumed, consumed: null, expires: now.AddHours(-1));   // only "consumed" keeps this one
+            AddInboxRow(db, unconsumed, consumed: null, expires: now.AddHours(-1));   // never delivered, so kept
+            AddInboxRow(db, defaultEngines, consumed: now.AddHours(-2), expires: null);   // as the default engine writes one: no expiration time
             await db.SaveChangesAsync();
         }
 
@@ -110,7 +112,7 @@ public sealed class WolverineAdapterTests(ConformanceContainers containers)
         {
             var db = scope.ServiceProvider.GetRequiredService<ConformanceDb>();
             var remaining = await db.Database
-                .SqlQueryRaw<Guid>("SELECT \"MessageId\" AS \"Value\" FROM \"InboxState\" WHERE \"MessageId\" IN ({0}, {1}, {2})", expired, live, unconsumed)
+                .SqlQueryRaw<Guid>("SELECT \"MessageId\" AS \"Value\" FROM \"InboxState\" WHERE \"MessageId\" IN ({0}, {1}, {2}, {3})", expired, live, unconsumed, defaultEngines)
                 .ToListAsync();
             Assert.Equal(new[] { live, unconsumed }.Order(), remaining.Order());
         }
@@ -118,7 +120,7 @@ public sealed class WolverineAdapterTests(ConformanceContainers containers)
 
     // The inbox row's type is the engine's own; the suite names no engine (EngineFreeSuiteTests), so the row is
     // built from the context's model.
-    private static void AddInboxRow(ConformanceDb db, Guid messageId, DateTime? consumed, DateTime expires)
+    private static void AddInboxRow(ConformanceDb db, Guid messageId, DateTime? consumed, DateTime? expires)
     {
         var entity = db.Model.GetEntityTypes().Single(e => e.ClrType.Name == "InboxState");
         var row = Activator.CreateInstance(entity.ClrType)!;
