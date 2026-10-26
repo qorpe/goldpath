@@ -419,3 +419,59 @@ describe("product console link tiles on Today", () => {
     expect(within(rail).queryByText(/^Products$/)).toBeNull();
   });
 });
+
+describe("the console shell — the remaining doors", () => {
+  /** One service composing jobs AND bulk, with an executed batch whose run exists. */
+  function hopEstate() {
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+    const run = {
+      id: "r-42", jobName: "payments-execute", status: "Completed", startedAt: "2026-07-27T09:05:00Z", finishedAt: "2026-07-27T09:06:00Z",
+      totalChunks: 1, completedChunks: 1, failedChunks: 0, totalItems: 118, itemFailures: 0,
+    };
+    const batch = {
+      id: "3f7a0c9e-0000-4000-8000-000000000001", definition: "payments", state: "Executed", tenant: "acme", totalRows: 120, validRows: 118,
+      invalidRows: 2, executedRows: 118, failedRows: 0, runId: "r-42", receivedAt: "2026-07-27T09:00:00Z", validatedAt: "2026-07-27T09:01:00Z",
+    };
+    return (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("console.config.json")) return json({ services: [{ name: "payments", adminBaseUrl: "https://payments.internal" }] });
+      if (url.endsWith("/jobs/fleets")) return json([{ schedulerName: "it-cluster", jobCount: 1, nodes: [] }]);
+      if (url.includes("/jobs/runs/r-42")) return json({ run, chunksByStatus: { Completed: 1 }, openFailures: [] });
+      if (url.includes("/runs?")) return json([run]);
+      if (url.endsWith("/bulk/definitions")) return json([{ name: "payments", batchesByState: { Executed: 1 }, awaitingApproval: 0, oldestAwaitingApprovalSeconds: null }]);
+      if (url.includes("/bulk/batches?")) return json([batch]);
+      if (url.includes("/errors?")) return json([]);
+      if (url.includes("/bulk/batches/")) return json(batch);
+      return new Response("", { status: 404 });
+    }) as typeof fetch;
+  }
+
+  it("§7.9: a batch's run id crosses to the run console and opens THAT run there", async () => {
+    render(<ConsoleApp fetcher={hopEstate()} search="" />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Bulk intake" }));
+    await userEvent.click(await screen.findByRole("button", { name: "3f7a0c9e-0000-4000-8000-000000000001" }));
+    await userEvent.click(await screen.findByRole("button", { name: "run r-42" }));
+
+    // The run's sheet is modal, so the section behind it is inert to the a11y tree.
+    expect(await screen.findByRole("dialog", { name: "Run r-42" })).toBeInTheDocument();
+    expect(screen.getByTestId("run-detail")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Runs", hidden: true })).toBeInTheDocument();
+  });
+
+  it("the rail's Today entry goes home from any section", async () => {
+    render(<ConsoleApp fetcher={estate().fetcher} search="" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Runs" }));
+    await screen.findByRole("heading", { name: "Runs" });
+
+    await userEvent.click(screen.getByRole("button", { name: "Today" }));
+    expect(await screen.findByTestId("triage-home")).toBeInTheDocument();
+  });
+
+  it("the rail collapses and expands again", async () => {
+    render(<ConsoleApp fetcher={estate().fetcher} search="" />);
+    await userEvent.click(await screen.findByRole("button", { name: "collapse navigation" }));
+    await userEvent.click(await screen.findByRole("button", { name: "expand navigation" }));
+    expect(await screen.findByRole("button", { name: "collapse navigation" })).toBeInTheDocument();
+  });
+});

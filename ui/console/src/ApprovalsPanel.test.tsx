@@ -147,3 +147,95 @@ describe("ApprovalsPanel — the worklist and its rules", () => {
     expect(within(sheet).getByText("00000000-0000-4000-8000-00000000dead")).toBeInTheDocument();
   });
 });
+
+describe("ApprovalsPanel — the remaining doors", () => {
+  it("the decider's role and reason are what travel — typed, not the defaults", async () => {
+    const bodies: unknown[] = [];
+    const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+      if (url.includes("/reject")) {
+        bodies.push(JSON.parse(String(init?.body)));
+        return json({ ok: true, message: "Applied" });
+      }
+      if (/\/requests\/[^/?]+$/.test(url)) return json(detail());
+      return json([row()]);
+    }) as typeof fetch;
+    render(<ApprovalsPanel client={new AdminClient({ fetcher })} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "P26-1" }));
+    const role = await screen.findByLabelText("Decider role");
+    // The rung's role is pre-filled from the request; a delegate types their own.
+    expect(role).toHaveValue("manager");
+    await userEvent.clear(role);
+    await userEvent.type(role, "deputy-manager");
+    await userEvent.type(screen.getByLabelText("Reason"), "collateral missing");
+    await userEvent.click(screen.getByRole("button", { name: "Reject" }));
+
+    await waitFor(() => expect(bodies).toEqual([{ role: "deputy-manager", reason: "collateral missing" }]));
+    // Applied: the reason box empties for the next decision.
+    await waitFor(() => expect(screen.getByLabelText("Reason")).toHaveValue(""));
+  });
+
+  it("approving sends the typed role too, and a blank reason is left out rather than sent empty", async () => {
+    const bodies: unknown[] = [];
+    const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+      if (url.includes("/approve")) {
+        bodies.push(JSON.parse(String(init?.body)));
+        return json({ ok: true, message: "Applied" });
+      }
+      if (/\/requests\/[^/?]+$/.test(url)) return json(detail());
+      return json([row()]);
+    }) as typeof fetch;
+    render(<ApprovalsPanel client={new AdminClient({ fetcher })} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "P26-1" }));
+    const role = await screen.findByLabelText("Decider role");
+    await userEvent.clear(role);
+    await userEvent.type(role, "deputy-manager");
+    await userEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+    await waitFor(() => expect(bodies).toEqual([{ role: "deputy-manager" }]));
+  });
+
+  it("unticking a status and clearing the facet each re-read the worklist without it", async () => {
+    const { api, fetched } = client();
+    render(<ApprovalsPanel client={api} />);
+    await screen.findByText("P26-1");
+    const lists = () => fetched.filter((url) => url.includes("/requests?"));
+
+    await userEvent.click(screen.getByRole("button", { name: /status/i }));
+    // Pending is the default lens; unticking it leaves no status in the query.
+    await userEvent.click(await screen.findByRole("menuitemcheckbox", { name: /Pending/ }));
+    await waitFor(() => expect(lists().at(-1)).not.toContain("status="));
+
+    await userEvent.click(screen.getByRole("menuitemcheckbox", { name: /Granted/ }));
+    await waitFor(() => expect(lists().at(-1)).toContain("status=Granted"));
+    await userEvent.click(screen.getByRole("menuitem", { name: "clear" }));
+    await waitFor(() => expect(lists().at(-1)).not.toContain("status="));
+  });
+
+  it("closing the sheet lets go of the request", async () => {
+    const { api } = client();
+    render(<ApprovalsPanel client={api} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "P26-1" }));
+    await screen.findByTestId("approval-detail");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByTestId("approval-detail")).toBeNull());
+  });
+
+  it("a request that cannot be read says which one", async () => {
+    const fetcher = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (/\/requests\/[^/?]+$/.test(url)) return new Response("", { status: 500 });
+      return new Response(JSON.stringify([row()]), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+    render(<ApprovalsPanel client={new AdminClient({ fetcher })} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "P26-1" }));
+    expect(await screen.findByText(`approval ${row().id} could not be read`)).toBeInTheDocument();
+  });
+});

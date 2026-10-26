@@ -29,6 +29,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     adapter's first cut, which discarded a batch's outbox rows with its scope, and is green on both
     now. The adapter's own decisions the class cannot reach (the commit without the inbox, two
     handlers on one endpoint, the inbox sweep) have Wolverine-only facts beside it.
+- **A threat model, for the first four surfaces with an auth boundary (GA gate G15 Part 2/2,
+  #340).** Documents and one test assertion; no package change.
+  `docs/security/threat-model.md` covers four surfaces: the admin routes, the served console,
+  Campaign's signed callbacks, and Bulk upload with its gate.
+  - It is STRIDE per surface, and every threat names what holds it: a test, by class and method;
+    an analyzer; an issue; or an accepted risk.
+  - Three threats had no holder and are now issues: #452 (CSRF on body-less verbs behind a
+    gateway cookie), #453 (a bulk batch does not record its uploader), and #454 (no test pins
+    that the console refuses traversal-shaped asset paths).
+  - Six accepted risks (A1–A6) await the owner's signature. A6 is that archival retrieval
+    returns an archived document unredacted to both ops roles, the viewer role included under
+    admin-contract R4.1 (the regulatory record; erasure is what masks it).
+  - Bulk upload is the one mutating admin verb that records no actor (#453); every other
+    surface's audit evidence is named per surface. The Jobs holder's unit test now asserts
+    each audit row's actor, not only its action.
+  - `SECURITY.md` links the model, and `ga-gate-status.md` G15 records 4 of 10 surfaces. The
+    other six (Approvals, FileExchange, Notification, DataProtection, Idempotency,
+    MultiTenancy) remain the issue's checklist.
 - **S-OPS-02 runs in the console smoke: four operator mistakes refused from the screen, zero
   5xx (GA gate G10a, #324).** Test-only; no package change.
   - **The four mistakes:** `ui/console/e2e/refusals.spec.ts` attempts each one through the real
@@ -142,6 +160,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
 ### Changed
+- **Admin-contract revision R4 is written (#304), PROPOSED; merging it is its acceptance.**
+  Documents only, no package change. `docs/rfc/goldpath-admin-contract.md` gains R4, the shape of
+  the owner's 2026-10-20 approvals:
+  - **R4.1:** a read role, `goldpath-ops-read`, which `goldpath-ops` also satisfies. Every admin
+    `GET` and the served console demand it, and every verb keeps `goldpath-ops`. A verb refused
+    for want of the role answers `403` with the verb envelope. The role reads archived
+    documents in full (`GET /archival/entries/{definition}/{key}` returns the `Document`), by
+    owner decision of 2026-10-25; R4.1 states it, and R4-S1 must state it in the upgrade guide.
+  - **R4.2:** campaign `/failures` walks by `afterSeq` and returns each item's `errorCode`.
+  - **R4.3:** campaign `/{id}/outcomes` counts the items by state and the failures by code.
+  - **R4.4:** the campaign detail's `ETag` is its `PolicyVersion`, and `throttle` takes an
+    optional `If-Match`; a stale one answers `412`.
+  - **R4.5:** Campaign R3.2's four ceiling routes.
+
+  The revision also states its compatibility case (additive, no migration), the rejected
+  alternatives, and seven ordered slices. Alongside it:
+  - the auth RFC (§10) and the console RFC (§3 auth, item 4) say how the three policies compose;
+  - the campaign RFC records that R2's "finer roles" non-goal is reversed for reads;
+  - open-threads T50 carries what R4 leaves out: an admin-only tier, an approver outside
+    Approvals, and a viewer that reads archive metadata without the document.
 - **`Goldpath.Campaign`: campaign consumes through the seam (GA gate G1 Part 3/4, #328).**
   `messaging.AddGoldpathCampaign<TContext>()` on the `GoldpathMessagingBuilder` registers
   `GoldpathCampaignItemHandler<TContext>` (an `IIntegrationEventHandler<GoldpathCampaignItemMessage>`)
@@ -172,6 +210,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **The console's npm advisories are closed: vitest 2 → 5, with the 97% coverage floor re-earned
+  (#356).** Console test tooling only; the shipped bundle is byte-identical to the one before
+  (the same `pnpm build` output hashes) and every package is unchanged. `ui/console` takes
+  `vitest` and `@vitest/coverage-v8` at 5.0.5 (exact pins, one family as Dependabot groups it;
+  supersedes #375), and `pnpm update source-map-js` lifts the last stale `source-map-js`
+  (under the `@tailwindcss/vite` dev plugin) to 1.2.2, with no other resolution re-chosen.
+  `pnpm audit` goes from 26 advisories (3 critical, 11 high: `vitest`, `tinypool`, `vite` 5,
+  `esbuild`, `source-map-js`, `brace-expansion`) to none, with no override. vitest ≥4 maps v8
+  coverage back to the source AST-aware, so the same 274 tests measured 91.16% statements and
+  94.22% lines against floors of 97. The floors stay at 97 (open-threads T24). 35 new component
+  tests cover what the old counter credited and the new one does not: the throttle form's
+  every dial, resume and abort on a paused campaign, rerun, unticking and clearing each facet,
+  closing each sheet, the error line of every detail that fails to load, the erasure table's
+  columns, and the cross-section hop from a batch's run id to that run. Under vitest 5 the
+  console now measures 97.93% statements, 90.59% branches, 97.6% functions, 98.99% lines.
 - **`Goldpath.Bulk`: in-file duplicate detection no longer keeps every key (#300).** Validation
   kept each distinct `RowKey` as a string, so a 10M-row device list held them all: 1,226 MiB
   peak managed heap on a 10M-row run. It now keeps a 64-bit hash and the first row per key

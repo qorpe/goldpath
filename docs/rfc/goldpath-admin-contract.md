@@ -270,3 +270,377 @@ Additive; nothing an R2 client sends changes meaning.
 - Motivation: the console's facet filters are multi-select (ui-standard v1.2 §8.13),
   and the console refuses to fake OR by merging take-bounded pages client-side —
   the server is the only honest place to widen a filter.
+
+## Revision R4 — a read role, failures by code with a cursor, an outcomes aggregate, a versioned throttle, the ceiling routes (PROPOSED 2026-10-25; merging the PR that adds this section is its acceptance)
+
+**Finding.** A coverage analysis on 2026-10-20 (a device-fleet adopter, the same one that
+produced Campaign R3) found three things the frozen surface cannot say:
+
+1. **Whoever can see can also act.** Every admin route demands one policy,
+   `GoldpathPolicies.Ops` (`AdminSurfaceGuard.Apply` puts it on the whole group), so the person
+   who should only watch a campaign can also abort it ([#297](https://github.com/qorpe/goldpath/issues/297)).
+2. **The campaign governor cannot answer "what is failing, and why".**
+   `GET /campaign/{id}/failures` is capped at `AdminPaging.MaxTake` (500) with no cursor. Its row,
+   `GoldpathCampaignFailedItem(Seq, Error, CompletedAt)`, leaves out the item's `ErrorCode`, which
+   the store has kept since Campaign R2.1. Nothing splits the outcomes by code
+   ([#296](https://github.com/qorpe/goldpath/issues/296)).
+3. **Two operators' throttles race and the last one silently wins.** Campaign R3.5 gives the
+   campaign a `PolicyVersion` and the service a conditional throttle. The HTTP shape is this
+   revision's to write ([#298](https://github.com/qorpe/goldpath/issues/298)).
+
+Campaign R3.2's live ceilings also need routes that the frozen surface does not have. Campaign R3
+Q5 put them here, so the contract is revised and frozen once.
+
+**Owner decisions.**
+- **2026-10-20** (on #296, #297 and #298): admin-contract R4 is approved. It covers the
+  `/failures` cursor and `ErrorCode`, the `/outcomes` aggregate, and an optional `If-Match` /
+  `ETag` on throttle. The additive read role `goldpath-ops-read` is approved too, and
+  `goldpath-ops` also satisfies it. This deliberately reverses Campaign R2's "finer roles than
+  the ops floor" non-goal; the campaign RFC records the reversal.
+- **2026-10-21** (Campaign R3 Q5): the ceiling routes fold into R4.
+
+This text comes first, docs-only ([#304](https://github.com/qorpe/goldpath/issues/304)). Each code
+slice below updates the route inventory above in the same PR that maps its route. That is the
+freeze rule, and it is unchanged.
+
+| # | Addition | The sentence for it |
+|---|---|---|
+| R4.1 | A read policy, `GoldpathPolicies.OpsRead` (role `goldpath-ops-read` by default), that `goldpath-ops` also satisfies. Every admin `GET` demands it; every other method still demands `goldpath-ops`. A verb refused for want of the role answers `403` with the verb envelope, in words | "the duty manager watches the push; only the operator can stop it" |
+| R4.2 | `GET /campaign/{id}/failures` returns each item's `errorCode` and walks the whole set by keyset (`?afterSeq=`) | "show me every device that failed, not the first five hundred" |
+| R4.3 | `GET /campaign/{id}/outcomes`: the campaign's items counted by outcome, and its failures counted by error code | "four thousand failed — three thousand five hundred of them `ACK_TIMEOUT`" |
+| R4.4 | The campaign detail carries its `PolicyVersion` as a strong `ETag`; `throttle` accepts an optional `If-Match`. A stale one answers `412` with the verb envelope | "my TPS cut must not be undone by a quota change made from a stale screen" |
+| R4.5 | The ceiling routes of Campaign R3.2: `GET /campaign/ceilings`, `POST /campaign/ceilings/global/throttle`, `POST /campaign/ceilings/target-systems/{name}/throttle`, `GET /campaign/ceilings/audit` | "the device core takes two hundred a second, and tonight it takes a hundred" |
+
+### R4.1 — the read role ([#297](https://github.com/qorpe/goldpath/issues/297))
+
+**Rule — the HTTP method decides, with no list of exceptions.** `GET` is a read (so would `HEAD`
+be, should a surface ever map one). `POST`, `PUT` and `DELETE` are verbs. This holds on all
+seven surfaces (jobs, archival, bulk, notification, campaign, approvals, fileexchange) and on the
+served console (`MapGoldpathConsole`, every route a `GET`).
+- **A viewer can open the console and read every screen.**
+- **A viewer reads archived documents in full** (owner decision 2026-10-25, on this revision's
+  pull request). `GET /archival/entries/{definition}/{key}` returns `GoldpathArchiveEntry` as
+  stored, `Document` included: the archived aggregate, unmasked, within the caller's tenant
+  scope (R1). It is a `GET`, so the method rule makes it a read, and it stays one.
+  - **Why:** answering a retrieval request ("show me what we held on this customer") is
+    exactly the duty the read role exists for, and it needs the content, not its metadata.
+  - **What it means for an adopter:** granting `goldpath-ops-read` grants the content of every
+    archived document in the holder's scope — where personal data sits under legal hold and
+    erasure. Where that content is sensitive, withhold the role. R4-S1 must put this in the
+    upgrade guide (see *Compatibility*).
+  - **Not built:** a viewer that sees an entry's metadata but not its document. It would be a
+    masking reader like Notification's `MaskedRecipient`, not a route exception; open-threads
+    T50 carries it with its trigger.
+- **Every verb stays an operator's.** That includes archival's `verify`, a `POST` that changes no
+  row: it walks a whole hash chain, and spending that cost is an operator's call. A rule that
+  depends on reading each handler is a rule a new route can quietly break. The method is what the
+  route-table test can see.
+
+**Policies, and how they compose.**
+
+| Policy | Satisfied by (default roles, `Goldpath:Auth`) | Demanded by |
+|---|---|---|
+| `GoldpathPolicies.OpsRead` = `"goldpath-ops-read"` (new) | `OpsReadRole` (`goldpath-ops-read`, new option) **or** `OpsRole` (`goldpath-ops`) | every admin `GET`, and the console's page and `console.config.json` |
+| `GoldpathPolicies.Ops` = `"goldpath-ops"` (unchanged) | `OpsRole` | every admin `POST` / `PUT` / `DELETE` |
+| `GoldpathPolicies.OpsAllTenants` = `"goldpath-ops-all-tenants"` (unchanged) | `OpsAllTenantsRole` | R1's cross-tenant widening, on top of whichever of the two above the route demands |
+
+- **`goldpath-ops` satisfies the read policy.** So no existing operator loses a route, and an
+  identity provider that grants only today's role sees no change. That is what makes the
+  revision additive.
+- **R1 composes unchanged.** On a multi-tenant app, a cross-tenant viewer holds
+  `goldpath-ops-read` + `goldpath-ops-all-tenants`, and a cross-tenant operator holds
+  `goldpath-ops` + `goldpath-ops-all-tenants`.
+- **Campaign's surface stays whole-group cross-tenant** (R1 rule 5). A viewer of it on a
+  multi-tenant app therefore needs both roles, exactly as an operator does today.
+
+**Where it is applied: still ONE file.**
+- `AdminSurfaceGuard.Apply` puts `OpsRead` on the group instead of `Ops`.
+- It also adds, to every endpoint in the group whose method is not `GET`/`HEAD`, an endpoint
+  filter that authorizes `Ops` through `IAuthorizationService`.
+- The filter, not a second `RequireAuthorization`, is what lets the refusal speak.
+  - **What the refusal looks like:** `403` with `GoldpathAdminResult { ok: false, message }`,
+    whose message names the missing role: *"this verb needs the goldpath-ops role; this identity
+    can read this surface but not act on it"*.
+  - **Why authorization metadata cannot do it:** the authorization middleware would answer the
+    same `403` with an empty body, and the console could only say that the call failed.
+- An unauthenticated caller still meets the group's policy first and gets today's `401`
+  challenge.
+- **The order, said plainly:** endpoint filters run after model binding. A viewer's verb body is
+  therefore parsed, but never acted on. A body that does not bind answers the binder's `400`
+  before the role check can answer `403`. Nothing reaches a handler either way.
+- `exposeUnsecured: true` keeps meaning "no policy at all", and it keeps its warning.
+
+**Registration.**
+- `AddGoldpathAuth` registers `OpsRead` as `RequireRole(OpsReadRole, OpsRole)` (any one of the
+  two), in both branches: the authenticated strategies, and `Strategy = None`, where audit A4
+  already registers the ops policies so that a refusal is a `403`, never a `500`.
+- **An app that registers its own policies without `Goldpath.Auth`** keeps working: it may never
+  define `goldpath-ops-read`.
+  - When `AuthorizationOptions.GetPolicy(OpsRead)` is null at map time, the guard demands `Ops`
+    for reads too, which is R3's behaviour exactly.
+  - It logs one information line on `Goldpath.AdminSurface` naming the policy to register.
+  - An unregistered policy is never allowed to become a `500` at request time.
+
+**Public API (additions only).**
+```
+const Goldpath.GoldpathPolicies.OpsRead = "goldpath-ops-read" -> string!
+Goldpath.GoldpathAuthOptions.OpsReadRole.get -> string!
+Goldpath.GoldpathAuthOptions.OpsReadRole.set -> void
+```
+`AdminSurfaceGuard.Apply`'s signature does not change. Its behaviour changes for `GET`s
+(additively) and for the body of a role refusal on verbs: an empty `403` becomes an envelope
+`403`.
+
+**The console.**
+- `AdminClient.send` reads the envelope on `403` (and on `412`, R4.4) as well as on `200`/`400`.
+  Today any status other than those two throws, and the verb is reported as "did not reach the
+  server".
+- A viewer who presses *pause* therefore reads the server's sentence as a refusal (S-OPS-02).
+- The console does not hide verbs from a viewer: it has no way to know the caller's roles
+  without asking, and a hidden button explains nothing. The refusal is the explanation.
+
+**Proof.**
+- **A route-table test** (a new file, as #297 asks) maps all seven surfaces and the console on
+  one host, enumerates every endpoint under their prefixes, and asserts: `OpsRead` on every
+  `GET`, and the `Ops` filter on every other method.
+  - It is red today, because every `GET` demands `Ops`.
+  - A new route cannot ship without falling into one of the two buckets.
+- **Over real HTTP:**
+  - a `goldpath-ops-read` identity reads every surface (`200`) and is refused every verb
+    (`403` + envelope naming the role);
+  - that identity's `GET /archival/entries/{definition}/{key}` returns the entry's `Document`
+    (the disclosure above, pinned so that a later masking change is a decision, not a drift);
+  - a `goldpath-ops` identity does both;
+  - no identity gets `401`;
+  - an app that never registers `OpsRead` gets R3's behaviour and the log line.
+- **Console smoke (S-OPS-02):** a viewer opens the governor, presses *pause*, and reads the
+  refusal. Axe stays green.
+
+### R4.2 — failures by code, with a cursor ([#296](https://github.com/qorpe/goldpath/issues/296))
+
+| Method | Route | Returns |
+|---|---|---|
+| GET | `/{id}/failures?afterSeq=&take=` | failed items in `Seq` order, after `afterSeq` (exclusive); each row `{ seq, error, errorCode, completedAt }` |
+
+- **Keyset, by the item's own key.** `Seq` is unique within a campaign, part of the primary key
+  `(CampaignId, Seq)`, and never reused.
+  - `afterSeq` absent or `0` starts from the beginning, as today. A full page means "ask again
+    after its last `seq`"; a short page is the end.
+  - This follows the bulk report's `afterRow` and the jobs runs' `afterId`, not an offset. The set
+    grows while it is read (R2's reason).
+- **`take` keeps its default (100) and the uniform `[1, 500]` clamp.**
+- **`errorCode`** is `GoldpathCampaignItem.ErrorCode`, at most 64 characters. It holds one of:
+  - the code a handler gave `Failed(code, …)` (R2.1);
+  - `HANDLER_EXCEPTION` for a throw;
+  - `ACK_TIMEOUT` for an acknowledgement nobody sent;
+  - a callback's own code.
+
+  It is `null` for an item that failed under R1, which stored no code.
+- **Additive on the wire.** An R3 client that sends no `afterSeq` gets today's first page,
+  ignores the new field, and keeps working.
+- **In the API,** `GoldpathCampaignFailedItem` is a shipped positional record, so the code
+  joins as an init-only property, not a fourth positional parameter.
+- **The service** gains an overload with the cursor. The shipped
+  `GetFailedItemsAsync(id, take, ct)` calls it with `afterSeq: 0`.
+
+```
+Goldpath.GoldpathCampaignFailedItem.ErrorCode.get -> string?
+Goldpath.GoldpathCampaignFailedItem.ErrorCode.init -> void
+Goldpath.GoldpathCampaignAdminService<TContext>.GetFailedItemsAsync(System.Guid id, long afterSeq, int take, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathCampaignFailedItem!>!>!
+```
+
+**Proof.** A campaign with 1,203 failed items is walked at `take=500` in three pages, with no gap
+and no repeat. Every row carries the code its handler or callback gave. A page asked for after
+the last `seq` is empty. On the route-freeze test the route text is unchanged, because a query
+parameter is not part of the pattern; the contract table above gains `afterSeq` in the slice's PR.
+
+### R4.3 — the outcomes aggregate ([#296](https://github.com/qorpe/goldpath/issues/296))
+
+| Method | Route | Returns |
+|---|---|---|
+| GET | `/{id}/outcomes` | `{ byState: { "<item state>": count, … }, failedByCode: [ { code, count }, … ], failedCodesTruncated }` |
+
+- **`byState` counts the campaign's items by item state.**
+  - The keys are the `GoldpathCampaignItemState` names, `Pending` through the newest. A state
+    with no items is omitted.
+  - It answers from one `GROUP BY State` over the items of one campaign, which the
+    `(CampaignId, State, …)` indexes serve.
+- **`failedByCode` counts the `Failed` items by `errorCode`.**
+  - It is ordered by count (descending), then by code (ordinal), with `code: null` last among
+    equal counts. The order is fixed in the query, not left to the database: PostgreSQL and
+    SQL Server sort nulls at opposite ends.
+  - At most 20 entries; `failedCodesTruncated: true` says when more codes exist.
+  - Items with no code are counted under `code: null`, never dropped.
+- **The first aggregate route, by owner decision.** R2 said the contract "gains no aggregate
+  endpoint it would then have to keep true". The owner approved this one on 2026-10-20 (#296),
+  because counting thirty million rows by code is not something a client can do from take-bounded
+  pages. The rest of R2's rule still holds:
+  - the route counts rows and derives nothing;
+  - it has no ratio, ETA or "health" field. The console computes those from these counts and the
+    detail it already reads.
+- **Cost, said plainly.** This is the first admin read that scans more than one page. On a
+  30-million-item campaign it is two grouped counts per call.
+  - The console asks for it when the governor opens and on the governor's poll (#296, every 5 s
+    while the tab is visible).
+  - The slice measures the call on a 1M-item campaign (the size `campaign-benchmarks.md`
+    already enumerates) and publishes the number there, with profile, date and commit.
+  - If it exceeds the governor's poll interval, the console polls this route less often than the
+    detail. No new index is added for it; Campaign R3 holds the train to one migration.
+
+**Public API (additions only).**
+```
+Goldpath.GoldpathCampaignOutcomes
+Goldpath.GoldpathCampaignOutcomes.GoldpathCampaignOutcomes(System.Collections.Generic.IReadOnlyDictionary<string!, long>! ByState, System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathCampaignCodeCount!>! FailedByCode, bool FailedCodesTruncated) -> void
+Goldpath.GoldpathCampaignOutcomes.ByState.get -> System.Collections.Generic.IReadOnlyDictionary<string!, long>!
+Goldpath.GoldpathCampaignOutcomes.ByState.init -> void
+Goldpath.GoldpathCampaignOutcomes.FailedByCode.get -> System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathCampaignCodeCount!>!
+Goldpath.GoldpathCampaignOutcomes.FailedByCode.init -> void
+Goldpath.GoldpathCampaignOutcomes.FailedCodesTruncated.get -> bool
+Goldpath.GoldpathCampaignOutcomes.FailedCodesTruncated.init -> void
+Goldpath.GoldpathCampaignCodeCount
+Goldpath.GoldpathCampaignCodeCount.GoldpathCampaignCodeCount(string? Code, long Count) -> void
+Goldpath.GoldpathCampaignCodeCount.Code.get -> string?
+Goldpath.GoldpathCampaignCodeCount.Code.init -> void
+Goldpath.GoldpathCampaignCodeCount.Count.get -> long
+Goldpath.GoldpathCampaignCodeCount.Count.init -> void
+Goldpath.GoldpathCampaignAdminService<TContext>.GetOutcomesAsync(System.Guid id, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathCampaignOutcomes?>!
+```
+An unknown campaign id answers `404` with no body (the convention for a missing entity).
+
+**Proof.**
+- A seeded campaign with items in five states and failures under three codes plus one with no
+  code answers exactly those counts.
+- 25 distinct codes answer 20 entries with `failedCodesTruncated: true`, and their order is
+  stable.
+- An unknown id answers `404`.
+- The route-freeze test gains the line `GET /goldpath/admin/campaign/{id:guid}/outcomes`.
+
+### R4.4 — a versioned throttle: `ETag`, `If-Match`, `412` ([#298](https://github.com/qorpe/goldpath/issues/298), the HTTP half of Campaign R3.5)
+
+- **`GET /{id}`** answers with `ETag: "<PolicyVersion>"`: a strong entity tag, the decimal
+  version in quotes. The body also carries `policyVersion` (R3.5), so a client that cannot read
+  headers still has it.
+- **`POST /{id}/throttle`** accepts an optional `If-Match` (RFC 9110 §13.1.1, strong
+  comparison).
+
+  | `If-Match` | Meaning | Answer |
+  |---|---|---|
+  | absent | last writer wins (R3, scripts) | `200` / `400` as today; the version moves once per applied throttle |
+  | `*` | "any current representation" (RFC 9110) | the same as absent |
+  | one strong tag equal to the current version | the policy did not move since the read | `200` / `400` as today; the version moves by one |
+  | one strong tag not equal to it, or a weak tag (`W/"4"`, which strong comparison never matches) | the policy moved since the read | **`412`** with `GoldpathAdminResult { ok: false, message }`: R3.5's teaching text, naming the current version, who changed it and when. Audited as `throttle-refused` with both versions |
+  | not an entity tag at all (`4` without quotes, `"abc"`, a list of several tags) | a malformed precondition | `400` with the envelope, saying what the header must look like. A list is refused rather than matched, so "any of these versions" is never accepted by accident |
+
+- **The `412` and the `400` carry the same envelope as every refusal.** The console reads both
+  (R4.1's client change).
+  - The console always sends the version it read.
+  - On a `412` it re-reads the campaign and keeps the operator's draft, so the retry is one
+    click.
+- **The response to an applied throttle carries the new `ETag`.** The console's next throttle
+  from the same screen does not need a re-read to stay current.
+
+**Proof.**
+- Over real HTTP:
+  - two throttles carry the same `If-Match`: the first `200`, the second `412`, and the audit
+    shows one `throttle` and one `throttle-refused`;
+  - two throttles without one both apply, and the version moves by two;
+  - `*`, a weak tag, a bare number and a list each answer as the table says.
+- Console smoke: a stale form is refused, re-reads, and the operator's retry succeeds (Campaign
+  R3.5's console proof).
+- The route-freeze test is unchanged: no route is added.
+
+### R4.5 — the ceiling routes (Campaign R3.2, owner decision Q5)
+
+| Method | Route | Returns |
+|---|---|---|
+| GET | `/ceilings` | `GoldpathCampaignCeilingInfo[]`: the global row and every target system, each with its live `maxTps`, the code value (`codeMaxTps`), the types that name it, and who changed it last |
+| POST | `/ceilings/global/throttle` (body: `{ maxTps?, clearMaxTps? }`) | `GoldpathAdminResult` |
+| POST | `/ceilings/target-systems/{name}/throttle` (same body) | `GoldpathAdminResult`. Clearing is refused here: a target system without a ceiling is a typo, and the refusal says to set a high number instead (R3.2) |
+| GET | `/ceilings/audit?take=` | the ceiling changes, newest first (`GoldpathCampaignAudit` rows with `CampaignId = Guid.Empty`, action `ceiling`) |
+
+- The routes sit under the campaign mount, so they inherit everything below unchanged:
+  - R1 rule 5's whole-group all-tenants filter;
+  - R4.1's split: a viewer reads the ceilings, and an operator changes them;
+  - the verb envelope.
+- `{id:guid}` keeps the detail routes from ever matching `ceilings`.
+- `{name}` is the declared target-system name. An unknown name answers `400`, naming the
+  declared ones; it is not a `404`, because the verb's subject is a name and not an entity the
+  caller looked up.
+- The public API is Campaign R3.2's block. R4 adds no type of its own here.
+
+**Proof.** Campaign R3.2's (R3-S9, [#318](https://github.com/qorpe/goldpath/issues/318)):
+- a change through the verb bites within one leader tick, and the audit row carries the actor;
+- a viewer reads `/ceilings` and is refused the verb;
+- the route-freeze test gains the four lines.
+
+### Compatibility — why this is a revision, not a break
+
+- **No route is renamed or removed. No envelope changes shape. No existing field changes
+  meaning.**
+- An R3 client keeps working against an R4 server:
+  - it sends no `afterSeq` and no `If-Match`, and it ignores `errorCode`, `policyVersion`,
+    `ETag` and the new routes;
+  - an operator it authenticates as `goldpath-ops` reads and acts exactly as before.
+- **Two behaviours change, both for the better and both said in the upgrade guide:**
+  - a role refusal on a verb now has a body (an envelope `403` instead of an empty one);
+  - a `GET` that refused `goldpath-ops-read` with `403` now answers it.
+- **One disclosure the upgrade guide states in words** (owner decision 2026-10-25): granting
+  `goldpath-ops-read` grants archive retrieval, every archived document's full content in the
+  holder's tenant scope (R4.1). An adopter whose archive holds sensitive content withholds the
+  role, or grants it only where that read is intended.
+- **No migration.** `PolicyVersion` and the ceilings table are Campaign R3-S1's (#314), already
+  on `main`. `ErrorCode` has been on the items table since R2.1.
+- Ships with whichever train carries its slices. Each slice's PR moves its routes into the
+  inventory above and adds its upgrade-guide line.
+
+### Rejected, with the reason recorded
+
+- **A per-route list of read and mutate.** Every new route would need its author to remember
+  the list, and a forgotten entry fails open or closed depending on its default. The method rule
+  is checkable by a test that needs no list.
+- **Hiding verbs from a viewer in the console.** The console would need to know the caller's
+  roles, which means either a new "who am I" route or a token the console holds (§3 case 3 of
+  the console RFC, not built). The refusal in words already tells the viewer what they lack.
+- **`IAuthorizationMiddlewareResultHandler` for the worded `403`.** It is a global service: it
+  would exist only where `Goldpath.Auth` registered it, and it would reshape every `403` in the
+  app, not the admin surfaces'. The guard's endpoint filter is scoped to the routes it guards
+  and works under any authentication an adopter composes.
+- **The version in the throttle body instead of `If-Match`.** The owner chose the HTTP
+  precondition (2026-10-20). It is also the shape gateways, caches and generic clients already
+  understand.
+- **Offset paging on failures, or a larger `take`.** Offset paging skips and repeats rows in a
+  set that grows while it is read. A larger clamp only moves the wall.
+
+### Implementation slices (after acceptance; each one issue, each ≤ ~3 hours of agent time)
+
+In dependency order. Each slice carries:
+- its tests, red first;
+- its PublicAPI lines;
+- the contract inventory rows it adds, in the same PR;
+- the README and runbook text;
+- the upgrade-guide line.
+
+| Slice | R4 item | Issue | Depends on | Scope |
+|---|---|---|---|---|
+| R4-S1 | R4.1 | [#297](https://github.com/qorpe/goldpath/issues/297) | acceptance | `GoldpathPolicies.OpsRead`, `OpsReadRole`, the registration in both strategy branches, `AdminSurfaceGuard`'s split and its worded `403` filter, the unregistered-policy fallback, the cross-surface route-table test, the real-HTTP role matrix (the viewer's archive retrieval included), the *Conventions* mount line above ("every endpoint demands `GoldpathPolicies.Ops`") rewritten to the split, and the upgrade-guide line that granting `goldpath-ops-read` grants archive retrieval |
+| R4-S2 | R4.1 | filed on acceptance (#297's console half) | S1 | `AdminClient.send` reads `403`/`412` envelopes; the viewer's refused verb on every verb button; console smoke S-OPS-02's viewer journey; axe |
+| R4-S3 | R4.2 | [#296](https://github.com/qorpe/goldpath/issues/296) (part 1) | acceptance | `afterSeq`, `ErrorCode` on the row, the overload, the 1,203-row walk |
+| R4-S4 | R4.3 | filed on acceptance (#296 part 2) | acceptance | `/outcomes`, its two records, the route-freeze line, the measured cost on the 1M-item bench campaign |
+| R4-S5 | R4.4 | filed on acceptance (#298's HTTP half) | R3-S4 ([#298](https://github.com/qorpe/goldpath/issues/298)) | `ETag` on the detail and the throttle response, `If-Match` parsing and its five cases, the `412`, the console's re-read on refusal, the stale-form smoke |
+| R4-S6 | R4.5 | [#318](https://github.com/qorpe/goldpath/issues/318) (R3-S9) | R3-S8 ([#290](https://github.com/qorpe/goldpath/issues/290)) | as Campaign R3-S9 states; its routes enter the inventory under this revision |
+| R4-S7 | R4.2 + R4.3 | filed on acceptance (#296's console half) | S2, S3, S4, [#294](https://github.com/qorpe/goldpath/issues/294) | the governor's 5-second poll while the tab is visible, the binding constraint (#294), the outcomes by code, the failures walk with codes; the console's 97% floors hold |
+
+S1, S3 and S4 depend on nothing but this revision's merge, and can land in any order. The R4
+row in `open-threads.md` (T50) carries what this revision deliberately leaves out.
+
+### Deliberately NOT in this revision
+
+- **An admin-only tier above `goldpath-ops`** (for example, only an administrator may *abort*, or
+  may change a ceiling). Trigger and proof: open-threads T50.
+- **Binding the approver role outside Approvals.** The approver stays the rung's role inside a
+  ladder. Four-eyes on a campaign start is Campaign R3.7 through `Goldpath.Approvals`, not a
+  fourth admin role. Trigger and proof: T50.
+- **Push updates (SSE / SignalR) for the governor:** P2 (#296's out of scope). R4.3's cost is
+  measured against polling.
+- **Exports of item outcomes:** unchanged from Campaign R2. The failures walk and R4.3's counts
+  are what an operator reads; a file is the app's own reporting.

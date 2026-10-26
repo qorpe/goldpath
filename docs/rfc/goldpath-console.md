@@ -74,6 +74,14 @@ custom-develop ON, with the same kit, the same way they add features to the back
      a service refuses: a call blocked by CORS is reported as UNREACHABLE, never as an
      absent module, because "we could not ask" and "they do not have it" are different
      sentences.
+  4. **Read and act are two roles** (admin-contract [R4.1](goldpath-admin-contract.md), PROPOSED
+     2026-10-25; owner decision 2026-10-20 on #297).
+     - The console's page, its config and every admin `GET` demand `goldpath-ops-read`, and
+       `goldpath-ops` satisfies it. Every verb demands `goldpath-ops`.
+     - A viewer opens every screen. A verb they press is refused with `403` and the verb
+       envelope, and the console shows the server's sentence. It does not hide the button: it
+       cannot know the caller's roles without asking, and the refusal is the explanation.
+     - `AdminClient` reads the envelope on `403` and `412` as well as `200`/`400` (R4-S2).
 - **External products**: Mockifyr (mocks) and other products appear as configured LINK
   tiles — their UI is theirs. SHIPPED on `main` (2026-10-19, #257; decision record
   [goldpath-console-link-tiles.md](goldpath-console-link-tiles.md)), published with the next

@@ -231,3 +231,74 @@ describe("the notification evidence panel (read-only by contract)", () => {
     expect(within(detail).queryByText("Correlation")).toBeNull();
   });
 });
+
+describe("the notification evidence panel — the remaining doors", () => {
+  it("a retention it cannot parse is shown as the server wrote it, never guessed at", () => {
+    expect(retentionWords("P90D")).toBe("P90D");
+  });
+
+  it("refresh re-reads the list — evidence moves while the operator watches", async () => {
+    const { client: api, fetched } = client();
+    render(<NotificationPanel client={api} />);
+    await screen.findByRole("button", { name: "a***@e***" });
+    const lists = () => fetched.filter((url) => url.includes("/notifications?")).length;
+    const before = lists();
+
+    await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(lists()).toBeGreaterThan(before));
+  });
+
+  it("clearing the state facet drops state= from the query", async () => {
+    const { client: api, fetched } = client();
+    render(<NotificationPanel client={api} />);
+    const lists = () => fetched.filter((url) => url.includes("/notifications?"));
+
+    await userEvent.click(await screen.findByRole("button", { name: /State/ }));
+    await userEvent.click(await screen.findByRole("menuitemcheckbox", { name: /Failed/ }));
+    await waitFor(() => expect(lists().at(-1)).toContain("state=Failed"));
+    await userEvent.click(screen.getByRole("menuitem", { name: "clear" }));
+    await waitFor(() => expect(lists().at(-1)).not.toContain("state="));
+  });
+
+  it("unticking a template and clearing the facet each drop it from the query", async () => {
+    const { client: api, fetched } = client({ templates: [template(), template({ key: "welcome" })] });
+    render(<NotificationPanel client={api} />);
+    const lists = () => fetched.filter((url) => url.includes("/notifications?"));
+
+    await userEvent.click(await screen.findByRole("button", { name: /Template/ }));
+    await userEvent.click(await screen.findByRole("menuitemcheckbox", { name: /policy-renewal/ }));
+    await userEvent.click(await screen.findByRole("menuitemcheckbox", { name: /welcome/ }));
+    await waitFor(() => expect(lists().at(-1)).toContain("template=welcome"));
+
+    await userEvent.click(screen.getByRole("menuitemcheckbox", { name: /policy-renewal/ }));
+    await waitFor(() => expect(lists().at(-1)).not.toContain("template=policy-renewal"));
+    expect(lists().at(-1)).toContain("template=welcome");
+
+    await userEvent.click(screen.getByRole("menuitem", { name: "clear" }));
+    await waitFor(() => expect(lists().at(-1)).not.toContain("template="));
+  });
+
+  it("closing the sheet lets go of the row", async () => {
+    const { client: api } = client();
+    render(<NotificationPanel client={api} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "a***@e***" }));
+    await screen.findByTestId("notification-detail");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByTestId("notification-detail")).toBeNull());
+  });
+
+  it("a row that cannot be read says which one", async () => {
+    const fetcher = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+      if (/\/notifications\/[^/?]+$/.test(url)) return new Response("", { status: 500 });
+      if (url.includes("/notifications")) return json([notification()]);
+      return json([template()]);
+    }) as typeof fetch;
+    render(<NotificationPanel client={new AdminClient({ fetcher })} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "a***@e***" }));
+    expect(await screen.findByText(`notification ${notification().id} could not be read`)).toBeInTheDocument();
+  });
+});

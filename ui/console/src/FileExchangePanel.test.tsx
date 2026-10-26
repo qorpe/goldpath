@@ -110,3 +110,62 @@ describe("FileExchangePanel — the rails and their quarantine", () => {
     expect(await screen.findByText("the file rails could not be loaded")).toBeInTheDocument();
   });
 });
+
+describe("FileExchangePanel — the remaining doors", () => {
+  it("refresh re-reads the rails and the files", async () => {
+    const { api, fetched } = client();
+    render(<FileExchangePanel client={api} />);
+    await screen.findByRole("button", { name: "reg-0901.csv" });
+    const count = (part: string) => fetched.filter((url) => url.includes(part)).length;
+    const rails = count("/fileexchange/rails");
+    const files = count("/fileexchange/files");
+
+    await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => {
+      expect(count("/fileexchange/rails")).toBeGreaterThan(rails);
+      expect(count("/fileexchange/files")).toBeGreaterThan(files);
+    });
+  });
+
+  it("unticking a rail and clearing the facet each drop it from the query", async () => {
+    const { api, fetched } = client();
+    render(<FileExchangePanel client={api} />);
+    const lists = () => fetched.filter((url) => url.includes("/fileexchange/files"));
+
+    await userEvent.click(await screen.findByRole("button", { name: /Rail/ }));
+    await userEvent.click(await screen.findByRole("menuitemcheckbox", { name: /registry-daily/ }));
+    await userEvent.click(await screen.findByRole("menuitemcheckbox", { name: /bank-status/ }));
+    await waitFor(() => expect(lists().at(-1)).toContain("rail=bank-status"));
+
+    await userEvent.click(screen.getByRole("menuitemcheckbox", { name: /registry-daily/ }));
+    await waitFor(() => expect(lists().at(-1)).not.toContain("rail=registry-daily"));
+    expect(lists().at(-1)).toContain("rail=bank-status");
+
+    await userEvent.click(screen.getByRole("menuitem", { name: "clear" }));
+    await waitFor(() => expect(lists().at(-1)).not.toContain("rail="));
+  });
+
+  it("closing the sheet lets go of the file", async () => {
+    const { api } = client();
+    render(<FileExchangePanel client={api} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "reg-0901.csv" }));
+    await screen.findByTestId("file-detail");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByTestId("file-detail")).toBeNull());
+  });
+
+  it("a quarantine that cannot be read names the file", async () => {
+    const fetcher = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+      if (url.includes("/fileexchange/quarantine")) return new Response("", { status: 500 });
+      if (url.includes("/fileexchange/files")) return json([file()]);
+      return json([rail()]);
+    }) as typeof fetch;
+    render(<FileExchangePanel client={new AdminClient({ fetcher })} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "reg-0901.csv" }));
+    expect(await screen.findByText("the quarantine of reg-0901.csv could not be read")).toBeInTheDocument();
+  });
+});
