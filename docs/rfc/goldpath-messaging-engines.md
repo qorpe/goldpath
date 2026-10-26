@@ -245,9 +245,13 @@ through the same runbook links. SECURITY.md's engine posture is G5's to write, n
       options and entity mapping, and the test host's entry point and publish; the conformance
       suite and the outbox and tenant-square integration tests use only them. Issue #327 keeps the
       MassTransit-typed overloads until Part 4/4, so the baseline stays at 13 until then. GP0406,
-      the `providers.messagingEngine` key, engine discovery by attribute with a public
-      `IGoldpathMessagingEngine`, `ConfigureEngine`, `AddBatchHandler` (Part 3) and the harness's
-      `Handled`/`Faulted`/`Published` are open-threads T44.
+      the `providers.messagingEngine` key, `ConfigureEngine`, `AddBatchHandler` (Part 3) and the harness's
+      `Handled`/`Faulted`/`Published` are open-threads T44. **Engine discovery landed with G5 Part 1/5
+      (#330, owner decision 2026-10-25):** the public `IGoldpathMessagingEngine` (`Name`, `Compose`, and the
+      `PublishAsync` the test host publishes with), `[assembly: GoldpathMessagingEngine(typeof(…))]`, and
+      `GoldpathMessagingComposition`, the read-only record of what the builder holds. Until Part 4/4
+      extracts the MassTransit adapter, `Goldpath.Messaging` declares its own engine and an adapter
+      package's engine wins over it; two adapter packages are refused, naming both.
 - [x] Part 3/4: Campaign through the seam, with the batch contract. **Landed (#328):**
       `IIntegrationEventBatchHandler<TEvent>`, `IntegrationEvent<TEvent>`, `GoldpathBatchOptions` and
       `AddBatchHandler`; conformance facts S2.9–S2.11 (size bound, time bound, one in flight);

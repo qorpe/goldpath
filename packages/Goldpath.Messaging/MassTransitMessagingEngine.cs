@@ -14,7 +14,7 @@ namespace Goldpath;
 /// produce one bus — the same queues, the same pipeline, the same tables. Internal until the adapter
 /// package is extracted (RFC goldpath-messaging-engines, Part 4/4).
 /// </summary>
-internal static class MassTransitMessagingEngine
+internal sealed class MassTransitMessagingEngine : IGoldpathMessagingEngine
 {
     private static readonly System.Reflection.MethodInfo s_addHandler =
         typeof(GoldpathHandlerRegistrationExtensions).GetMethod(nameof(GoldpathHandlerRegistrationExtensions.AddHandlerAt), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
@@ -24,6 +24,80 @@ internal static class MassTransitMessagingEngine
 
     private static readonly System.Reflection.MethodInfo s_composeOutbox =
         typeof(MassTransitMessagingEngine).GetMethod(nameof(ComposeOutbox), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+
+    /// <inheritdoc />
+    public string Name => "masstransit";
+
+    /// <inheritdoc />
+    void IGoldpathMessagingEngine.Compose(GoldpathMessagingComposition composition, IServiceCollection services, IConfiguration configuration)
+    {
+        Validate(composition.Builder, services);
+
+        // The publish seam (RFC goldpath-messaging-exit §5), scoped because the outbox's publish endpoint is.
+        services.TryAddScoped<IIntegrationEventPublisher, MassTransitIntegrationEventPublisher>();
+        services.AddMassTransit(bus =>
+        {
+            bus.SetKebabCaseEndpointNameFormatter();
+            Compose(composition.Builder, bus, configuration);
+        });
+
+        if (composition.WaitUntilStarted)
+        {
+            services.Configure<MassTransitHostOptions>(options => options.WaitUntilStarted = true);
+        }
+    }
+
+    /// <inheritdoc />
+    public Task PublishAsync(IServiceProvider services, Type contract, object body, GoldpathOutgoingMessage message, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(contract);
+        ArgumentNullException.ThrowIfNull(body);
+        ArgumentNullException.ThrowIfNull(message);
+        var bus = services.GetRequiredService<IBus>();
+
+        // An instance of the contract publishes as itself; any other body is materialised under the
+        // contract property by property — the wider or older shape an upstream producer sends.
+        var publish = contract.IsInstanceOfType(body) ? s_publishMessage : s_publishValues;
+        return (Task)publish.MakeGenericMethod(contract).Invoke(null, [bus, body, message, cancellationToken])!;
+    }
+
+    private static readonly System.Reflection.MethodInfo s_publishMessage =
+        typeof(MassTransitMessagingEngine).GetMethod(nameof(PublishMessage), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+
+    private static readonly System.Reflection.MethodInfo s_publishValues =
+        typeof(MassTransitMessagingEngine).GetMethod(nameof(PublishValues), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+
+    private static Task PublishMessage<TEvent>(IBus bus, object message, GoldpathOutgoingMessage outgoing, CancellationToken cancellationToken)
+        where TEvent : class
+        => bus.Publish((TEvent)message, context => Apply(outgoing, context), cancellationToken);
+
+    private static Task PublishValues<TEvent>(IBus bus, object values, GoldpathOutgoingMessage outgoing, CancellationToken cancellationToken)
+        where TEvent : class
+        => bus.Publish<TEvent>(values, context => Apply(outgoing, context), cancellationToken);
+
+    private static void Apply(GoldpathOutgoingMessage outgoing, PublishContext context)
+    {
+        if (outgoing.MessageId is { } messageId)
+        {
+            context.MessageId = messageId;
+        }
+
+        if (outgoing.Tenant is { } tenant)
+        {
+            context.Headers.Set(GoldpathHeaders.TenantId, tenant);
+        }
+
+        if (outgoing.CorrelationId is { } correlationId)
+        {
+            context.Headers.Set(GoldpathHeaders.CorrelationId, correlationId);
+        }
+
+        foreach (var (key, value) in outgoing.Headers)
+        {
+            context.Headers.Set(key, value);
+        }
+    }
 
     /// <summary>
     /// Refuses, at registration, what would otherwise fail only once the bus runs: an outbox interval

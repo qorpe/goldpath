@@ -53,3 +53,41 @@ Goldpath.IntegrationEvent<TEvent>.Context.init -> void
 Goldpath.IntegrationEvent<TEvent>.IntegrationEvent(TEvent! Message, Goldpath.IntegrationEventContext! Context) -> void
 Goldpath.IntegrationEvent<TEvent>.Message.get -> TEvent!
 Goldpath.IntegrationEvent<TEvent>.Message.init -> void
+Goldpath.GoldpathBatchHandlerRegistration
+Goldpath.GoldpathBatchHandlerRegistration.EndpointName.get -> string!
+Goldpath.GoldpathBatchHandlerRegistration.EndpointName.init -> void
+Goldpath.GoldpathBatchHandlerRegistration.Event.get -> System.Type!
+Goldpath.GoldpathBatchHandlerRegistration.Event.init -> void
+Goldpath.GoldpathBatchHandlerRegistration.GoldpathBatchHandlerRegistration(System.Type! Event, System.Type! Handler, Goldpath.GoldpathBatchOptions! Options, string! EndpointName) -> void
+Goldpath.GoldpathBatchHandlerRegistration.Handler.get -> System.Type!
+Goldpath.GoldpathBatchHandlerRegistration.Handler.init -> void
+Goldpath.GoldpathBatchHandlerRegistration.Options.get -> Goldpath.GoldpathBatchOptions!
+Goldpath.GoldpathBatchHandlerRegistration.Options.init -> void
+Goldpath.GoldpathHandlerRegistration
+Goldpath.GoldpathHandlerRegistration.EndpointName.get -> string!
+Goldpath.GoldpathHandlerRegistration.EndpointName.init -> void
+Goldpath.GoldpathHandlerRegistration.Event.get -> System.Type!
+Goldpath.GoldpathHandlerRegistration.Event.init -> void
+Goldpath.GoldpathHandlerRegistration.GoldpathHandlerRegistration(System.Type! Event, System.Type! Handler, string! EndpointName) -> void
+Goldpath.GoldpathHandlerRegistration.Handler.get -> System.Type!
+Goldpath.GoldpathHandlerRegistration.Handler.init -> void
+Goldpath.GoldpathMessagingComposition
+Goldpath.GoldpathMessagingComposition.BatchHandlers.get -> System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathBatchHandlerRegistration!>!
+Goldpath.GoldpathMessagingComposition.Handlers.get -> System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathHandlerRegistration!>!
+Goldpath.GoldpathMessagingComposition.Options.get -> Goldpath.GoldpathMessagingOptions!
+Goldpath.GoldpathMessagingComposition.Outbox.get -> Goldpath.GoldpathOutboxOptions?
+Goldpath.GoldpathMessagingComposition.OutboxContext.get -> System.Type?
+Goldpath.GoldpathMessagingComposition.RabbitMqConnectionName.get -> string!
+Goldpath.GoldpathMessagingComposition.Transport.get -> Goldpath.GoldpathMessagingTransport
+Goldpath.GoldpathMessagingComposition.WaitUntilStarted.get -> bool
+Goldpath.GoldpathMessagingEngineAttribute
+Goldpath.GoldpathMessagingEngineAttribute.EngineType.get -> System.Type!
+Goldpath.GoldpathMessagingEngineAttribute.GoldpathMessagingEngineAttribute(System.Type! engineType) -> void
+Goldpath.GoldpathMessagingTransport
+Goldpath.GoldpathMessagingTransport.InMemory = 2 -> Goldpath.GoldpathMessagingTransport
+Goldpath.GoldpathMessagingTransport.None = 0 -> Goldpath.GoldpathMessagingTransport
+Goldpath.GoldpathMessagingTransport.RabbitMq = 1 -> Goldpath.GoldpathMessagingTransport
+Goldpath.IGoldpathMessagingEngine
+Goldpath.IGoldpathMessagingEngine.Compose(Goldpath.GoldpathMessagingComposition! composition, Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration) -> void
+Goldpath.IGoldpathMessagingEngine.Name.get -> string!
+Goldpath.IGoldpathMessagingEngine.PublishAsync(System.IServiceProvider! services, System.Type! contract, object! body, Goldpath.GoldpathOutgoingMessage! message, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!

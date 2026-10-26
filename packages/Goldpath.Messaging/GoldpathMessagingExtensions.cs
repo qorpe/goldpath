@@ -33,7 +33,7 @@ public static class GoldpathMessagingExtensions
         return builder.AddGoldpathMessagingCore(configureBus, options);
     }
 
-    /// <summary>What both registrations share: the options as given, the tenant holder, the publish seam and the bus.</summary>
+    /// <summary>The MassTransit-typed registration: the options as given, the tenant holder, the publish seam and the bus.</summary>
     private static TBuilder AddGoldpathMessagingCore<TBuilder>(this TBuilder builder, Action<IBusRegistrationConfigurator> configureBus, GoldpathMessagingOptions options)
         where TBuilder : IHostApplicationBuilder
     {
@@ -67,6 +67,11 @@ public static class GoldpathMessagingExtensions
     /// <exception cref="InvalidOperationException">No transport was selected (call <see cref="GoldpathMessagingBuilder.UseRabbitMq"/>).</exception>
     public static TBuilder AddGoldpathMessaging<TBuilder>(this TBuilder builder, Action<GoldpathMessagingBuilder> configure)
         where TBuilder : IHostApplicationBuilder
+        => builder.AddGoldpathMessaging(configure, waitUntilStarted: false);
+
+    /// <summary>The registration both the application and the test host make; the test host waits for the bus.</summary>
+    internal static TBuilder AddGoldpathMessaging<TBuilder>(this TBuilder builder, Action<GoldpathMessagingBuilder> configure, bool waitUntilStarted)
+        where TBuilder : IHostApplicationBuilder
     {
         ArgumentNullException.ThrowIfNull(configure);
         var messaging = new GoldpathMessagingBuilder(new GoldpathMessagingOptions());
@@ -78,8 +83,14 @@ public static class GoldpathMessagingExtensions
                 "AddGoldpathMessaging: the message path has no transport. Call messaging.UseRabbitMq() (the manifest's providers.broker).");
         }
 
-        MassTransitMessagingEngine.Validate(messaging, builder.Services);
-        return builder.AddGoldpathMessagingCore(bus => MassTransitMessagingEngine.Compose(messaging, bus, builder.Configuration), messaging.Options);
+        // The engine is the referenced adapter's, never named here (RFC goldpath-messaging-engines §9 Q2).
+        var engine = GoldpathMessagingEngines.Resolve(messaging.EngineName);
+        builder.Services.AddSingleton(messaging.Options);
+        builder.Services.TryAddScoped<GoldpathMessageTenantContext>();
+        builder.Services.TryAddScoped<ITenantContext>(sp => sp.GetRequiredService<GoldpathMessageTenantContext>());
+        builder.Services.AddSingleton(engine);
+        engine.Compose(new GoldpathMessagingComposition(messaging, waitUntilStarted), builder.Services, builder.Configuration);
+        return builder;
     }
 
     /// <summary>

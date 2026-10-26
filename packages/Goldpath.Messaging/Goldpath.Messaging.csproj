@@ -22,6 +22,9 @@
     <InternalsVisibleTo Include="Goldpath.Messaging.Tests" />
     <!-- The campaign suites size a consumer's slots through the engine test hook (MassTransitMessagingEngine.TestHooks, open-threads T44). -->
     <InternalsVisibleTo Include="Goldpath.IntegrationTests" />
+    <!-- The conformance suite runs its facts once per referenced engine: GoldpathMessagingTestHost.Create's
+         engine-named overload is internal, because an application references one engine and never names it. -->
+    <InternalsVisibleTo Include="Goldpath.Messaging.Conformance" />
   </ItemGroup>
 
   <ItemGroup>

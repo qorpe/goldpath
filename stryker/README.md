@@ -82,6 +82,22 @@ run — the duplicate-batch check's `&&`, the explicit endpoint name, a `Message
 the refusal naming the in-flight product — and so is the engine test hook's registration callback.
 Left without coverage: the hook's RabbitMQ transport callback, which only the broker bench reaches.
 
+**Messaging was re-measured 2026-10-25**, a full run at 2a97413 on the #330 branch (G5 Part 1/5: the
+engine contract, discovery, and the conformance class run once per engine, so the Wolverine facts
+also exercise Messaging's code): 86.09 % → 82.70 % (275 mutants tested; 99.8 minutes in the agent
+sandbox while other test runs shared it, not the CI profile's). The drop is the new code's survivors. Pinned by tests added after the run, each checked by
+planting its mutant: the refusal's separator and its order (the order moved from discovery into the
+decision, so it holds however the declarations are found), an engine with an internal constructor, the
+engine publish's four argument guards, an application not waiting for the bus while the test host
+does, and the message-scope tenant registered when the application registers none. Removed rather
+than tested, because they could not change behaviour: a null check after `Activator.CreateInstance`
+(null only for a `Nullable<T>`, which the type check refuses), the floor assembly added to a scan that
+always contains it, and a `Directory.Exists` the catch already covers. Left: loading an adapter found
+beside the application but not loaded yet (no test process here starts without the adapter loaded),
+the dynamic-assembly filter, the scan's catch branches, the kebab formatter on the builder path (the
+builder names every endpoint), the test host's dispose branches, and its body guard, which the engine's
+own guard now makes equivalent.
+
 **Bulk was re-measured 2026-10-24**, a full run of `mutation-gate.sh Goldpath.Bulk` at 6b97bc3 on
 the #300 branch (the duplicate check keeps hashes, not keys), at concurrency 1 on the local
 sandbox: 88.38 % → 88.37 % (577 mutants tested). The new `GoldpathBulkDuplicateKeys` leaves one
@@ -107,10 +123,10 @@ at f459fe2, so its row carries it (minutes not recorded).
 | Console | 91.46 % (75.00) | 21.46 | — | 75.00 %, 24.3 |
 | Bulk | 88.37 % (88.38) | 18.37 | 19.7 | never finished (timeout) |
 | Idempotency | 84.91 % (73.58) | 14.91 | 1.8 | 73.58 %, 3.3 |
+| Messaging | 82.70 % (86.09) | 12.70 | 99.8 | 80.72 %, 69.4 |
 | AuditTrail | 81.97 % | 11.97 | 5.1 | 81.97 %, 5.7 |
 | MultiTenancy | 81.40 % (72.09) | 11.40 | 6.1 | 75.58 %, 38.5 |
 | Notification | 81.23 % | 11.23 | 5.9 | never finished (OOM) |
-| Messaging | 86.09 % (81.53) | 16.09 | 57.0 | 80.72 %, 69.4 |
 | DataProtection | 78.95 % | 8.95 | 1.5 | 78.95 %, 33.0 |
 | ServiceDefaults | 78.48 % (72.15) | 8.48 | 1.4 | 72.15 %, 4.3 |
 | Approvals | 77.78 % (74.84) | 7.78 | 3.4 | 74.84 %, 217.7 |

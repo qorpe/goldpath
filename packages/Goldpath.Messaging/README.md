@@ -40,6 +40,12 @@ modelBuilder.AddGoldpathOutboxEntities();
 `AddOutbox` takes `GoldpathOutboxOptions`: `DuplicateDetectionWindow` (30 min), `Inbox` (on) and
 `DeliveryPollInterval` (the engine's default unless set).
 
+**Which engine runs it.** No line above names one. `AddGoldpathMessaging` finds the engine an adapter
+package declares (`[assembly: GoldpathMessagingEngine(typeof(…))]`, an `IGoldpathMessagingEngine`); with
+no adapter referenced, it runs on the MassTransit 8.x engine this package still carries (G1 Part 4/4
+moves it to its own package). Two adapter packages fail the start, naming both. The second engine,
+`Goldpath.Messaging.Wolverine`, is built and conformance-tested but not published yet (open-threads T18).
+
 **Testing:** `GoldpathMessagingTestHost` runs the same registrations on the in-memory transport
 (or the one the block selects), returns from its start once the bus is up, and publishes the way
 an upstream service would:

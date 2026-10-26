@@ -5,6 +5,30 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **The second messaging engine runs the conformance suite: a Wolverine adapter, and the engine contract
+  it plugs into (GA gate G5 Part 1/5, #330).**
+  - **`Goldpath.Messaging`:** the engine contract of RFC goldpath-messaging-engines §4.1 row 5, built
+    ahead of Part 4/4 by owner decision (2026-10-25). `IGoldpathMessagingEngine` (`Name`, `Compose`,
+    `PublishAsync`), declared by an adapter assembly with `[assembly: GoldpathMessagingEngine(typeof(…))]`
+    and handed a read-only `GoldpathMessagingComposition`; `GoldpathMessagingTransport` becomes public.
+    `AddGoldpathMessaging(messaging => …)` finds the engine: an adapter package beside the application
+    wins over the MassTransit engine `Goldpath.Messaging` still carries, and two adapter packages fail
+    the start, naming both. An application that references no adapter (every one today) composes
+    exactly as before. Additions only; the MassTransit-typed overloads are unchanged.
+  - **`Goldpath.Messaging.Wolverine`** (new, not published: `IsPackable=false` until the switch proofs
+    are linked in open-threads T18). WolverineFx 6.53.0 and its transitive family pinned exactly, all
+    MIT; the licence gate passes with no new exception, and `dotnet list package --vulnerable` is clean.
+    Wolverine receives (a listener per endpoint, the immediate retry ladder, the move to
+    `<queue>_error`); the adapter writes the 8.x envelope, declares the 8.x topology and keeps the
+    outbox and inbox in the 8.x tables on PostgreSQL itself (RFC §4.4, §9 Q4). It refuses in words
+    what it does not do yet, among them delayed redelivery, which the default options enable
+    (open-threads T51).
+  - **The conformance suite runs once per engine:** S2.1–S2.12 green on MassTransit 8.5.11 and on
+    Wolverine, on real RabbitMQ + PostgreSQL; dropping the tenant header in the adapter turns S2.2
+    red on Wolverine only. S2.12 (what a batch handler publishes is delivered) was red on the
+    adapter's first cut, which discarded a batch's outbox rows with its scope, and is green on both
+    now. The adapter's own decisions the class cannot reach (the commit without the inbox, two
+    handlers on one endpoint, the inbox sweep) have Wolverine-only facts beside it.
 - **A threat model, for the first four surfaces with an auth boundary (GA gate G15 Part 2/2,
   #340).** Documents and one test assertion; no package change.
   `docs/security/threat-model.md` covers four surfaces: the admin routes, the served console,

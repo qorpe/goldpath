@@ -33,6 +33,12 @@ public sealed class GoldpathMessagingBuilder
     internal string RabbitMqConnectionName { get; private set; } = "";
 
     /// <summary>
+    /// The engine to run on when several are referenced, by name: only the conformance suite sets it, to run
+    /// its facts once per engine. An application never does; it references one adapter.
+    /// </summary>
+    internal string? EngineName { get; set; }
+
+    /// <summary>
     /// Registers <typeparamref name="THandler"/> for <typeparamref name="TEvent"/>. Its queue is named
     /// by <see cref="GoldpathHandlerEndpoints.NameOf"/>, exactly as the MassTransit-typed registration
     /// names it, so moving to this builder moves no queue.
@@ -216,12 +222,4 @@ public sealed class GoldpathOutboxOptions
     /// own default, which is what an application composed before this option existed runs on.
     /// </summary>
     public TimeSpan? DeliveryPollInterval { get; set; }
-}
-
-/// <summary>Which transport a builder selected.</summary>
-internal enum GoldpathMessagingTransport
-{
-    None,
-    RabbitMq,
-    InMemory,
 }

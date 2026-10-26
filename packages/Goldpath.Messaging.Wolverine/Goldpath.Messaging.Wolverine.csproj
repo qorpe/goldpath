@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Wolverine 6.x targets net9.0 and net10.0 only; the adapter follows the engine. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageId>Goldpath.Messaging.Wolverine</PackageId>
+    <Description>The Wolverine engine adapter behind the Goldpath message-path seam (ADR-0013, ADR-0015, RFC goldpath-messaging-engines §2). Not selectable yet: it ships once the messaging-exit switch proofs S1-S4 and S6 are linked (open-threads T18).</Description>
+    <RootNamespace>Goldpath</RootNamespace>
+    <!-- ADR-0015 §2: an adapter short of the bar is not published. G5 Parts 2-5 lift this. -->
+    <IsPackable>false</IsPackable>
+    <!-- "Wolverine and its transitive packages pinned exactly" (#330): every JasperFx/Wolverine-family
+         package resolves to the version Directory.Packages.props names, never a floating one. -->
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Goldpath.Messaging/Goldpath.Messaging.csproj" />
+    <PackageReference Include="WolverineFx" />
+    <PackageReference Include="WolverineFx.RabbitMQ" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Goldpath.Messaging.Conformance" />
+  </ItemGroup>
+
+</Project>
