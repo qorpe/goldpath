@@ -5,6 +5,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **A threat model, for the first four surfaces with an auth boundary (GA gate G15 Part 2/2,
+  #340).** Documents and one test assertion; no package change.
+  `docs/security/threat-model.md` covers four surfaces: the admin routes, the served console,
+  Campaign's signed callbacks, and Bulk upload with its gate.
+  - It is STRIDE per surface, and every threat names what holds it: a test, by class and method;
+    an analyzer; an issue; or an accepted risk.
+  - Three threats had no holder and are now issues: #452 (CSRF on body-less verbs behind a
+    gateway cookie), #453 (a bulk batch does not record its uploader), and #454 (no test pins
+    that the console refuses traversal-shaped asset paths).
+  - Six accepted risks (A1–A6) await the owner's signature. A6 is that archival retrieval
+    returns an archived document unredacted to both ops roles, the viewer role included under
+    admin-contract R4.1 (the regulatory record; erasure is what masks it).
+  - Bulk upload is the one mutating admin verb that records no actor (#453); every other
+    surface's audit evidence is named per surface. The Jobs holder's unit test now asserts
+    each audit row's actor, not only its action.
+  - `SECURITY.md` links the model, and `ga-gate-status.md` G15 records 4 of 10 surfaces. The
+    other six (Approvals, FileExchange, Notification, DataProtection, Idempotency,
+    MultiTenancy) remain the issue's checklist.
 - **S-OPS-02 runs in the console smoke: four operator mistakes refused from the screen, zero
   5xx (GA gate G10a, #324).** Test-only; no package change.
   - **The four mistakes:** `ui/console/e2e/refusals.spec.ts` attempts each one through the real

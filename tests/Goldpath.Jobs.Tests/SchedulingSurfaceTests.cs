@@ -147,10 +147,13 @@ public class SchedulingSurfaceTests
         Assert.Equal(0, afterRemove);
         // The JOB survives its last trigger: unscheduling is not deleting.
         Assert.True(await scheduler.CheckExists(new JobKey("nightly", GoldpathJobsExtensions.JobGroup), default));
-        // Both crossings are on the record — iron rule 2.
-        var audit = fixture.Query(db => db.Set<GoldpathJobAdminAudit>().Select(a => a.Action).ToList());
-        Assert.Contains("add-trigger", audit);
-        Assert.Contains("remove-trigger", audit);
+        // Both crossings are on the record — iron rule 2 — and each names who made it.
+        var audit = fixture.Query(db => db.Set<GoldpathJobAdminAudit>()
+            .Where(a => a.Action == "add-trigger" || a.Action == "remove-trigger")
+            .Select(a => new { a.Action, a.Actor }).ToList());
+        Assert.Contains(audit, a => a.Action == "add-trigger");
+        Assert.Contains(audit, a => a.Action == "remove-trigger");
+        Assert.All(audit, a => Assert.Equal("ops@acme", a.Actor));
     }
 
     [Fact]

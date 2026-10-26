@@ -72,7 +72,12 @@ decision we can make, but not one we can guess.
 
 There is no paid penetration test today. That was an owner decision on 2026-10-21 (GA gate
 G15): a paid test happens when a paying customer funds one. In its place, two free scans run
-in CI. Neither one is a substitute for a threat model, which G15's second part adds.
+in CI. Neither one is a substitute for a threat model, which G15's second part adds:
+[docs/security/threat-model.md](docs/security/threat-model.md). It is STRIDE per surface with an
+auth boundary, and every threat names the test that holds it, the issue that will, or an
+accepted risk for the owner to sign. Four surfaces are modelled so far (the admin routes, the
+served console, Campaign's signed callbacks, Bulk upload and its gate). The other six are its
+checklist.
 
 - **CodeQL** (static analysis, [`.github/workflows/codeql.yml`](.github/workflows/codeql.yml)):
   - Covers the C# and the console's TypeScript with the `security-extended` query suite.
