@@ -153,7 +153,7 @@ internal sealed class WolverineMessagingEngine : IGoldpathMessagingEngine
                     .PreFetchCount((ushort)Math.Min(batch.Options.MessageLimit * (long)batch.Options.ConcurrencyLimit, ushort.MaxValue))
                     .ProcessInParallelWithNativeAcks()
                     .MaximumParallelMessages(batch.Options.MessageLimit * batch.Options.ConcurrencyLimit)
-                    .AddStickyHandler(batch.Event, BatchSeamHandler.For(batch));
+                    .AddStickyHandler(batch.Event, BatchSeamHandler.For(batch, state));
             }
         });
     }
@@ -258,6 +258,20 @@ internal abstract class SeamHandler : IMessageHandler
         return (headers, tenant, correlationId);
     }
 
+    /// <summary>
+    /// Commits what a handler published when nothing else saves the scope's context (no inbox, or a batch): with an
+    /// outbox composed, a publish only adds <c>OutboxMessage</c> rows, which the scope would otherwise discard.
+    /// </summary>
+    protected static async Task CommitPublishedAsync(IServiceProvider services, WolverineEngineState state, CancellationToken cancellation)
+    {
+        if (state.OutboxContext is { } outboxContext
+            && (DbContext)services.GetRequiredService(outboxContext) is var db
+            && db.ChangeTracker.Entries<OutboxMessage>().Any(e => e.State == EntityState.Added))
+        {
+            await db.SaveChangesAsync(cancellation);
+        }
+    }
+
     public void RecordCauseAndEffect(MessageContext context, Wolverine.Runtime.Agents.IWolverineObserver observer)
     {
     }
@@ -301,14 +315,7 @@ internal sealed class SeamHandler<TEvent>(Type[] handlers, string endpoint, Wolv
             else
             {
                 await InvokeAsync(scope.ServiceProvider, message, eventContext, cancellation);
-
-                // Without the inbox nothing else saves the scope's context: what the handler published is committed here.
-                if (state.OutboxContext is { } outboxContext
-                    && (DbContext)scope.ServiceProvider.GetRequiredService(outboxContext) is var db
-                    && db.ChangeTracker.Entries<OutboxMessage>().Any(e => e.State == EntityState.Added))
-                {
-                    await db.SaveChangesAsync(cancellation);
-                }
+                await CommitPublishedAsync(scope.ServiceProvider, state, cancellation);
             }
         }
         finally

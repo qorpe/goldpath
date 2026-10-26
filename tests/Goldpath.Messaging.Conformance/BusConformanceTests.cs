@@ -304,6 +304,31 @@ public abstract class BatchConformanceTests(ConformanceContainers containers, st
         Assert.Equal(1, batches.Peak);
         await host.StopAsync();
     }
+
+    [Fact]
+    public async Task S2_12_what_a_batch_handler_publishes_is_delivered()
+    {
+        // The handler publishes through the seam and saves nothing: with an outbox composed, committing what it
+        // published is the engine's work, as it is for a single-message handler. A publish lost here is an
+        // acknowledged delivery whose consequence never leaves the process.
+        var observed = new Observed();
+        var batches = new BatchesObserved { PublishFromBatch = true };
+        await using var host = await containers.BuildHostAsync(
+            engine, observed, batches: (batches, new GoldpathBatchOptions { MessageLimit = 5, TimeLimit = TimeSpan.FromMilliseconds(500) }));
+        await host.StartAsync();
+
+        for (var i = 0; i < 3; i++)
+        {
+            await host.PublishAsync(new Tick { Number = i });
+        }
+
+        await batches.WaitForDeliveredAsync(3, Wait);
+        Assert.Equal(3, batches.Delivered);
+        await observed.WaitForPingsAsync(batches.Batches.Count, Wait);
+        Assert.Equal(batches.Batches.Count, observed.PingCount);
+        Assert.All(observed.Pings, p => Assert.Equal("from-batch", p.Event.Payload));
+        await host.StopAsync();
+    }
 }
 
 /// <summary>The suite on the oracle, MassTransit 8.5.11.</summary>

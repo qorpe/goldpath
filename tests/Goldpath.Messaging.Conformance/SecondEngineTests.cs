@@ -121,19 +121,6 @@ public sealed class SecondEngineTests
         Assert.Contains("'ticks'", refused.Message, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void Two_handlers_of_one_event_on_one_endpoint_compose()
-    {
-        // One endpoint, one event, two handlers: both run for each delivery, as the default engine's shared queue does.
-        using var host = Create(messaging =>
-        {
-            messaging.AddHandler<Ping, PingHandler>("pings");
-            messaging.AddHandler<Ping, AlsoPingHandler>("pings");
-            messaging.UseRabbitMq();
-            messaging.Options.Retry.RedeliveryIntervals.Clear();
-        });
-    }
-
     private static DisposableHost Create(Action<GoldpathMessagingBuilder> configure)
         => new(GoldpathMessagingTestHost.Create(configure, builder => builder.Configuration["ConnectionStrings:messaging"] = "amqp://guest:guest@localhost:5672/", Engine));
 

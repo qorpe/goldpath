@@ -23,9 +23,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     outbox and inbox in the 8.x tables on PostgreSQL itself (RFC §4.4, §9 Q4). It refuses in words
     what it does not do yet, among them delayed redelivery, which the default options enable
     (open-threads T51).
-  - **The conformance suite runs once per engine:** S2.1–S2.11 green on MassTransit 8.5.11 and on
+  - **The conformance suite runs once per engine:** S2.1–S2.12 green on MassTransit 8.5.11 and on
     Wolverine, on real RabbitMQ + PostgreSQL; dropping the tenant header in the adapter turns S2.2
-    red on Wolverine only.
+    red on Wolverine only. S2.12 (what a batch handler publishes is delivered) was red on the
+    adapter's first cut, which discarded a batch's outbox rows with its scope, and is green on both
+    now. The adapter's own decisions the class cannot reach (the commit without the inbox, two
+    handlers on one endpoint, the inbox sweep) have Wolverine-only facts beside it.
 - **S-OPS-02 runs in the console smoke: four operator mistakes refused from the screen, zero
   5xx (GA gate G10a, #324).** Test-only; no package change.
   - **The four mistakes:** `ui/console/e2e/refusals.spec.ts` attempts each one through the real

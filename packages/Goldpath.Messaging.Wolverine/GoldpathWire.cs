@@ -179,9 +179,11 @@ internal sealed class GoldpathWire : IAsyncDisposable
 
     private async Task DeclareExchangeAsync(IChannel channel, string exchange, CancellationToken cancellationToken)
     {
-        if (_declared.Add(exchange))
+        // Recorded only once the broker has declared it: a declare cancelled on an open channel must be tried again.
+        if (!_declared.Contains(exchange))
         {
             await channel.ExchangeDeclareAsync(exchange, ExchangeType.Fanout, durable: true, autoDelete: false, cancellationToken: cancellationToken);
+            _declared.Add(exchange);
         }
     }
 

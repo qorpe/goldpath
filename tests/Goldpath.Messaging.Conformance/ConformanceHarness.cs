@@ -34,6 +34,9 @@ public sealed class Observed
 
     public ConcurrentBag<int> PoisonAttempts { get; } = [];
 
+    /// <summary>Ping ids the second handler on a shared endpoint saw — both handlers of one event run for each delivery.</summary>
+    public ConcurrentBag<Guid> AlsoPinged { get; } = [];
+
     /// <summary>While set and not completed, every Ping handler waits here — the drain scenario holds its window full.</summary>
     public Task? HandlerGate { get; set; }
 
@@ -134,6 +137,9 @@ public sealed class BatchesObserved
     /// <summary>How long each batch holds the handler — the one-in-flight fact needs batches that overlap if allowed to.</summary>
     public TimeSpan Hold { get; set; }
 
+    /// <summary>When set, every batch publishes one Ping through the seam and saves nothing itself.</summary>
+    public bool PublishFromBatch { get; set; }
+
     /// <summary>The most batches ever inside the handler at once.</summary>
     public int Peak => Volatile.Read(ref _peak);
 
@@ -163,7 +169,7 @@ public sealed class BatchesObserved
 }
 
 /// <summary>The seam's batch handler under test: names no engine type.</summary>
-public sealed class TickBatchHandler(BatchesObserved observed) : IIntegrationEventBatchHandler<Tick>
+public sealed class TickBatchHandler(BatchesObserved observed, IIntegrationEventPublisher publisher) : IIntegrationEventBatchHandler<Tick>
 {
     public async Task HandleAsync(IReadOnlyList<IntegrationEvent<Tick>> batch, CancellationToken cancellationToken = default)
     {
@@ -173,6 +179,11 @@ public sealed class TickBatchHandler(BatchesObserved observed) : IIntegrationEve
             if (observed.Hold > TimeSpan.Zero)
             {
                 await Task.Delay(observed.Hold, cancellationToken);
+            }
+
+            if (observed.PublishFromBatch)
+            {
+                await publisher.PublishAsync(new Ping { Id = Guid.NewGuid(), Payload = "from-batch" }, cancellationToken);
             }
 
             observed.Batches.Enqueue((batch.Count, DateTimeOffset.UtcNow, [.. batch.Select(e => e.Message.Number)]));
@@ -245,11 +256,12 @@ public sealed class ConformanceContainers : IAsyncLifetime
     /// seam, RabbitMQ at the connection string the AppHost would give. Not started — a scenario decides
     /// when (the crash scenario commits BEFORE the bus exists). The test host returns from its start
     /// only once the bus has started (#371), so no fact has to know how an engine says that. Every engine
-    /// the suite references is in this process, so <paramref name="engine"/> names the one this host runs on.
+    /// the suite references is in this process, so <paramref name="engine"/> names the one this host runs on;
+    /// <paramref name="compose"/> adds to the composition after the defaults.
     /// </summary>
     public async Task<GoldpathMessagingTestHost> BuildHostAsync(
         string engine, Observed observed, Action<GoldpathMessagingOptions>? options = null, string? tenant = null,
-        (BatchesObserved Observed, GoldpathBatchOptions Grouping)? batches = null)
+        (BatchesObserved Observed, GoldpathBatchOptions Grouping)? batches = null, Action<GoldpathMessagingBuilder>? compose = null)
     {
         var host = GoldpathMessagingTestHost.Create(
             messaging =>
@@ -266,6 +278,7 @@ public sealed class ConformanceContainers : IAsyncLifetime
                 messaging.Options.Retry.ImmediateCount = 2;
                 messaging.Options.Retry.RedeliveryIntervals.Clear();   // the suite proves the immediate ladder; delayed redelivery needs the scheduler plugin
                 options?.Invoke(messaging.Options);
+                compose?.Invoke(messaging);
             },
             builder =>
             {

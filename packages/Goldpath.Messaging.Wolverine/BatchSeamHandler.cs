@@ -9,16 +9,17 @@ namespace Goldpath;
 /// <see cref="GoldpathBatchOptions.TimeLimit"/> has passed since its first delivery, whichever comes first; at
 /// most <see cref="GoldpathBatchOptions.ConcurrencyLimit"/> batches run at once. A delivery's handling completes
 /// only when its batch has run (the listener acknowledges after handling), and a throw fails every delivery in
-/// the batch into Wolverine's retry ladder.
+/// the batch into Wolverine's retry ladder. A batch endpoint runs without the inbox (open-threads T51), so what the
+/// handler published is committed here, after it returns and before the deliveries are acknowledged.
 /// </summary>
 internal abstract class BatchSeamHandler : SeamHandler
 {
-    public static BatchSeamHandler For(GoldpathBatchHandlerRegistration registration)
+    public static BatchSeamHandler For(GoldpathBatchHandlerRegistration registration, WolverineEngineState state)
         => (BatchSeamHandler)Activator.CreateInstance(
-            typeof(BatchSeamHandler<,>).MakeGenericType(registration.Event, registration.Handler), registration.Options)!;
+            typeof(BatchSeamHandler<,>).MakeGenericType(registration.Event, registration.Handler), registration.Options, state)!;
 }
 
-internal sealed class BatchSeamHandler<TEvent, THandler>(GoldpathBatchOptions options) : BatchSeamHandler
+internal sealed class BatchSeamHandler<TEvent, THandler>(GoldpathBatchOptions options, WolverineEngineState state) : BatchSeamHandler
     where TEvent : class, IIntegrationEvent
     where THandler : class, IIntegrationEventBatchHandler<TEvent>
 {
@@ -85,6 +86,7 @@ internal sealed class BatchSeamHandler<TEvent, THandler>(GoldpathBatchOptions op
         {
             using var scope = services.CreateScope();
             await scope.ServiceProvider.GetRequiredService<THandler>().HandleAsync([.. batch.Select(b => b.Item)], CancellationToken.None);
+            await CommitPublishedAsync(scope.ServiceProvider, state, CancellationToken.None);
             batch.ForEach(b => b.Done.TrySetResult());
         }
         catch (Exception e)
