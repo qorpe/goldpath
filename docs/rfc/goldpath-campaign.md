@@ -167,7 +167,7 @@ operator's single screen per campaign (progress, rate governor, failure rate, ET
    (#284):** leadership is continuous by default. `LeadershipSlice` (60 s) is at least the
    period of the default pacer cron (once a minute), and the jobs runner never runs the pacer
    twice at once, so the next fire is already due when a slice returns and starts as it
-   returns; it does not wait for the next cron tick. The measured hand-over is about 0.6 s (the longest gap between two releases at 50 TPS with a 250 ms tick, on the run that proved it). A
+   returns; it does not wait for the next cron tick. The measured hand-over is under 0.6 s (the longest gap between two releases at 50 TPS with a 250 ms tick: 583 ms and 459 ms on two runs). A
    slice shorter than an adopter's cron period gives that remainder of every period no leader.
    After a crash the gap is the cluster's recovery instead: the dead node's run re-fires
    elsewhere once its check-in is missed, `CheckinInterval` (5 s) + `CheckinMisfireThreshold`

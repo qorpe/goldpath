@@ -169,7 +169,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   - **Proof:** `CampaignContinuousLeadershipTests` runs on the package defaults, with Quartz on a
     real PostgreSQL and a real RabbitMQ. It was red on the 50 s default (two 10-second windows
     per minute at half rate, with a 10 s gap between releases). It is green on 60 s: every
-    10-second window across two hand-overs is within ±5%, with a measured hand-over of about 0.6 s (the longest gap between two releases at 50 TPS with a 250 ms tick, on the run that proved it).
+    10-second window across two hand-overs is within ±5%, with a measured hand-over of under 0.6 s (the longest gap between two releases at 50 TPS with a 250 ms tick: 583 ms and 459 ms on two runs).
   - **What does not change:** no public API line; a slice still starts with empty token
     buckets, so a fire's first tick releases at most one tick's worth.
   - **Upgrade guide:** preview.10, "A default changed: the pacer's leadership slice".
