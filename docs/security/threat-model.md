@@ -110,12 +110,14 @@ service, **E**levation of privilege.
 | T-BLK-07 | D | A huge file exhausts memory or the database | `MaxRows` is mandatory per definition, and exactly `MaxRows` is within the ceiling. Bytes are stored in chunks, never whole in memory. The request body is bounded only by the host's limit (Kestrel's default `MaxRequestBodySize`, 30 MB); the module sets no byte ceiling of its own | `Goldpath.Bulk.Tests.OptionsTests.MaxRows_is_mandatory_the_ceiling_is_a_decision`, `Goldpath.Bulk.Tests.ValidationFlowTests.A_file_of_exactly_MaxRows_rows_is_within_the_ceiling`, `Goldpath.Bulk.Tests.FileStoreTests.A_trickling_upload_still_chunks_and_hashes_exactly`. The byte bound is **accepted risk A5** |
 | T-BLK-08 | T | A crafted CSV breaks the parser (quotes, delimiters) and shifts fields into the wrong columns | The CSV format honours quoting and escaped quotes; the delimiter is configuration | `Goldpath.Bulk.Tests.CsvFormatTests.Quoted_fields_carry_delimiters_and_escaped_quotes`, `…Semicolon_delimiter_is_a_configuration` |
 
-## Accepted risks awaiting the owner's signature
+## Accepted risks (signed by the owner 2026-10-26)
 
-These have no test because the answer is a decision, not code. The owner signs this list on the
-pull request that adds it. Until then, each one is an open G15 item.
+These have no test because the answer is a decision, not code. The owner signed A1–A6 on
+2026-10-26 on [#455](https://github.com/qorpe/goldpath/pull/455), the pull request that added
+them, as written below. Each stays accepted until its "Revisit when" trigger fires; a new
+accepted risk needs its own signature.
 
-| # | Risk | Why it is accepted (proposed) | Revisit when |
+| # | Risk | Why it is accepted | Revisit when |
 |---|---|---|---|
 | A1 | `exposeUnsecured: true` makes every admin actor `anonymous` and opens the surface (T-ADM-09) | It is an explicit, warning-logged opt-out for hosts that sit behind an authenticating boundary. Refusing it would push those adopters to a worse workaround | an adopter's deployment is found using it without such a boundary |
 | A2 | `?base=` lets a crafted link show an attacker's service inside the real console's frame (T-CON-06) | It is the documented developer override. No credential of the app reaches the other origin. Removing it costs the dev loop and the "service that did not serve this console" path | an operator is phished through it, or the console starts holding a token (console RFC §3, case 3), which would make it a credential leak |
