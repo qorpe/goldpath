@@ -39,8 +39,14 @@ workers own only their private tables and MAP shared ones read-only
 
 ## 5. The admin surface is a frozen, fail-closed contract
 
-Every `Map*Admin` demands the `goldpath-ops` policy out of the box (opting out is
-visible and warned). Routes, envelopes and paging are FROZEN — the UI and your scripts
+Every `Map*Admin` is fail-closed out of the box (opting out is visible and warned), and
+the HTTP method decides who passes:
+- **Reads:** every `GET` demands the read policy, which `goldpath-ops-read` (a viewer) and
+  `goldpath-ops` (an operator) both satisfy.
+- **Verbs:** every other method also demands `goldpath-ops`. A viewer's verb is refused with
+  `403` and a sentence naming the missing role.
+- **What a viewer can see:** the read role reads everything, including archived documents in
+  full ([admin contract R4.1](../rfc/goldpath-admin-contract.md)). Routes, envelopes and paging are FROZEN — the UI and your scripts
 are written once against [the contract](../rfc/goldpath-admin-contract.md); changing it
 is a breaking change under [the versioning contract](../rfc/goldpath-versioning.md).
 Every mutating verb writes an audit row with the actor, server-side.

@@ -8,8 +8,12 @@ versioning note per H7).
 ## Conventions (all five surfaces)
 
 - **Mount**: `Map<Module>Admin<TContext>(prefix, exposeUnsecured)` on the management head;
-  default prefix `/goldpath/admin/<module>`. Fail-closed: every endpoint demands
-  `GoldpathPolicies.Ops` unless `exposeUnsecured: true` (visible opt-out + startup warning).
+  default prefix `/goldpath/admin/<module>`. Fail-closed, and the HTTP method decides (R4.1,
+  since R4-S1): every `GET` demands `GoldpathPolicies.OpsRead` (`goldpath-ops-read`, which
+  `goldpath-ops` also satisfies), and every other method also demands `GoldpathPolicies.Ops`,
+  refused with `403` and the verb envelope naming the role. An app that registers no `OpsRead`
+  policy keeps `Ops` on every route. All of it is off only with `exposeUnsecured: true`
+  (visible opt-out + startup warning).
 - **Verbs are POSTs with kebab-case names** (`trigger`, `replay-items`, `lift-hold`,
   `pause-all`). No PATCH; `PUT`/`DELETE` only for true upserts/removals (calendars).
 - **Verb envelope**: every mutating verb returns `GoldpathAdminResult { ok, message }` —
