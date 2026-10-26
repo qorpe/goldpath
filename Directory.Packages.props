@@ -60,6 +60,12 @@
     <PackageVersion Include="System.Linq.Dynamic.Core" Version="1.7.4" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.16.0" />
     <PackageVersion Include="Testcontainers.RabbitMq" Version="4.16.0" />
+    <!-- Oracle (G7, slice O-1, #404; RFC goldpath-oracle §2.1). Test projects ONLY: no Goldpath.* package
+         references either Oracle id. Both are Oracle Free Use Terms and Conditions (FUTC), admitted by the scoped
+         licence-gate exception. The pin is the newest release at least two weeks old on the day it landed
+         (2026-10-26): .26301 / 23.26.301 of 2026-09-08; .26400 / 23.26.400 (2026-10-20) is eligible from 2026-11-03. -->
+    <PackageVersion Include="Oracle.ManagedDataAccess.Core" Version="23.26.301" />
+    <PackageVersion Include="Testcontainers.Oracle" Version="4.16.0" />
     <PackageVersion Include="OpenTelemetry.Exporter.Console" Version="1.19.1" />
     <PackageVersion Include="OpenTelemetry.Exporter.InMemory" Version="1.19.1" />
     <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.19.1" />
@@ -92,6 +98,8 @@
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.9" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.13" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <!-- The Oracle EF Core 10 provider (FUTC, test projects only; see the Oracle block above for the pin date). -->
+    <PackageVersion Include="Oracle.EntityFrameworkCore" Version="10.23.26301" />
     <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
   </ItemGroup>
 </Project>
