@@ -163,7 +163,15 @@ operator's single screen per campaign (progress, rate governor, failure rate, ET
 3. Failure rate climbing (pause, drill into failed items, fix the world, resume; item
    replay via the jobs console).
 4. Leader takeover after a crash (checkpointed watermark + counter warmup reconcile —
-   what the operator sees and how long warmup takes at 1M/30M).
+   what the operator sees and how long warmup takes at 1M/30M). **Hand-over between slices
+   (#284):** leadership is continuous by default. `LeadershipSlice` (60 s) is at least the
+   period of the default pacer cron (once a minute), and the jobs runner never runs the pacer
+   twice at once, so the next fire is already due when a slice returns and starts as it
+   returns; it does not wait for the next cron tick. The measured hand-over is about 0.6 s (the longest gap between two releases at 50 TPS with a 250 ms tick, on the run that proved it). A
+   slice shorter than an adopter's cron period gives that remainder of every period no leader.
+   After a crash the gap is the cluster's recovery instead: the dead node's run re-fires
+   elsewhere once its check-in is missed, `CheckinInterval` (5 s) + `CheckinMisfireThreshold`
+   (15 s) at the Jobs defaults. That bound is read from configuration, not measured here.
 5. Redis loss mid-campaign (pacing degrades to reconcile-on-warmup; truth intact —
    the drill that proves constraint 3).
 6. Abort semantics (drain in-flight claims, terminal-state the remainder as Aborted —

@@ -160,6 +160,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
 ### Changed
+- **`Goldpath.Campaign`: leadership is continuous by default (#284).** `LeadershipSlice` goes
+  from 50 s to 60 s, the period of the default pacer cron (`pacerCron`, unchanged). The next fire
+  is already due when a slice returns, and the jobs runner, which never runs the pacer twice at
+  once, starts it then.
+  - **Before:** every minute had about 10 s with no leader, so a campaign averaged at most 5/6
+    of its configured rate.
+  - **Proof:** `CampaignContinuousLeadershipTests` runs on the package defaults, with Quartz on a
+    real PostgreSQL and a real RabbitMQ. It was red on the 50 s default (two 10-second windows
+    per minute at half rate, with a 10 s gap between releases). It is green on 60 s: every
+    10-second window across two hand-overs is within ±5%, with a measured hand-over of about 0.6 s (the longest gap between two releases at 50 TPS with a 250 ms tick, on the run that proved it).
+  - **What does not change:** no public API line; a slice still starts with empty token
+    buckets, so a fire's first tick releases at most one tick's worth.
+  - **Upgrade guide:** preview.10, "A default changed: the pacer's leadership slice".
 - **Admin-contract revision R4 is written (#304), PROPOSED; merging it is its acceptance.**
   Documents only, no package change. `docs/rfc/goldpath-admin-contract.md` gains R4, the shape of
   the owner's 2026-10-20 approvals:

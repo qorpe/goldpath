@@ -127,7 +127,9 @@ bench; it is not a result.
   a 50-second slice per one-minute cron fire, so roughly 10 s in every 60 have no leader. The
   136 empty windows in 900 s match that gap. At these defaults, no tuning of the release path can
   reach 95% of windows within band. The slice/cron relation is a Part 2/3 question, not this
-  part's.
+  part's. *(#284: since then the default slice is 60 s, so leadership is continuous;
+  `CampaignContinuousLeadershipTests` measures every 10-second window within ±5% across
+  two hand-overs at 50 TPS. The table above is the 50-second baseline and is not re-run here.)*
 - **Inside a slice, the leader releases about 600/s against 1000.** That is p50 606 and
   p95 750, with no window in band. The per-tick release path (publish, then stamp the batch)
   is the binding constraint on this profile, not the consumers: only 336 items were still queued
