@@ -402,3 +402,66 @@ describe("the bulk intake panel (upload → report → four-eyes gate)", () => {
     expect(await screen.findByText("no batches yet")).toBeInTheDocument();
   });
 });
+
+describe("the bulk intake panel — the remaining doors", () => {
+  it("'choose file' opens the hidden file input — the styled button is only its face", async () => {
+    const { client: api } = client();
+    render(<BulkPanel client={api} />);
+
+    const input = (await screen.findByLabelText("batch file")) as HTMLInputElement;
+    const picked = vi.spyOn(input, "click");
+    await userEvent.click(screen.getByRole("button", { name: "choose file" }));
+    expect(picked).toHaveBeenCalledTimes(1);
+  });
+
+  it("clearing the state facet re-reads the batches with no state at all", async () => {
+    const { client: api, fetched } = client();
+    render(<BulkPanel client={api} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /State/ }));
+    await userEvent.click(await screen.findByRole("menuitemcheckbox", { name: /Validated/ }));
+    const lists = () => fetched.filter((url) => url.includes("/batches?"));
+    await waitFor(() => expect(lists().at(-1)).toContain("state=Validated"));
+    await userEvent.click(screen.getByRole("menuitem", { name: "clear" }));
+    await waitFor(() => expect(lists().at(-1)).not.toContain("state="));
+  });
+
+  it("unticking a definition and clearing the facet each narrow the query back", async () => {
+    const { client: api, fetched } = client({
+      definitions: [definition(), definition({ name: "refunds", batchesByState: {}, awaitingApproval: 0 })],
+    });
+    render(<BulkPanel client={api} />);
+    const lists = () => fetched.filter((url) => url.includes("/batches?"));
+
+    await userEvent.click(await screen.findByRole("button", { name: /Definition/ }));
+    await userEvent.click(await screen.findByRole("menuitemcheckbox", { name: /payments/ }));
+    await userEvent.click(await screen.findByRole("menuitemcheckbox", { name: /refunds/ }));
+    await waitFor(() => expect(lists().at(-1)).toContain("definition=refunds"));
+
+    await userEvent.click(screen.getByRole("menuitemcheckbox", { name: /payments/ }));
+    await waitFor(() => expect(lists().at(-1)).not.toContain("definition=payments"));
+    expect(lists().at(-1)).toContain("definition=refunds");
+
+    await userEvent.click(screen.getByRole("menuitem", { name: "clear" }));
+    await waitFor(() => expect(lists().at(-1)).not.toContain("definition="));
+  });
+
+  it("closing the sheet lets go of the batch", async () => {
+    const { client: api } = client();
+    render(<BulkPanel client={api} />);
+
+    await openBatch();
+    await screen.findByTestId("batch-detail");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByTestId("batch-detail")).toBeNull());
+  });
+
+  it("a batch that will not open says which one", async () => {
+    const { client: api } = client({ batchStatus: 500 });
+    render(<BulkPanel client={api} />);
+
+    await openBatch();
+    expect(await screen.findByText(`batch ${batch().id} could not be opened`)).toBeInTheDocument();
+    expect(screen.queryByTestId("batch-detail")).toBeNull();
+  });
+});

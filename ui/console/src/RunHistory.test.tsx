@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AdminClient, type RunDetail, type RunSummary } from "./adminClient";
 import { RunHistory } from "./RunHistory";
@@ -223,5 +223,53 @@ describe("the run history (contract R2.4)", () => {
     // A client-side narrow of one loaded page would read as "no runs" while more sat
     // behind the take bound — the search is a FILTER, so it travels.
     await waitFor(() => expect(asked.at(-1)!.searchParams.get("job")).toBe("eod"));
+  });
+});
+
+describe("the run history — the remaining doors", () => {
+  it("rerun posts the frozen route for THAT run, through the confirm", async () => {
+    const user = userEvent.setup();
+    const changed = vi.fn();
+    const { client, sent } = api();
+    render(<RunHistory client={client} fleet="it-cluster" refreshToken={0} onChanged={changed} />);
+
+    await user.click(await screen.findByRole("button", { name: "run-9f21" }));
+    await user.click(await screen.findByRole("button", { name: "rerun" }));
+    const dialog = screen.getByRole("alertdialog", { name: "confirm rerun" });
+    expect(dialog).toHaveTextContent("Rerun run-9f21?");
+    await user.click(within(dialog).getByRole("button", { name: "rerun" }));
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0].url).toContain("/goldpath/admin/jobs/runs/run-9f21/rerun");
+    await waitFor(() => expect(changed).toHaveBeenCalled());
+  });
+
+  it("unticking a state and clearing the facet each re-ask without it", async () => {
+    const user = userEvent.setup();
+    const { client, asked } = api();
+    render(<RunHistory client={client} fleet="it-cluster" refreshToken={0} onChanged={() => {}} />);
+    await screen.findByText("eod-reconciliation");
+
+    await user.click(screen.getByRole("button", { name: /State/ }));
+    await user.click(await screen.findByRole("menuitemcheckbox", { name: /Failed/ }));
+    await user.click(await screen.findByRole("menuitemcheckbox", { name: /Running/ }));
+    await waitFor(() => expect(asked.at(-1)!.searchParams.getAll("status")).toEqual(["Failed", "Running"]));
+
+    await user.click(screen.getByRole("menuitemcheckbox", { name: /Failed/ }));
+    await waitFor(() => expect(asked.at(-1)!.searchParams.getAll("status")).toEqual(["Running"]));
+
+    await user.click(screen.getByRole("menuitem", { name: "clear" }));
+    await waitFor(() => expect(asked.at(-1)!.searchParams.getAll("status")).toEqual([]));
+  });
+
+  it("closing the sheet lets go of the run", async () => {
+    const user = userEvent.setup();
+    const { client } = api();
+    render(<RunHistory client={client} fleet="it-cluster" refreshToken={0} onChanged={() => {}} />);
+
+    await user.click(await screen.findByRole("button", { name: "run-9f21" }));
+    await screen.findByTestId("run-detail");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByTestId("run-detail")).toBeNull());
   });
 });

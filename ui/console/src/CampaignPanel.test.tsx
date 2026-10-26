@@ -339,3 +339,137 @@ describe("the campaign governor panel", () => {
     expect(detail).toHaveTextContent("Daily quotanone");
   });
 });
+
+describe("the campaign governor's remaining doors", () => {
+  it("a paused campaign resumes through the frozen route", async () => {
+    const paused = campaign({ state: "Paused" });
+    const { client: api, posted } = client({ detail: paused, list: [paused], verb: { status: 200, body: { ok: true, message: "resumed" } } });
+    render(<CampaignPanel client={api} />);
+
+    await open();
+    await userEvent.click(await screen.findByRole("button", { name: "resume" }));
+    const dialog = screen.getByRole("alertdialog", { name: "confirm resume" });
+    expect(dialog).toHaveTextContent("Release continues under the policy below");
+    await userEvent.click(within(dialog).getByRole("button", { name: "resume" }));
+
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0].url).toContain(`/goldpath/admin/campaign/${paused.id}/resume`);
+    expect(await screen.findByText("resumed")).toBeInTheDocument();
+  });
+
+  it("a paused campaign can still be aborted, and the reason travels", async () => {
+    const paused = campaign({ state: "Paused" });
+    const { client: api, posted } = client({ detail: paused, list: [paused] });
+    render(<CampaignPanel client={api} />);
+
+    await open();
+    await userEvent.click(await screen.findByRole("button", { name: "abort" }));
+    const dialog = screen.getByRole("alertdialog", { name: "confirm abort" });
+    await userEvent.type(within(dialog).getByLabelText("reason (required)"), "budget pulled");
+    await userEvent.click(within(dialog).getByRole("button", { name: "abort" }));
+
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0].url).toContain(`/goldpath/admin/campaign/${paused.id}/abort`);
+    expect(JSON.parse(String(posted[0].body))).toEqual({ reason: "budget pulled" });
+  });
+
+  it("every dial of the throttle form reaches the confirm line and the body — and a cleared form resets", async () => {
+    const { client: api, posted } = client({ verb: { status: 200, body: { ok: true, message: "policy updated" } } });
+    render(<CampaignPanel client={api} />);
+
+    await open();
+    await userEvent.type(await screen.findByLabelText("daily quota"), "900");
+    await userEvent.type(screen.getByLabelText("max in-flight"), "12");
+    await userEvent.type(screen.getByLabelText("max attempts"), "3");
+    await userEvent.type(screen.getByLabelText("window start"), "08:30");
+    await userEvent.type(screen.getByLabelText("window end"), "18:00");
+    await userEvent.type(screen.getByLabelText("time zone"), "Europe/Berlin");
+    await userEvent.type(screen.getByLabelText("end date"), "2026-12-31");
+    // A day ticked and unticked again is NOT excluded; only what stays ticked travels.
+    await userEvent.click(screen.getByLabelText("Sat"));
+    await userEvent.click(screen.getByLabelText("Sun"));
+    await userEvent.click(screen.getByLabelText("Sat"));
+    await userEvent.click(screen.getByLabelText("clear window"));
+    await userEvent.click(screen.getByLabelText("clear excluded days"));
+    await userEvent.click(screen.getByLabelText("clear end date"));
+
+    await userEvent.click(screen.getByRole("button", { name: "throttle" }));
+    const dialog = screen.getByRole("alertdialog", { name: "confirm throttle" });
+    expect(dialog).toHaveTextContent(
+      "daily quota 900, max in-flight 12, window 08:30–18:00, time zone Europe/Berlin, no window (release around the clock), " +
+        "excluded days Sunday, end date 2026-12-31, 3 attempts per item, no excluded days, no end date",
+    );
+    await userEvent.click(within(dialog).getByRole("button", { name: "throttle" }));
+
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(JSON.parse(String(posted[0].body))).toEqual({
+      dailyQuota: 900,
+      maxInFlight: 12,
+      maxAttempts: 3,
+      windowStart: "08:30",
+      windowEnd: "18:00",
+      timeZoneId: "Europe/Berlin",
+      clearWindow: true,
+      excludedDays: ["Sunday"],
+      endDate: "2026-12-31",
+      clearExcludedDays: true,
+      clearEndDate: true,
+    });
+    // Applied: the draft empties, so nothing is left to throttle.
+    await waitFor(() => expect(screen.queryByRole("button", { name: "throttle" })).toBeNull());
+    expect(screen.getByLabelText("daily quota")).toHaveValue(null);
+  });
+
+  it("the confirm line marks the open end of a half-given window", () => {
+    expect(describeThrottle({ windowStart: "08:00" })).toBe("window 08:00–…");
+    expect(describeThrottle({ windowEnd: "17:00" })).toBe("window …–17:00");
+  });
+
+  it("unticking a state and clearing the facet each re-read the list without it", async () => {
+    const seen: string[] = [];
+    const fetcher = (async (input: RequestInfo | URL) => {
+      seen.push(String(input));
+      return new Response(JSON.stringify([]), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+    render(<CampaignPanel client={new AdminClient({ fetcher })} />);
+    const lists = () => seen.filter((url) => url.includes("/campaign/?"));
+
+    await userEvent.click(await screen.findByRole("button", { name: /State/ }));
+    await userEvent.click(await screen.findByRole("menuitemcheckbox", { name: /Running/ }));
+    await userEvent.click(await screen.findByRole("menuitemcheckbox", { name: /Paused/ }));
+    await waitFor(() => expect(lists().at(-1)).toContain("state=Paused"));
+
+    // Unticked, Running leaves the query; Paused stays.
+    await userEvent.click(screen.getByRole("menuitemcheckbox", { name: /Running/ }));
+    await waitFor(() => expect(lists().at(-1)).not.toContain("state=Running"));
+    expect(lists().at(-1)).toContain("state=Paused");
+
+    await userEvent.click(screen.getByRole("menuitem", { name: "clear" }));
+    await waitFor(() => expect(lists().at(-1)).not.toContain("state="));
+  });
+
+  it("closing the sheet lets go of the campaign", async () => {
+    const { client: api } = client();
+    render(<CampaignPanel client={api} />);
+
+    await open();
+    await screen.findByTestId("campaign-detail");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByTestId("sheet")).toBeNull());
+  });
+
+  it("a campaign that will not open says which one, instead of an empty sheet", async () => {
+    const fetcher = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/campaign/?")) {
+        return new Response(JSON.stringify([campaign()]), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return new Response("", { status: 500 });
+    }) as typeof fetch;
+    render(<CampaignPanel client={new AdminClient({ fetcher })} />);
+
+    await open();
+    expect(await screen.findByText(`campaign ${campaign().id} could not be opened`)).toBeInTheDocument();
+    expect(screen.queryByTestId("campaign-detail")).toBeNull();
+  });
+});
