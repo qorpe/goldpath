@@ -36,7 +36,7 @@ entry of `CHANGELOG.md` names that train; this line names no version because a p
 | [goldpath-template](goldpath-template.md) | `dotnet new` solution pack | implemented |
 | [goldpath-template-completion](goldpath-template-completion.md) | template completion set | implemented |
 | [goldpath-migrations](goldpath-migrations.md) | migrations discipline + `goldpath db` + bundle | implemented (H1) |
-| [goldpath-admin-contract](goldpath-admin-contract.md) | the admin API contract | **FROZEN** + revisions R1 (tenant scoping, 2026-07-24), R2 (fleet status, widened trigger DTO, run filters), R3 (repeatable OR filters) — all ACCEPTED & implemented |
+| [goldpath-admin-contract](goldpath-admin-contract.md) | the admin API contract | **FROZEN** + revisions R1 (tenant scoping, 2026-07-24), R2 (fleet status, widened trigger DTO, run filters), R3 (repeatable OR filters) — all ACCEPTED & implemented; **R4 PROPOSED** 2026-10-25 (the `goldpath-ops-read` role, campaign failures by code with a cursor, `/outcomes`, `ETag`/`If-Match` on throttle, the ceiling routes; #304) |
 | [goldpath-versioning](goldpath-versioning.md) | SemVer & support promise (H7) | accepted (binding) |
 | [goldpath-event-contracts](goldpath-event-contracts.md) | event contracts idiom (per-app `<Name>.Contracts`) | accepted (2026-07-14) |
 | [goldpath-delivery-cycle-v1](goldpath-delivery-cycle-v1.md) | one delivery cycle for defects and features, for adopters AND library maintainers | **PROPOSED** (2026-09-08) — widens the skills RFC's D1; the measured gap is that five library repositories carry no cycle at all, and the accelerator does not run the hooks it ships |
