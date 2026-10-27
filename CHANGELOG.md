@@ -5,6 +5,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **The conformance suite's named gaps, on both engines (GA gate G5 Part 2/5, #331).** Two additive seam rows,
+  by owner decision (2026-10-27), RFC goldpath-messaging-engines §4.1 rows 14 and 15. No shipped line changes.
+  - **`GoldpathHandlerOptions.ConcurrencyLimit`**, through `AddHandler<TEvent, THandler>(GoldpathHandlerOptions,
+    string? endpointName = null)`: the most deliveries an endpoint handles at once and holds unacknowledged
+    (1 to 65,535, null for the engine's default). It belongs to the endpoint, and two limits for one endpoint
+    are refused. The engine contract carries it as `GoldpathHandlerRegistration.ConcurrencyLimit`.
+  - **`[GoldpathMessageName("Namespace:Type")]`** fixes an integration event's exchange name and message URN,
+    so a renamed or moved type keeps its wire identity. It is honoured on RabbitMQ through the builder, not
+    on the in-memory test transport or the MassTransit-typed overloads (open-threads T53).
+  - **Consume spans carry `goldpath.tenant_id`** beside `goldpath.correlation_id`, on the default engine's
+    consume filter and the Wolverine adapter.
+  - **Conformance facts S2.14–S2.18:** ordering at a limit of 1, a limit of N reached and never exceeded,
+    publish and consume as one trace read through the OpenTelemetry in-memory exporter, a renamed type in
+    both directions, and the retry ladder and error queue on a limited endpoint. S2.13 (delayed redelivery) is reserved: see Known issues.
 - **The Oracle test lane (GA gate G7, slice O-1, #404).** Repository and CI only: no package
   changes, and no `Goldpath.*` package references Oracle.
   - **Pins:** `Oracle.EntityFrameworkCore` 10.23.26301, `Oracle.ManagedDataAccess.Core` 23.26.301
@@ -236,6 +250,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **The Wolverine adapter continues the publisher's trace (#331).** Its consume span started a new trace from
+  the 8.x envelope; it now opens the consume span under the `MT-Activity-Id` the delivery carries (ActivitySource
+  `Goldpath.Messaging.Wolverine`), and writes that header when it publishes. The adapter is not published.
 - **The console's npm advisories are closed: vitest 2 → 5, with the 97% coverage floor re-earned
   (#356).** Console test tooling only; the shipped bundle is byte-identical to the one before
   (the same `pnpm build` output hashes) and every package is unchanged. `ui/console` takes
@@ -521,6 +538,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 - A consumer that died mid-call on a paused, closed-window, aborted, expired or finished
   campaign stayed `Processing` forever — the stale-claim sweep visited only campaigns
   releasing that tick. It now reaches every campaign with work in flight.
+
+### Known issues
+- **Delayed redelivery has no broker to ride on (#331, open-threads T52).** `Goldpath:Messaging:Retry:RedeliveryIntervals`
+  defaults to 5, 15 and 30 minutes, and the default engine schedules each redelivery through RabbitMQ's
+  delayed-message exchange plugin. The stock RabbitMQ the AppHost starts does not carry it. Measured on such a
+  broker: the redelivery's exchange declare is refused, and the poison message stays on its queue and never
+  reaches `<queue>_error`. The plugin is unmaintained and cannot run from RabbitMQ 4.3. Until the owner decides
+  what the ladder rides on, an application on a broker without the plugin should clear the ladder
+  (`Goldpath:Messaging:Retry:RedeliveryIntervals` empty), so a poison message reaches `_error` after its
+  immediate retries.
+
 
 ## [0.1.0-preview.9] - 2026-10-19
 

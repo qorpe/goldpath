@@ -78,8 +78,9 @@ public sealed class GoldpathPublishFilter<T> : IFilter<PublishContext<T>>
 
 /// <summary>
 /// Consume-side restoration: the tenant header repopulates the message-scoped
-/// <see cref="GoldpathMessageTenantContext"/>, and the correlation id is tagged on the current
-/// Activity so logs/traces line up across the hop.
+/// <see cref="GoldpathMessageTenantContext"/>, and the tenant and the correlation id are tagged on the
+/// current Activity (<c>goldpath.tenant_id</c>, <c>goldpath.correlation_id</c>) so logs/traces line up
+/// across the hop.
 /// </summary>
 public sealed class GoldpathConsumeFilter<T> : IFilter<ConsumeContext<T>>
     where T : class
@@ -99,6 +100,7 @@ public sealed class GoldpathConsumeFilter<T> : IFilter<ConsumeContext<T>>
         {
             _tenantContext.Current = tenant;
             GoldpathAmbientTenant.Current = tenant;   // ambient truth: EF filters/guards see the origin tenant
+            Activity.Current?.SetTag("goldpath.tenant_id", tenant.Value);
         }
 
         if (context.Headers.TryGetHeader(GoldpathHeaders.CorrelationId, out var correlation)

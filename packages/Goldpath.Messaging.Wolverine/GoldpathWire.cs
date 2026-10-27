@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -17,6 +19,12 @@ internal sealed class GoldpathWire : IAsyncDisposable
 {
     /// <summary>The 8.x envelope's content type.</summary>
     public const string ContentType = "application/vnd.masstransit+json";
+
+    /// <summary>
+    /// The 8.x header that carries the publisher's span, as a W3C <c>traceparent</c>: the consumer's span continues
+    /// that trace (RFC goldpath-messaging-engines §4.4; messaging-exit §7.1 S2.16).
+    /// </summary>
+    public const string ActivityIdHeader = "MT-Activity-Id";
 
     private static readonly JsonSerializerOptions s_body = new(JsonSerializerDefaults.Web);
 
@@ -66,9 +74,18 @@ internal sealed class GoldpathWire : IAsyncDisposable
 
     public Uri Broker => _broker;
 
-    /// <summary>The 8.x name of a message type's exchange and its <c>urn:message:</c> identity.</summary>
+    /// <summary>
+    /// The 8.x name of a message type's exchange and its <c>urn:message:</c> identity: the
+    /// <see cref="GoldpathMessageNameAttribute"/> the type declares (RFC goldpath-messaging-engines §4.1 row 15), or
+    /// the name 8.x derives from the type.
+    /// </summary>
     public static string ExchangeOf(Type messageType)
     {
+        if (NameOf(messageType) is { } declared)
+        {
+            return declared;
+        }
+
         if (messageType.IsGenericType)
         {
             throw new NotSupportedException($"'{messageType.Name}' is generic; a generic integration event has no 8.x exchange name this adapter derives.");
@@ -76,6 +93,34 @@ internal sealed class GoldpathWire : IAsyncDisposable
 
         var name = messageType.IsNested ? $"{ExchangeOf(messageType.DeclaringType!).Split(':')[^1]}+{messageType.Name}" : messageType.Name;
         return string.IsNullOrEmpty(messageType.Namespace) ? name : $"{messageType.Namespace}:{name}";
+    }
+
+    /// <summary>
+    /// The wire name <paramref name="messageType"/> declares, or null. A name the attribute refuses is refused again
+    /// here, naming the type.
+    /// </summary>
+    public static string? NameOf(Type messageType)
+    {
+        try
+        {
+            return messageType.GetCustomAttribute<GoldpathMessageNameAttribute>(inherit: false)?.Name;
+        }
+        catch (ArgumentException refused)
+        {
+            throw new InvalidOperationException($"The [GoldpathMessageName] on '{messageType.FullName}' cannot name it on the wire: {refused.Message}", refused);
+        }
+    }
+
+    /// <summary>
+    /// Stamps the current span on <paramref name="headers"/> under <see cref="ActivityIdHeader"/>, unless the caller
+    /// stamped one already; a span outside W3C format, or none, stamps nothing.
+    /// </summary>
+    public static void StampTrace(IDictionary<string, string> headers)
+    {
+        if (Activity.Current is { IdFormat: ActivityIdFormat.W3C, Id: { } id } && !headers.ContainsKey(ActivityIdHeader))
+        {
+            headers[ActivityIdHeader] = id;
+        }
     }
 
     /// <summary>The 8.x <c>messageType</c> URN of a message type.</summary>

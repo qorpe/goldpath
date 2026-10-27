@@ -29,6 +29,14 @@ finds the engine the package declares, and the messaging block, the handlers
   `InboxState` in the handler's own transaction, so a redelivered message runs once.
 - **Tenant and correlation** travel as `X-Goldpath-Tenant` and `X-Correlation-Id`, restored into the
   message scope and the ambient tenant, exactly as the default engine restores them.
+- **Tracing.** A publish carries its span as `MT-Activity-Id`, and a delivery's consume span continues that
+  trace, tagged `goldpath.tenant_id` and `goldpath.correlation_id`. Listen to the ActivitySource
+  `Goldpath.Messaging.Wolverine` (or `*`) to export it. The header is written into the envelope only, so across
+  engines in a mixed fleet the trace is not continuous yet (T51).
+- **A concurrency limit** (`GoldpathHandlerOptions.ConcurrencyLimit`) runs the endpoint's listener in parallel,
+  at most that many deliveries at once and that many prefetched, each acknowledged once handled. Without one,
+  the listener handles on the transport's callback, as before. A `[GoldpathMessageName]` names the exchange
+  and the URN the adapter writes.
 
 ## What it refuses today
 
@@ -39,7 +47,8 @@ an outbox on SQL Server. A batch endpoint runs without the inbox.
 
 ## Proof
 
-`tests/Goldpath.Messaging.Conformance` runs the whole fact class, S2.1–S2.12, on this engine and on
+`tests/Goldpath.Messaging.Conformance` runs the whole fact class, S2.1–S2.12 and S2.14–S2.18 (S2.13, delayed
+redelivery, is reserved: open-threads T52), on this engine and on
 MassTransit 8.5.11, against real RabbitMQ and PostgreSQL, in CI's integration job. `WolverineAdapterTests`
 beside it holds what the class cannot reach: a handler's publish committed without the inbox, two
 handlers of one endpoint both run, and the inbox swept only past its window.

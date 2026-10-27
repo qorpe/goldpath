@@ -55,6 +55,12 @@ internal sealed class WolverineMessagingEngine : IGoldpathMessagingEngine
                 composition.Options.Retry.ImmediateCount, "Immediate retries cannot be negative.");
         }
 
+        // Every handled type's wire name is read now, so a refused one stops the start rather than the first delivery.
+        foreach (var handled in composition.Handlers.Select(h => h.Event).Concat(composition.BatchHandlers.Select(b => b.Event)).Distinct())
+        {
+            _ = GoldpathWire.NameOf(handled);
+        }
+
         var broker = GoldpathWire.BrokerOf(composition, configuration);
         var state = new WolverineEngineState(composition.OutboxContext, composition.Outbox);
 
@@ -124,8 +130,22 @@ internal sealed class WolverineMessagingEngine : IGoldpathMessagingEngine
                 var listener = options.ListenToRabbitQueue(endpoint)
                     .UseMassTransitInterop()
                     .DefaultIncomingMessage(events[0])
-                    .DeadLetterQueueing(new DeadLetterQueue($"{endpoint}_error", DeadLetterQueueMode.InteropFriendly))
-                    .ProcessInline();
+                    .DeadLetterQueueing(new DeadLetterQueue($"{endpoint}_error", DeadLetterQueueMode.InteropFriendly));
+
+                // A concurrency limit (§4.1 row 14) runs that many deliveries at once, each acknowledged to the broker
+                // only once handled, and holds no more than that from the broker; without one, the listener handles
+                // on the transport's own callback, as before.
+                if (registrations[0].ConcurrencyLimit is { } limit)
+                {
+                    listener.ProcessInParallelWithNativeAcks()
+                        .MaximumParallelMessages(limit)
+                        .PreFetchCount((ushort)Math.Min(limit, ushort.MaxValue));
+                }
+                else
+                {
+                    listener.ProcessInline();
+                }
+
                 foreach (var byEvent in registrations.GroupBy(r => r.Event))
                 {
                     options.RegisterMessageType(byEvent.Key);
@@ -182,6 +202,7 @@ internal sealed class WolverineMessagingEngine : IGoldpathMessagingEngine
             headers[key] = value?.ToString() ?? "";
         }
 
+        GoldpathWire.StampTrace(headers);
         var messageId = message.MessageId ?? Guid.NewGuid();
         return wire.PublishAsync(GoldpathWire.ExchangeOf(contract), messageId, wire.Envelope(contract, body, messageId, headers, DateTimeOffset.UtcNow), cancellationToken);
     }
@@ -227,6 +248,11 @@ internal sealed class WolverineTopology(GoldpathWire wire, IReadOnlyDictionary<s
 /// </summary>
 internal abstract class SeamHandler : IMessageHandler
 {
+    /// <summary>The adapter's spans: an application's tracing listens to it by this name.</summary>
+    public const string ActivitySourceName = "Goldpath.Messaging.Wolverine";
+
+    private static readonly ActivitySource s_source = new(ActivitySourceName);
+
     public abstract Type MessageType { get; }
 
     public LogLevel SuccessLogLevel => LogLevel.Debug;
@@ -256,6 +282,24 @@ internal abstract class SeamHandler : IMessageHandler
             : null;
         var correlationId = headers.TryGetValue(GoldpathHeaders.CorrelationId, out var correlation) ? correlation as string : null;
         return (headers, tenant, correlationId);
+    }
+
+    /// <summary>
+    /// Opens the consume span under the publisher's span the delivery carries (<see cref="GoldpathWire.ActivityIdHeader"/>),
+    /// linked to the span current here; null when the delivery carries none, or when the current span already
+    /// continues that trace.
+    /// </summary>
+    protected static Activity? StartConsume(string endpoint, IReadOnlyDictionary<string, object?> headers)
+    {
+        if (!headers.TryGetValue(GoldpathWire.ActivityIdHeader, out var raw) || raw is not string traceParent
+            || !ActivityContext.TryParse(traceParent, null, isRemote: true, out var publisher)
+            || Activity.Current?.TraceId == publisher.TraceId)
+        {
+            return null;
+        }
+
+        ActivityLink[] links = Activity.Current is { } current ? [new ActivityLink(current.Context)] : [];
+        return s_source.StartActivity($"{endpoint} consume", ActivityKind.Consumer, publisher, links: links);
     }
 
     /// <summary>
@@ -300,9 +344,18 @@ internal sealed class SeamHandler<TEvent>(Type[] handlers, string endpoint, Wolv
             GoldpathAmbientTenant.Current = restored;
         }
 
+        // The delivery's span continues the publisher's trace: Wolverine's own span starts a trace of its own from the
+        // 8.x envelope, so the adapter opens the consume span under the publisher's (linked to Wolverine's), and the
+        // handler runs inside it.
+        using var consume = StartConsume(endpoint, headers);
         if (correlationId is not null)
         {
             Activity.Current?.SetTag("goldpath.correlation_id", correlationId);
+        }
+
+        if (tenant is { } tagged)
+        {
+            Activity.Current?.SetTag("goldpath.tenant_id", tagged.Value);
         }
 
         try
