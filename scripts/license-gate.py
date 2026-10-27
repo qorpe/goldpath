@@ -18,6 +18,14 @@ EXCEPTIONS: dict[str, str] = {
     # OPTIONAL Goldpath.Locking.SqlServer package / the template's explicit sqlserver db choice —
     # i.e. only customers who already run commercially-licensed SQL Server. Approved 2026-07-05.
     "Microsoft.Data.SqlClient.SNI.runtime": "proprietary-free (Microsoft Software License Terms)",
+    # Oracle Free Use Terms and Conditions (closed source, free of charge, redistributable).
+    # The Oracle EF Core provider and its ODP.NET driver. Reachable ONLY through the template's
+    # explicit `--db oracle` / manifest `database: oracle` choice — i.e. only adopters who
+    # already run a commercially licensed Oracle Database. No Goldpath package references
+    # them; the optional Goldpath.Locking.Oracle package (if O-4 ships it) is the one
+    # exception and carries the same scope. Approved 2026-10-23 (goldpath-oracle RFC, #287).
+    "Oracle.EntityFrameworkCore": "proprietary-free (Oracle Free Use Terms and Conditions)",
+    "Oracle.ManagedDataAccess.Core": "proprietary-free (Oracle Free Use Terms and Conditions)",
 }
 # licenseUrl-era packages (no SPDX expression in the nuspec); licenses verified by hand.
 # Every entry here was checked against its project page — reviewed like any suppression.

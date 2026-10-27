@@ -19,6 +19,10 @@
     <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="Testcontainers.RabbitMq" />
     <PackageReference Include="Testcontainers.Redis" />
+    <!-- The Oracle lane (G7, O-1, #404): Category=Oracle tests run in their own CI job. FUTC packages, test-only. -->
+    <PackageReference Include="Oracle.EntityFrameworkCore" />
+    <PackageReference Include="Oracle.ManagedDataAccess.Core" />
+    <PackageReference Include="Testcontainers.Oracle" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />

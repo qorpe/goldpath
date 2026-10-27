@@ -5,6 +5,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **The Oracle test lane (GA gate G7, slice O-1, #404).** Repository and CI only: no package
+  changes, and no `Goldpath.*` package references Oracle.
+  - **Pins:** `Oracle.EntityFrameworkCore` 10.23.26301, `Oracle.ManagedDataAccess.Core` 23.26.301
+    (the newest releases at least two weeks old on 2026-10-26) and `Testcontainers.Oracle` 4.16.0,
+    referenced by `Goldpath.IntegrationTests` only.
+  - **Licence gate:** `scripts/license-gate.py` gains exactly the two scoped Oracle Free Use Terms
+    entries of RFC goldpath-oracle §2.1. Any other FUTC package still fails the gate.
+  - **Fixture:** `OracleFixture` runs one `gvenzl/oracle-free:23.26.3-slim-faststart` container per
+    collection.
+  - **CI:** `ci.yml` gains an `oracle` job (`Category=Oracle&Category!=Bench`), and the
+    `integration` job excludes `Category=Oracle`. `nightly.yml` runs the same filter.
+  - **Advisories:** of ODP.NET's six transitive packages only `System.Security.Cryptography.Pkcs`
+    8.0.1 carries advisories. It resolves to the existing central lift, 10.0.13.
 - **The second messaging engine runs the conformance suite: a Wolverine adapter, and the engine contract
   it plugs into (GA gate G5 Part 1/5, #330).**
   - **`Goldpath.Messaging`:** the engine contract of RFC goldpath-messaging-engines §4.1 row 5, built
