@@ -74,7 +74,7 @@ public abstract class MixedFleetTests(ConformanceContainers containers, string f
     {
         // The rolling deployment's duplicate: the old process handled the message and committed its inbox row, then
         // the broker (or a retrying upstream) delivers the same message id to a process already on the new engine.
-        // The inbox both engines share — InboxState keyed by message id and consumer endpoint — must recognise it.
+        // The inbox both engines share — InboxState keyed by message id and consumer (one per handler) — must recognise it.
         var observed = new Observed();
         var id = Guid.NewGuid();
         var messageId = Guid.NewGuid();

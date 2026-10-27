@@ -212,8 +212,8 @@ named after the whole `;`-separated `MessageType` column, where nothing is bound
 deleted the row, a silent loss (S4.3); and its inbox sweep read `ExpirationTime`, which 8.x
 never writes, so the rows the old engine left would never be forgotten.
 
-**Retry and the error queue in a mixed fleet.** Measured by S2.3 on each engine and S4.5
-across them:
+**Retry and the error queue in a mixed fleet.** Immediate retry is measured by S2.3 on each
+engine, and the error queue by S4.5 across them:
 
 - *Immediate retries* run in the process that received the delivery, on its engine, counted by
   that engine (`IntegrationEventContext.RetryAttempt` starts at 0 on each); no attempt count
