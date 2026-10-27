@@ -51,6 +51,10 @@ public sealed class AdminReadRoleTests
         group.MapGet("/things", () => Results.Ok(new { ok = true }));
         group.MapPost("/things/{id}/pause", (string id) => Results.Ok(new { ok = true, message = $"paused {id}" }));
         group.MapDelete("/things/{id}", (string id) => Results.Ok(new { ok = true, message = $"deleted {id}" }));
+
+        // Routes no shipped surface maps but an adopter may: one that answers GET and POST, and one that names no method.
+        group.MapMethods("/both", ["GET", "POST"], () => Results.Ok(new { ok = true }));
+        group.Map("/any", () => Results.Ok(new { ok = true }));
     }
 
     private static HttpClient As(WebApplication app, string? role)
@@ -104,6 +108,37 @@ public sealed class AdminReadRoleTests
             Assert.Equal("this verb needs the goldpath-ops role; this identity can read this surface but not act on it",
                 envelope.RootElement.GetProperty("message").GetString());
         }
+    }
+
+    [Theory]
+    [InlineData("/goldpath/admin/demo/both")]
+    [InlineData("/goldpath/admin/demo/any")]
+    public async Task On_a_route_that_also_answers_a_verb_a_viewer_reads_and_every_verb_is_refused_in_words(string path)
+    {
+        // A route mapped with GET plus another method, or with no method at all, counts as a verb route: the floor is
+        // attached, yet a GET on it still passes, and every other method meets the ops floor.
+        await using var app = await StartAsync();
+        var viewer = As(app, "goldpath-ops-read");
+
+        Assert.Equal(HttpStatusCode.OK, (await viewer.GetAsync(path)).StatusCode);
+        foreach (var method in new[] { HttpMethod.Post, HttpMethod.Put, HttpMethod.Delete })
+        {
+            using var refused = await viewer.SendAsync(new HttpRequestMessage(method, path));
+            if (path.EndsWith("/both", StringComparison.Ordinal) && method != HttpMethod.Post)
+            {
+                Assert.Equal(HttpStatusCode.MethodNotAllowed, refused.StatusCode);   // the route does not answer it at all
+                continue;
+            }
+
+            Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+            using var envelope = JsonDocument.Parse(await refused.Content.ReadAsStringAsync());
+            Assert.Equal("this verb needs the goldpath-ops role; this identity can read this surface but not act on it",
+                envelope.RootElement.GetProperty("message").GetString());
+        }
+
+        var operatorClient = As(app, "goldpath-ops");
+        Assert.Equal(HttpStatusCode.OK, (await operatorClient.GetAsync(path)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await operatorClient.PostAsync(path, null)).StatusCode);
     }
 
     [Fact]

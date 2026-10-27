@@ -169,7 +169,7 @@ share of it:
   worded `403` on a refused verb comes from the admin guard's endpoint filter in `Goldpath.Sdk`,
   not from this module, so it holds under any authentication an adopter composes.
 - **An app that composes its own authentication without this module** and never registers
-  `goldpath-ops-read` keeps R3's behaviour: reads demand `Ops`, with one startup log line naming
+  `goldpath-ops-read` keeps R3's behaviour: reads demand `Ops`, with one startup log line per surface naming
   the policy to register.
 
 ```

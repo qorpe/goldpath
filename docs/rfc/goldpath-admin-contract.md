@@ -382,7 +382,7 @@ served console (`MapGoldpathConsole`, every route a `GET`).
   define `goldpath-ops-read`.
   - When `AuthorizationOptions.GetPolicy(OpsRead)` is null at map time, the guard demands `Ops`
     for reads too, which is R3's behaviour exactly.
-  - It logs one information line on `Goldpath.AdminSurface` naming the policy to register.
+  - Each surface logs one information line on `Goldpath.AdminSurface` naming the policy to register.
   - An unregistered policy is never allowed to become a `500` at request time.
 
 **Public API (additions only).**
