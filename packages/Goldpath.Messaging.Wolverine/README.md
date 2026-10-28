@@ -47,7 +47,7 @@ an outbox on SQL Server. A batch endpoint runs without the inbox.
 
 ## Proof
 
-`tests/Goldpath.Messaging.Conformance` runs the whole fact class, S2.1–S2.12 and S2.14–S2.18 (S2.13, delayed
+`tests/Goldpath.Messaging.Conformance` runs the whole fact class, S2.1–S2.12 and S2.14–S2.19 (S2.13, delayed
 redelivery, is reserved: open-threads T52), on this engine and on
 MassTransit 8.5.11, against real RabbitMQ and PostgreSQL, in CI's integration job. `WolverineAdapterTests`
 beside it holds what the class cannot reach: a handler's publish committed without the inbox, two

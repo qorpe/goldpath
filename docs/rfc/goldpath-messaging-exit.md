@@ -196,9 +196,10 @@ ordering (the seam promises none; a second engine may), OTel spans (needs an exp
 in the harness), consumer concurrency/prefetch limits. Every fact is written against the
 seam, so S3 is "register a second engine's adapter in the harness and run the class".
 
-**2026-10-27 — the named gaps (G5 Part 2/5, [#331](https://github.com/qorpe/goldpath/issues/331)).** Five
+**2026-10-27 — the named gaps (G5 Part 2/5, [#331](https://github.com/qorpe/goldpath/issues/331)).** Six
 facts join the class, each green on MassTransit 8.5.11 and on the Wolverine adapter in the same CI job, and each
-shown red against a planted fault (S2.14–S2.17 on each engine; S2.18 on Wolverine, the engine whose mode it guards):
+shown red against a planted fault (S2.14–S2.17 on each engine; S2.18 and S2.19 on Wolverine, the engine whose mode
+they guard):
 
 - **S2.14, per-queue ordering.** The seam's promise is written down here, and it is the weakest one both engines
   hold: one publisher's messages, on one endpoint run at `ConcurrencyLimit = 1` in one process, are handled in
@@ -219,6 +220,11 @@ shown red against a planted fault (S2.14–S2.17 on each engine; S2.18 on Wolver
   name.
 - **S2.18, the retry ladder on a limited endpoint.** A limit changes how the Wolverine adapter runs an endpoint
   (in parallel, with native acknowledgements), so S2.3 is asked again there: every attempt, then `<queue>_error`.
+- **S2.19, exactly-once on a limited endpoint.** S2.1 asked again where deliveries of one message id can be in
+  flight at once: the same id delivered five times at `ConcurrencyLimit = 4` is handled once. Finding: the
+  Wolverine adapter handled it four times, because its inbox locked a row that a first delivery has not written
+  yet. It now claims the row (an insert that does nothing on the existing key) before it locks it, so a concurrent
+  duplicate waits for the first delivery's transaction and then sees it consumed.
 
 **Delayed redelivery is not in the suite, and that is a finding, not a skip** (open-threads T52; S2.13 is
 reserved for it). The Wolverine
@@ -268,8 +274,8 @@ lines, open until each proof runs:
       owner decision 2026-10-21, ADR-0015); SECURITY.md states the engine posture.
       **2026-10-25 (G5 Part 1/5, #330):** `Goldpath.Messaging.Wolverine` runs the suite's current
       class, S2.1–S2.12, green beside 8.5.11 in the same CI job. **2026-10-27 (G5 Part 2/5, #331):** S2.14
-      ordering, S2.15 concurrency, S2.16 spans, S2.17 a renamed type and S2.18 the ladder on a limited
-      endpoint join it, green on both. Delayed
+      ordering, S2.15 concurrency, S2.16 spans, S2.17 a renamed type, S2.18 the ladder on a limited
+      endpoint and S2.19 exactly-once on a limited endpoint join it, green on both. Delayed
       redelivery is the open finding T52. S1, S3, S4 and S6 are open; what the adapter refuses is
       open-threads T51.
 - [ ] The family bus has its own RFC and repository (qorpe organisation, open source,

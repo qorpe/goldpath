@@ -16,9 +16,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     on the in-memory test transport or the MassTransit-typed overloads (open-threads T53).
   - **Consume spans carry `goldpath.tenant_id`** beside `goldpath.correlation_id`, on the default engine's
     consume filter and the Wolverine adapter.
-  - **Conformance facts S2.14–S2.18:** ordering at a limit of 1, a limit of N reached and never exceeded,
+  - **Conformance facts S2.14–S2.19:** ordering at a limit of 1, a limit of N reached and never exceeded,
     publish and consume as one trace read through the OpenTelemetry in-memory exporter, a renamed type in
-    both directions, and the retry ladder and error queue on a limited endpoint. S2.13 (delayed redelivery) is reserved: see Known issues.
+    both directions, the retry ladder and error queue on a limited endpoint, and exactly-once on a limited
+    endpoint (the same message id delivered concurrently is handled once; the Wolverine adapter's inbox now
+    claims its row before locking it, which a parallel listener needs). S2.13 (delayed redelivery) is reserved: see Known issues.
 - **The Oracle test lane (GA gate G7, slice O-1, #404).** Repository and CI only: no package
   changes, and no `Goldpath.*` package references Oracle.
   - **Pins:** `Oracle.EntityFrameworkCore` 10.23.26301, `Oracle.ManagedDataAccess.Core` 23.26.301

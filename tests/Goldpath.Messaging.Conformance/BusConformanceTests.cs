@@ -314,6 +314,31 @@ public abstract class BusConformanceTests(ConformanceContainers containers, stri
     }
 
     [Fact]
+    public async Task S2_19_at_a_concurrency_limit_the_same_message_delivered_concurrently_handles_once()
+    {
+        // S2.1 asked of a limited endpoint: there the deliveries of one message id can be in flight AT ONCE, so the
+        // inbox's claim itself must be race-free. A claim that only locks a row that already exists lets every
+        // concurrent first delivery through, and each would run the handler's effects before the key collides.
+        var work = new WorkObserved { Hold = TimeSpan.FromMilliseconds(800) };
+        await using var host = await containers.BuildHostAsync(
+            engine, new Observed(),
+            compose: messaging => messaging.AddHandler<Work, WorkHandler>(new GoldpathHandlerOptions { ConcurrencyLimit = 4 }),
+            services: services => services.AddSingleton(work));
+        await host.StartAsync();
+        var messageId = Guid.NewGuid();
+
+        for (var i = 0; i < 5; i++)
+        {
+            await host.PublishAsync(new Work { Number = 1 }, message => message.MessageId = messageId);
+        }
+
+        await work.WaitForHandledAsync(1, Wait);
+        await Task.Delay(TimeSpan.FromSeconds(4));   // grace for a wrong second delivery, past every held slot
+        Assert.Single(work.Handled);
+        await host.StopAsync();
+    }
+
+    [Fact]
     public async Task S2_16_publish_and_consume_are_one_trace_whose_consume_span_carries_tenant_and_correlation()
     {
         var exported = new List<Activity>();

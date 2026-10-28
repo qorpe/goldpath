@@ -382,10 +382,18 @@ internal sealed class SeamHandler<TEvent>(Type[] handlers, string endpoint, Wolv
     /// transaction as the handler's own writes and its outbox rows, so a second delivery of a consumed message
     /// is acknowledged without running the handler again.
     /// </summary>
+    /// <remarks>
+    /// The row is claimed before it is locked: an insert that does nothing when the key exists, then the locking
+    /// select. On an endpoint run at a concurrency limit, deliveries of one message id can arrive together; a lock
+    /// alone finds no row on a first delivery, so every one of them would run the handler before the key collided
+    /// (S2.19). The insert makes a concurrent duplicate wait on the key until the first delivery's transaction ends,
+    /// and then see it consumed, or claim it itself if that delivery failed and rolled back.
+    /// </remarks>
     private async Task HandleOnceAsync(IServiceProvider services, DbContext db, GoldpathOutboxOptions outbox, TEvent message, IntegrationEventContext eventContext, CancellationToken cancellation)
     {
         var messageId = eventContext.MessageId ?? throw new InvalidOperationException("The inbox needs a message id.");
         await using var transaction = await db.Database.BeginTransactionAsync(cancellation);
+        await db.Database.ExecuteSqlRawAsync(InboxClaimSql(db), [messageId, _consumerId, Guid.NewGuid(), DateTime.UtcNow], cancellation);
         var seen = await db.Set<InboxState>()
             .FromSqlRaw(InboxLockSql(db), messageId, _consumerId)
             .AsTracking()
@@ -399,6 +407,7 @@ internal sealed class SeamHandler<TEvent>(Type[] handlers, string endpoint, Wolv
         var now = DateTime.UtcNow;
         if (seen is null)
         {
+            // Only when the sweep removed an expired row between the claim and the lock: a first delivery again.
             seen = new InboxState { MessageId = messageId, ConsumerId = _consumerId, LockId = Guid.NewGuid(), Received = now, ReceiveCount = 0 };
             db.Set<InboxState>().Add(seen);
         }
@@ -423,11 +432,26 @@ internal sealed class SeamHandler<TEvent>(Type[] handlers, string endpoint, Wolv
 
     private static string InboxLockSql(DbContext db)
     {
+        var (table, column) = Inbox(db);
+        return $"SELECT * FROM {table} WHERE {column(nameof(InboxState.MessageId))} = {{0}} AND {column(nameof(InboxState.ConsumerId))} = {{1}} FOR UPDATE";
+    }
+
+    private static string InboxClaimSql(DbContext db)
+    {
+        // (MessageId, ConsumerId) is the inbox's alternate key, so a second claim of one key does nothing, after
+        // waiting for the first claim's transaction to end.
+        var (table, column) = Inbox(db);
+        return $"INSERT INTO {table} ({column(nameof(InboxState.MessageId))}, {column(nameof(InboxState.ConsumerId))}, "
+            + $"{column(nameof(InboxState.LockId))}, {column(nameof(InboxState.Received))}, {column(nameof(InboxState.ReceiveCount))}) "
+            + "VALUES ({0}, {1}, {2}, {3}, 0) ON CONFLICT DO NOTHING";
+    }
+
+    /// <summary>The inbox table as the context maps it, and its columns by property, quoted.</summary>
+    private static (string Table, Func<string, string> Column) Inbox(DbContext db)
+    {
         var entity = db.Model.FindEntityType(typeof(InboxState))
             ?? throw new InvalidOperationException($"'{db.GetType().Name}' maps no inbox table; call modelBuilder.AddGoldpathOutboxEntities().");
         var table = entity.GetSchema() is { } schema ? $"\"{schema}\".\"{entity.GetTableName()}\"" : $"\"{entity.GetTableName()}\"";
-        var messageId = entity.FindProperty(nameof(InboxState.MessageId))!.GetColumnName();
-        var consumerId = entity.FindProperty(nameof(InboxState.ConsumerId))!.GetColumnName();
-        return $"SELECT * FROM {table} WHERE \"{messageId}\" = {{0}} AND \"{consumerId}\" = {{1}} FOR UPDATE";
+        return (table, property => $"\"{entity.FindProperty(property)!.GetColumnName()}\"");
     }
 }
