@@ -5,6 +5,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **Campaign: a scheduled start and the `Ready` state (campaign RFC R3.1, slice R3-S2, #289).**
+  - **API (additive, init-only):** `GoldpathCampaignPolicy.StartAt` and `IsBeforeStart(utcNow)`,
+    `GoldpathCampaignThrottle.StartAt` and `ClearStartAt`, `GoldpathCampaignInfo.StartAt`. No
+    positional constructor changes. `StartAt` is stored in UTC.
+  - **Engine and pacer:** a finished snapshot goes to `Ready` while the start is ahead, and to
+    `Running` otherwise, as before. The pacer loads `Ready`, starts it once the start has passed
+    through one internal start gate that ships with no gates (amendment R3.7 plugs in there),
+    audits it `start` with the actor `system`, and releases in the same tick. A `Ready`
+    campaign past its end date expires.
+  - **Verbs:** `create` takes `StartAt`. `throttle` moves or clears it until the campaign has
+    started (`Running`, or anything released) and refuses after that. A start in the past
+    means now, and a start after the end date's local day is refused. `pause` accepts `Ready`;
+    `resume` returns to `Ready` while the start is ahead. The audit and `LastVerb` add
+    `start=…` to the policy text only when a start is involved, so existing text is unchanged.
+  - **Proof:** `R3StartTests` (18 facts, a stepped clock), red against planted faults,
+    including the Berlin DST pair: a 03:30 start on spring-forward Sunday releases nothing at
+    01:29:59Z and releases at 01:30Z, and of the two 02:30s on fall-back Sunday only the
+    chosen one starts. The pacer's start is guarded on the state and the start it read, so an
+    operator's move made during the tick wins.
+  - **Not yet:** the real-broker test and the console's view of `Ready` (R3-S3, #315).
 - **Admin surfaces: a read role, `goldpath-ops-read` (admin contract R4.1, slice R4-S1, #297).**
   - **What it is:** `GoldpathPolicies.OpsRead` (Abstractions) and `GoldpathAuthOptions.OpsReadRole`
     (Auth, default `goldpath-ops-read`). `AddGoldpathAuth` registers the policy in both strategy
