@@ -12,6 +12,13 @@ public static class GoldpathPolicies
     public const string Ops = "goldpath-ops";
 
     /// <summary>
+    /// The READ policy (admin-contract revision R4.1): every admin <c>GET</c> demands it, and every
+    /// other method still demands <see cref="Ops"/>. Goldpath.Auth registers it so that the ops role
+    /// satisfies it too, so an operator loses nothing and a viewer can read a surface without acting on it.
+    /// </summary>
+    public const string OpsRead = "goldpath-ops-read";
+
+    /// <summary>
     /// The CROSS-TENANT ops policy (admin-contract revision R1): on a multi-tenant app,
     /// widening an admin read beyond the ambient tenant (an explicit `?tenant=` override
     /// or the all-tenants view) demands this on top of <see cref="Ops"/> — tenant

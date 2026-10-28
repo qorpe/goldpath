@@ -16,7 +16,9 @@ app.MapGoldpathConsole(configure: console => console
   does not already expose, and it carries the operator's own credentials.
 - Its assets are **embedded in this package**: adopters never run Node, and a generated app
   stays Node-free by construction.
-- It sits behind the **same ops floor** as the admin surfaces (`goldpath-ops`). Pass
+- It sits behind the **same ops floor** as the admin surfaces: every console route is a `GET`, so
+  it demands the read policy (`goldpath-ops-read`, which `goldpath-ops` also satisfies;
+  admin-contract R4.1). A viewer opens every screen, and only an operator's verbs act. Pass
   `exposeUnsecured: true` only for a host with no auth at all — the guard logs that choice.
 - The cross-service registry is **configuration**, not a file you drop beside the dist:
   `AddService(...)` is what the console reads at startup.

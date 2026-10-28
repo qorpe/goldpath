@@ -184,9 +184,19 @@ Every adapter:
   `SaveChanges` transaction (the atomicity proof, messaging-exit §7 item 1);
 - **relays** any undelivered `OutboxMessage` row, whichever engine wrote it. A row written by
   process A and left pending when A stopped is delivered by process B on the other engine. That
-  is S4's "outbox rows written under the old adapter delivered by the new", with no drain;
-- **deduplicates** against `InboxState` keyed by (`MessageId`, consumer endpoint). A message
-  delivered once under one engine and redelivered under the other is not handled twice;
+  is S4's "outbox rows written under the old adapter delivered by the new", with no drain. The
+  row goes to its own type's exchange: 8.x stores in `MessageType` every type the message is
+  published as, `;`-separated with the message's own type first (measured 2026-10-26, #333);
+- **deduplicates** against `InboxState` keyed by (`MessageId`, consumer). A message
+  delivered once under one engine and redelivered under the other is not handled twice. The
+  consumer is **one per handler**, the key 8.x derives for its adapter consumer:
+  `MD5("{consumer}:{message}:{queue}")` as a GUID (SHA-256's first 16 bytes when FIPS-only or
+  `MT_FIPS_ENABLE`), where the consumer is `Goldpath.GoldpathIntegrationEventConsumer<TEvent,THandler>`
+  and both are 8.x short type names (measured against an `InboxState` row 8.5.11 wrote, #333).
+  The adapter consumer's namespace and name are therefore part of this schema: renaming or
+  moving it (as Part 4/4's extraction might) re-keys every deployed inbox, so it keeps both;
+- forgets inbox rows by the 8.x rule (`Delivered` older than the duplicate-detection window),
+  so the rows either engine wrote are swept by whichever runs;
 - holds the relay lock per `OutboxState` row the same way, so two engines never deliver one
   row twice.
 

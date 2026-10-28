@@ -1,6 +1,4 @@
 using System.Diagnostics;
-using System.Security.Cryptography;
-using System.Text;
 using MassTransit.EntityFrameworkCoreIntegration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -324,8 +322,10 @@ internal abstract class SeamHandler : IMessageHandler
 internal sealed class SeamHandler<TEvent>(Type[] handlers, string endpoint, WolverineEngineState state) : SeamHandler
     where TEvent : class, IIntegrationEvent
 {
-    // The inbox's consumer key for this endpoint: stable across processes and restarts.
-    private readonly Guid _consumerId = new(MD5.HashData(Encoding.UTF8.GetBytes("goldpath-endpoint:" + endpoint)));
+    // The inbox's consumer key per handler, the one the default engine writes (GoldpathInboxKey): a delivery one
+    // engine of a mixed fleet recorded is recognised by the other, handler by handler.
+    private readonly (Type Handler, Guid ConsumerId)[] _consumers =
+        [.. handlers.Select(handler => (handler, GoldpathInboxKey.ConsumerIdOf(typeof(TEvent), handler, endpoint)))];
 
     public override Type MessageType => typeof(TEvent);
 
@@ -378,9 +378,10 @@ internal sealed class SeamHandler<TEvent>(Type[] handlers, string endpoint, Wolv
     }
 
     /// <summary>
-    /// The inbox: the delivery is recorded in <c>InboxState</c> keyed by (message id, endpoint) in the same
-    /// transaction as the handler's own writes and its outbox rows, so a second delivery of a consumed message
-    /// is acknowledged without running the handler again.
+    /// The inbox: each handler's delivery is recorded in <c>InboxState</c> keyed by (message id, consumer) in the
+    /// same transaction as the handlers' own writes and their outbox rows, so a second delivery of a consumed
+    /// message is acknowledged without running a handler again. One row per handler, as the default engine keeps
+    /// them, so a handler that already ran under either engine is skipped and only the others run.
     /// </summary>
     /// <remarks>
     /// The row is claimed before it is locked: an insert that does nothing when the key exists, then the locking
@@ -393,30 +394,43 @@ internal sealed class SeamHandler<TEvent>(Type[] handlers, string endpoint, Wolv
     {
         var messageId = eventContext.MessageId ?? throw new InvalidOperationException("The inbox needs a message id.");
         await using var transaction = await db.Database.BeginTransactionAsync(cancellation);
-        await db.Database.ExecuteSqlRawAsync(InboxClaimSql(db), [messageId, _consumerId, Guid.NewGuid(), DateTime.UtcNow], cancellation);
-        var seen = await db.Set<InboxState>()
-            .FromSqlRaw(InboxLockSql(db), messageId, _consumerId)
-            .AsTracking()
-            .FirstOrDefaultAsync(cancellation);
-        if (seen?.Consumed is not null)
+        var claimSql = InboxClaimSql(db);
+        var lockSql = InboxLockSql(db);
+        var ran = false;
+        foreach (var (handlerType, consumerId) in _consumers)
+        {
+            await db.Database.ExecuteSqlRawAsync(claimSql, [messageId, consumerId, Guid.NewGuid(), DateTime.UtcNow], cancellation);
+            var seen = await db.Set<InboxState>()
+                .FromSqlRaw(lockSql, messageId, consumerId)
+                .AsTracking()
+                .FirstOrDefaultAsync(cancellation);
+            if (seen?.Consumed is not null)
+            {
+                continue;
+            }
+
+            var now = DateTime.UtcNow;
+            if (seen is null)
+            {
+                // Only when the sweep removed an expired row between the claim and the lock: a first delivery again.
+                seen = new InboxState { MessageId = messageId, ConsumerId = consumerId, LockId = Guid.NewGuid(), Received = now, ReceiveCount = 0 };
+                db.Set<InboxState>().Add(seen);
+            }
+
+            seen.ReceiveCount++;
+            await InvokeAsync(services, handlerType, message, eventContext, cancellation);
+            seen.Consumed = DateTime.UtcNow;
+            seen.Delivered = seen.Consumed;
+            seen.ExpirationTime = seen.Consumed + outbox.DuplicateDetectionWindow;
+            ran = true;
+        }
+
+        if (!ran)
         {
             await transaction.RollbackAsync(cancellation);
             return;
         }
 
-        var now = DateTime.UtcNow;
-        if (seen is null)
-        {
-            // Only when the sweep removed an expired row between the claim and the lock: a first delivery again.
-            seen = new InboxState { MessageId = messageId, ConsumerId = _consumerId, LockId = Guid.NewGuid(), Received = now, ReceiveCount = 0 };
-            db.Set<InboxState>().Add(seen);
-        }
-
-        seen.ReceiveCount++;
-        await InvokeAsync(services, message, eventContext, cancellation);
-        seen.Consumed = now;
-        seen.Delivered = now;
-        seen.ExpirationTime = now + outbox.DuplicateDetectionWindow;
         await db.SaveChangesAsync(cancellation);
         await transaction.CommitAsync(cancellation);
     }
@@ -425,10 +439,12 @@ internal sealed class SeamHandler<TEvent>(Type[] handlers, string endpoint, Wolv
     {
         foreach (var handlerType in handlers)
         {
-            var handler = (IIntegrationEventHandler<TEvent>)services.GetRequiredService(handlerType);
-            await handler.HandleAsync(message, eventContext, cancellation);
+            await InvokeAsync(services, handlerType, message, eventContext, cancellation);
         }
     }
+
+    private static Task InvokeAsync(IServiceProvider services, Type handlerType, TEvent message, IntegrationEventContext eventContext, CancellationToken cancellation)
+        => ((IIntegrationEventHandler<TEvent>)services.GetRequiredService(handlerType)).HandleAsync(message, eventContext, cancellation);
 
     private static string InboxLockSql(DbContext db)
     {

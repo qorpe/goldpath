@@ -236,6 +236,19 @@ internal sealed class GoldpathWire : IAsyncDisposable
     public static string ExchangeOfUrn(string urn)
         => urn.StartsWith("urn:message:", StringComparison.Ordinal) ? urn["urn:message:".Length..] : throw new FormatException($"'{urn}' is not an 8.x message type URN.");
 
+    /// <summary>
+    /// The exchange an outbox row is published to, from its <c>MessageType</c> column. The default engine stores
+    /// every type a message is published as, <c>;</c>-separated with the message's own type first (an event and the
+    /// interfaces it implements); a row is published to its own type's exchange, as the default engine's relay
+    /// publishes it, never to an exchange named after the whole list.
+    /// </summary>
+    public static string ExchangeOfMessageTypes(string messageTypes)
+    {
+        ArgumentNullException.ThrowIfNull(messageTypes);
+        var separator = messageTypes.IndexOf(';', StringComparison.Ordinal);
+        return ExchangeOfUrn(separator < 0 ? messageTypes : messageTypes[..separator]);
+    }
+
     private static async Task DeclareQueueWithExchangeAsync(IChannel channel, string name, CancellationToken cancellationToken)
     {
         await channel.ExchangeDeclareAsync(name, ExchangeType.Fanout, durable: true, autoDelete: false, cancellationToken: cancellationToken);

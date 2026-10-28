@@ -170,7 +170,7 @@ internal sealed class WolverineOutboxRelay<TContext>(
             // hold the locked row for ever: the pass gives up, rolls back, and the row is taken again.
             using var confirm = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             confirm.CancelAfter(s_confirmTimeout);
-            await wire.PublishAsync(GoldpathWire.ExchangeOfUrn(message.MessageType), message.MessageId, System.Text.Encoding.UTF8.GetBytes(message.Body), confirm.Token);
+            await wire.PublishAsync(GoldpathWire.ExchangeOfMessageTypes(message.MessageType), message.MessageId, System.Text.Encoding.UTF8.GetBytes(message.Body), confirm.Token);
         }
 
         context.Set<OutboxMessage>().RemoveRange(messages);
@@ -181,16 +181,19 @@ internal sealed class WolverineOutboxRelay<TContext>(
     }
 
     /// <summary>
-    /// Forgets consumed inbox rows whose duplicate-detection window has passed, as the default engine's cleanup
-    /// does: the inbox is a window, not a history, and without this the table only grows.
+    /// Forgets inbox rows delivered longer ago than the duplicate-detection window, by the default engine's own
+    /// rule (<c>Delivered</c> before now less the window): the inbox is a window, not a history, and without this the
+    /// table only grows. The rule reads a column both engines write, so in a mixed fleet the rows either one wrote
+    /// are forgotten by whichever runs the sweep; the default engine leaves <c>ExpirationTime</c> empty, so a rule
+    /// on that column would keep its rows for ever.
     /// </summary>
     internal async Task<int> SweepInboxAsync(CancellationToken cancellationToken)
     {
         using var scope = scopes.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<TContext>();
-        var now = DateTime.UtcNow;
+        var cutoff = DateTime.UtcNow - options.DuplicateDetectionWindow;
         return await context.Set<InboxState>()
-            .Where(i => i.Consumed != null && i.ExpirationTime != null && i.ExpirationTime < now)
+            .Where(i => i.Delivered != null && i.Delivered < cutoff)
             .ExecuteDeleteAsync(cancellationToken);
     }
 

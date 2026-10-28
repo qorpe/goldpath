@@ -21,6 +21,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     both directions, the retry ladder and error queue on a limited endpoint, and exactly-once on a limited
     endpoint (the same message id delivered concurrently is handled once; the Wolverine adapter's inbox now
     claims its row before locking it, which a parallel listener needs). S2.13 (delayed redelivery) is reserved: see Known issues.
+- **Admin surfaces: a read role, `goldpath-ops-read` (admin contract R4.1, slice R4-S1, #297).**
+  - **What it is:** `GoldpathPolicies.OpsRead` (Abstractions) and `GoldpathAuthOptions.OpsReadRole`
+    (Auth, default `goldpath-ops-read`). `AddGoldpathAuth` registers the policy in both strategy
+    branches as "the read role or the ops role", so no operator loses a route.
+  - **How the guard applies it:** `AdminSurfaceGuard` (Sdk) applies the HTTP method rule on all
+    seven surfaces and the console. A `GET` demands `OpsRead`. Every other method also demands
+    `Ops` through an endpoint filter, which refuses with `403` and the admin envelope naming the
+    configured role ("this verb needs the goldpath-ops role; this identity can read this surface
+    but not act on it"), where it used to answer an empty `403`.
+  - **Apps without the read policy:** an app that registers no `OpsRead` policy keeps `Ops` on
+    every route and gets one information log line.
+  - **Proof:** a cross-surface route-table test holds every route in one of the two buckets. A
+    real-HTTP role matrix on PostgreSQL covers every surface:
+    - a viewer reads every parameterless `GET` and is refused every verb in words;
+    - the viewer retrieves an archived document in full;
+    - an operator does both;
+    - nobody is challenged with `401`.
+  - **Disclosure:** granting the role grants archive retrieval. The preview.10 upgrade guide says
+    so; T50 carries the masking viewer.
 - **The Oracle test lane (GA gate G7, slice O-1, #404).** Repository and CI only: no package
   changes, and no `Goldpath.*` package references Oracle.
   - **Pins:** `Oracle.EntityFrameworkCore` 10.23.26301, `Oracle.ManagedDataAccess.Core` 23.26.301
@@ -255,6 +274,30 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 - **The Wolverine adapter continues the publisher's trace (#331).** Its consume span started a new trace from
   the 8.x envelope; it now opens the consume span under the `MT-Activity-Id` the delivery carries (ActivitySource
   `Goldpath.Messaging.Wolverine`), and writes that header when it publishes. The adapter is not published.
+- **`Goldpath.Messaging.Wolverine` (not published) is wire-compatible with a MassTransit fleet:
+  S4, mixed-fleet compatibility, in the conformance suite (GA gate G5 Part 4/5, #333).**
+  `MixedFleetTests` runs a MassTransit 8.5.11 process and a Wolverine process on one RabbitMQ and one
+  PostgreSQL, in both directions, through the seam only (S4.1–S4.5). It covers:
+  - what one engine publishes, the other handles with tenant, correlation and message id intact;
+  - a redelivery handled under one engine is not handled again under the other;
+  - an outbox row one engine committed and never relayed is delivered by the other;
+  - a message one engine parked in `<queue>_error` is handled by the other once shovelled back.
+
+  The facts were red first and found three adapter defects:
+  - **The inbox keyed a consumer by the endpoint alone.** A message the default engine had handled ran
+    its handler again on Wolverine, and the reverse. It now keys each handler by the id 8.x derives for
+    its adapter consumer (one `InboxState` row per handler, MD5 or FIPS SHA-256 as 8.x chooses), pinned
+    against a row 8.5.11 wrote.
+  - **The relay lost a MassTransit-written row.** It published the row to an exchange named after the
+    whole `;`-separated `MessageType` column, which nothing is bound to, then deleted the row. It now
+    publishes to the row's own type's exchange.
+  - **The inbox sweep missed MassTransit's rows.** It read `ExpirationTime`, which 8.x leaves empty, so
+    rows the old engine wrote were never forgotten. It now forgets by the 8.x rule: `Delivered` older
+    than the duplicate-detection window.
+
+  Removing the listener's MassTransit interop turns S4.1 red. Mixed-fleet retry and error-queue
+  semantics are written in RFC goldpath-messaging-exit §7.1. `Goldpath.Messaging` and every
+  published package are unchanged.
 - **The console's npm advisories are closed: vitest 2 → 5, with the 97% coverage floor re-earned
   (#356).** Console test tooling only; the shipped bundle is byte-identical to the one before
   (the same `pnpm build` output hashes) and every package is unchanged. `ui/console` takes

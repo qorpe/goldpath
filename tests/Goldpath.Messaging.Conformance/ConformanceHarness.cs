@@ -34,6 +34,12 @@ public sealed class Observed
 
     public ConcurrentBag<int> PoisonAttempts { get; } = [];
 
+    /// <summary>While set, the Repairable handler faults: the release whose consumer has the bug.</summary>
+    public bool Broken { get; set; }
+
+    /// <summary>What the Repairable handler handled, once it was not broken.</summary>
+    public ConcurrentBag<(Guid Id, IntegrationEventContext Context)> Repaired { get; } = [];
+
     /// <summary>Ping ids the second handler on a shared endpoint saw — both handlers of one event run for each delivery.</summary>
     public ConcurrentBag<Guid> AlsoPinged { get; } = [];
 
@@ -125,6 +131,27 @@ public sealed class PoisonHandler(Observed observed) : IIntegrationEventHandler<
     {
         observed.PoisonAttempts.Add(context.RetryAttempt);
         throw new InvalidOperationException("poison");
+    }
+}
+
+/// <summary>The re-drive fact's event: its handler faults while broken, and handles once it is fixed.</summary>
+public sealed class Repairable : IIntegrationEvent
+{
+    public Guid Id { get; set; }
+}
+
+/// <summary>Throws while <see cref="Observed.Broken"/> is set — the release with the bug — and records once it is not.</summary>
+public sealed class RepairableHandler(Observed observed) : IIntegrationEventHandler<Repairable>
+{
+    public Task HandleAsync(Repairable integrationEvent, IntegrationEventContext context, CancellationToken cancellationToken = default)
+    {
+        if (observed.Broken)
+        {
+            throw new InvalidOperationException("broken");
+        }
+
+        observed.Repaired.Add((integrationEvent.Id, context));
+        return Task.CompletedTask;
     }
 }
 
@@ -381,6 +408,27 @@ public sealed class ConformanceContainers : IAsyncLifetime
         return response.IsSuccessStatusCode;
     }
 
+    /// <summary>
+    /// Moves every message in <paramref name="queue"/> to the exchange <paramref name="exchange"/>, body and properties
+    /// untouched — what the runbook's "shovel it back" does once the consumer is fixed. Returns how many it moved.
+    /// </summary>
+    public async Task<int> ShovelAsync(string queue, string exchange)
+    {
+        var factory = new RabbitMQ.Client.ConnectionFactory { Uri = new Uri(Rabbit.GetConnectionString()) };
+        await using var connection = await factory.CreateConnectionAsync();
+        await using var channel = await connection.CreateChannelAsync(
+            new RabbitMQ.Client.CreateChannelOptions(publisherConfirmationsEnabled: true, publisherConfirmationTrackingEnabled: true));
+        var moved = 0;
+        while (await channel.BasicGetAsync(queue, autoAck: false) is { } message)
+        {
+            await channel.BasicPublishAsync(exchange, "", mandatory: false, new RabbitMQ.Client.BasicProperties(message.BasicProperties), message.Body);
+            await channel.BasicAckAsync(message.DeliveryTag, multiple: false);
+            moved++;
+        }
+
+        return moved;
+    }
+
     public async Task InitializeAsync() => await Task.WhenAll(Postgres.StartAsync(), Rabbit.StartAsync());
 
     public async Task DisposeAsync()
@@ -397,17 +445,23 @@ public sealed class ConformanceContainers : IAsyncLifetime
     /// only once the bus has started (#371), so no fact has to know how an engine says that. Every engine
     /// the suite references is in this process, so <paramref name="engine"/> names the one this host runs on;
     /// <paramref name="compose"/> adds to the composition after the defaults, and <paramref name="services"/> to the host's services.
+    /// A host built with <paramref name="consumes"/> false registers no handler: in a mixed fleet it is the process that only
+    /// publishes, so what it sends can only be handled by the other engine.
     /// </summary>
     public async Task<GoldpathMessagingTestHost> BuildHostAsync(
         string engine, Observed observed, Action<GoldpathMessagingOptions>? options = null, string? tenant = null,
         (BatchesObserved Observed, GoldpathBatchOptions Grouping)? batches = null, Action<GoldpathMessagingBuilder>? compose = null,
-        Action<IServiceCollection>? services = null)
+        Action<IServiceCollection>? services = null, bool consumes = true)
     {
         var host = GoldpathMessagingTestHost.Create(
             messaging =>
             {
-                messaging.AddHandler<Ping, PingHandler>();
-                messaging.AddHandler<Poison, PoisonHandler>();
+                if (consumes)
+                {
+                    messaging.AddHandler<Ping, PingHandler>();
+                    messaging.AddHandler<Poison, PoisonHandler>();
+                }
+
                 if (batches is { } batch)
                 {
                     messaging.AddBatchHandler<Tick, TickBatchHandler>(batch.Grouping);

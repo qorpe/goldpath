@@ -1,1 +1,2 @@
 #nullable enable
+const Goldpath.GoldpathPolicies.OpsRead = "goldpath-ops-read" -> string!
