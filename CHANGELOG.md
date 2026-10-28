@@ -5,6 +5,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **The Data module, proven on Oracle (GA gate G7, slice O-2, #405).** Tests only: no package changes.
+  `OracleDataTests` (`Category=Oracle`) runs on the O-1 lane's container, one schema per fact, against a model that
+  composes Jobs, Campaign, Bulk and Archival in the 19c SQL form:
+  - every column's Oracle store type is pinned in a golden;
+  - every identifier fits in 128 bytes;
+  - every NOT NULL string column refuses `''`;
+  - the keyset suite passes with no Oracle branch;
+  - `DateOnly`/`TimeOnly` round-trip;
+  - D7 migrate up, down, up, and a second migrate changes nothing.
+
+  It found three things, filed as issues:
+  - the document columns are `NVARCHAR2(2000)` and refuse a NULL in the client (#475);
+  - three admin verbs can write `''` into a NOT NULL column (#476);
+  - the global ceiling row's empty name (#384, already open).
+
+  `packages/Goldpath.Data/ops/data.md` gains an "Oracle" section: the container's cost, the 19c compatibility
+  setting, and the type mappings.
 - **Admin surfaces: a read role, `goldpath-ops-read` (admin contract R4.1, slice R4-S1, #297).**
   - **What it is:** `GoldpathPolicies.OpsRead` (Abstractions) and `GoldpathAuthOptions.OpsReadRole`
     (Auth, default `goldpath-ops-read`). `AddGoldpathAuth` registers the policy in both strategy

@@ -25,6 +25,36 @@ migrations RFC D2; `EnsureCreated` is analyzer-flagged, GP0302).
 3. `Skip/Take` is analyzer-flagged (GP0301): if a list drifts under concurrent inserts,
    someone bypassed the page helper.
 
+## Oracle
+
+Measured in G7 slice O-2 (#405), on `gvenzl/oracle-free:23.26.3-slim-faststart` with `Oracle.EntityFrameworkCore`
+10.23.26301. The proofs are `tests/Goldpath.IntegrationTests/OracleDataTests.cs` (`Category=Oracle`).
+
+- **Cost of the container.**
+  - Agent sandbox, image already pulled: 27.6 s and 32.6 s to accept connections, measured by the lane fixture's
+    `StartUpTime`.
+  - GitHub-hosted runner (ci run 40725896363, job 122948933921, 2026-10-28, the O-1 fact alone): 54 s from test
+    discovery to the result. That covers the image pull and the start; CI's logger does not print the fixture's
+    own number.
+- **The 19c form must be asked for.** The provider's default SQL form is 23ai's, which maps `bool` to `BOOLEAN`, a
+  column type 19c does not have. To run on 19c, use
+  `UseOracle(cs, o => o.UseOracleSQLCompatibility(OracleSQLCompatibility.DatabaseVersion19))`; `bool` is then
+  `NUMBER(1)`. The golden in `tests/Goldpath.IntegrationTests/Oracle/composed-model.golden.txt` is that form.
+- **`DateOnly` and `TimeOnly` are strings.** They are `NVARCHAR2(10)` and `NVARCHAR2(48)`, not `DATE` and
+  `INTERVAL`. They round-trip, including `23:59:59.9999999` and a DST date, and range filters order correctly. Read
+  them as text when you query from SQL*Plus.
+- **Document columns are capped at 2,000 characters** (`HasMaxLength(-1)` → `NVARCHAR2(2000)`), and a NULL in one
+  fails in ODP.NET (`OracleParameter.set_Size`) before it is sent. Until #475 lands, a job execution that succeeds
+  (its `Error` is NULL) cannot be recorded on Oracle.
+- **`''` is NULL.** Every NOT NULL string column refuses an empty string with `ORA-01400`. The known writers of
+  `""` are #384 (the global ceiling row) and #476 (three admin verbs that accept a blank value).
+- **Keyset needs nothing Oracle-specific.** `ToPageAsync` emits `FETCH FIRST … ROWS ONLY`, and orders as the
+  database does:
+  - a string key in BINARY order, which is by code point (`A` before `a`; dotted `İ` and dotless `ı` by code point);
+  - a `Guid` key by its `RAW(16)` bytes, which is stable but not the order rows were created in.
+- **Identifiers fit.** Every table, column, key, index and constraint name in the composed model is at most
+  76 bytes, against Oracle's 128-byte limit.
+
 ## Connection-pool exhaustion
 Symptoms: p95 climbs, then `TimeoutException` acquiring a connection. Causes in order of
 likelihood: a DbContext captured in a singleton (a scope leak — the EF meter's
