@@ -19,11 +19,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     means now, and a start after the end date's local day is refused. `pause` accepts `Ready`;
     `resume` returns to `Ready` while the start is ahead. The audit and `LastVerb` add
     `start=…` to the policy text only when a start is involved, so existing text is unchanged.
-  - **Proof:** `R3StartTests` (18 facts, a stepped clock), red against planted faults,
+  - **Proof:** `R3StartTests` (20 facts, a stepped clock), red against planted faults,
     including the Berlin DST pair: a 03:30 start on spring-forward Sunday releases nothing at
     01:29:59Z and releases at 01:30Z, and of the two 02:30s on fall-back Sunday only the
     chosen one starts. The pacer's start is guarded on the state and the start it read, so an
-    operator's move made during the tick wins.
+    operator's move or pause made during the tick wins. Mutation gate: 83.95 % (`stryker/README.md`).
   - **Not yet:** the real-broker test and the console's view of `Ready` (R3-S3, #315).
 - **Admin surfaces: a read role, `goldpath-ops-read` (admin contract R4.1, slice R4-S1, #297).**
   - **What it is:** `GoldpathPolicies.OpsRead` (Abstractions) and `GoldpathAuthOptions.OpsReadRole`

@@ -226,6 +226,21 @@ public class R3StartTests
         Assert.True(rig.EarliestRelease(id) >= start);
     }
 
+    [Fact]
+    public async Task ACreateWithoutAPolicy_TakesTheTypesDefaults_WhichCarryNoStart()
+    {
+        var t0 = new DateTimeOffset(2026, 11, 2, 9, 0, 0, TimeSpan.Zero);
+        using var rig = new Rig(new TickClock(t0));
+        var created = await rig.Admin.CreateAsync("winback", "defaults", new Dictionary<string, string>(), policy: null, null, "op", CancellationToken.None);
+        Assert.True(created.Ok, created.Message);
+        var row = rig.Fixture.Query(db => db.Set<GoldpathCampaign>().AsNoTracking().Single());
+        Assert.Null(row.StartAt);
+        Assert.Equal(rig.Fixture.Options.Type("winback").DefaultPolicy.Tps, row.Tps);
+
+        await rig.SliceAsync();
+        Assert.Equal(GoldpathCampaignState.Running, rig.Reload(row.Id).State);
+    }
+
     // ---- the verbs ----
 
     [Fact]
@@ -260,20 +275,50 @@ public class R3StartTests
     [Fact]
     public async Task AStartMovedAfterTheTickLoadedTheCampaign_WinsOverThePacersStart()
     {
-        // The tick loads every workable campaign, then works them in creation order. The first
-        // campaign's selector runs inside that tick, so it can play the operator: it moves the
-        // second campaign's start an hour on AFTER the tick read the old one, which has passed.
         var t0 = new DateTimeOffset(2026, 11, 2, 9, 0, 0, TimeSpan.Zero);
+        var (rig, scheduled) = await RaceTheStartAsync(t0, (admin, id, now) =>
+            admin.ThrottleAsync(id, new GoldpathCampaignThrottle { StartAt = now.AddHours(1) }, "op", CancellationToken.None));
+        using (rig)
+        {
+            var row = rig.Reload(scheduled);
+            Assert.Equal(GoldpathCampaignState.Ready, row.State);
+            Assert.Equal(t0.AddSeconds(30).AddHours(1), row.StartAt);
+            Assert.Equal(0, row.ReleasedThrough);
+            Assert.DoesNotContain(rig.Audit(scheduled), a => a.Action == "start");
+        }
+    }
+
+    [Fact]
+    public async Task APauseMadeAfterTheTickLoadedTheCampaign_WinsOverThePacersStart()
+    {
+        var t0 = new DateTimeOffset(2026, 11, 2, 9, 0, 0, TimeSpan.Zero);
+        var (rig, scheduled) = await RaceTheStartAsync(t0, (admin, id, _) => admin.PauseAsync(id, "op", CancellationToken.None));
+        using (rig)
+        {
+            var row = rig.Reload(scheduled);
+            Assert.Equal(GoldpathCampaignState.Paused, row.State);
+            Assert.Equal(0, row.ReleasedThrough);
+            Assert.DoesNotContain(rig.Audit(scheduled), a => a.Action == "start");
+        }
+    }
+
+    /// <summary>
+    /// The tick loads every workable campaign, then works them in creation order. A first campaign's
+    /// selector runs inside that tick, so it can play the operator: it acts on the scheduled campaign
+    /// AFTER the tick read it, when its start (t0 + 10 s) has already passed.
+    /// </summary>
+    private static async Task<(Rig Rig, Guid Scheduled)> RaceTheStartAsync(
+        DateTimeOffset t0, Func<GoldpathCampaignAdminService<CampaignTestContext>, Guid, DateTimeOffset, Task<GoldpathAdminResult>> act)
+    {
         Rig rig = null!;
         Guid scheduled = Guid.Empty;
-        var moved = false;
+        var acted = false;
         async IAsyncEnumerable<TestTarget> Operator()
         {
-            if (scheduled != Guid.Empty && !moved)
+            if (scheduled != Guid.Empty && !acted)
             {
-                moved = true;
-                var result = await rig.Admin.ThrottleAsync(scheduled,
-                    new GoldpathCampaignThrottle { StartAt = rig.Clock.GetUtcNow().AddHours(1) }, "op", CancellationToken.None);
+                acted = true;
+                var result = await act(rig.Admin, scheduled, rig.Clock.GetUtcNow());
                 Assert.True(result.Ok, result.Message);
             }
 
@@ -282,30 +327,22 @@ public class R3StartTests
 
         rig = new Rig(new TickClock(t0), configure: o => o.AddCampaign<TestTarget>("operator", c => c
             .MaxTargets(10).Targets((_, _) => Operator())));
-        using (rig)
+        scheduled = await rig.CreateAsync(new GoldpathCampaignThrottle(Tps: 10_000) { StartAt = t0.AddSeconds(10) });
+        await rig.SliceAsync();
+        Assert.Equal(GoldpathCampaignState.Ready, rig.Reload(scheduled).State);
+
+        rig.MoveTo(t0.AddSeconds(30));   // the start has passed
+        using (var scope = rig.Fixture.Services.CreateScope())
         {
-            scheduled = await rig.CreateAsync(new GoldpathCampaignThrottle(Tps: 10_000) { StartAt = t0.AddSeconds(10) });
-            await rig.SliceAsync();
-            Assert.Equal(GoldpathCampaignState.Ready, rig.Reload(scheduled).State);
-
-            rig.MoveTo(t0.AddSeconds(30));   // the old start has passed
-            using (var scope = rig.Fixture.Services.CreateScope())
-            {
-                await rig.Engine.CreateAsync(scope.ServiceProvider, "operator", "the operator's hand", new Dictionary<string, string>(),
-                    Generous() with { StartAt = t0.AddDays(1) }, null, "tester", CancellationToken.None);
-            }
-
-            // Ticks work campaigns in creation order: the operator's must come first.
-            rig.Fixture.Mutate(db => db.Set<GoldpathCampaign>().Single(c => c.Type == "operator").CreatedAt = t0.AddDays(-1));
-            await rig.SliceAsync();
-
-            Assert.True(moved);
-            var row = rig.Reload(scheduled);
-            Assert.Equal(GoldpathCampaignState.Ready, row.State);
-            Assert.Equal(t0.AddSeconds(30).AddHours(1), row.StartAt);
-            Assert.Equal(0, rig.Fixture.Query(db => db.Set<GoldpathCampaign>().AsNoTracking().Single(c => c.Id == scheduled).ReleasedThrough));
-            Assert.DoesNotContain(rig.Audit(scheduled), a => a.Action == "start");
+            await rig.Engine.CreateAsync(scope.ServiceProvider, "operator", "the operator's hand", new Dictionary<string, string>(),
+                Generous() with { StartAt = t0.AddDays(1) }, null, "tester", CancellationToken.None);
         }
+
+        // Ticks work campaigns in creation order: the operator's must come first.
+        rig.Fixture.Mutate(db => db.Set<GoldpathCampaign>().Single(c => c.Type == "operator").CreatedAt = t0.AddDays(-1));
+        await rig.SliceAsync();
+        Assert.True(acted);
+        return (rig, scheduled);
     }
 
     [Fact]
