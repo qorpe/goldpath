@@ -5,6 +5,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **The 1.0 API review's record and its counter (GA gate G4, API-1, #390).** Repository only: no
+  package changes.
+  - `docs/rfc/goldpath-1.0-api-review.md` is DRAFT, in the eight RFC sections. It holds the scope,
+    the verdict vocabulary (`keep` · `rename` with its target line · `remove` with its reason ·
+    `experimental` with its diagnostic id), the review method, cross-cutting policies P1–P3, the
+    gates, and the sign-off left for API-13 (#402).
+  - Diagnostic ids `GPEXP001` (Approvals) and `GPEXP002` (FileExchange) are proposed; they collide
+    with none of the 50 `GP…` ids.
+  - `docs/strategy/api-review-1.0/` has a README and one header-only TSV per package with a ledger
+    (23). Owner decision (a): these are Tier A data.
+  - `scripts/api-review-gate.sh` (run in `gates`) has these modes:
+    - report: covered/total per package; it fails on a stale row, an unknown verdict, a missing
+      reason or target, a duplicate, `keep` in an experimental package, a missing or extra TSV, or
+      a bad header;
+    - `--require-complete [--package …]`;
+    - `--require-applied`;
+    - `--list-non-keep`;
+    - `--selftest` (18 planted faults red; green unplanted, across one `[ID]` prefix and on an
+      applied review).
+  - At `main` 92ad7a0: **0 of 2,648 live lines** reviewed.
 - **Admin surfaces: a read role, `goldpath-ops-read` (admin contract R4.1, slice R4-S1, #297).**
   - **What it is:** `GoldpathPolicies.OpsRead` (Abstractions) and `GoldpathAuthOptions.OpsReadRole`
     (Auth, default `goldpath-ops-read`). `AddGoldpathAuth` registers the policy in both strategy

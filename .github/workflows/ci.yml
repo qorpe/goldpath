@@ -33,6 +33,10 @@ jobs:
         run: |
           ./scripts/engine-gate.sh
           ./scripts/engine-gate.sh --selftest
+      - name: API review gate (GA G4 — every verdict row well-formed and live; the counter the 1.0 record quotes)
+        run: |
+          ./scripts/api-review-gate.sh
+          ./scripts/api-review-gate.sh --selftest
       - name: docs freshness (no link to a missing file)
         run: bash scripts/docs-freshness.sh
       - name: merge tiers self-test (ADR-0014 — the rules this PR proposes still put every fixture where it belongs)
