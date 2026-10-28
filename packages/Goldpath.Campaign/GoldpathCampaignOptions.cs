@@ -369,8 +369,13 @@ public sealed class GoldpathCampaignOptions
     /// <summary>The leader's in-memory tick (constraint 1: local ticks, not cluster locks).</summary>
     public TimeSpan LeaderTick { get; set; } = TimeSpan.FromMilliseconds(250);
 
-    /// <summary>How long one pacer RUN leads before returning (the cron re-fires it).</summary>
-    public TimeSpan LeadershipSlice { get; set; } = TimeSpan.FromSeconds(50);
+    /// <summary>
+    /// How long one pacer RUN leads before returning (the cron re-fires it). Keep it at least the pacer cron's
+    /// period: the pacer never runs twice at once, so a fire due while a slice still leads waits and starts as
+    /// that slice returns, and leadership is continuous. A slice shorter than the period leaves the rest of each
+    /// period with no leader and nothing released. The default matches the default once-a-minute cron.
+    /// </summary>
+    public TimeSpan LeadershipSlice { get; set; } = TimeSpan.FromSeconds(60);
 
     /// <summary>A Processing claim older than this is an interrupted consumer (sweep to repair).</summary>
     public TimeSpan StaleClaimAfter { get; set; } = TimeSpan.FromMinutes(10);

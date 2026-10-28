@@ -640,6 +640,10 @@ test.describe("the run console against a real Goldpath app", () => {
     // Lift it, then erase: the redaction records itself as an erasure row.
     await page.getByRole("button", { name: "lift-hold" }).click();
     await page.getByRole("alertdialog", { name: "confirm lift-hold" }).getByRole("button", { name: "lift-hold" }).click();
+    // The lift is a round trip: erase only once the hold list (lifted holds hidden by default)
+    // no longer shows it. Erasing earlier races the lift, the engine still refuses with
+    // "lift the hold first", and the erasure row never appears (nightly 2026-10-26, 46/47).
+    await expect(page.getByRole("row", { name: /CASE-SMOKE-1/ })).toHaveCount(0);
 
     await page.getByRole("button", { name: "erase" }).click();
     const erasing = page.getByRole("alertdialog", { name: "confirm erase" });

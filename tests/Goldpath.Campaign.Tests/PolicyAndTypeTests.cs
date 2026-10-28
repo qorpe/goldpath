@@ -133,7 +133,7 @@ public class TypeRegistrationTests
         Assert.Equal(2_000, options.EnumerationBatchSize);
         Assert.Equal(500, options.ReleaseBatchSize);
         Assert.Equal(TimeSpan.FromMilliseconds(250), options.LeaderTick);
-        Assert.Equal(TimeSpan.FromSeconds(50), options.LeadershipSlice);
+        Assert.Equal(TimeSpan.FromSeconds(60), options.LeadershipSlice);   // #284: the default pacer cron's period, so leadership is continuous
         Assert.Equal(TimeSpan.FromMinutes(10), options.StaleClaimAfter);
         Assert.Empty(options.Types);
     }

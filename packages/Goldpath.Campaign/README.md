@@ -16,7 +16,11 @@ create → enumerate (streaming, ceilinged) → release under policy → consume
 
 The pacer is a LONG-LIVED leader run on Goldpath.Jobs: the ~1-minute cron only guarantees a
 leader exists; pacing happens on in-memory ticks (250ms default) against durable
-watermarks — leader death means the next fire takes over from the row, mid-campaign.
+watermarks — leader death means the next fire takes over from the row, mid-campaign. A
+leadership slice (`LeadershipSlice`, 60 s) is at least the cron's period, so the next fire is
+already due when a slice returns and starts as it returns. Leadership is continuous, with a
+measured hand-over of under 0.6 s (the longest gap between two releases at 50 TPS with a 250 ms tick: 583 ms and 459 ms on two runs) (campaign RFC §8 item 4); keep the slice at least the period if you
+change either.
 
 ## Wire it
 

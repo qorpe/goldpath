@@ -38,6 +38,23 @@ jobs:
       - name: every CLI verb, on a real generated app
         run: ./scripts/validate-cli.sh
 
+  # The Oracle lane, nightly (RFC goldpath-oracle §7): the same filter as ci.yml's oracle job, so the suites
+  # later slices add on Oracle run every night whether or not a pull request touched them.
+  oracle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: Oracle proofs (Category=Oracle, benches excluded)
+        run: |
+          dotnet test tests/Goldpath.IntegrationTests/Goldpath.IntegrationTests.csproj \
+            --filter "Category=Oracle&Category!=Bench" --nologo
+
   migrations-proofs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
