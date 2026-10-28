@@ -5,6 +5,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **Admin surfaces: a read role, `goldpath-ops-read` (admin contract R4.1, slice R4-S1, #297).**
+  - **What it is:** `GoldpathPolicies.OpsRead` (Abstractions) and `GoldpathAuthOptions.OpsReadRole`
+    (Auth, default `goldpath-ops-read`). `AddGoldpathAuth` registers the policy in both strategy
+    branches as "the read role or the ops role", so no operator loses a route.
+  - **How the guard applies it:** `AdminSurfaceGuard` (Sdk) applies the HTTP method rule on all
+    seven surfaces and the console. A `GET` demands `OpsRead`. Every other method also demands
+    `Ops` through an endpoint filter, which refuses with `403` and the admin envelope naming the
+    configured role ("this verb needs the goldpath-ops role; this identity can read this surface
+    but not act on it"), where it used to answer an empty `403`.
+  - **Apps without the read policy:** an app that registers no `OpsRead` policy keeps `Ops` on
+    every route and gets one information log line.
+  - **Proof:** a cross-surface route-table test holds every route in one of the two buckets. A
+    real-HTTP role matrix on PostgreSQL covers every surface:
+    - a viewer reads every parameterless `GET` and is refused every verb in words;
+    - the viewer retrieves an archived document in full;
+    - an operator does both;
+    - nobody is challenged with `401`.
+  - **Disclosure:** granting the role grants archive retrieval. The preview.10 upgrade guide says
+    so; T50 carries the masking viewer.
 - **The Oracle test lane (GA gate G7, slice O-1, #404).** Repository and CI only: no package
   changes, and no `Goldpath.*` package references Oracle.
   - **Pins:** `Oracle.EntityFrameworkCore` 10.23.26301, `Oracle.ManagedDataAccess.Core` 23.26.301

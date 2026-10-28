@@ -21,6 +21,8 @@
 
   <ItemGroup>
     <ProjectReference Include="../../packages/Goldpath.Auth/Goldpath.Auth.csproj" />
+    <!-- The admin floor (AdminSurfaceGuard) is what the read role is applied by: R4.1 is proven through it. -->
+    <ProjectReference Include="../../packages/Goldpath.Sdk/Goldpath.Sdk.csproj" />
     <ProjectReference Include="../../packages/Goldpath.MultiTenancy/Goldpath.MultiTenancy.csproj" />
   </ItemGroup>
 

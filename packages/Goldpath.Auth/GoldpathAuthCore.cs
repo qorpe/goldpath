@@ -31,6 +31,13 @@ public sealed class GoldpathAuthOptions
     public string OpsRole { get; set; } = "goldpath-ops";
 
     /// <summary>
+    /// The role the admin surfaces' READ policy accepts (admin-contract revision R4.1): it reads every admin
+    /// surface and acts on none. <see cref="OpsRole"/> satisfies the read policy too. Granting it grants the
+    /// content of every archived document in the holder's tenant scope, since an archive entry's retrieval is a read.
+    /// </summary>
+    public string OpsReadRole { get; set; } = "goldpath-ops-read";
+
+    /// <summary>
     /// The role that grants CROSS-TENANT admin access on a multi-tenant app (admin-contract
     /// revision R1) — required ON TOP of <see cref="OpsRole"/> to widen past the ambient tenant.
     /// </summary>

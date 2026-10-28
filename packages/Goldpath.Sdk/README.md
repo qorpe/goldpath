@@ -9,7 +9,11 @@ binds to Mediant.
 ## What it carries
 
 - **`AdminSurfaceGuard`** — the H2 auth floor in one place: every admin mapper applies
-  the fail-closed ops policy; `exposeUnsecured` is a visible, warning-logged opt-out.
+  it, fail-closed, and the HTTP method decides (admin-contract R4.1). A `GET` demands the
+  read policy (`goldpath-ops-read` or `goldpath-ops`). Any other method also demands
+  `goldpath-ops`, refused with a `403` envelope naming the role. Without a registered read
+  policy, every route demands `goldpath-ops` as before. `exposeUnsecured` is a visible,
+  warning-logged opt-out.
 - **`AdminTenantScope`** — admin-contract revision R1: on a multi-tenant app every admin
   read/verb scopes to the ambient tenant; crossing the fence demands
   `GoldpathPolicies.OpsAllTenants` and is logged with the actor.

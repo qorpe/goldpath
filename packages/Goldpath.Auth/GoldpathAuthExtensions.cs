@@ -37,6 +37,7 @@ public static class GoldpathAuthExtensions
             builder.Services.AddAuthorization(authz =>
             {
                 authz.AddPolicy(GoldpathPolicies.Ops, policy => policy.RequireRole(options.OpsRole));
+                authz.AddPolicy(GoldpathPolicies.OpsRead, policy => policy.RequireRole(options.OpsReadRole, options.OpsRole));
                 authz.AddPolicy(GoldpathPolicies.OpsAllTenants, policy => policy.RequireRole(options.OpsAllTenantsRole));
             });
             builder.Services
@@ -53,6 +54,7 @@ public static class GoldpathAuthExtensions
         {
             authz.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build();
             authz.AddPolicy(GoldpathPolicies.Ops, policy => policy.RequireRole(options.OpsRole));
+            authz.AddPolicy(GoldpathPolicies.OpsRead, policy => policy.RequireRole(options.OpsReadRole, options.OpsRole));
             authz.AddPolicy(GoldpathPolicies.OpsAllTenants, policy => policy.RequireRole(options.OpsAllTenantsRole));
         });
 
