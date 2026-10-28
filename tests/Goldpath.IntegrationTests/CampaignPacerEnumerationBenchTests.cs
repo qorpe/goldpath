@@ -30,7 +30,7 @@ public sealed class CampaignPacerEnumerationBenchTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _postgres.StartAsync();
-        _options = new GoldpathCampaignOptions();   // the package defaults: 250 ms tick, 50 s slice, 2,000-row batch
+        _options = new GoldpathCampaignOptions();   // the package defaults: 250 ms tick, 60 s slice, 2,000-row batch
         _options.AddCampaign<CampaignBenchTests.BenchTarget>("bench", c => c
             .MaxTargets(50_000_000)
             .Targets((_, parameters) => Synthetic(long.Parse(parameters["count"], CultureInfo.InvariantCulture))));
@@ -75,7 +75,7 @@ public sealed class CampaignPacerEnumerationBenchTests : IAsyncLifetime
 
     /// <summary>
     /// #288 / S-FLEET-02's enumeration leg: the snapshot as an adopter's campaign takes it —
-    /// THROUGH THE PACER, at the package defaults (250 ms tick, 50 s slice, 2,000-row batch),
+    /// THROUGH THE PACER, at the package defaults (250 ms tick, 60 s slice, 2,000-row batch),
     /// slices run back to back (the cron's gap between them is not modelled). Size from
     /// GOLDPATH_BENCH_CAMPAIGN_ENUM_COUNT (default 1M). Reports wall time, the item table's
     /// heap and index size, and the leader's peak memory (sampled every 100 ms).

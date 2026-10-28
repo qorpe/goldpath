@@ -80,14 +80,32 @@ jobs:
           dotnet-version: |
             8.0.x
             10.0.x
-      - name: integration proofs (real containers, benches excluded)
+      - name: integration proofs (real containers, benches and the Oracle lane excluded)
         run: |
           dotnet test tests/Goldpath.IntegrationTests/Goldpath.IntegrationTests.csproj \
-            --filter "Category!=Bench" --nologo
+            --filter "Category!=Bench&Category!=Oracle" --nologo
           # The bus conformance suite (ADR-0013 §3): the facts a bus must hold for Goldpath,
           # on real RabbitMQ + PostgreSQL through the seam — the oracle is MassTransit 8.5.11.
           dotnet test tests/Goldpath.Messaging.Conformance/Goldpath.Messaging.Conformance.csproj --nologo
         timeout-minutes: 45
+
+  # The Oracle lane (G7, slice O-1, #404; RFC goldpath-oracle §8): every Category=Oracle test, on the pinned
+  # Oracle Database Free image, in its own job so its container's start-up never slows the integration job.
+  # A bench is both Bench and Oracle (ORA-8) and stays out. Not a required check: that is the owner's call.
+  oracle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: Oracle proofs (Category=Oracle, benches excluded)
+        run: |
+          dotnet test tests/Goldpath.IntegrationTests/Goldpath.IntegrationTests.csproj \
+            --filter "Category=Oracle&Category!=Bench" --nologo
+        timeout-minutes: 30
 
   # The console (U2+): component tests over the PUBLISHED @qorpe/ui kit — the kit's
   # own tests live in its repo (github.com/qorpe/ui); here we prove the CONSUMER.

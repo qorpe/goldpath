@@ -24,6 +24,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     - nobody is challenged with `401`.
   - **Disclosure:** granting the role grants archive retrieval. The preview.10 upgrade guide says
     so; T50 carries the masking viewer.
+- **The Oracle test lane (GA gate G7, slice O-1, #404).** Repository and CI only: no package
+  changes, and no `Goldpath.*` package references Oracle.
+  - **Pins:** `Oracle.EntityFrameworkCore` 10.23.26301, `Oracle.ManagedDataAccess.Core` 23.26.301
+    (the newest releases at least two weeks old on 2026-10-26) and `Testcontainers.Oracle` 4.16.0,
+    referenced by `Goldpath.IntegrationTests` only.
+  - **Licence gate:** `scripts/license-gate.py` gains exactly the two scoped Oracle Free Use Terms
+    entries of RFC goldpath-oracle §2.1. Any other FUTC package still fails the gate.
+  - **Fixture:** `OracleFixture` runs one `gvenzl/oracle-free:23.26.3-slim-faststart` container per
+    collection.
+  - **CI:** `ci.yml` gains an `oracle` job (`Category=Oracle&Category!=Bench`), and the
+    `integration` job excludes `Category=Oracle`. `nightly.yml` runs the same filter.
+  - **Advisories:** of ODP.NET's six transitive packages only `System.Security.Cryptography.Pkcs`
+    8.0.1 carries advisories. It resolves to the existing central lift, 10.0.13.
 - **The second messaging engine runs the conformance suite: a Wolverine adapter, and the engine contract
   it plugs into (GA gate G5 Part 1/5, #330).**
   - **`Goldpath.Messaging`:** the engine contract of RFC goldpath-messaging-engines §4.1 row 5, built
@@ -179,6 +192,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
 ### Changed
+- **`Goldpath.Campaign`: leadership is continuous by default (#284).** `LeadershipSlice` goes
+  from 50 s to 60 s, the period of the default pacer cron (`pacerCron`, unchanged). The next fire
+  is already due when a slice returns, and the jobs runner, which never runs the pacer twice at
+  once, starts it then.
+  - **Before:** every minute had about 10 s with no leader, so a campaign averaged at most 5/6
+    of its configured rate.
+  - **Proof:** `CampaignContinuousLeadershipTests` runs on the package defaults, with Quartz on a
+    real PostgreSQL and a real RabbitMQ. It was red on the 50 s default (two 10-second windows
+    per minute at half rate, with a 10 s gap between releases). It is green on 60 s: every
+    10-second window across two hand-overs is within ±5%, with a measured hand-over of under 0.6 s (the longest gap between two releases at 50 TPS with a 250 ms tick: 583 ms and 459 ms on two runs).
+  - **What does not change:** no public API line; a slice still starts with empty token
+    buckets, so a fire's first tick releases at most one tick's worth.
+  - **Upgrade guide:** preview.10, "A default changed: the pacer's leadership slice".
 - **Admin-contract revision R4 is written (#304), PROPOSED; merging it is its acceptance.**
   Documents only, no package change. `docs/rfc/goldpath-admin-contract.md` gains R4, the shape of
   the owner's 2026-10-20 approvals:
