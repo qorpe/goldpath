@@ -1,9 +1,13 @@
 # Threat model — every surface with an auth boundary (GA gate G15, Part 2/2)
 
-Status: **IN PROGRESS.** The first four surfaces are below: the admin routes, the served
-console, Campaign R2.8 signed callbacks, and Bulk upload with its gate. The other six are the
-checklist at the end ([#340](https://github.com/qorpe/goldpath/issues/340) stays open until
-they land). Written 2026-10-25 against `main` c5bf84a; re-checked against `main` aff2d3e the same day.
+Status: **IN PROGRESS, 6 of 10 surfaces.** Below are:
+- the admin routes, the served console, Campaign R2.8 signed callbacks, and Bulk upload with
+  its gate (written 2026-10-25 against `main` c5bf84a, re-checked against `main` aff2d3e the
+  same day);
+- Approvals decisions and FileExchange ingress (written 2026-10-29 against `main` 92ad7a0).
+
+The other four are the checklist at the end; [#340](https://github.com/qorpe/goldpath/issues/340)
+stays open until they land.
 
 ## How to read this
 
@@ -11,7 +15,7 @@ Each surface is a STRIDE table. Every threat names what holds it, and that holde
 three things:
 
 - **a test** (the class and method, runnable as named) or **an analyzer** rule;
-- **an accepted risk**: listed again in [the accepted-risk list](#accepted-risks-awaiting-the-owners-signature),
+- **an accepted risk**: listed again in [the signed list](#accepted-risks-signed-by-the-owner-2026-10-26) or [the list awaiting signature](#accepted-risks-awaiting-the-owners-signature),
   which the owner signs on the pull request. That signature is the gate's last step;
 - **an issue**: a threat with no holder today. The issue says what would hold it.
 
@@ -110,6 +114,54 @@ service, **E**levation of privilege.
 | T-BLK-07 | D | A huge file exhausts memory or the database | `MaxRows` is mandatory per definition, and exactly `MaxRows` is within the ceiling. Bytes are stored in chunks, never whole in memory. The request body is bounded only by the host's limit (Kestrel's default `MaxRequestBodySize`, 30 MB); the module sets no byte ceiling of its own | `Goldpath.Bulk.Tests.OptionsTests.MaxRows_is_mandatory_the_ceiling_is_a_decision`, `Goldpath.Bulk.Tests.ValidationFlowTests.A_file_of_exactly_MaxRows_rows_is_within_the_ceiling`, `Goldpath.Bulk.Tests.FileStoreTests.A_trickling_upload_still_chunks_and_hashes_exactly`. The byte bound is **accepted risk A5** |
 | T-BLK-08 | T | A crafted CSV breaks the parser (quotes, delimiters) and shifts fields into the wrong columns | The CSV format honours quoting and escaped quotes; the delimiter is configuration | `Goldpath.Bulk.Tests.CsvFormatTests.Quoted_fields_carry_delimiters_and_escaped_quotes`, `…Semicolon_delimiter_is_a_configuration` |
 
+## 5. Approvals decisions (`MapGoldpathApprovalsAdmin`, `/goldpath/admin/approvals`, and the engine)
+
+**Boundary:** two callers decide.
+- **The app's own code** calls `GoldpathApprovalEngine.DecideAsync(id, decidedBy, deciderRole, …)` and supplies
+  both the identity and the role.
+- **An operator** decides through `POST /requests/{id}/approve|reject`. There the identity is the principal
+  (`http.User.Identity.Name`), and the role is the body's `role` field.
+
+**Assets:** a grant, which a downstream system acts on (`GoldpathApprovalGranted`), and the trail that says who
+decided under which rung.
+
+| # | STRIDE | Threat | Defence | Held by |
+|---|---|---|---|---|
+| T-APR-01 | S / E | An unauthenticated caller, or one without the ops role, decides through the admin surface | The admin floor (T-ADM-01/02). Since admin-contract R4.1 the two verbs demand `goldpath-ops`, and the viewer role reads only | as T-ADM-01..02; `Goldpath.IntegrationTests.AdminReadRoleSurfaceTests.A_viewer_reads_every_surface_and_every_verb_is_refused_in_words`, `…Every_admin_route_is_a_read_for_the_viewer_or_a_verb_for_the_operator` |
+| T-APR-02 | E | The requester approves their own request (maker-checker) | Four-eyes compares the decider with `RequestedBy`, case-insensitively, on every rung including a quorum rung. On the admin surface the decider is the principal, never a body field | `Goldpath.Approvals.Tests.ApprovalEngineTests.Four_eyes_the_requester_may_never_decide_their_own_request`; `Goldpath.Approvals.Tests.ApprovalEngineV2Tests.Four_eyes_bars_the_requester_from_a_quorum_rung_too` |
+| T-APR-03 | E | A decider without the rung's authority decides it: an "expert" grants the top rung of a credit ladder | The engine refuses a role other than the pending rung's (`WrongRole`). **On the admin surface the role is the body's `role`**, which the caller types, so any ops holder can name any rung | engine: `Goldpath.Approvals.Tests.ApprovalEngineTests.Wrong_role_is_refused_and_right_role_is_applied`; admin surface: **issue [#478](https://github.com/qorpe/goldpath/issues/478)** |
+| T-APR-04 | E | One person satisfies a quorum, or a two-step chain, alone | Distinct-eyes reads the whole chain: an identity signs at most once per request, even after escalation (`AlreadySigned`) | `Goldpath.Approvals.Tests.ApprovalEngineV2Tests.The_same_identity_may_not_sign_twice_on_one_rung`, `…Distinct_eyes_holds_across_escalation_a_lower_rung_signer_may_not_sign_the_higher_rung`, `…A_quorum_rung_stays_pending_until_the_required_distinct_grants_arrive` |
+| T-APR-05 | E | A delegate decides beyond the delegator's authority | Delegation is bounded: a window no longer than `MaxDelegationWindow`, depth one, no delegation to self, and an expired one admits nobody. **But an active delegation admits its delegate to every rung**, because v0 delegations carry no role (`HasDelegationToRoleAsync`) | bounds: `Goldpath.Approvals.Tests.ApprovalEngineTests.Delegation_admits_the_delegate_and_depth_is_one`, `…Expired_delegation_admits_nobody`; `Goldpath.Approvals.Tests.ApprovalEngineDetailTests.Refusal_messages_name_the_rule_that_refused` (self-delegation, the window, re-delegation); `Goldpath.Approvals.Tests.ApprovalAdminServiceTests.A_delegation_of_exactly_the_maximum_window_is_allowed`; rung scope: **issue [#479](https://github.com/qorpe/goldpath/issues/479)** |
+| T-APR-06 | T | Two decisions race: a double click signs twice, or a grant and a reject both apply and both publish | None today. The engine checks, then acts, across separate store calls; the signature table has no unique `(RequestId, SignedBy)`; the request row has no concurrency token | **Issue [#480](https://github.com/qorpe/goldpath/issues/480)** |
+| T-APR-07 | T / R | A decided request is decided again, or a rejection is unexplained | A decided request refuses any further decision (`NotPending`), and a rejection needs a reason (`ReasonRequired`). Only the requester may withdraw | `Goldpath.Approvals.Tests.ApprovalEngineTests.A_decided_request_cannot_be_decided_again`; `Goldpath.Approvals.Tests.ApprovalEngineV2Tests.A_rejection_without_a_reason_is_refused`, `…Only_the_requester_may_withdraw` |
+| T-APR-08 | R | A decider denies a decision, or the trail is reworded after the fact | Every lifecycle step lands in the trail with the actor and the time, and the trail's wording is pinned. The admin surface records the principal, so the trail names a person, never "the console" | `Goldpath.Approvals.Tests.ApprovalEngineTests.The_trail_records_every_lifecycle_step`; `Goldpath.Approvals.Tests.ApprovalEngineDetailTests.The_trail_wording_is_the_audit_surface`; `Goldpath.Approvals.Tests.ApprovalAdminEndpointsTests.Approve_answers_the_frozen_envelope_and_the_engine_applied_it` |
+| T-APR-09 | E / I | On a multi-tenant app, an operator of tenant A reads and decides tenant B's requests | The approvals store carries no tenant column, so admin-contract R1 rule 5 applies: the surface should demand `goldpath-ops-all-tenants` outright, as campaign's does. **It does not** | **Issue [#481](https://github.com/qorpe/goldpath/issues/481)** |
+| T-APR-10 | D | A request waits forever because nobody decides it | Escalation moves an overdue request one rung up. At the top rung it expires rather than loops, and the sweep is a declared job | `Goldpath.Approvals.Tests.ApprovalEngineTests.Escalation_moves_one_rung_on_deadline_and_resets_the_clock`, `…Overdue_at_the_top_rung_expires_not_loops` |
+| T-APR-11 | I | A refusal leaks more than the rule | The refusal answers `400` with the rule's name only (`FourEyesViolation`, `WrongRole`, …). Lists clamp `take` | `Goldpath.Approvals.Tests.ApprovalAdminEndpointsTests.A_refusal_is_a_400_whose_message_is_the_rule_name`; `Goldpath.Approvals.Tests.ApprovalAdminServiceTests.Take_is_clamped_and_honored` |
+
+## 6. FileExchange ingress (`GoldpathFileRailEngine`, and `/goldpath/admin/fileexchange`)
+
+**Boundary:** a counterparty's file reaches a declared rail.
+- **How it arrives:** through a composed transport (SFTP, share, object store) and the app's pick-up job, which
+  calls `ProcessAsync(rail, fileName, lines)`. The engine receives lines, never a path: the package opens no file
+  and touches no filesystem.
+- **The admin surface:** read-only. It has rails, files and the quarantine, and no verb.
+- **Assets:** the rows a handler applies (payments-shaped, and once only), and the quarantine an operator acts on.
+
+| # | STRIDE | Threat | Defence | Held by |
+|---|---|---|---|---|
+| T-FXI-01 | S | A forged file, dropped into the pick-up location, is ingested as the counterparty's | Authenticating the counterparty is the transport's job (SSH keys, bucket policy), composed and never rewritten (ADR-0003). The rail's `ValidateFile` can check a trailer, a count or a signature the counterparty supplies | **accepted risk A7** (awaiting signature) |
+| T-FXI-02 | T | A file on an undeclared rail is ingested | Only declared rails ingest; an undeclared name throws | `Goldpath.FileExchange.Tests.FileRailEngineTests.An_undeclared_rail_is_refused` |
+| T-FXI-03 | T | A truncated or malformed file is applied in part | `ValidateFile` rejects the whole file: nothing ingests, and `GoldpathFileRejected` says why | `Goldpath.FileExchange.Tests.FileRailEngineTests.Truncated_file_is_rejected_whole_and_ingests_nothing`; `Goldpath.FileExchange.Tests.FileRailContractTests.A_rejected_file_announces_the_rejection_and_nothing_else` |
+| T-FXI-04 | T | A re-delivered file applies twice, or a different file under a reused name is silently skipped | The `(rail, file, line)` key dedups a re-delivery, across a restart too. **The key is the file's name, not its content**, so new content under a processed name is skipped as "duplicates", with nothing but a `skipped` count | dedup: `Goldpath.FileExchange.Tests.FileRailEngineTests.Replaying_the_same_file_applies_zero_duplicates`; `Goldpath.FileExchange.Tests.EfFileLedgerTests.Zero_duplicates_survive_a_restart`; name reuse: **issue [#482](https://github.com/qorpe/goldpath/issues/482)** |
+| T-FXI-05 | T | A bad row reaches the handler, or stops the batch | Row validation runs before the handler, and a parse failure, contract failure or handler throw quarantines that row with its reason while the batch continues. Reprocessing retries only the quarantined rows | `Goldpath.FileExchange.Tests.FileRailContractTests.Row_validation_wins_over_the_handler_the_handler_never_sees_a_bad_row`, `…A_throwing_handler_quarantines_the_row_with_its_words`; `Goldpath.FileExchange.Tests.FileRailEngineTests.Bad_rows_quarantine_and_the_batch_continues`, `…Reprocess_after_fix_retries_only_the_quarantined_row` |
+| T-FXI-06 | T | A path in a file name escapes a directory | Not applicable to the module: it receives the name as a key and the lines as strings, opens nothing, and the admin surface carries file names in the query, never the path. A transport adapter that maps names to paths owns that check | by construction (no `System.IO` file access in `packages/Goldpath.FileExchange`) |
+| T-FXI-07 | R | A counterparty disputes what was applied, and when | The ledger keeps every processed `(rail, file, line)`, every quarantined row with its reason and first time, and one archive mark per run. The lifecycle events carry the rail and the file | `Goldpath.FileExchange.Tests.EfFileLedgerTests.The_archive_mark_is_idempotent_one_run_one_row`; `Goldpath.FileExchange.Tests.FileRailEngineTests.Clean_file_ingests_every_row_once` |
+| T-FXI-08 | I | The quarantine shows a row's classified values to operators | The surface is behind the ops floor (T-ADM-01..02); since R4.1 a viewer reads it. The reason is the app's own words, from its parser, validator or handler, and is stored and shown as written. Goldpath does not mask free text | `Goldpath.FileExchange.Tests.FileExchangeAdminTests.The_routes_answer_over_real_HTTP_with_the_R3_query_shape`; the content is **accepted risk A8** (awaiting signature) |
+| T-FXI-09 | E / I | On a multi-tenant app, an operator of tenant A reads every rail's files and quarantine | The ledger carries no tenant column, so R1 rule 5 applies. **The surface does not demand `goldpath-ops-all-tenants`** | **Issue [#481](https://github.com/qorpe/goldpath/issues/481)** |
+| T-FXI-10 | E / T | An operator changes ingestion state from the console | There are no verbs: re-delivering the file is the reprocess, and a `POST` anywhere under the surface is never a `200` | `Goldpath.FileExchange.Tests.FileExchangeAdminTests.The_routes_answer_over_real_HTTP_with_the_R3_query_shape` |
+| T-FXI-11 | D | A huge file exhausts memory, or the ledger with one round trip per line | Lines arrive as a list the pick-up job built. The module sets no line or byte ceiling, and makes up to three ledger calls per line (processed?, mark, release the quarantine). Lists on the admin surface clamp `take` | lists: `Goldpath.FileExchange.Tests.FileExchangeAdminTests.Take_is_clamped_and_files_filter_by_rail`; the size: **accepted risk A9** (awaiting signature) |
+
 ## Accepted risks (signed by the owner 2026-10-26)
 
 These have no test because the answer is a decision, not code. The owner signed A1–A6 on
@@ -126,10 +178,21 @@ accepted risk needs its own signature.
 | A5 | Bulk upload size is bounded by the host's request-body limit, not by the module (T-BLK-07) | Kestrel's default (30 MB) applies unless an adopter raises it deliberately. `MaxRows` bounds the work. A module-level byte ceiling would duplicate a host setting | an adopter needs larger files (then the module should take its own ceiling) |
 | A6 | Archival retrieval returns the archived document's classified fields unmasked to any `goldpath-ops` holder in scope, and, under admin-contract R4.1 (owner decision 2026-10-25), to any `goldpath-ops-read` holder in scope (T-ADM-13) | The archive is the regulatory record: an operator retrieving it for a case needs it as stored, and erasure is the path that masks it (archival RFC D4). The read already demands the ops role and the tenant scope | an adopter needs a masked viewer of archived content (open-threads T50 once R4 merges), or the archive read is opened to a principal outside the two ops roles |
 
+## Accepted risks awaiting the owner's signature
+
+Added 2026-10-29 with §5 and §6. They are not accepted until the owner signs them on the pull
+request that adds them.
+
+| # | Risk | Why it would be accepted | Revisit when |
+|---|---|---|---|
+| A7 | A forged file in the pick-up location is ingested as the counterparty's (T-FXI-01) | Authenticating the sender is the transport's job: SSH keys, bucket policy, a share's ACL. The module composes transports and never rewrites them (ADR-0003). A rail that needs content authenticity can verify a signature or trailer in `ValidateFile` | an adopter's counterparty signs its files and asks for a declared verifier, or a transport adapter ships inside Goldpath |
+| A8 | A quarantine reason can carry a row's classified values to anyone who may read the surface (T-FXI-08) | The reason is the app's own words, from its parser, validator or handler, and it is what an operator needs to fix the row. Masking free text would guess at it | an adopter's validator is found echoing classified values, or the quarantine is opened beyond the two ops roles |
+| A9 | A rail has no line or byte ceiling of its own (T-FXI-11) | The pick-up job builds the line list and is the place to bound it. Counterparty files on these rails are bounded by contract. Bulk is the module for large uploads (`MaxRows`) | an adopter routes files larger than the transport's own limits through a rail, or a ledger's per-line round trips become the bottleneck (then the ledger should batch) |
+
 ## Still to model (Part 2/2, remaining checklist)
 
-- [ ] Approvals decisions (distinct eyes, self-approval, the rung's role)
-- [ ] FileExchange ingress (path, format, quarantine)
+- [x] Approvals decisions (§5)
+- [x] FileExchange ingress (§6)
 - [ ] Notification channels (credentials, template injection)
 - [ ] DataProtection keys
 - [ ] Idempotency key scope
