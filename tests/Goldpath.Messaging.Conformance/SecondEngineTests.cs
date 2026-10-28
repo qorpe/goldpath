@@ -56,6 +56,40 @@ public sealed class SecondEngineTests
     }
 
     [Fact]
+    public void An_outbox_row_is_relayed_to_its_own_types_exchange_not_to_the_list_of_its_types()
+    {
+        // The default engine's MessageType column, as 8.5.11 writes it for an event that implements IIntegrationEvent.
+        Assert.Equal("Goldpath.Messaging.Conformance:Ping",
+            GoldpathWire.ExchangeOfMessageTypes("urn:message:Goldpath.Messaging.Conformance:Ping;urn:message:Goldpath:IIntegrationEvent"));
+        Assert.Equal("Goldpath.Messaging.Conformance:Ping", GoldpathWire.ExchangeOfMessageTypes("urn:message:Goldpath.Messaging.Conformance:Ping"));
+        Assert.Throws<FormatException>(() => GoldpathWire.ExchangeOfMessageTypes("Goldpath.Messaging.Conformance:Ping;urn:message:Goldpath:IIntegrationEvent"));
+    }
+
+    [Fact]
+    public void The_inbox_keys_a_handler_as_the_default_engine_does()
+    {
+        // Each id is the one MassTransit 8.5.11 derives for the default engine's adapter consumer of that handler on
+        // that queue, read from its own type-name formatter and hash: Ping's from an InboxState row 8.5.11 wrote.
+        Assert.Equal(Guid.Parse("866a0036-11ef-81e3-1bbe-9d5edb4c7579"), GoldpathInboxKey.ConsumerIdOf(typeof(Ping), typeof(PingHandler), "ping"));
+        Assert.Equal(Guid.Parse("9b297fd6-cca2-f960-7677-bf239d645e5d"), GoldpathInboxKey.ConsumerIdOf(typeof(Ping), typeof(WolverineAdapterTests.AlsoPingHandler), "ping"));
+        Assert.Equal(Guid.Parse("ad5781ca-1bd3-5cf0-74e8-ce268cf2d752"), GoldpathInboxKey.ConsumerIdOf(typeof(Settled), typeof(SettledHandler), "settled"));
+
+        // One row per handler, and per queue: a second handler or another queue is another consumer.
+        Assert.NotEqual(GoldpathInboxKey.ConsumerIdOf(typeof(Ping), typeof(PingHandler), "ping"), GoldpathInboxKey.ConsumerIdOf(typeof(Ping), typeof(PingHandler), "pong"));
+    }
+
+    [Fact]
+    public void A_short_type_name_is_written_as_the_default_engine_writes_it()
+    {
+        // 8.5.11's own output for each type: a generic argument drops the namespace it shares with its generic type.
+        Assert.Equal("Goldpath.IntegrationEvent<Goldpath.Messaging.Conformance.Ping>", GoldpathInboxKey.ShortNameOf(typeof(IntegrationEvent<Ping>)));
+        Assert.Equal("System.Collections.Generic.Dictionary<System.String,List<Goldpath.GoldpathOutgoingMessage>>",
+            GoldpathInboxKey.ShortNameOf(typeof(Dictionary<string, List<GoldpathOutgoingMessage>>)));
+        Assert.Equal("Goldpath.Messaging.Conformance.SecondEngineTests+Settled+Nested", GoldpathInboxKey.ShortNameOf(typeof(Settled.Nested)));
+        Assert.Throws<ArgumentException>(() => GoldpathInboxKey.ShortNameOf(typeof(Generic<>)));
+    }
+
+    [Fact]
     public void The_envelope_names_the_broker_without_its_credentials()
     {
         var wire = new GoldpathWire(new Uri("amqp://app-user:s3cret-pass@broker.internal:5673/fleet"));

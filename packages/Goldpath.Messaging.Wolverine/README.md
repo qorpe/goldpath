@@ -25,8 +25,11 @@ finds the engine the package declares, and the messaging block, the handlers
   queue and a same-named exchange; `<queue>_error`), and the outbox and inbox in the 8.x tables
   (`OutboxMessage`, `OutboxState`, `InboxState`, mapped by `AddGoldpathOutboxEntities()`). A publish is a
   row committed with the caller's `SaveChanges`; a relay delivers it with broker confirms, locking with
-  `FOR UPDATE SKIP LOCKED`, so two processes never deliver one row. A delivery is recorded in
-  `InboxState` in the handler's own transaction, so a redelivered message runs once.
+  `FOR UPDATE SKIP LOCKED`, so two processes never deliver one row. A row the default engine wrote
+  is relayed too, to its own type's exchange. A delivery is recorded in `InboxState` in the handlers'
+  own transaction, one row per handler under the consumer id the default engine derives for it, so
+  a redelivered message runs once whichever engine handled it first. The inbox is swept by the
+  default engine's rule (`Delivered` older than the duplicate-detection window).
 - **Tenant and correlation** travel as `X-Goldpath-Tenant` and `X-Correlation-Id`, restored into the
   message scope and the ambient tenant, exactly as the default engine restores them.
 
@@ -42,4 +45,7 @@ an outbox on SQL Server. A batch endpoint runs without the inbox.
 `tests/Goldpath.Messaging.Conformance` runs the whole fact class, S2.1–S2.12, on this engine and on
 MassTransit 8.5.11, against real RabbitMQ and PostgreSQL, in CI's integration job. `WolverineAdapterTests`
 beside it holds what the class cannot reach: a handler's publish committed without the inbox, two
-handlers of one endpoint both run, and the inbox swept only past its window.
+handlers of one endpoint both run, and the inbox swept only past its window. `MixedFleetTests` is S4:
+a MassTransit process and a process on this engine on one broker and one database, both directions,
+for publish and handle, inbox dedup per handler, an outbox row crossing engines, and an error-queue
+re-drive (RFC `goldpath-messaging-exit` §7.1 holds the mixed-fleet retry semantics).

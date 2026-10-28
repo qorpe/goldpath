@@ -236,6 +236,30 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **`Goldpath.Messaging.Wolverine` (not published) is wire-compatible with a MassTransit fleet:
+  S4, mixed-fleet compatibility, in the conformance suite (GA gate G5 Part 4/5, #333).**
+  `MixedFleetTests` runs a MassTransit 8.5.11 process and a Wolverine process on one RabbitMQ and one
+  PostgreSQL, in both directions, through the seam only (S4.1–S4.5). It covers:
+  - what one engine publishes, the other handles with tenant, correlation and message id intact;
+  - a redelivery handled under one engine is not handled again under the other;
+  - an outbox row one engine committed and never relayed is delivered by the other;
+  - a message one engine parked in `<queue>_error` is handled by the other once shovelled back.
+
+  The facts were red first and found three adapter defects:
+  - **The inbox keyed a consumer by the endpoint alone.** A message the default engine had handled ran
+    its handler again on Wolverine, and the reverse. It now keys each handler by the id 8.x derives for
+    its adapter consumer (one `InboxState` row per handler, MD5 or FIPS SHA-256 as 8.x chooses), pinned
+    against a row 8.5.11 wrote.
+  - **The relay lost a MassTransit-written row.** It published the row to an exchange named after the
+    whole `;`-separated `MessageType` column, which nothing is bound to, then deleted the row. It now
+    publishes to the row's own type's exchange.
+  - **The inbox sweep missed MassTransit's rows.** It read `ExpirationTime`, which 8.x leaves empty, so
+    rows the old engine wrote were never forgotten. It now forgets by the 8.x rule: `Delivered` older
+    than the duplicate-detection window.
+
+  Removing the listener's MassTransit interop turns S4.1 red. Mixed-fleet retry and error-queue
+  semantics are written in RFC goldpath-messaging-exit §7.1. `Goldpath.Messaging` and every
+  published package are unchanged.
 - **The console's npm advisories are closed: vitest 2 → 5, with the 97% coverage floor re-earned
   (#356).** Console test tooling only; the shipped bundle is byte-identical to the one before
   (the same `pnpm build` output hashes) and every package is unchanged. `ui/console` takes

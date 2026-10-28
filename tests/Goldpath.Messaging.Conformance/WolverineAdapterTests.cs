@@ -87,19 +87,21 @@ public sealed class WolverineAdapterTests(ConformanceContainers containers)
     }
 
     [Fact]
-    public async Task The_inbox_sweep_forgets_only_consumed_rows_past_their_window()
+    public async Task The_inbox_sweep_forgets_only_rows_delivered_before_the_window_whichever_engine_wrote_them()
     {
         await using var host = await containers.BuildHostAsync(Engine, new Observed());
         var now = DateTime.UtcNow;
         var expired = Guid.NewGuid();
         var live = Guid.NewGuid();
         var unconsumed = Guid.NewGuid();
+        var defaultEngines = Guid.NewGuid();
         using (var scope = host.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ConformanceDb>();
             AddInboxRow(db, expired, consumed: now.AddHours(-2), expires: now.AddHours(-1));
             AddInboxRow(db, live, consumed: now.AddMinutes(-1), expires: now.AddHours(1));
-            AddInboxRow(db, unconsumed, consumed: null, expires: now.AddHours(-1));   // only "consumed" keeps this one
+            AddInboxRow(db, unconsumed, consumed: null, expires: now.AddHours(-1));   // never delivered, so kept
+            AddInboxRow(db, defaultEngines, consumed: now.AddHours(-2), expires: null);   // as the default engine writes one: no expiration time
             await db.SaveChangesAsync();
         }
 
@@ -110,15 +112,61 @@ public sealed class WolverineAdapterTests(ConformanceContainers containers)
         {
             var db = scope.ServiceProvider.GetRequiredService<ConformanceDb>();
             var remaining = await db.Database
-                .SqlQueryRaw<Guid>("SELECT \"MessageId\" AS \"Value\" FROM \"InboxState\" WHERE \"MessageId\" IN ({0}, {1}, {2})", expired, live, unconsumed)
+                .SqlQueryRaw<Guid>("SELECT \"MessageId\" AS \"Value\" FROM \"InboxState\" WHERE \"MessageId\" IN ({0}, {1}, {2}, {3})", expired, live, unconsumed, defaultEngines)
                 .ToListAsync();
             Assert.Equal(new[] { live, unconsumed }.Order(), remaining.Order());
         }
     }
 
+    [Fact]
+    public async Task A_row_this_engine_wrote_is_forgotten_by_the_sweep_once_its_delivery_is_past_the_window()
+    {
+        // The sweep reads Delivered, which only the delivery path stamps on a row this engine writes; the fact above
+        // writes its rows by hand, so this one sweeps a row a real delivery left.
+        var observed = new Observed();
+        await using var host = await containers.BuildHostAsync(Engine, observed);
+        await host.StartAsync();
+
+        await host.PublishAsync(new Ping { Id = Guid.NewGuid(), Payload = "swept" });
+
+        await observed.WaitForPingsAsync(1, Wait);
+        var messageId = Assert.Single(observed.Pings).Context.MessageId!.Value;
+        var deadline = DateTime.UtcNow + Wait;
+        while (await InboxRowsAsync(host, messageId) == 0 && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(100);   // the handler is observed before its transaction commits the row
+        }
+
+        Assert.Equal(1, await InboxRowsAsync(host, messageId));
+        await host.StopAsync();
+
+        var relay = ActivatorUtilities.CreateInstance<WolverineOutboxRelay<ConformanceDb>>(host.Services);
+        await relay.SweepInboxAsync(CancellationToken.None);
+        Assert.Equal(1, await InboxRowsAsync(host, messageId));   // still inside the window, so kept
+
+        using (var scope = host.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ConformanceDb>();
+            await db.Database.ExecuteSqlRawAsync(
+                "UPDATE \"InboxState\" SET \"Delivered\" = \"Delivered\" - INTERVAL '2 days' WHERE \"MessageId\" = {0}", messageId);
+        }
+
+        await relay.SweepInboxAsync(CancellationToken.None);
+        Assert.Equal(0, await InboxRowsAsync(host, messageId));
+    }
+
+    private static async Task<int> InboxRowsAsync(GoldpathMessagingTestHost host, Guid messageId)
+    {
+        using var scope = host.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ConformanceDb>();
+        return await db.Database
+            .SqlQueryRaw<int>("SELECT COUNT(*)::int AS \"Value\" FROM \"InboxState\" WHERE \"MessageId\" = {0}", messageId)
+            .SingleAsync();
+    }
+
     // The inbox row's type is the engine's own; the suite names no engine (EngineFreeSuiteTests), so the row is
     // built from the context's model.
-    private static void AddInboxRow(ConformanceDb db, Guid messageId, DateTime? consumed, DateTime expires)
+    private static void AddInboxRow(ConformanceDb db, Guid messageId, DateTime? consumed, DateTime? expires)
     {
         var entity = db.Model.GetEntityTypes().Single(e => e.ClrType.Name == "InboxState");
         var row = Activator.CreateInstance(entity.ClrType)!;
