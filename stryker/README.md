@@ -123,6 +123,7 @@ at f459fe2, so its row carries it (minutes not recorded).
 | Console | 91.46 % (75.00) | 21.46 | — | 75.00 %, 24.3 |
 | Bulk | 88.37 % (88.38) | 18.37 | 19.7 | never finished (timeout) |
 | Idempotency | 84.91 % (73.58) | 14.91 | 1.8 | 73.58 %, 3.3 |
+| Campaign | 83.95 % (76.30) | 13.95 | 43.4 | never finished (OOM) |
 | Messaging | 82.70 % (86.09) | 12.70 | 99.8 | 80.72 %, 69.4 |
 | AuditTrail | 81.97 % | 11.97 | 5.1 | 81.97 %, 5.7 |
 | MultiTenancy | 81.40 % (72.09) | 11.40 | 6.1 | 75.58 %, 38.5 |
@@ -132,7 +133,6 @@ at f459fe2, so its row carries it (minutes not recorded).
 | Approvals | 77.78 % (74.84) | 7.78 | 3.4 | 74.84 %, 217.7 |
 | Data | 77.38 % | 7.38 | 2.3 | 77.38 %, 38.0 |
 | FileExchange | 76.92 % | 6.92 | 3.6 | 76.92 %, 31.8 |
-| Campaign | 76.30 % (74.77) | 6.30 | 50.6 | never finished (OOM) |
 | Archival | 74.49 % | 4.49 | 10.6 | never finished (OOM) |
 | Analyzers | 72.55 % | 2.55 | 3.9 | 72.55 %, 5.4 |
 | Jobs | 72.52 % | 2.52 | 9.1 | never finished (OOM) |
@@ -191,6 +191,24 @@ templates until G1 Part 4/4 sits in the excluded composition file); its successo
 2 survived. One survivor (`replay: false` → `true`) is pinned by a test added after the run; the
 other (`Length > 1000` → `>= 1000`) is equivalent, since a 1,000-character message cut at 1,000 is
 unchanged.
+
+**Campaign after R3-S2, the scheduled start (#289), 2026-10-28.** A full local run of
+`mutation-gate.sh Goldpath.Campaign` at 1c77033 on the #289 branch: 76.30 % → 83.95 % (1,148
+mutants tested, 237 tests; 43.4 minutes, the agent sandbox's, not the CI profile's). The rise is not
+this slice's alone: 211 → 237 tests includes R3-S2's eighteen and the Campaign facts merged since
+5c59165, and no run isolated the two. On the lines R3-S2 changed: 70 killed, 7 survived, 1 without
+coverage.
+- **Killed afterwards by two facts:**
+  - the start's conditional update with `&&` turned into `||` (`(Id || Ready) && StartAt`) started a
+    campaign an operator had just paused, and is killed by
+    `APauseMadeAfterTheTickLoadedTheCampaign_WinsOverThePacersStart`;
+  - create without a policy always applying a patch is killed by
+    `ACreateWithoutAPolicy_TakesTheTypesDefaults_WhichCarryNoStart`.
+- **Equivalent:** the start gate's `refusal is not null` → `is null`, because the gate list ships empty
+  (until amendment R3.7 adds a gate), and removing the `ChangeTracker.Clear()` after the start's
+  audit row, because the tick's scope and its tracker are discarded at the end of the tick.
+- **Not R3-S2's:** the rest sit on the rewritten audit-text line (`Describe`), on its pre-existing
+  `excludedDays` and `endDate` terms.
 
 ## Excluded files
 

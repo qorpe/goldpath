@@ -60,7 +60,10 @@ S-FLEET-02 — 30M inventory: one campaign sustains the configured TPS for an ho
   when:     release for 60 minutes under measurement
   then:     p95 release jitter within bound; store and broker headroom recorded; the numbers
             published as a bench report the way H6 benches are
-  needs:    scale-rig — SPEC TO BE WRITTEN WITH THE OWNER before any claim
+  needs:    scale-rig — the rig spec SIGNED by the owner on 2026-10-24 (#326; the Scale-rig
+            note below): the full 30M dataset in real time, on two lanes — the owner's Mac in
+            the Lima `bench` VM (the pass lane) and a GitHub-hosted runner (the repeatable
+            lane). The run itself is #349
   evidence: —
 
 S-FLEET-02a — One leader sustains 1000 TPS on a real broker (local profile of S-FLEET-02)
@@ -191,3 +194,37 @@ The CI reference profile proves mechanics, not telco scale. Before any 30M claim
 owner and the agent write the rig spec TOGETHER (hardware, dataset shape, clock policy,
 pass thresholds) into this file, and the run publishes its numbers like the H6 benches —
 a claim without its rig spec does not get made.
+
+### S-FLEET-02's rig spec — signed 2026-10-24
+
+Signed by the owner on 2026-10-24, approving the six points as recommended and unchanged
+([decision comment](https://github.com/qorpe/goldpath/issues/326#issuecomment-6387926062), #326). Its frame is the owner's Q11 decision of 2026-10-21 (GA
+readiness RFC §8.3): **zero budget**, the **full 30M dataset, never shrunk**, the owner's Mac
+overnight as the primary hardware, GitHub-hosted free runners as the repeatable lane.
+
+1. **Dataset.** 30,000,000 synthetic targets, seeded before the measured hour. The seeding
+   time is recorded and not counted.
+2. **Clock.** Real time, with no compression, for the 60-minute release. Clock compression
+   is S-FLEET-01's tool, not this one's.
+3. **Pass, on the Mac `bench` VM.** All four must hold:
+   - the mean release rate over the 60 minutes is at least 2,000 TPS;
+   - the p95 of the per-second release rate is within ±5% of the configured rate;
+   - **no one-second window is above the ceiling** (the strict rule of #292);
+   - zero items lost and zero duplicated: the sink's count equals the released count, and
+     every id is distinct.
+4. **If 2,000 TPS is not reached,** the run still publishes, labelled **"hardware ceiling"**.
+   It gives the sustained TPS, the TPS per core and the first saturated resource (CPU, disk
+   IO, broker or store). That is an honest result, not a pass of the 2,000 claim.
+5. **Recorded headroom.**
+   - Every 10 s: VM CPU, memory and disk IO, plus PostgreSQL and the RabbitMQ queue depth.
+   - In the report header: the Mac model; the Lima VM's size, which is all but 2 performance
+     cores and 75% of RAM, with its disk on the internal SSD; and the macOS version.
+   - The `bench` VM is a dedicated one, separate from the `ci` runner VM.
+6. **The runner lane.** The same scenario runs on a GitHub-hosted runner, inside its 6-hour
+   job cap and on the full dataset. Its number is the repeatable one. It is published beside
+   the Mac number with its own hardware line.
+
+The owner leaves the Mac on overnight when a slice is ready to measure. The run issue (#349)
+says so **a day ahead**. The plan for the rig script is the checklist in #349's body: the
+`scripts/bench-campaign.sh` mode, the environment knobs, the seeding step and the 10-second
+headroom sampler. Until that run publishes, S-FLEET-02 claims nothing.

@@ -7,7 +7,9 @@ the pacer's run health lives on the goldpath-jobs dashboard. This board owns the
 ## 1. Release rate ≠ configured TPS
 
 - The `released/s` line should track the campaign's `Tps` within a leader tick or two.
-- Rate is ZERO: `GET /{id}` — `WindowOpenNow` false? Then the window is doing its job
+- Rate is ZERO: `GET /{id}` — `State` Ready? The campaign is **waiting for its start, not
+  stuck** (R3.1): the snapshot is complete and `startAt` (UTC) is still ahead; it starts on
+  its own (§11 to move it). `WindowOpenNow` false? Then the window is doing its job
   (§4 if that surprises you). `State` Paused? Read `LastVerb` — either an operator or
   the TARGET CEILING paused it (the verb text says which; resume or abort is a decision,
   not a default). Quota exhausted? `ReleasedToday` vs `DailyQuota` on the same view.
@@ -125,3 +127,17 @@ For a LEAKED secret, skip the overlap: deploy `.SignedCallbacks(next)` alone and
 target system to it at once. Callbacks still signed with the leaked secret are `401` from
 that deploy on, and the items they would have settled time out into the ladder rather than
 settle on a forged word.
+
+## 11. Moving a scheduled start (R3.1)
+
+- `GET /{id}` — `startAt` is the instant in UTC; the policy's `timeZoneId` is how to read it.
+  Convert the wall-clock time you were given in that zone yourself: on a DST Sunday, 02:30 in
+  Europe/Berlin does not exist in spring and happens twice in autumn, so ask which one is meant.
+- `POST /{id}/throttle {"startAt": "2026-11-09T07:00:00Z"}` moves it; `{"clearStartAt": true}`
+  starts the campaign as soon as its snapshot is ready (a `Ready` one on the next tick). The
+  old → new policy lands in `LastVerb` and the audit trail with your name on it.
+- Refused "has already started": the campaign is `Running` or released something. A start
+  cannot be taken back; pause it, or lower its `tps`.
+- Refused "after the end date": the start would fall after `endDate`'s local day, so the
+  campaign would expire before it started. Move the end date in the same or an earlier call.
+- A start in the past means now. The start itself is audited `start` with the actor `system`.
