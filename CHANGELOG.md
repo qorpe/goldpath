@@ -22,13 +22,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     - `--require-complete [--package …]`;
     - `--require-applied`;
     - `--list-non-keep`;
-    - `--selftest` (22 planted faults red; green unplanted, across one `[ID]` prefix, and on an
-      applied review in every mode `gates` runs after API-14).
+    - `--selftest` (23 planted faults red; green unplanted, across one `[ID]` prefix, on an
+      experimental package under its own diagnostic id, and on an applied review in every mode
+      `gates` runs after API-14).
 
     The modes compose on an applied review: an applied source is not stale and a rename's target is
     covered by its row. A `keep` line that disappears, or a rename applied as a plain deletion, is
     red in every mode.
-  - At `main` 92ad7a0: **0 of 2,648 live lines** reviewed.
+  - At `main` 463e79f: **0 of 2,657 live lines** reviewed.
+  - An `experimental` row in Approvals or FileExchange must name that package's diagnostic id
+    (`GPEXP001`/`GPEXP002`).
 - **Campaign: a scheduled start and the `Ready` state (campaign RFC R3.1, slice R3-S2, #289).**
   - **API (additive, init-only):** `GoldpathCampaignPolicy.StartAt` and `IsBeforeStart(utcNow)`,
     `GoldpathCampaignThrottle.StartAt` and `ClearStartAt`, `GoldpathCampaignInfo.StartAt`. No

@@ -16,7 +16,8 @@
 #                                      on a malformed table: a stale row (a keep/experimental whose line
 #                                      is no longer live, or a rename whose source and target are both
 #                                      not live), an unknown verdict, a non-keep without a reason, a
-#                                      rename or experimental without a target, a duplicate row, a
+#                                      rename or experimental without a target, an experimental naming
+#                                      another id than its package's, a duplicate row, a
 #                                      `keep` in an experimental package, a missing or extra TSV, a
 #                                      wrong header
 #   --require-complete [--package P …] also fail on any live line that is neither a row nor a rename's
@@ -43,7 +44,8 @@ TABLES = "docs/strategy/api-review-1.0"
 HEADER = ["line", "verdict", "target", "reason"]
 VERDICTS = ("keep", "rename", "remove", "experimental")
 # Q4 of the GA readiness RFC: these ship [Experimental] at 1.0, so none of their lines may be `keep`.
-EXPERIMENTAL_PACKAGES = {"Goldpath.Approvals", "Goldpath.FileExchange"}
+# The value is the package's proposed diagnostic id (record §4): an `experimental` row there must name it.
+EXPERIMENTAL_PACKAGES = {"Goldpath.Approvals": "GPEXP001", "Goldpath.FileExchange": "GPEXP002"}
 PREFIX = re.compile(r"^\[[A-Za-z0-9_]+\]")
 
 
@@ -137,6 +139,8 @@ def check(root, require_complete=False, only=None, require_applied=False):
                 findings.append(f"{where}: a '{verdict}' needs a reason")
             if verdict in ("rename", "experimental") and not row["target"]:
                 findings.append(f"{where}: a '{verdict}' needs a target ({'the full new ledger line' if verdict == 'rename' else 'the diagnostic id'})")
+            if verdict == "experimental" and row["target"] and package in EXPERIMENTAL_PACKAGES and row["target"] != EXPERIMENTAL_PACKAGES[package]:
+                findings.append(f"{where}: an 'experimental' in {package} names '{row['target']}', not its diagnostic id {EXPERIMENTAL_PACKAGES[package]}")
             if verdict == "keep" and package in EXPERIMENTAL_PACKAGES:
                 findings.append(f"{where}: {package} ships [Experimental] at 1.0 (GA readiness Q4): 'keep' is not a verdict there")
             if row["line"] not in live[package]:
@@ -251,6 +255,7 @@ def selftest():
         ("an experimental without a target", {}, lambda r: add_row(r, X, first_live(r, X), "experimental", "", "Q4")),
         ("a duplicate row", {}, lambda r: (add_row(r, P, first_live(r, P)), add_row(r, P, first_live(r, P)))),
         ("a keep in an experimental package", {}, lambda r: add_row(r, X, first_live(r, X))),
+        ("an experimental naming another package's diagnostic id", {}, lambda r: add_row(r, X, first_live(r, X), "experimental", "GPEXP999", "Q4")),
         ("a package's TSV missing", {}, lambda r: os.remove(os.path.join(r, TABLES, f"{P}.tsv"))),
         ("a TSV for a package with no ledger", {}, lambda r: shutil.copy(os.path.join(r, TABLES, f"{P}.tsv"), os.path.join(r, TABLES, "Goldpath.Ghost.tsv"))),
         ("a wrong header", {}, lambda r: open(os.path.join(r, TABLES, f"{P}.tsv"), "w", encoding="utf-8").write("line\tverdict\n")),
@@ -293,6 +298,13 @@ def selftest():
     if check(prefixed)[0]:
         failures.append(f"a line matched across one [ID] prefix went red: {check(prefixed)[0][:3]}")
 
+    # An experimental package reviewed line by line under its own diagnostic id is complete and green.
+    experimental = scratch()
+    for line in sorted(ledgers(experimental)[X]):
+        add_row(experimental, X, line, "experimental", EXPERIMENTAL_PACKAGES[X], "Q4")
+    if check(experimental, require_complete=True, only={X})[0]:
+        failures.append(f"an experimental package under its own id went red: {check(experimental, require_complete=True, only={X})[0][:3]}")
+
     # An applied review (one renamed: source gone, target live; one removed: gone; the rest kept) is green in
     # EVERY mode `gates` runs after API-14 (record §5): report, --require-complete and --require-applied.
     applied = scratch()
@@ -315,14 +327,14 @@ def selftest():
             print(f"api-review-gate selftest: red as it should be — {name}")
         shutil.rmtree(root)
 
-    for root in (clean, prefixed, applied):
+    for root in (clean, prefixed, experimental, applied):
         shutil.rmtree(root)
     if failures:
         print("api-review-gate selftest FAILED:")
         for failure in failures:
             print(f"  - {failure}")
         return 1
-    print("api-review-gate selftest: green unplanted, across one [ID] prefix and on an applied review in every mode; every planted fault red.")
+    print("api-review-gate selftest: green unplanted, across one [ID] prefix, on an experimental package under its own id and on an applied review in every mode; every planted fault red.")
     return 0
 
 
