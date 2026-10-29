@@ -236,6 +236,7 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
         // expired must not even enumerate, and the flip must not wait out a slice
         // boundary behind enumeration.
         if (campaign.State is GoldpathCampaignState.Created or GoldpathCampaignState.Enumerating or GoldpathCampaignState.Running
+                or GoldpathCampaignState.Ready
             && GoldpathCampaignEngine<TContext>.PolicyOf(campaign).IsExpired(_time.GetUtcNow()))
         {
             if (await TryExpireAsync(db, campaign, cancellationToken) && streams.Remove(campaign.Id, out var open))
@@ -273,9 +274,18 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
             }
         }
 
+        // R3.1: a Ready campaign starts once its start has passed and every start gate is open,
+        // and releases in the same tick; until then it releases nothing.
+        if (campaign.State == GoldpathCampaignState.Ready
+            && !GoldpathCampaignEngine<TContext>.PolicyOf(campaign).IsBeforeStart(_time.GetUtcNow())
+            && StartGateRefusal(campaign) is null)
+        {
+            await TryStartAsync(db, campaign, cancellationToken);
+        }
+
         if (campaign.State != GoldpathCampaignState.Running)
         {
-            return -1;   // paused / ceiling-paused / still enumerating first batch
+            return -1;   // paused / ceiling-paused / still enumerating first batch / ready before its start
         }
 
         // 2) Policy math on the LIVE row values (throttle takes effect within one tick).
@@ -481,7 +491,7 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
         {
             var timedOut = await _engine.SweepAckTimeoutsAsync(db, campaign, cancellationToken);
             if (timedOut.Count > 0 && campaign.State is not (GoldpathCampaignState.Created or GoldpathCampaignState.Enumerating
-                or GoldpathCampaignState.Running or GoldpathCampaignState.Paused))
+                or GoldpathCampaignState.Running or GoldpathCampaignState.Paused or GoldpathCampaignState.Ready))
             {
                 foreach (var seq in timedOut)
                 {
@@ -532,7 +542,57 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
     }
 
     /// <summary>
-    /// Flips a Running campaign whose EndDate passed to ExpiredIncomplete (state-token
+    /// The start gates a Ready campaign passes on its way to Running (R3.1), each answering the
+    /// reason it may not start yet or null. The list ships empty; it is where amendment R3.7
+    /// (#291, four-eyes approval at Ready) plugs in.
+    /// </summary>
+    private static readonly IReadOnlyList<Func<GoldpathCampaign, string?>> StartGates = [];
+
+    /// <summary>The first start gate's refusal, or null when every gate is open (R3.1).</summary>
+    private static string? StartGateRefusal(GoldpathCampaign campaign)
+        => StartGates.Select(gate => gate(campaign)).FirstOrDefault(refusal => refusal is not null);
+
+    /// <summary>
+    /// Starts a Ready campaign whose start has passed (R3.1). The flip is one conditional update
+    /// on the state AND the start this tick loaded: a racing verb wins — a pause or an abort moves
+    /// the state, and a throttle that moved the start moves the start — and the next tick
+    /// re-evaluates. Audited <c>start</c> with the actor <c>system</c>, after the flip, as every
+    /// admin verb is.
+    /// </summary>
+    private async Task TryStartAsync(TContext db, GoldpathCampaign campaign, CancellationToken cancellationToken)
+    {
+        var now = _time.GetUtcNow();
+        var startAt = campaign.StartAt;
+        var verb = startAt is { } at
+            ? string.Create(CultureInfo.InvariantCulture, $"goldpath: started at its scheduled start {at.UtcDateTime:yyyy-MM-ddTHH:mm:ss}Z")
+            : "goldpath: started — its scheduled start was cleared";
+        var started = await db.Set<GoldpathCampaign>()
+            .Where(c => c.Id == campaign.Id && c.State == GoldpathCampaignState.Ready && c.StartAt == startAt)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(c => c.State, GoldpathCampaignState.Running)
+                .SetProperty(c => c.LastVerb, verb), cancellationToken);
+        if (started == 0)
+        {
+            return;
+        }
+
+        campaign.State = GoldpathCampaignState.Running;
+        campaign.LastVerb = verb;
+        db.Set<GoldpathCampaignAudit>().Add(new GoldpathCampaignAudit
+        {
+            At = now,
+            Actor = "system",
+            Action = "start",
+            CampaignId = campaign.Id,
+            Detail = verb,
+        });
+        await db.SaveChangesAsync(cancellationToken);
+        db.ChangeTracker.Clear();
+        _logger.LogInformation("Campaign {CampaignId} started at its scheduled start.", campaign.Id);
+    }
+
+    /// <summary>
+    /// Flips a Running (or Ready, R3.1) campaign whose EndDate passed to ExpiredIncomplete (state-token
     /// guarded, so a racing verb wins and the flip re-evaluates next tick). The remaining
     /// count IS the report; nothing is stamped onto the items themselves.
     /// </summary>
