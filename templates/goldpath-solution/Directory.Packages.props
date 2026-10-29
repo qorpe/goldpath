@@ -16,7 +16,7 @@
          System.Security.Cryptography.Xml GHSA-c399-9853-6jmj + GHSA-7hqp-7c5m-4vq6 (SqlClient,
          MimeKit, MSBuild/Roslyn workspaces, Aspire SqlServer), MessagePack GHSA-qhrr-8q5h-9q3h
          (Aspire's StreamJsonRpc). Transitive only — pinned, never referenced for use. -->
-    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.14" />
     <PackageVersion Include="MessagePack" Version="2.5.307" />
     <!--#if (UseSqlServer) -->
     <PackageVersion Include="Aspire.Hosting.SqlServer" Version="13.4.6" />
