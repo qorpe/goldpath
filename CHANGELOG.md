@@ -9,7 +9,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   Part 2/2, 2/4, part of #340).** Documents only; no package change. `docs/security/threat-model.md`
   now models 6 of 10 surfaces. Every threat names a test (by class and method, all 36 checked to
   exist and pass), an issue, or an accepted risk.
-  - Five threats had no holder and are now issues:
+  - Six threats had no holder and are now issues:
     - #478: the Approvals admin route takes the decider's role from the request body, so any ops
       holder can decide any rung;
     - #479: an active delegation admits its delegate to every rung;
@@ -17,6 +17,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     - #481: the approvals and fileexchange surfaces skip admin-contract R1 rule 5 on a multi-tenant app;
     - #482: FileExchange dedups by file name, so new content under a processed name is silently
       skipped.
+    - #487: the Approvals admin route takes the decider from `Identity.Name`, which is null for most
+      OIDC tokens and is not the identifier `ICurrentUser.UserId` returns, so a requester can approve
+      their own request there (T-APR-12; T-APR-02 and T-APR-08 are narrowed to what holds today).
   - Three accepted risks (A7–A9) await the owner's signature: counterparty authenticity is the
     transport's job, quarantine reasons are shown as written, and a rail has no size ceiling of its
     own.
