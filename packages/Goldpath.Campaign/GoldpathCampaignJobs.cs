@@ -319,7 +319,20 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
     /// <c>GlobalTps</c> — held to <see cref="BucketCapacity"/> (#292).
     /// </summary>
     internal static double Refill(double banked, int ceiling, TimeSpan tick)
-        => Math.Min(banked + ceiling * tick.TotalSeconds, BucketCapacity(ceiling, tick));
+    {
+        var refilled = banked + ceiling * tick.TotalSeconds;
+        if (ceiling > 0 && tick.Ticks > 0 && tick.Ticks < TimeSpan.TicksPerSecond)
+        {
+            // Everything the bucket holds is a multiple of 1/q: it gains p/q a tick and spends whole units. Snapping to
+            // that grid keeps floating point from losing a unit at the cap: ten refills of 0.1 sum to 0.9999999999999999,
+            // which spends nothing, and the eleventh is clipped to a capacity of 1, so one release in eleven ticks
+            // instead of ten (2/s at a 50 ms tick delivered 1.82/s).
+            var (_, denominator) = RefillFraction(ceiling, tick);
+            refilled = Math.Round(refilled * denominator) / denominator;
+        }
+
+        return Math.Min(refilled, BucketCapacity(ceiling, tick));
+    }
 
     /// <summary>
     /// The most a hard-ceiling bucket may hold (#292): one tick's worth, plus the largest fraction a refill can leave
@@ -330,7 +343,8 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
     /// A refill of <c>p/q</c> units a tick (in lowest terms) leaves fractions that are multiples of <c>1/q</c>, the
     /// largest <c>(q - 1)/q</c>. A whole refill (<c>q = 1</c>) therefore banks exactly one tick's worth. A fractional one
     /// keeps room for its carry, so the steady rate is unchanged: 2.5 a tick spends 2, then 3 (capacity 3), where a
-    /// capacity of 2.5 would spend 2 every tick. Either way, when <see cref="GoldpathCampaignOptions.LeaderTick"/>
+    /// capacity of 2.5 would spend 2 every tick. <see cref="Refill"/> snaps every sum to that <c>1/q</c> grid, so
+    /// floating-point error never costs a unit at the cap (ten refills of 0.1 are exactly 1). Either way, when <see cref="GoldpathCampaignOptions.LeaderTick"/>
     /// divides one second (the default 250 ms does), the ticks of any one second release less than the ceiling plus one:
     /// at most the ceiling, in whole units.
     /// </para>
@@ -347,13 +361,18 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
             return ceiling;   // one tick's refill is the ceiling or more: the ceiling caps it, as before
         }
 
-        // The refill in exact integers: under a second, ceiling × ticks stays far inside a long.
+        var (numerator, denominator) = RefillFraction(ceiling, tick);
+        return Math.Min(ceiling, ((double)numerator + denominator - 1) / denominator);
+    }
+
+    /// <summary>One tick's refill under a second, <c>p/q</c> units in lowest terms, in exact integers.</summary>
+    private static (long Numerator, long Denominator) RefillFraction(int ceiling, TimeSpan tick)
+    {
+        // Under a second, ceiling × ticks stays far inside a long.
         var numerator = ceiling * tick.Ticks;
         var denominator = TimeSpan.TicksPerSecond;
         var divisor = GreatestCommonDivisor(numerator, denominator);
-        numerator /= divisor;
-        denominator /= divisor;
-        return Math.Min(ceiling, ((double)numerator + denominator - 1) / denominator);
+        return (numerator / divisor, denominator / divisor);
     }
 
     private static long GreatestCommonDivisor(long a, long b)

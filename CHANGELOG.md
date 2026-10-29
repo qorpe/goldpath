@@ -293,7 +293,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     divide a second fits one more tick into some seconds, so such a second can release up to one more
     tick's refill (56 against 50 at a 140 ms tick); that was already so before this change, and
     `LeaderTick`'s documentation now says so. The steady rate is unchanged: 2.5 a tick still spends 2,
-    then 3. No public API, option or migration changes.
+    then 3. Each refill is snapped to the exact grid of its fraction, so floating point never costs a
+    unit at the cap: ten refills of 0.1 are exactly one, where 0.9999999999999999 would have released
+    2/s at a 50 ms tick as 1.82/s. No public API, option or migration changes.
   - **Proof:** `BurstControlTests` counts each tick's releases exactly through the pacer's own tick scope.
     After 30 idle ticks, the three buckets each released 100 in one tick and 195 in one second against a
     ceiling of 100; now 5 a tick. S-FLEET-03 at its own numbers (GlobalTps 1000, two campaigns at 800):

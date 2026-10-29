@@ -36,6 +36,7 @@ public class BurstControlTests
     [InlineData(10, 2_000, 10)]   // a tick longer than a second never holds more than the ceiling
     [InlineData(10, 1_000, 10)]
     [InlineData(0, 50, 0)]
+    [InlineData(-5, 250, -5)]     // never above the ceiling, whatever its sign
     public void TheCapacityIsOneTicksWorth_PlusTheLargestCarryARefillLeaves(int ceiling, int tickMs, double expected)
         => Assert.Equal(expected, GoldpathCampaignPacerJob<CampaignTestContext>.BucketCapacity(ceiling, TimeSpan.FromMilliseconds(tickMs)), 9);
 
@@ -50,6 +51,11 @@ public class BurstControlTests
     [InlineData(1_000, 250)]
     [InlineData(7, 250)]         // 1.75 a tick: the carry reaches 0.75, which a capacity of 2 would clip
     [InlineData(33, 20)]         // 0.66 a tick
+    [InlineData(2, 50)]          // 0.1 a tick, capacity 1: ten refills sum to 0.9999999999999999 in floating point
+    [InlineData(10, 10)]
+    [InlineData(20, 5)]
+    [InlineData(100, 1)]
+    [InlineData(1, 100)]
     public void AfterAnIdleStretch_NoSecondOfTicksReleasesMoreThanTheCeiling_AndTheSteadyRateHolds(int ceiling, int tickMs)
     {
         // The pacer's own arithmetic: refill, spend what is whole, carry the rest.
