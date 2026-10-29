@@ -212,6 +212,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
 ### Changed
+- **Dependencies: the nuget minor/patch group of 2026-10-27.** MassTransit (and its RabbitMQ and EF Core
+  packages) 8.5.11 → 8.5.12, so the conformance suite's oracle is 8.5.12. The templates, CorPay and the CLI's
+  outbox recipe pin the same version, and the templates and CorPay move `System.Security.Cryptography.Pkcs` to
+  10.0.14 with it, because a generated app pinning 8.5.11 against a Goldpath.Messaging
+  built on 8.5.12 fails restore with NU1109. Also: MailKit 4.18.2, Microsoft.OpenApi 2.13.0, the
+  `Microsoft.Extensions.*` 10.0.14 line, OpenTelemetry 1.20.1 and Quartz 3.22.9. The Oracle pair stays at
+  23.26.301 / 10.23.26301 until 23.26.400 is two weeks old (2026-11-03).
 - **`Goldpath.Campaign`: leadership is continuous by default (#284).** `LeadershipSlice` goes
   from 50 s to 60 s, the period of the default pacer cron (`pacerCron`, unchanged). The next fire
   is already due when a slice returns, and the jobs runner, which never runs the pacer twice at
