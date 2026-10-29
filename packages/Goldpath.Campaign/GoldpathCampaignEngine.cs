@@ -51,6 +51,8 @@ public sealed class GoldpathCampaignEngine<TContext>
             EndDate = effective.EndDate,
             MaxAttempts = effective.MaxAttempts,
             Priority = effective.Priority,
+            // R3.1: Npgsql refuses a non-zero offset on timestamptz, so the instant is stored in UTC.
+            StartAt = effective.StartAt?.ToUniversalTime(),
             QuotaDay = effective.LocalDay(_time.GetUtcNow()),
             CreatedAt = _time.GetUtcNow(),
             CreatedBy = actor,
@@ -62,12 +64,16 @@ public sealed class GoldpathCampaignEngine<TContext>
         return campaign;
     }
 
-    /// <summary>The campaigns a leader slice works: Created (to start), Enumerating, Running.</summary>
+    /// <summary>
+    /// The campaigns a leader slice works: Created (to start), Enumerating, Running, and Ready
+    /// (R3.1), so the pacer can start a scheduled campaign at its start and expire it at its end date.
+    /// </summary>
     public async Task<List<GoldpathCampaign>> LoadWorkableAsync(TContext db, CancellationToken cancellationToken)
         => await db.Set<GoldpathCampaign>()
             .Where(c => c.State == GoldpathCampaignState.Created
                 || c.State == GoldpathCampaignState.Enumerating
-                || c.State == GoldpathCampaignState.Running)
+                || c.State == GoldpathCampaignState.Running
+                || c.State == GoldpathCampaignState.Ready)
             .OrderBy(c => c.CreatedAt)
             .ToListAsync(cancellationToken);
 
@@ -80,6 +86,7 @@ public sealed class GoldpathCampaignEngine<TContext>
             EndDate = campaign.EndDate,
             MaxAttempts = campaign.MaxAttempts,
             Priority = campaign.Priority,
+            StartAt = campaign.StartAt,
         };
 
     /// <summary>
@@ -109,7 +116,7 @@ public sealed class GoldpathCampaignEngine<TContext>
                 campaign.EnumerationComplete = true;
                 if (campaign.State == GoldpathCampaignState.Enumerating)
                 {
-                    campaign.State = GoldpathCampaignState.Running;
+                    campaign.State = SnapshotDoneState(campaign);
                 }
 
                 break;
@@ -149,13 +156,20 @@ public sealed class GoldpathCampaignEngine<TContext>
 
         if (campaign.EnumerationComplete && campaign.State == GoldpathCampaignState.Enumerating)
         {
-            campaign.State = GoldpathCampaignState.Running;
+            campaign.State = SnapshotDoneState(campaign);
         }
 
         await db.SaveChangesAsync(cancellationToken);
         db.ChangeTracker.Clear();
         return added;
     }
+
+    /// <summary>
+    /// Where a finished snapshot goes (R3.1): Ready while the start is still ahead, Running
+    /// otherwise, exactly as R2 did. A start that passed during the snapshot starts it at once.
+    /// </summary>
+    private GoldpathCampaignState SnapshotDoneState(GoldpathCampaign campaign)
+        => PolicyOf(campaign).IsBeforeStart(_time.GetUtcNow()) ? GoldpathCampaignState.Ready : GoldpathCampaignState.Running;
 
     /// <summary>
     /// Opens the type's target stream at the campaign's watermark (takeover resume): a
@@ -555,7 +569,7 @@ public sealed class GoldpathCampaignEngine<TContext>
         var maxAttempts = policy is null
             ? 1
             : policy.State is GoldpathCampaignState.Created or GoldpathCampaignState.Enumerating
-                or GoldpathCampaignState.Running or GoldpathCampaignState.Paused
+                or GoldpathCampaignState.Running or GoldpathCampaignState.Paused or GoldpathCampaignState.Ready
                 ? policy.MaxAttempts
                 : 0;
 

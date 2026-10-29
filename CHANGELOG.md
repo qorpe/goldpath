@@ -5,6 +5,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **Campaign: a scheduled start and the `Ready` state (campaign RFC R3.1, slice R3-S2, #289).**
+  - **API (additive, init-only):** `GoldpathCampaignPolicy.StartAt` and `IsBeforeStart(utcNow)`,
+    `GoldpathCampaignThrottle.StartAt` and `ClearStartAt`, `GoldpathCampaignInfo.StartAt`. No
+    positional constructor changes. `StartAt` is stored in UTC.
+  - **Engine and pacer:** a finished snapshot goes to `Ready` while the start is ahead, and to
+    `Running` otherwise, as before. The pacer loads `Ready`, starts it once the start has passed
+    through one internal start gate that ships with no gates (amendment R3.7 plugs in there),
+    audits it `start` with the actor `system`, and releases in the same tick. A `Ready`
+    campaign past its end date expires.
+  - **Verbs:** `create` takes `StartAt`. `throttle` moves or clears it until the campaign has
+    started (`Running`, or anything released) and refuses after that. A start in the past
+    means now, and a start after the end date's local day is refused. `pause` accepts `Ready`;
+    `resume` returns to `Ready` while the start is ahead. The audit and `LastVerb` add
+    `start=…` to the policy text only when a start is involved, so existing text is unchanged.
+  - **Proof:** `R3StartTests` (20 facts, a stepped clock), red against planted faults,
+    including the Berlin DST pair: a 03:30 start on spring-forward Sunday releases nothing at
+    01:29:59Z and releases at 01:30Z, and of the two 02:30s on fall-back Sunday only the
+    chosen one starts. The pacer's start is guarded on the state and the start it read, so an
+    operator's move or pause made during the tick wins. Mutation gate: 83.95 % (`stryker/README.md`).
+  - **Not yet:** the real-broker test and the console's view of `Ready` (R3-S3, #315).
 - **Admin surfaces: a read role, `goldpath-ops-read` (admin contract R4.1, slice R4-S1, #297).**
   - **What it is:** `GoldpathPolicies.OpsRead` (Abstractions) and `GoldpathAuthOptions.OpsReadRole`
     (Auth, default `goldpath-ops-read`). `AddGoldpathAuth` registers the policy in both strategy
@@ -192,6 +212,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
 ### Changed
+- **Dependencies: the nuget minor/patch group of 2026-10-27.** MassTransit (and its RabbitMQ and EF Core
+  packages) 8.5.11 → 8.5.12, so the conformance suite's oracle is 8.5.12. The templates, CorPay and the CLI's
+  outbox recipe pin the same version, and the templates and CorPay move `System.Security.Cryptography.Pkcs` to
+  10.0.14 with it, because a generated app pinning 8.5.11 against a Goldpath.Messaging
+  built on 8.5.12 fails restore with NU1109. Also: MailKit 4.18.2, Microsoft.OpenApi 2.13.0, the
+  `Microsoft.Extensions.*` 10.0.14 line, OpenTelemetry 1.20.1 and Quartz 3.22.9. The Oracle pair stays at
+  23.26.301 / 10.23.26301 until 23.26.400 is two weeks old (2026-11-03).
 - **`Goldpath.Campaign`: leadership is continuous by default (#284).** `LeadershipSlice` goes
   from 50 s to 60 s, the period of the default pacer cron (`pacerCron`, unchanged). The next fire
   is already due when a slice returns, and the jobs runner, which never runs the pacer twice at
