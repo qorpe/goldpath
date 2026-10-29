@@ -11,7 +11,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   - every column's Oracle store type is pinned in a golden;
   - every identifier fits in 128 bytes;
   - every NOT NULL string column refuses `''`;
-  - the keyset suite passes with no Oracle branch;
+  - the keyset suite passes with no Oracle branch, in a session that sorts BINARY;
   - `DateOnly`/`TimeOnly` round-trip;
   - D7 migrate up, down, up, and a second migrate changes nothing.
 
@@ -19,6 +19,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   - the document columns are `NVARCHAR2(2000)` and refuse a NULL in the client (#475);
   - three admin verbs can write `''` into a NOT NULL column (#476);
   - the global ceiling row's empty name (#384, already open).
+
+  It also found that in a `tr-TR` process ODP.NET opens the session with `NLS_SORT=TURKISH`, so a keyset walk
+  over a string key silently skips rows. A fact pins it, and open-threads T54 holds the fix (pin the session's
+  sort in the Oracle composition).
 
   `packages/Goldpath.Data/ops/data.md` gains an "Oracle" section: the container's cost, the 19c compatibility
   setting, and the type mappings.

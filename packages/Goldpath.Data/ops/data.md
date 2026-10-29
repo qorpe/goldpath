@@ -47,11 +47,19 @@ Measured in G7 slice O-2 (#405), on `gvenzl/oracle-free:23.26.3-slim-faststart` 
   fails in ODP.NET (`OracleParameter.set_Size`) before it is sent. Until #475 lands, a job execution that succeeds
   (its `Error` is NULL) cannot be recorded on Oracle.
 - **`''` is NULL.** Every NOT NULL string column refuses an empty string with `ORA-01400`. The known writers of
-  `""` are #384 (the global ceiling row) and #476 (three admin verbs that accept a blank value).
-- **Keyset needs nothing Oracle-specific.** `ToPageAsync` emits `FETCH FIRST … ROWS ONLY`, and orders as the
-  database does:
+  `""` are #384 (the global ceiling row) and #476 (three admin verbs that accept a blank value). A LINQ filter
+  `x == ""` is translated as a NULL test, so on Oracle it matches the rows whose value is NULL: a query ported from
+  PostgreSQL returns different rows, with no error.
+- **Keyset has no Oracle branch, and it is correct only in a session that sorts BINARY.** `ToPageAsync` emits
+  `FETCH FIRST … ROWS ONLY`, and orders as the database session does:
   - a string key in BINARY order, which is by code point (`A` before `a`; dotted `İ` and dotless `ı` by code point);
   - a `Guid` key by its `RAW(16)` bytes, which is stable but not the order rows were created in.
+
+  ODP.NET takes the session's NLS settings from the .NET process culture. In a `tr-TR` process the session opens
+  with `NLS_SORT=TURKISH` and `NLS_COMP=BINARY`, so the page's `ORDER BY` sorts linguistically while its
+  `key > cursor` compares by code point, and a walk over a string key **silently skips rows** (measured: 6 of 12 at a
+  page size of 5). Until Goldpath's Oracle composition pins the session's sort (open-threads T54), run an Oracle
+  host under the invariant culture, or set `NLS_SORT=BINARY` on every connection it opens.
 - **Identifiers fit.** Every table, column, key, index and constraint name in the composed model is at most
   76 bytes, against Oracle's 128-byte limit.
 

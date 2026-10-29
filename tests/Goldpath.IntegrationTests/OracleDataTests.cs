@@ -285,9 +285,14 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
     [Fact]
     public async Task A_string_key_walks_in_binary_order_under_the_default_nls_sort()
     {
+        // ODP.NET takes the session's NLS_SORT from the process culture, so this fact pins the culture whose session
+        // sorts BINARY rather than inheriting the runner's locale (a tr-TR runner gets TURKISH: the next fact).
+        using var culture = new CultureScope(CultureInfo.InvariantCulture);
         var (db, _) = await KeysetDbAsync("GP_KEYSET_D");
         await using (db)
         {
+            Assert.Equal("BINARY", await SessionNlsSortAsync(db));
+
             // Upper before lower, and the dotted/dotless Turkish i by code point: BINARY is not a linguistic sort.
             string[] labels = ["b", "B", "a", "A", "ı", "İ", "i", "I", "z", "Z", "é", "e"];
             db.Rows.AddRange(labels.Select((label, index) => NewRow(index + 1) with { Label = label }));
@@ -295,6 +300,30 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
 
             var seen = await WalkAsync(db.Rows, 5, async (rows, request) => await rows.ToPageAsync(request, r => r.Label, r => r.Id), r => r.Label);
             Assert.Equal(labels.OrderBy(label => label, StringComparer.Ordinal), seen);
+        }
+    }
+
+    [Fact]
+    public async Task A_string_key_walk_in_a_turkish_process_sorts_linguistically_and_skips_rows()
+    {
+        // T54 (4): in a tr-TR process ODP.NET opens the session with NLS_SORT=TURKISH while NLS_COMP stays BINARY, so
+        // ToPageAsync's ORDER BY sorts linguistically and its "key > cursor" compares by code point: the cursor jumps
+        // past rows, silently. This fact pins that defect; it flips when the Oracle composition pins every session
+        // to a sort its comparisons agree with (T54).
+        using var culture = new CultureScope(CultureInfo.GetCultureInfo("tr-TR"));
+        var (db, _) = await KeysetDbAsync("GP_KEYSET_E");
+        await using (db)
+        {
+            Assert.Equal("TURKISH", await SessionNlsSortAsync(db));
+
+            string[] labels = ["ı", "I", "i", "İ", "X", "XA", "x", "ğ", "G", "ı", "I", "X"];
+            db.Rows.AddRange(labels.Select((label, index) => NewRow(index + 1) with { Label = label }));
+            await db.SaveChangesAsync();
+
+            var seen = await WalkAsync(db.Rows, 5, async (rows, request) => await rows.ToPageAsync(request, r => r.Label, r => r.Id), r => r.Id);
+            Assert.Equal(labels.Length, await db.Rows.CountAsync());
+            Assert.Equal(seen.Distinct().Count(), seen.Count);
+            Assert.True(seen.Count < labels.Length, $"the walk returned all {labels.Length} rows: T54 (4) has landed, flip this fact");
         }
     }
 
@@ -355,6 +384,22 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
             .Options);
         await db.Database.EnsureCreatedAsync();
         return (db, sql);
+    }
+
+    private static async Task<string> SessionNlsSortAsync(DbContext db)
+    {
+        var connection = db.Database.GetDbConnection();
+        await connection.OpenAsync();
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT value FROM nls_session_parameters WHERE parameter = 'NLS_SORT'";
+            return (string)(await command.ExecuteScalarAsync())!;
+        }
+        finally
+        {
+            await connection.CloseAsync();
+        }
     }
 
     private static async Task<List<TKey>> WalkAsync<TKey>(
@@ -495,6 +540,25 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
         public long Id { get; init; }
 
         public DateTimeOffset StampedAt { get; init; }
+    }
+
+    /// <summary>Sets the thread's culture for one fact, so a connection opened inside it takes that culture's NLS settings.</summary>
+    private sealed class CultureScope : IDisposable
+    {
+        private readonly CultureInfo _culture = CultureInfo.CurrentCulture;
+        private readonly CultureInfo _uiCulture = CultureInfo.CurrentUICulture;
+
+        public CultureScope(CultureInfo culture)
+        {
+            CultureInfo.CurrentCulture = culture;
+            CultureInfo.CurrentUICulture = culture;
+        }
+
+        public void Dispose()
+        {
+            CultureInfo.CurrentCulture = _culture;
+            CultureInfo.CurrentUICulture = _uiCulture;
+        }
     }
 
     /// <summary>Oracle's RAW comparison: byte by byte, unsigned.</summary>
