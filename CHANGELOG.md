@@ -261,9 +261,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   in-flight cap, a pause, a spent quota) was spent in one tick when release resumed, so one second could
   release the ceiling plus all but one tick of refill: 1.75 times the ceiling at the default 250 ms tick.
   - **Now:** a bucket holds one tick's refill, plus the largest fraction a refill can leave behind (none
-    when the refill is a whole number of units). The ticks of any one second therefore release at most
-    the ceiling, and the steady rate is unchanged: 2.5 a tick still spends 2, then 3. No public API,
-    option or migration changes.
+    when the refill is a whole number of units). When `LeaderTick` divides one second (the default
+    250 ms does), the ticks of any one second therefore release at most the ceiling. A tick that does not
+    divide a second fits one more tick into some seconds, so such a second can release up to one more
+    tick's refill (56 against 50 at a 140 ms tick); that was already so before this change, and
+    `LeaderTick`'s documentation now says so. The steady rate is unchanged: 2.5 a tick still spends 2,
+    then 3. No public API, option or migration changes.
   - **Proof:** `BurstControlTests` counts each tick's releases exactly through the pacer's own tick scope.
     After 30 idle ticks, the three buckets each released 100 in one tick and 195 in one second against a
     ceiling of 100; now 5 a tick. S-FLEET-03 at its own numbers (GlobalTps 1000, two campaigns at 800):

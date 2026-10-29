@@ -320,8 +320,14 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
     /// A refill of <c>p/q</c> units a tick (in lowest terms) leaves fractions that are multiples of <c>1/q</c>, the
     /// largest <c>(q - 1)/q</c>. A whole refill (<c>q = 1</c>) therefore banks exactly one tick's worth. A fractional one
     /// keeps room for its carry, so the steady rate is unchanged: 2.5 a tick spends 2, then 3 (capacity 3), where a
-    /// capacity of 2.5 would spend 2 every tick. Either way, the ticks of any one second release less than the ceiling
-    /// plus one: at most the ceiling, in whole units.
+    /// capacity of 2.5 would spend 2 every tick. Either way, when <see cref="GoldpathCampaignOptions.LeaderTick"/>
+    /// divides one second (the default 250 ms does), the ticks of any one second release less than the ceiling plus one:
+    /// at most the ceiling, in whole units.
+    /// </para>
+    /// <para>
+    /// A tick that does not divide one second fits one more tick into some seconds (eight 140 ms ticks start within one
+    /// second, not seven), so such a second can release one more tick's refill: 56 against a ceiling of 50 at 140 ms,
+    /// steadily and not only after an idle stretch. That is the tick's granularity, not the bank this cap removes.
     /// </para>
     /// </summary>
     internal static double BucketCapacity(int ceiling, TimeSpan tick)

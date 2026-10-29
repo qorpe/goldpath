@@ -43,7 +43,9 @@ the pacer's run health lives on the goldpath-jobs dashboard. This board owns the
 - Sending outside the window is a policy change: `POST /{id}/throttle` with
   `"clearWindow": true` (audited) — or wait for the window; the campaign's budget does not refill
   while its window is closed, and no bucket holds more than one tick's refill plus the fraction
-  it carries (#292), so the morning does not open with a burst.
+  it carries (#292), so the morning does not open with a burst. (The ceiling holds for every
+  second of ticks when `LeaderTick` divides one second, as the default 250 ms does; any other tick
+  lets a second release up to one more tick's refill.)
 
 ## 5. Failed items / poisoned targets
 

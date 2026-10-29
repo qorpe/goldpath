@@ -43,7 +43,10 @@ public class BurstControlTests
     [InlineData(100, 50)]
     [InlineData(25, 100)]
     [InlineData(3, 100)]
-    [InlineData(50, 140)]
+    [InlineData(50, 140)]        // a tick that does not divide one second: one more tick's refill allowed (below)
+    [InlineData(100, 300)]
+    [InlineData(1_000, 300)]
+    [InlineData(10, 400)]
     [InlineData(1_000, 250)]
     [InlineData(7, 250)]         // 1.75 a tick: the carry reaches 0.75, which a capacity of 2 would clip
     [InlineData(33, 20)]         // 0.66 a tick
@@ -66,10 +69,38 @@ public class BurstControlTests
             released.Add(spent);
         }
 
-        var perSecond = (int)(TimeSpan.FromSeconds(1).Ticks / tick.Ticks);
-        Assert.InRange(MaxWindow(released, Math.Max(1, perSecond)), 0, ceiling);
+        // Every tick that STARTS within one second counts: ceil(1 s / tick) of them. Only a tick that divides one second
+        // holds the ceiling itself; any other fits one more tick into some seconds, so one more tick's refill is allowed
+        // (LeaderTick's documented condition).
+        var second = TimeSpan.FromSeconds(1).Ticks;
+        var perSecond = (int)((second + tick.Ticks - 1) / tick.Ticks);
+        var divides = second % tick.Ticks == 0;
+        var bound = divides ? ceiling : ceiling + (int)Math.Ceiling(ceiling * tick.TotalSeconds);
+        Assert.InRange(MaxWindow(released, Math.Max(1, perSecond)), 0, bound);
         // The steady rate is the ceiling: over 400 ticks the carry loses less than one unit.
         Assert.InRange(released.Sum(), (ceiling * 400 * tick.TotalSeconds) - 1, ceiling * 400 * tick.TotalSeconds);
+    }
+
+    [Theory]
+    [InlineData(50, 140, 56)]
+    [InlineData(100, 300, 120)]
+    [InlineData(10, 400, 12)]
+    public void A_tick_that_does_not_divide_one_second_can_release_one_more_ticks_refill_in_a_second(int ceiling, int tickMs, int worstSecond)
+    {
+        // The documented limit of the ceiling (LeaderTick's summary): steady hungry ticks, no idle stretch needed.
+        var tick = TimeSpan.FromMilliseconds(tickMs);
+        var banked = 0d;
+        var released = new List<int>();
+        for (var i = 0; i < 400; i++)
+        {
+            banked = GoldpathCampaignPacerJob<CampaignTestContext>.Refill(banked, ceiling, tick);
+            var spent = (int)Math.Floor(banked);
+            banked -= spent;
+            released.Add(spent);
+        }
+
+        var perSecond = (int)((TimeSpan.FromSeconds(1).Ticks + tick.Ticks - 1) / tick.Ticks);
+        Assert.Equal(worstSecond, MaxWindow(released, perSecond));
     }
 
     // ---- the pacer, one bucket binding at a time ----
