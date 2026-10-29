@@ -55,11 +55,21 @@ Measured in G7 slice O-2 (#405), on `gvenzl/oracle-free:23.26.3-slim-faststart` 
   - a string key in BINARY order, which is by code point (`A` before `a`; dotted `İ` and dotless `ı` by code point);
   - a `Guid` key by its `RAW(16)` bytes, which is stable but not the order rows were created in.
 
-  ODP.NET takes the session's NLS settings from the .NET process culture. In a `tr-TR` process the session opens
-  with `NLS_SORT=TURKISH` and `NLS_COMP=BINARY`, so the page's `ORDER BY` sorts linguistically while its
-  `key > cursor` compares by code point, and a walk over a string key **silently skips rows** (measured: 6 of 12 at a
-  page size of 5). Until Goldpath's Oracle composition pins the session's sort (open-threads T54), run an Oracle
-  host under the invariant culture, or set `NLS_SORT=BINARY` on every connection it opens.
+  ODP.NET decides a session's NLS settings from a .NET culture, and which culture depends on pooling:
+  - a **pooled** connection takes the `CurrentCulture` of the thread that **creates the pool**, and every session
+    in that pool keeps it for the pool's life, whatever culture later requests run under;
+  - an **unpooled** connection takes the culture the process **started** under; a culture set in code is ignored.
+
+  A Turkish culture opens the session with `NLS_SORT=TURKISH` and `NLS_COMP=BINARY`, so the page's `ORDER BY`
+  sorts linguistically while its `key > cursor` compares by code point, and a walk over a string key **silently
+  skips rows** (measured: 4 of 12 at a page size of 1, 6 of 12 at 5). Until Goldpath's Oracle composition pins the
+  session's sort ([#496](https://github.com/qorpe/goldpath/issues/496)), **pin it on every connection**: run
+  `ALTER SESSION SET NLS_SORT=BINARY NLS_COMP=BINARY` when a connection opens (an EF Core connection interceptor's
+  `ConnectionOpened`); `A_string_key_walk_in_a_turkish_process_walks_every_row_once_the_session_sort_is_pinned`
+  proves it walks 12 of 12 on a pool created under `tr-TR`. Setting an invariant culture in code is not
+  enough: it does not reach unpooled sessions, and with per-request localization the pool's sort is decided by
+  whichever request opened it first. Only a process that **starts** non-Turkish (a non-Turkish `LANG`, or
+  `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1`) and never creates a pool on a Turkish thread avoids it without the pin.
 - **Identifiers fit.** Every table, column, key, index and constraint name in the composed model is at most
   76 bytes, against Oracle's 128-byte limit.
 

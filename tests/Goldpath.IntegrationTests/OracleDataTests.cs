@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -285,8 +286,9 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
     [Fact]
     public async Task A_string_key_walks_in_binary_order_under_the_default_nls_sort()
     {
-        // ODP.NET takes the session's NLS_SORT from the process culture, so this fact pins the culture whose session
-        // sorts BINARY rather than inheriting the runner's locale (a tr-TR runner gets TURKISH: the next fact).
+        // A pooled ODP.NET session takes its NLS_SORT from the culture of the thread that creates the pool, and this
+        // fact's schema is its own pool, so it pins the culture whose session sorts BINARY rather than inheriting the
+        // runner's locale (a tr-TR runner gets TURKISH: the next fact).
         using var culture = new CultureScope(CultureInfo.InvariantCulture);
         var (db, _) = await KeysetDbAsync("GP_KEYSET_D");
         await using (db)
@@ -306,10 +308,10 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
     [Fact]
     public async Task A_string_key_walk_in_a_turkish_process_sorts_linguistically_and_skips_rows()
     {
-        // T54 (4): in a tr-TR process ODP.NET opens the session with NLS_SORT=TURKISH while NLS_COMP stays BINARY, so
-        // ToPageAsync's ORDER BY sorts linguistically and its "key > cursor" compares by code point: the cursor jumps
-        // past rows, silently. This fact pins that defect; it flips when the Oracle composition pins every session
-        // to a sort its comparisons agree with (T54).
+        // #496: a pool created on a tr-TR thread opens its sessions with NLS_SORT=TURKISH while NLS_COMP stays BINARY,
+        // so ToPageAsync's ORDER BY sorts linguistically and its "key > cursor" compares by code point: the cursor
+        // jumps past rows, silently. This fact pins that defect; it flips when the Oracle composition pins every
+        // session to a sort its comparisons agree with (#496, open-threads T54 (4)).
         using var culture = new CultureScope(CultureInfo.GetCultureInfo("tr-TR"));
         var (db, _) = await KeysetDbAsync("GP_KEYSET_E");
         await using (db)
@@ -323,7 +325,30 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
             var seen = await WalkAsync(db.Rows, 5, async (rows, request) => await rows.ToPageAsync(request, r => r.Label, r => r.Id), r => r.Id);
             Assert.Equal(labels.Length, await db.Rows.CountAsync());
             Assert.Equal(seen.Distinct().Count(), seen.Count);
-            Assert.True(seen.Count < labels.Length, $"the walk returned all {labels.Length} rows: T54 (4) has landed, flip this fact");
+            Assert.True(seen.Count < labels.Length, $"the walk returned all {labels.Length} rows: #496 has landed, flip this fact");
+        }
+    }
+
+    [Fact]
+    public async Task A_string_key_walk_in_a_turkish_process_walks_every_row_once_the_session_sort_is_pinned()
+    {
+        // The workaround ops/data.md gives until #496: pin every session to BINARY when the connection opens. Same
+        // tr-TR pool and labels as the previous fact; the pin alone makes the walk total.
+        using var culture = new CultureScope(CultureInfo.GetCultureInfo("tr-TR"));
+        var (db, _) = await KeysetDbAsync("GP_KEYSET_F", new SessionSortPin());
+        await using (db)
+        {
+            Assert.Equal("BINARY", await SessionNlsSortAsync(db));
+
+            string[] labels = ["ı", "I", "i", "İ", "X", "XA", "x", "ğ", "G", "ı", "I", "X"];
+            db.Rows.AddRange(labels.Select((label, index) => NewRow(index + 1) with { Label = label }));
+            await db.SaveChangesAsync();
+
+            foreach (var size in new[] { 1, 5 })
+            {
+                var seen = await WalkAsync(db.Rows, size, async (rows, request) => await rows.ToPageAsync(request, r => r.Label, r => r.Id), r => r.Id);
+                Assert.Equal(Enumerable.Range(1, labels.Length).Select(id => (long)id).Order(), seen.Order());
+            }
         }
     }
 
@@ -373,12 +398,13 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
         Day = new DateOnly(2026, 7, 1),
     };
 
-    private async Task<(OracleComposedDb Db, List<string> Sql)> KeysetDbAsync(string schema)
+    private async Task<(OracleComposedDb Db, List<string> Sql)> KeysetDbAsync(string schema, params IInterceptor[] interceptors)
     {
         var connection = await oracle.CreateSchemaAsync(schema);
         var sql = new List<string>();
         var db = new OracleComposedDb(new DbContextOptionsBuilder<OracleComposedDb>()
             .UseOracle(connection, o => o.UseOracleSQLCompatibility(OracleSQLCompatibility.DatabaseVersion19))
+            .AddInterceptors(interceptors)
             .EnableServiceProviderCaching(false)
             .LogTo(sql.Add, [RelationalEventId.CommandExecuted])
             .Options);
@@ -388,17 +414,17 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
 
     private static async Task<string> SessionNlsSortAsync(DbContext db)
     {
-        var connection = db.Database.GetDbConnection();
-        await connection.OpenAsync();
+        // Opened through EF, so a connection interceptor runs exactly as it does for a query.
+        await db.Database.OpenConnectionAsync();
         try
         {
-            await using var command = connection.CreateCommand();
+            await using var command = db.Database.GetDbConnection().CreateCommand();
             command.CommandText = "SELECT value FROM nls_session_parameters WHERE parameter = 'NLS_SORT'";
             return (string)(await command.ExecuteScalarAsync())!;
         }
         finally
         {
-            await connection.CloseAsync();
+            await db.Database.CloseConnectionAsync();
         }
     }
 
@@ -558,6 +584,17 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
         {
             CultureInfo.CurrentCulture = _culture;
             CultureInfo.CurrentUICulture = _uiCulture;
+        }
+    }
+
+    /// <summary>Pins every session to BINARY sort and comparison as its connection opens: the #496 workaround.</summary>
+    private sealed class SessionSortPin : DbConnectionInterceptor
+    {
+        public override async Task ConnectionOpenedAsync(DbConnection connection, ConnectionEndEventData eventData, CancellationToken cancellationToken = default)
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = "ALTER SESSION SET NLS_SORT=BINARY NLS_COMP=BINARY";
+            await command.ExecuteNonQueryAsync(cancellationToken);
         }
     }
 

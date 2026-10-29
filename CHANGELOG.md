@@ -20,9 +20,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   - three admin verbs can write `''` into a NOT NULL column (#476);
   - the global ceiling row's empty name (#384, already open).
 
-  It also found that in a `tr-TR` process ODP.NET opens the session with `NLS_SORT=TURKISH`, so a keyset walk
-  over a string key silently skips rows. A fact pins it, and open-threads T54 holds the fix (pin the session's
-  sort in the Oracle composition).
+  It also found that under a `tr-TR` culture ODP.NET opens the session with `NLS_SORT=TURKISH`, so a keyset walk
+  over a string key silently skips rows. A fact pins it, #496 holds the fix (pin the session's sort in the Oracle
+  composition), and `ops/data.md` gives the per-connection pin as the workaround until then.
 
   `packages/Goldpath.Data/ops/data.md` gains an "Oracle" section: the container's cost, the 19c compatibility
   setting, and the type mappings.
