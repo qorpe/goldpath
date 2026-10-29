@@ -192,3 +192,12 @@ Goldpath.GoldpathCampaignOutcomeHandler<TContext>
 Goldpath.GoldpathCampaignOutcomeHandler<TContext>.GoldpathCampaignOutcomeHandler(Goldpath.GoldpathCampaignEngine<TContext!>! engine, TContext! db) -> void
 Goldpath.GoldpathCampaignOutcomeHandler<TContext>.HandleAsync(System.Collections.Generic.IReadOnlyList<Goldpath.IntegrationEvent<Goldpath.GoldpathCampaignOutcomeMessage!>!>! batch, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 static Goldpath.GoldpathCampaignExtensions.AddGoldpathCampaign<TContext>(this Goldpath.GoldpathMessagingBuilder! messaging) -> Goldpath.GoldpathMessagingBuilder!
+Goldpath.GoldpathCampaignInfo.StartAt.get -> System.DateTimeOffset?
+Goldpath.GoldpathCampaignInfo.StartAt.init -> void
+Goldpath.GoldpathCampaignPolicy.IsBeforeStart(System.DateTimeOffset utcNow) -> bool
+Goldpath.GoldpathCampaignPolicy.StartAt.get -> System.DateTimeOffset?
+Goldpath.GoldpathCampaignPolicy.StartAt.init -> void
+Goldpath.GoldpathCampaignThrottle.ClearStartAt.get -> bool
+Goldpath.GoldpathCampaignThrottle.ClearStartAt.init -> void
+Goldpath.GoldpathCampaignThrottle.StartAt.get -> System.DateTimeOffset?
+Goldpath.GoldpathCampaignThrottle.StartAt.init -> void

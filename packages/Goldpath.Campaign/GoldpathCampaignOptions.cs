@@ -80,6 +80,13 @@ public sealed record GoldpathCampaignPolicy(
     /// <summary>Share of a contended shared ceiling (R2.5); Normal unless an operator says otherwise.</summary>
     public GoldpathCampaignPriority Priority { get; init; } = GoldpathCampaignPriority.Normal;
 
+    /// <summary>
+    /// The earliest instant the campaign may start releasing (R3.1); null = as soon as its
+    /// snapshot is ready. An instant, not a wall-clock time: it has no DST ambiguity, and the
+    /// engine stores it in UTC.
+    /// </summary>
+    public DateTimeOffset? StartAt { get; init; }
+
     /// <summary>True when <paramref name="utcNow"/> falls inside the send window (always true when no window).</summary>
     public bool IsWindowOpen(DateTimeOffset utcNow)
     {
@@ -93,6 +100,10 @@ public sealed record GoldpathCampaignPolicy(
             ? local >= WindowStart && local < WindowEnd
             : local >= WindowStart || local < WindowEnd;   // overnight window (22:00–06:00)
     }
+
+    /// <summary>True while <see cref="StartAt"/> is still ahead of <paramref name="utcNow"/> (R3.1); false when there is no start.</summary>
+    public bool IsBeforeStart(DateTimeOffset utcNow)
+        => StartAt is { } start && utcNow < start;
 
     /// <summary>The policy-timezone calendar day (quota accounting).</summary>
     public DateOnly LocalDay(DateTimeOffset utcNow)
