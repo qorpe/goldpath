@@ -8,7 +8,7 @@ namespace Goldpath.Messaging.Conformance;
 /// <summary>
 /// The bus conformance suite — the facts a bus must hold for Goldpath, proven on real
 /// RabbitMQ + PostgreSQL THROUGH THE SEAM (ADR-0013 §3; messaging-exit RFC §7.1 S2). The
-/// oracle is MassTransit 8.5.11; a second engine must pass every fact here unchanged before
+/// oracle is MassTransit 8.5.12; a second engine must pass every fact here unchanged before
 /// it can become the default (S3 is the same list run on both). The class runs once per
 /// engine: each concrete class below names one by its manifest value, nothing more.
 /// </summary>
@@ -527,7 +527,7 @@ public abstract class BatchConformanceTests(ConformanceContainers containers, st
     }
 }
 
-/// <summary>The suite on the oracle, MassTransit 8.5.11.</summary>
+/// <summary>The suite on the oracle, MassTransit 8.5.12.</summary>
 [Collection("conformance")]
 public sealed class MassTransitBusConformance(ConformanceContainers containers) : BusConformanceTests(containers, "masstransit");
 
