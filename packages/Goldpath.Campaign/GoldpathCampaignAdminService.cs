@@ -35,7 +35,14 @@ public sealed record GoldpathCampaignInfo(
     string CreatedBy,
     DateTimeOffset? CompletedAt,
     string? LastVerb,
-    string? Tenant);
+    string? Tenant)
+{
+    /// <summary>
+    /// The earliest instant the campaign may start releasing, in UTC (R3.1); null = as soon as its
+    /// snapshot is ready. The console shows it in <see cref="TimeZoneId"/>.
+    /// </summary>
+    public DateTimeOffset? StartAt { get; init; }
+}
 
 /// <summary>One failed item (the drill-down; REPLAY delegates to the jobs console).</summary>
 public sealed record GoldpathCampaignFailedItem(long Seq, string? Error, DateTimeOffset? CompletedAt);
@@ -55,7 +62,17 @@ public sealed record GoldpathCampaignThrottle(
     int? MaxAttempts = null,
     bool ClearExcludedDays = false,
     bool ClearEndDate = false,
-    GoldpathCampaignPriority? Priority = null);
+    GoldpathCampaignPriority? Priority = null)
+{
+    /// <summary>
+    /// Moves the scheduled start (R3.1); null keeps it. Only before the campaign has started; a
+    /// start in the past means now, and a start after the end date's local day is refused.
+    /// </summary>
+    public DateTimeOffset? StartAt { get; init; }
+
+    /// <summary>Clears the scheduled start (R3.1): the campaign starts as soon as its snapshot is ready.</summary>
+    public bool ClearStartAt { get; init; }
+}
 
 /// <summary>
 /// The campaign admin verbs (campaign RFC §4: create/pause/resume/abort/throttle — EVERY
@@ -96,13 +113,19 @@ public sealed class GoldpathCampaignAdminService<TContext>
                 $"No campaign type named '{type}' — registered: {string.Join(", ", _options.TypeMap.Keys)}.");
         }
 
-        using var scope = _scopeFactory.CreateScope();
+        var now = _time.GetUtcNow();
         var defaults = _options.Type(type).DefaultPolicy;
-        var effective = policy is null ? defaults : Apply(defaults, policy);
+        var effective = policy is null ? defaults : Apply(defaults, policy, now);
+        if (StartRefusal(effective, now) is { } refusal)
+        {
+            return new GoldpathAdminResult(false, refusal);
+        }
+
+        using var scope = _scopeFactory.CreateScope();
         var campaign = await _engine.CreateAsync(scope.ServiceProvider, type, name, parameters, effective, tenant, actor, ct);
         var db = scope.ServiceProvider.GetRequiredService<TContext>();
         await AuditAsync(db, campaign.Id, "create", actor,
-            $"type={type} policy=({Describe(effective)})", ct);
+            $"type={type} policy=({Describe(effective, effective.StartAt is not null)})", ct);
         return new GoldpathAdminResult(true, $"Campaign '{name}' created as {campaign.Id:N} ({type}).");
     }
 
@@ -161,11 +184,12 @@ public sealed class GoldpathCampaignAdminService<TContext>
             .ToListAsync(ct);
     }
 
-    /// <summary>Pauses a live campaign: the pacer skips it next tick; in-flight items drain.</summary>
+    /// <summary>Pauses a live campaign (a Ready one too, R3.1): the pacer skips it next tick; in-flight items drain.</summary>
     public Task<GoldpathAdminResult> PauseAsync(Guid id, string actor, CancellationToken ct)
         => MutateAsync(id, "pause", actor, detail: null, campaign =>
         {
-            if (campaign.State is not (GoldpathCampaignState.Created or GoldpathCampaignState.Enumerating or GoldpathCampaignState.Running))
+            if (campaign.State is not (GoldpathCampaignState.Created or GoldpathCampaignState.Enumerating or GoldpathCampaignState.Running
+                or GoldpathCampaignState.Ready))
             {
                 return $"'{campaign.Name}' is {campaign.State} — only a live campaign can pause.";
             }
@@ -176,7 +200,8 @@ public sealed class GoldpathCampaignAdminService<TContext>
         }, ct);
 
     /// <summary>
-    /// Resumes a paused campaign (back to enumeration when the stream never finished).
+    /// Resumes a paused campaign (back to enumeration when the stream never finished, and to
+    /// Ready while its scheduled start is still ahead, R3.1).
     /// R2.6: every Released item is marked due for the orphan sweep at once — the messages
     /// consumers refused during the pause come back on the next tick, not after
     /// <see cref="GoldpathCampaignOptions.OrphanReleaseAfter"/>.
@@ -190,7 +215,11 @@ public sealed class GoldpathCampaignAdminService<TContext>
                 return $"'{campaign.Name}' is {campaign.State} — only a paused campaign can resume.";
             }
 
-            campaign.State = campaign.EnumerationComplete ? GoldpathCampaignState.Running : GoldpathCampaignState.Enumerating;
+            campaign.State = !campaign.EnumerationComplete
+                ? GoldpathCampaignState.Enumerating
+                : GoldpathCampaignEngine<TContext>.PolicyOf(campaign).IsBeforeStart(_time.GetUtcNow())
+                    ? GoldpathCampaignState.Ready
+                    : GoldpathCampaignState.Running;
             campaign.LastVerb = $"resumed by {actor}";
             return null;
         }, ct);
@@ -297,8 +326,23 @@ public sealed class GoldpathCampaignAdminService<TContext>
                 return $"'{campaign.Name}' is terminal ({campaign.State}) — nothing left to throttle.";
             }
 
-            var before = Describe(GoldpathCampaignEngine<TContext>.PolicyOf(campaign));
-            var effective = Apply(GoldpathCampaignEngine<TContext>.PolicyOf(campaign), patch);
+            var now = _time.GetUtcNow();
+            if ((patch.StartAt is not null || patch.ClearStartAt)
+                && (campaign.State == GoldpathCampaignState.Running || campaign.ReleasedThrough > 0))
+            {
+                return string.Create(CultureInfo.InvariantCulture,
+                    $"'{campaign.Name}' has already started ({campaign.State}, {campaign.ReleasedThrough} released) — a scheduled start moves only before the campaign starts; to hold it, pause it, or lower its Tps.");
+            }
+
+            var current = GoldpathCampaignEngine<TContext>.PolicyOf(campaign);
+            var effective = Apply(current, patch, now);
+            if (StartRefusal(effective, now) is { } startRefusal)
+            {
+                return startRefusal;
+            }
+
+            var showStart = current.StartAt is not null || effective.StartAt is not null;
+            var before = Describe(current, showStart);
             campaign.Tps = effective.Tps;
             campaign.DailyQuota = effective.DailyQuota;
             campaign.MaxInFlight = effective.MaxInFlight;
@@ -309,7 +353,8 @@ public sealed class GoldpathCampaignAdminService<TContext>
             campaign.EndDate = effective.EndDate;
             campaign.MaxAttempts = effective.MaxAttempts;
             campaign.Priority = effective.Priority;
-            campaign.LastVerb = $"throttled by {actor}: {before} -> {Describe(effective)}";
+            campaign.StartAt = effective.StartAt;
+            campaign.LastVerb = $"throttled by {actor}: {before} -> {Describe(effective, showStart)}";
             return null;
         }, ct, detailFactory: campaign => campaign.LastVerb);
     }
@@ -376,10 +421,13 @@ public sealed class GoldpathCampaignAdminService<TContext>
             c.WindowStart, c.WindowEnd, c.TimeZoneId,
             [.. policy.ExcludedDays.Select(day => day.ToString())], c.EndDate, c.MaxAttempts, c.Priority,
             policy.IsWindowOpen(_time.GetUtcNow()) && policy.IsDayAllowed(_time.GetUtcNow()),
-            eta, c.CreatedAt, c.CreatedBy, c.CompletedAt, c.LastVerb, c.Tenant);
+            eta, c.CreatedAt, c.CreatedBy, c.CompletedAt, c.LastVerb, c.Tenant)
+        {
+            StartAt = c.StartAt,
+        };
     }
 
-    private static GoldpathCampaignPolicy Apply(GoldpathCampaignPolicy current, GoldpathCampaignThrottle patch)
+    private static GoldpathCampaignPolicy Apply(GoldpathCampaignPolicy current, GoldpathCampaignThrottle patch, DateTimeOffset now)
         => new(
             patch.Tps ?? current.Tps,
             patch.ClearDailyQuota ? null : patch.DailyQuota ?? current.DailyQuota,
@@ -396,9 +444,37 @@ public sealed class GoldpathCampaignAdminService<TContext>
             EndDate = patch.ClearEndDate ? null : patch.EndDate ?? current.EndDate,
             MaxAttempts = patch.MaxAttempts ?? current.MaxAttempts,
             Priority = patch.Priority ?? current.Priority,
+            // R3.1: a start in the past means now; the stored instant is UTC.
+            StartAt = patch.ClearStartAt
+                ? null
+                : patch.StartAt is { } start
+                    ? (start < now ? now : start).ToUniversalTime()
+                    : current.StartAt,
         };
 
-    private static string Describe(GoldpathCampaignPolicy p)
+    /// <summary>
+    /// Why a policy's scheduled start cannot stand (R3.1), or null: a start still ahead must fall
+    /// on or before the end date's local day, in the policy's time zone.
+    /// </summary>
+    private static string? StartRefusal(GoldpathCampaignPolicy policy, DateTimeOffset now)
+    {
+        if (!policy.IsBeforeStart(now) || policy.EndDate is not { } end || policy.StartAt is not { } start)
+        {
+            return null;
+        }
+
+        var startDay = policy.LocalDay(start);
+        return startDay > end
+            ? string.Create(CultureInfo.InvariantCulture,
+                $"The start {start.UtcDateTime:yyyy-MM-ddTHH:mm:ss}Z falls on {startDay:yyyy-MM-dd} in {policy.TimeZoneId}, after the end date {end:yyyy-MM-dd} — the campaign would expire before it starts. Choose an earlier start or move the end date.")
+            : null;
+    }
+
+    /// <summary>
+    /// The audit's policy text. <paramref name="showStart"/> adds the scheduled start (R3.1) when
+    /// either side of the change has one, so a policy without a start reads exactly as before.
+    /// </summary>
+    private static string Describe(GoldpathCampaignPolicy p, bool showStart = false)
         => string.Create(CultureInfo.InvariantCulture,
-            $"tps={p.Tps} quota={p.DailyQuota?.ToString(CultureInfo.InvariantCulture) ?? "none"} maxInFlight={p.MaxInFlight} window={(p.WindowStart is null ? "always" : $"{p.WindowStart}-{p.WindowEnd} {p.TimeZoneId}")} excludedDays={(p.ExcludedDays.Count == 0 ? "none" : string.Join("+", p.ExcludedDays))} endDate={p.EndDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "open"} maxAttempts={p.MaxAttempts} priority={p.Priority}");
+            $"tps={p.Tps} quota={p.DailyQuota?.ToString(CultureInfo.InvariantCulture) ?? "none"} maxInFlight={p.MaxInFlight} window={(p.WindowStart is null ? "always" : $"{p.WindowStart}-{p.WindowEnd} {p.TimeZoneId}")} excludedDays={(p.ExcludedDays.Count == 0 ? "none" : string.Join("+", p.ExcludedDays))} endDate={p.EndDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "open"} maxAttempts={p.MaxAttempts} priority={p.Priority}{(showStart ? $" start={(p.StartAt is { } s ? s.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture) + "Z" : "when-ready")}" : "")}");
 }
