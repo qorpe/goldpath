@@ -5,6 +5,32 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **Jobs: the clustered Quartz store runs on Oracle (G7, slice O-3, #406).**
+  - **API (additive):** `GoldpathJobStoreProvider.Oracle = 2`. It is appended, so no stored value
+    moves. The executor composes `UseOracle`, and the management head's never-started schedulers use
+    `OracleDelegate` and `OracleODPManaged`. The application references ODP.NET; `Goldpath.Jobs`
+    takes no Oracle dependency.
+  - **An unknown provider is refused** with the value named, on both the executor and the management
+    head. Before this change, any value other than `SqlServer` silently became a PostgreSQL store.
+  - **The `qrtz_` tables take Quartz's own Oracle shape on Oracle only:**
+    - **Names:** upper-case table, column and index names. EF quotes what it creates, and
+      `OracleDelegate`'s unquoted SQL folds to upper case. Without this, the store's first query fails
+      with `ORA-00942: table or view "…"."QRTZ_JOB_DETAILS" does not exist`.
+    - **Flags:** `VARCHAR2(1)` holding `'0'`/`'1'`.
+    - **Binary data:** job data, calendars and blob triggers are `BLOB`, where EF's default
+      `RAW(2000)` would cap a job's data at 2,000 bytes.
+    - The PostgreSQL DDL is byte-for-byte unchanged (a golden generated from `main` before the
+      change).
+  - **Proof** (`JobsOracleTests` and `JobsRunListOracleTests`, `Category=Oracle`, on the pinned
+    Oracle Free container):
+    - the model against Quartz.NET's own `tables_oracle.sql`, vendored from tag v3.22.9;
+    - two schedulers fire one trigger exactly once;
+    - a misfired trigger follows its stored instruction;
+    - a kill -9 mid-run is recovered on the other node from the checkpoint;
+    - the run list's filters and keyset walk hold.
+  - **Runbook:** §9 covers `QRTZ_LOCKS` row-lock contention.
+  - **Still open:** `GoldpathJobExecutions` loses the history row of a fire with no error on Oracle.
+    The `Error` document column refuses a NULL in ODP.NET (#475).
 - **Campaign: a scheduled start and the `Ready` state (campaign RFC R3.1, slice R3-S2, #289).**
   - **API (additive, init-only):** `GoldpathCampaignPolicy.StartAt` and `IsBeforeStart(utcNow)`,
     `GoldpathCampaignThrottle.StartAt` and `ClearStartAt`, `GoldpathCampaignInfo.StartAt`. No

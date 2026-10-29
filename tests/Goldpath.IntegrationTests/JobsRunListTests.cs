@@ -17,18 +17,43 @@ namespace Goldpath.Tests.Integration;
 /// point — until R2 there was no storage-level test over this query at all.
 /// </para>
 /// </summary>
-public sealed class JobsRunListTests : IAsyncLifetime
+public sealed class JobsRunListTests : JobsRunListFacts
 {
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17-alpine").Build();
 
-    public async Task InitializeAsync()
+    protected override async Task<string> StartStoreAsync()
     {
         await _postgres.StartAsync();
+        return _postgres.GetConnectionString();
+    }
+
+    protected override Task StopStoreAsync() => _postgres.DisposeAsync().AsTask();
+
+    protected override void Use(DbContextOptionsBuilder options, string connection) => options.UseNpgsql(connection);
+}
+
+/// <summary>The run list's facts, run by each store the module ships on (PostgreSQL above, Oracle in G7 O-3, #406).</summary>
+public abstract class JobsRunListFacts : IAsyncLifetime
+{
+    private string _connection = "";
+
+    /// <summary>Starts (or provisions) the store and returns its connection string.</summary>
+    protected abstract Task<string> StartStoreAsync();
+
+    /// <summary>Releases the store.</summary>
+    protected abstract Task StopStoreAsync();
+
+    /// <summary>Points a context at the store.</summary>
+    protected abstract void Use(DbContextOptionsBuilder options, string connection);
+
+    public async Task InitializeAsync()
+    {
+        _connection = await StartStoreAsync();
         await using var db = Db();
         await db.Database.EnsureCreatedAsync();
     }
 
-    public async Task DisposeAsync() => await _postgres.DisposeAsync();
+    public Task DisposeAsync() => StopStoreAsync();
 
     [Fact]
     public async Task Runs_narrow_to_a_status_and_to_a_window()
@@ -103,7 +128,12 @@ public sealed class JobsRunListTests : IAsyncLifetime
 
     // ── harness ────────────────────────────────────────────────────────────────
 
-    private ClusterDb Db() => new(new DbContextOptionsBuilder<ClusterDb>().UseNpgsql(_postgres.GetConnectionString()).Options);
+    private ClusterDb Db()
+    {
+        var options = new DbContextOptionsBuilder<ClusterDb>();
+        Use(options, _connection);
+        return new ClusterDb(options.Options);
+    }
 
     private async Task SeedAsync(params (string Job, string Status, DateTimeOffset StartedAt)[] runs)
     {
@@ -129,8 +159,7 @@ public sealed class JobsRunListTests : IAsyncLifetime
     private GoldpathJobsAdminService<ClusterDb> Admin()
     {
         var services = new ServiceCollection();
-        var connection = _postgres.GetConnectionString();
-        services.AddDbContext<ClusterDb>(o => o.UseNpgsql(connection));
+        services.AddDbContext<ClusterDb>(o => Use(o, _connection));
         var provider = services.BuildServiceProvider();
         return new GoldpathJobsAdminService<ClusterDb>(
             new NoSchedulerRegistry(),
