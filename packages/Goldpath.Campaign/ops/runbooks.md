@@ -41,8 +41,9 @@ the pacer's run health lives on the goldpath-jobs dashboard. This board owns the
 - `GET /{id}` — `WindowOpenNow` false + `window_closed_ticks` climbing = CORRECT
   behaviour: the send window (e.g. 09:00–18:00 Europe/Istanbul) is closed.
 - Sending outside the window is a policy change: `POST /{id}/throttle` with
-  `"clearWindow": true` (audited) — or wait for the window; the budget does not bank
-  beyond one second, so the morning does not open with a burst.
+  `"clearWindow": true` (audited) — or wait for the window; the campaign's budget does not refill
+  while its window is closed, and no bucket holds more than one tick's refill plus the fraction
+  it carries (#292), so the morning does not open with a burst.
 
 ## 5. Failed items / poisoned targets
 

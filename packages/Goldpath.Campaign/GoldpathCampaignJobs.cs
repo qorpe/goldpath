@@ -71,15 +71,14 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
                 db.ChangeTracker.Clear();
                 if (_options.GlobalTps is { } globalTps)
                 {
-                    globalBudget = Math.Min(globalBudget + globalTps * _options.LeaderTick.TotalSeconds, globalTps);
+                    globalBudget = Refill(globalBudget, globalTps, _options.LeaderTick);
                 }
 
                 foreach (var type in _options.Types)
                 {
                     if (type.MaxTps is { } maxTps)
                     {
-                        typeBudgets[type.Key] = Math.Min(
-                            typeBudgets.GetValueOrDefault(type.Key) + maxTps * _options.LeaderTick.TotalSeconds, maxTps);
+                        typeBudgets[type.Key] = Refill(typeBudgets.GetValueOrDefault(type.Key), maxTps, _options.LeaderTick);
                     }
                 }
 
@@ -297,14 +296,58 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
             return -1;
         }
 
-        var budget = tpsBudgets.GetValueOrDefault(campaign.Id)
-            + policy.Tps * _options.LeaderTick.TotalSeconds;
-        budget = Math.Min(budget, policy.Tps);   // never bank more than one second of tokens
+        var budget = Refill(tpsBudgets.GetValueOrDefault(campaign.Id), policy.Tps, _options.LeaderTick);
         tpsBudgets[campaign.Id] = budget;
         var inFlight = campaign.ReleasedThrough - campaign.SucceededCount - campaign.FailedCount;
         return (int)Math.Floor(Math.Min(budget, Math.Max(0,
             Math.Min(policy.MaxInFlight - inFlight,
                 policy.DailyQuota is { } quota ? quota - campaign.ReleasedToday : long.MaxValue))));
+    }
+
+    /// <summary>
+    /// One tick's refill of a hard-ceiling bucket — a campaign's <c>Tps</c>, a type's <c>MaxTps</c> or the
+    /// <c>GlobalTps</c> — held to <see cref="BucketCapacity"/> (#292).
+    /// </summary>
+    internal static double Refill(double banked, int ceiling, TimeSpan tick)
+        => Math.Min(banked + ceiling * tick.TotalSeconds, BucketCapacity(ceiling, tick));
+
+    /// <summary>
+    /// The most a hard-ceiling bucket may hold (#292): one tick's worth, plus the largest fraction a refill can leave
+    /// behind. It banked a whole second before, so what it saved while nothing released (a closed window, a full
+    /// in-flight cap, a pause, a spent quota) let one second release the ceiling plus all but one tick of refill: 1.75
+    /// times the ceiling at the default 250 ms tick. It never holds more than the ceiling itself (a tick of a second or longer).
+    /// <para>
+    /// A refill of <c>p/q</c> units a tick (in lowest terms) leaves fractions that are multiples of <c>1/q</c>, the
+    /// largest <c>(q - 1)/q</c>. A whole refill (<c>q = 1</c>) therefore banks exactly one tick's worth. A fractional one
+    /// keeps room for its carry, so the steady rate is unchanged: 2.5 a tick spends 2, then 3 (capacity 3), where a
+    /// capacity of 2.5 would spend 2 every tick. Either way, the ticks of any one second release less than the ceiling
+    /// plus one: at most the ceiling, in whole units.
+    /// </para>
+    /// </summary>
+    internal static double BucketCapacity(int ceiling, TimeSpan tick)
+    {
+        if (tick.Ticks >= TimeSpan.TicksPerSecond)
+        {
+            return ceiling;   // one tick's refill is the ceiling or more: the ceiling caps it, as before
+        }
+
+        // The refill in exact integers: under a second, ceiling × ticks stays far inside a long.
+        var numerator = ceiling * tick.Ticks;
+        var denominator = TimeSpan.TicksPerSecond;
+        var divisor = GreatestCommonDivisor(numerator, denominator);
+        numerator /= divisor;
+        denominator /= divisor;
+        return Math.Min(ceiling, ((double)numerator + denominator - 1) / denominator);
+    }
+
+    private static long GreatestCommonDivisor(long a, long b)
+    {
+        while (b != 0)
+        {
+            (a, b) = (b, a % b);
+        }
+
+        return Math.Abs(a);
     }
 
     /// <summary>The slowest enumeration step of the current tick — the estimate Phase 5 budgets the next step by.</summary>

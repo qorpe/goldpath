@@ -71,7 +71,7 @@ S-FLEET-02a — One leader sustains 1000 TPS on a real broker (local profile of 
   when:     release for 15 minutes under measurement (a 2-minute smoke proves the bench only),
             then pause and let claimed work drain
   then:     at least 95% of one-second windows within ±5% of 1000; zero windows above 1000
-            (needs #292); exactly-once: sink outcomes = durable terminal items = handler
+            (the burst rule of #292); exactly-once: sink outcomes = durable terminal items = handler
             executions, nothing executed twice
   needs:    local (thresholds approved by the owner on #283, 2026-10-20)
   evidence: CampaignBrokerBenchTests via scripts/bench-campaign.sh broker; numbers in
@@ -85,7 +85,19 @@ S-FLEET-03 — Two campaigns under one GlobalTps never jointly exceed it
   then:     no one-second window releases >1000 across the pair (this is R1's own DoD,
             promoted to a story)
   needs:    local
-  evidence: —
+  evidence: tests/Goldpath.Campaign.Tests/BurstControlTests.cs —
+            `ScenarioFleet03_TwoCampaignsAt800_UnderGlobalTps1000_NeverReleaseAbove1000InAnySecondOfTicks`
+            runs the pacer at these numbers with an idle stretch first (both campaigns held at
+            MaxInFlight 1 for 30 ticks of 50 ms while every bucket refills, then released hungry for
+            40 ticks), counts each tick's releases exactly and holds every 20 consecutive ticks to
+            1000: 1000 in the first tick after the relief, 50 a tick after it. Red before #292: one
+            tick released 1000 and one second 1950. The same holds per bucket (campaign Tps, type
+            MaxTps, GlobalTps) in `AfterAnIdleStretch_…`, and on a real broker and PostgreSQL in
+            tests/Goldpath.IntegrationTests/CampaignR1Tests.cs (GlobalTps 20, two campaigns, every
+            second of ticks of the run checked against 20 with no tolerance; replay with
+            `dotnet test --filter FullyQualifiedName~CampaignR1Tests`). The broker test has not been
+            seen red: its leadership slices start with empty buckets, so its runs held no idle
+            stretch inside one slice (2026-10-29, three runs on the old code)
 
 S-FLEET-04 — Pause stops every worker within three seconds
   modules:  campaign (R2.6 claim guard, pause/resume verbs, orphan sweep), broker, store
