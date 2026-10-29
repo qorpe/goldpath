@@ -245,12 +245,20 @@ common, and the console supports both:
      `state` is an object of `RefreshState`'s shape built from the current `UserManager` user
      (the class is typed, not exported at runtime). This call never reaches
      `UserManager.storeUser`.
-   - **A console-owned in-memory map** holds each access token, keyed by the sorted scope set.
-     The default token stays the `UserManager` user's.
+   - **A console-owned in-memory map** holds each access token, keyed by the sorted scope set
+     the console **requested**, never by the response's `scope`: when the IdP omits `scope`,
+     3.5.0 reports the original scope there, which would file B's token under A's key. The
+     default token stays the `UserManager` user's.
    - **Rotation.** When the IdP rotates refresh tokens, the new one is written back onto the
-     `UserManager` user, so the next redemption, for any service, uses it. Redemptions are
-     single-flight (one at a time across services), so two services never redeem the same
-     refresh token concurrently and a renew for service B never invalidates service A's.
+     `UserManager` user, so the next redemption, for any service, uses it.
+   - **One queue for every redemption, the default renew included.** 3.5.0's
+     `automaticSilentRenew` defaults to `true`, and that renew runs `signinSilent` on the
+     library's own timer, outside any queue the console keeps, and stores a new `User`. So the
+     console sets `automaticSilentRenew: false` and drives the default token's renew itself
+     (OIDC-1.5), through the same single-flight queue as the per-scope redemptions. One refresh
+     token is then never presented twice at once (under rotation with reuse detection, a second
+     presentation can revoke the whole token family and sign the operator out), and no
+     redemption's write-back overwrites another's rotated refresh token.
 
    A service whose token cannot be obtained becomes a triage row ("signed in, but not for this
    service"), never a silent omission (D2(b)).
@@ -274,7 +282,10 @@ proof. Whether a hosted Entra tenant joins the nightly is **Q3**.
 - **Bearer tokens close the CSRF gap for this mode.** The console sends no cookie, so a foreign
   page's form has nothing to ride. That is threat-model T-ADM-07 / #452 for OIDC deployments.
   Gateway-cookie deployments keep #452 open.
-- **Expiry.** The console renews before expiry with the refresh token (rotating, in memory).
+- **Expiry.** The console renews before expiry with the refresh token (rotating, in memory). It
+  drives that renew itself (`automaticSilentRenew: false`), through the one single-flight queue
+  OIDC-1.4 case 2 describes, so the library's timer never redeems the refresh token beside a
+  console redemption.
   - A `401` from a service triggers one silent renew and one retry of a **read**.
   - A **verb** is never retried automatically. It answers "your sign-in expired — sign in and
     run it again", because a verb run twice is not a read run twice.
@@ -327,7 +338,7 @@ The console smoke gains a second mode, `scripts/console-smoke.sh oidc`, and a jo
 | C-2 | Server configuration: `UseOidc`, `Goldpath:Console:Oidc`, the anonymous `console.auth.json` (404 when off), the anonymous shell only when OIDC is on, and `AddService(…, audience, scopes)` | Console route tests: the auth route is anonymous and minimal; the registry stays behind the floor; with OIDC off, every route is byte-identical to today |
 | C-3 | `AddGoldpathConsoleOrigins` with preflight-before-floor, no credentials, and wildcards refused | Sdk tests: the preflight answers; the actual call still gets `401` without a token; a wildcard refuses at startup |
 | C-4 | The console signs in: `UserManager` with PKCE, in-memory store, redirect handling; `AdminClient` sends the bearer token with `credentials: "omit"` per service | Vitest with a fake `UserManager`: the bearer goes per service, nothing lands in web storage, and with no `auth.json` the console runs in case-1 mode. Coverage floors held |
-| C-5 | Expiry and refusals: silent renew, the one retry for reads only, a verb never retried, `401` vs `403` wording, IdP-unreachable and signed-out states, sign-out. Case 2 of OIDC-1.4: per-scope-set redemption through `OidcClient.useRefreshToken`, the console-owned token map, the rotated refresh token written back, single-flight redemption | Vitest on each branch; a planted retry of a verb turns its fact red. Case 2, against the real `oidc-client-ts` 3.5.0 with only the token endpoint faked: refreshing for service B leaves service A's token **and** the shared refresh token usable, with rotation on. Routing the redemption through `UserManager.signinSilent` turns it red (B's token arrives with A's scope, and the default user is replaced) |
+| C-5 | Expiry and refusals: silent renew, the one retry for reads only, a verb never retried, `401` vs `403` wording, IdP-unreachable and signed-out states, sign-out. Case 2 of OIDC-1.4: per-scope-set redemption through `OidcClient.useRefreshToken`, the console-owned token map keyed by the requested set, the rotated refresh token written back, one single-flight queue for every redemption including the default renew (`automaticSilentRenew: false`) | Vitest on each branch; a planted retry of a verb turns its fact red. Case 2, against the real `oidc-client-ts` 3.5.0 with only the token endpoint faked: refreshing for service B leaves service A's token **and** the shared refresh token usable, with rotation on. Routing the redemption through `UserManager.signinSilent` turns it red (B's token arrives with A's scope, and the default user is replaced). With rotation on, a default renew and a redemption for B issued together leave A's token, B's token and the shared refresh token usable; leaving `automaticSilentRenew` at its default `true` turns it red. An IdP that omits `scope` in the response still files B's token under B's requested set |
 | C-6 | `console-smoke.sh oidc` with Keycloak pinned, the realm file, two origins, the OIDC-1.6 journeys and axe, in `console-smoke.yml` and the nightly | The full mode green. A wrong audience on one service turns its journey red (CI link) |
 | C-7 | Docs: Console README, `ops/` runbook (Keycloak and Entra setup, the two audience shapes, CORS), upgrade guide, T10 closed, `ga-gate-status` G6 | `docs-freshness`; T10's proof is C-6's green run |
 
