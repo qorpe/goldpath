@@ -102,6 +102,30 @@ fair share, the fractional part carried from tick to tick so a Low campaign on a
 ceiling still moves; alone under its own policy a campaign runs at its own TPS whatever its
 priority.
 
+## R3: a scheduled start
+
+A campaign may carry `StartAt` (an instant; the admin API stores and returns it in UTC):
+
+```csharp
+await admin.CreateAsync("config-push", "Monday push", parameters,
+    new GoldpathCampaignThrottle(Tps: 200) { StartAt = new DateTimeOffset(2026, 11, 9, 10, 0, 0, TimeSpan.FromHours(3)) },
+    tenant: null, actor: "operator", cancellationToken);
+```
+
+The snapshot is still taken when the leader adopts the campaign, so the list can be looked at
+before the push. When the snapshot completes with the start still ahead, the campaign is
+**`Ready`**: waiting for its start, not stuck. It releases nothing until `StartAt` passes; the
+pacer then starts it (audited `start` with the actor `system`) and releases in the same tick.
+Without a start, or with one that passed during the snapshot, the campaign goes straight to
+`Running`, as before. `StartAt` is the earliest start, not a promise: a snapshot still running
+at `StartAt` starts the campaign when it completes.
+
+The `throttle` verb moves the start (`startAt`) or clears it (`clearStartAt`) until the campaign
+has started (`Running`, or anything released); after that the move is refused. A start in the
+past means now, and a start after the end date's local day is refused. `pause` accepts a
+`Ready` campaign, and `resume` returns it to `Ready` while its start is still ahead. A `Ready`
+campaign past its end date expires, like a running one.
+
 ## The guarantees
 
 - **The ceiling is mandatory:** a type without `MaxTargets` refuses to bake (GP1701);
