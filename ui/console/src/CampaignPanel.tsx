@@ -20,11 +20,85 @@ async function asOutcome(call: Promise<{ ok: boolean; message: string }>): Promi
   return result.ok ? { kind: "ok", message: result.message } : { kind: "refused", message: result.message };
 }
 
-/** The pacer's state machine, in its own order. */
-const STATES = ["Created", "Enumerating", "Running", "Paused", "Completed", "CompletedWithFailures", "Aborted", "ExpiredIncomplete"] as const;
+/** The pacer's state machine, in its own order (R3.1: a finished snapshot waits in Ready until its start). */
+const STATES = ["Created", "Enumerating", "Ready", "Running", "Paused", "Completed", "CompletedWithFailures", "Aborted", "ExpiredIncomplete"] as const;
 
 /** Only a live campaign can be paused, resumed or aborted; the rest already ended. */
-const LIVE = new Set(["Created", "Enumerating", "Running"]);
+const LIVE = new Set(["Created", "Enumerating", "Ready", "Running"]);
+
+/** A scheduled start moves only before the campaign starts; the server refuses it after. */
+const BEFORE_START = new Set(["Created", "Enumerating", "Ready"]);
+
+/** The wall clock an instant shows in a time zone, read back as if it were UTC (milliseconds). */
+function wallClock(instant: number, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(new Date(instant));
+  const part = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+  return Date.UTC(part("year"), part("month") - 1, part("day"), part("hour"), part("minute"), part("second"));
+}
+
+/** "+03:00" for an offset in milliseconds. */
+function offsetLabel(offset: number): string {
+  const minutes = Math.round(offset / 60_000);
+  const sign = minutes < 0 ? "-" : "+";
+  const abs = Math.abs(minutes);
+  return `UTC${sign}${String(Math.floor(abs / 60)).padStart(2, "0")}:${String(abs % 60).padStart(2, "0")}`;
+}
+
+/** One instant a local start can mean, with the offset the zone has then. */
+export interface StartInstant {
+  utc: string;
+  offset: string;
+}
+
+/**
+ * What a local wall time ("2026-10-25T02:30") means in a time zone. Exactly one instant, usually. None in the
+ * spring-forward gap — the clocks skip that hour, so the time does not exist — and two in the repeated hour after
+ * a fall-back, where the operator must say which one they mean. An unknown zone is refused.
+ */
+export type StartResolution =
+  | { kind: "ok"; instant: StartInstant }
+  | { kind: "gap" }
+  | { kind: "ambiguous"; earlier: StartInstant; later: StartInstant }
+  | { kind: "invalid" };
+
+export function resolveStart(local: string, timeZone: string): StartResolution {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(local);
+  if (!match) return { kind: "invalid" };
+  const [year, month, day, hour, minute] = match.slice(1).map(Number);
+  const naive = Date.UTC(year, month - 1, day, hour, minute);
+  try {
+    // The zone's offsets either side of the wall time cover any transition near it.
+    const offsets = new Set([naive - 86_400_000, naive, naive + 86_400_000].map((at) => wallClock(at, timeZone) - at));
+    const instants = [...offsets]
+      .map((offset) => ({ at: naive - offset, offset }))
+      .filter(({ at }) => wallClock(at, timeZone) === naive)
+      .sort((a, b) => a.at - b.at)
+      .map(({ at, offset }) => ({ utc: new Date(at).toISOString(), offset: offsetLabel(offset) }));
+    if (instants.length === 0) return { kind: "gap" };
+    if (instants.length === 1) return { kind: "ok", instant: instants[0] };
+    return { kind: "ambiguous", earlier: instants[0], later: instants[instants.length - 1] };
+  } catch {
+    return { kind: "invalid" };
+  }
+}
+
+/** An instant as the policy time zone shows it: "2026-11-02 09:00". */
+export function formatInZone(instant: string, timeZone: string): string {
+  try {
+    return new Date(wallClock(Date.parse(instant), timeZone)).toISOString().slice(0, 16).replace("T", " ");
+  } catch {
+    return instant;   // an unknown zone: the instant itself, never a guess
+  }
+}
 
 /** The throttle form's raw text; empty means "leave this as it is" (the patch's null). */
 interface ThrottleDraft {
@@ -42,6 +116,11 @@ interface ThrottleDraft {
   clearExcludedDays: boolean;
   clearEndDate: boolean;
   priority: string;
+  /** R3.1: the new start as a wall time in the policy time zone ("2026-11-02T09:00"). */
+  startLocal: string;
+  /** Which of the two instants a repeated-hour start means; empty until the operator says. */
+  startChoice: "" | "earlier" | "later";
+  clearStartAt: boolean;
 }
 
 const EMPTY_DRAFT: ThrottleDraft = {
@@ -59,6 +138,9 @@ const EMPTY_DRAFT: ThrottleDraft = {
   clearExcludedDays: false,
   clearEndDate: false,
   priority: "",
+  startLocal: "",
+  startChoice: "",
+  clearStartAt: false,
 };
 
 /**
@@ -66,7 +148,7 @@ const EMPTY_DRAFT: ThrottleDraft = {
  * server keeps its current value. Clearing is explicit on purpose — "no daily quota"
  * cannot be expressed by leaving a box empty.
  */
-export function toThrottle(draft: ThrottleDraft): CampaignThrottle {
+export function toThrottle(draft: ThrottleDraft, timeZone = "UTC"): CampaignThrottle {
   const patch: CampaignThrottle = {};
   const number = (raw: string) => (raw.trim() === "" ? undefined : Number(raw));
   const text = (raw: string) => (raw.trim() === "" ? undefined : raw.trim());
@@ -84,11 +166,30 @@ export function toThrottle(draft: ThrottleDraft): CampaignThrottle {
   if (draft.clearExcludedDays) patch.clearExcludedDays = true;
   if (draft.clearEndDate) patch.clearEndDate = true;
   if (text(draft.priority)) patch.priority = text(draft.priority) as CampaignThrottle["priority"];
+  if (draft.clearStartAt) patch.clearStartAt = true;
+  // A start goes into the patch only once it names exactly one instant (startProblem says why it does not).
+  if (text(draft.startLocal) && !draft.clearStartAt) {
+    const start = resolveStart(draft.startLocal, text(draft.timeZoneId) ?? timeZone);
+    if (start.kind === "ok") patch.startAt = start.instant.utc;
+    if (start.kind === "ambiguous" && draft.startChoice) patch.startAt = start[draft.startChoice].utc;
+  }
   return patch;
 }
 
+/** Why the draft's start cannot be sent yet, in the operator's terms; null when it can (or there is none). */
+export function startProblem(draft: ThrottleDraft, timeZone: string): string | null {
+  if (!draft.startLocal.trim() || draft.clearStartAt) return null;
+  const zone = draft.timeZoneId.trim() || timeZone;
+  const start = resolveStart(draft.startLocal, zone);
+  const [date, time] = draft.startLocal.split("T");
+  if (start.kind === "gap") return `${time} on ${date} does not exist in ${zone}: the clocks skip that hour. Choose another time.`;
+  if (start.kind === "invalid") return `${draft.startLocal} cannot be read in ${zone}.`;
+  if (start.kind === "ambiguous" && !draft.startChoice) return `${time} on ${date} happens twice in ${zone}: say which one.`;
+  return null;
+}
+
 /** The confirm line: what the operator is actually about to change, field by field. */
-export function describeThrottle(patch: CampaignThrottle): string {
+export function describeThrottle(patch: CampaignThrottle, timeZone = "UTC"): string {
   const parts: string[] = [];
   if (patch.tps !== undefined) parts.push(`${patch.tps} tps`);
   if (patch.dailyQuota !== undefined) parts.push(`daily quota ${patch.dailyQuota}`);
@@ -103,6 +204,8 @@ export function describeThrottle(patch: CampaignThrottle): string {
   if (patch.clearExcludedDays) parts.push("no excluded days");
   if (patch.clearEndDate) parts.push("no end date");
   if (patch.priority) parts.push(`priority ${patch.priority}`);
+  if (patch.startAt) parts.push(`start ${formatInZone(patch.startAt, patch.timeZoneId ?? timeZone)} ${patch.timeZoneId ?? timeZone} (${patch.startAt})`);
+  if (patch.clearStartAt) parts.push("no scheduled start (it starts as soon as it is ready)");
   return parts.join(", ");
 }
 
@@ -170,8 +273,11 @@ export function CampaignPanel({ client }: CampaignPanelProps) {
     };
   }, [client, selectedId, refreshToken]);
 
-  const patch = toThrottle(draft);
-  const patched = Object.keys(patch).length > 0;
+  const zone = selected?.timeZoneId ?? "UTC";
+  const patch = toThrottle(draft, zone);
+  const problem = startProblem(draft, zone);
+  const patched = Object.keys(patch).length > 0 && problem === null;
+  const ambiguous = draft.startLocal && !draft.clearStartAt ? resolveStart(draft.startLocal, draft.timeZoneId.trim() || zone) : null;
 
   return (
     <div data-testid="campaign-panel" className="space-y-6">
@@ -365,6 +471,12 @@ export function CampaignPanel({ client }: CampaignPanelProps) {
                     </>
                   ),
                 },
+                {
+                  key: "Start",
+                  value: selected.startAt
+                    ? `${formatInZone(selected.startAt, selected.timeZoneId)} ${selected.timeZoneId} (${selected.startAt})`
+                    : "as soon as it is ready",
+                },
                 { key: "Created", value: `${selected.createdAt} by ${selected.createdBy}`, mono: true },
                 { key: "Last verb", value: selected.lastVerb ?? "—" },
               ]}
@@ -489,10 +601,55 @@ export function CampaignPanel({ client }: CampaignPanelProps) {
                   onChange={(clearEndDate) => setDraft({ ...draft, clearEndDate })}
                   label="clear end date"
                 />
+                {BEFORE_START.has(selected.state) && (
+                  <>
+                    <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                      start, in {draft.timeZoneId.trim() || selected.timeZoneId}{" "}
+                      <span className="text-faint">
+                        (now {selected.startAt ? formatInZone(selected.startAt, selected.timeZoneId) : "as soon as it is ready"})
+                      </span>
+                      <input
+                        type="datetime-local"
+                        aria-label="start"
+                        className="control"
+                        value={draft.startLocal}
+                        onChange={(event) => setDraft({ ...draft, startLocal: event.target.value, startChoice: "" })}
+                      />
+                    </label>
+                    {selected.startAt && (
+                      <Checkbox
+                        checked={draft.clearStartAt}
+                        onChange={(clearStartAt) => setDraft({ ...draft, clearStartAt })}
+                        label="clear start"
+                      />
+                    )}
+                  </>
+                )}
+                {ambiguous?.kind === "ambiguous" && (
+                  <fieldset className="flex flex-col gap-1 text-xs text-muted-foreground">
+                    <legend>which {draft.startLocal.split("T")[1]}?</legend>
+                    {(["earlier", "later"] as const).map((choice) => (
+                      <label key={choice} className="flex items-center gap-1">
+                        <input
+                          type="radio"
+                          name="start-choice"
+                          checked={draft.startChoice === choice}
+                          onChange={() => setDraft({ ...draft, startChoice: choice })}
+                        />
+                        {choice === "earlier" ? "the first" : "the second"} ({ambiguous[choice].offset})
+                      </label>
+                    ))}
+                  </fieldset>
+                )}
+                {problem && (
+                  <p role="alert" className="w-full text-xs text-danger">
+                    {problem}
+                  </p>
+                )}
                 {patched && (
                   <VerbButton
                     label="throttle"
-                    confirm={`Change the release policy of ${selected.name} to ${describeThrottle(patch)}?`}
+                    confirm={`Change the release policy of ${selected.name} to ${describeThrottle(patch, zone)}?`}
                     execute={() => asOutcome(client.throttleCampaign(selected.id, patch))}
                     onDone={(result) => {
                       if (result.kind === "ok") setDraft(EMPTY_DRAFT);

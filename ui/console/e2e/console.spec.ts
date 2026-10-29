@@ -429,6 +429,47 @@ test.describe("the run console against a real Goldpath app", () => {
     await expect(page.getByRole("button", { name: "pause" })).toHaveCount(0);
   });
 
+  test("campaign R3.1: a scheduled start waits in Ready, shows in the policy time zone, and moving it starts the campaign", async ({ page, request }) => {
+    // Created half an hour out, in UTC so the wall time the console shows is the instant itself.
+    const later = new Date(Date.now() + 30 * 60_000);
+    const created = await request.post(`${service}/goldpath/admin/campaign/`, {
+      data: { type: "welcome", name: "r3-scheduled", policy: { tps: 50, maxInFlight: 50, timeZoneId: "UTC", startAt: later.toISOString() } },
+    });
+    expect(created.ok()).toBeTruthy();
+
+    const openCampaigns = async () => {
+      await page.goto(`/?base=${encodeURIComponent(service)}`);
+      await page.getByTestId("shell-rail").getByRole("button", { name: "Campaigns", exact: true }).click();
+      await expect(page.getByTestId("campaign-panel")).toBeVisible();
+    };
+    const detail = page.getByTestId("campaign-detail");
+
+    // The snapshot finishes, and the campaign waits for its start: Ready, nothing released.
+    await expect(async () => {
+      await openCampaigns();
+      await page.getByRole("button", { name: "r3-scheduled" }).click();
+      await expect(detail).toContainText("Ready", { timeout: 5_000 });
+    }).toPass({ timeout: 90_000 });
+    await expect(detail).toContainText(`${later.toISOString().slice(0, 16).replace("T", " ")} UTC`);
+    await expect(detail).toContainText(/Released\s*0 of/);
+
+    // Move the start to this minute: a start in the past means now, so the next tick starts it.
+    const now = new Date().toISOString().slice(0, 16);
+    await page.getByLabel("start", { exact: true }).fill(now);
+    await page.getByRole("button", { name: "throttle" }).click();
+    const moving = page.getByRole("alertdialog", { name: "confirm throttle" });
+    await expect(moving).toContainText(`start ${now.replace("T", " ")} UTC`);
+    await moving.getByRole("button", { name: "throttle" }).click();
+    await expect(page.getByRole("status")).toBeVisible();
+
+    await expect(async () => {
+      await openCampaigns();
+      await page.getByRole("button", { name: "r3-scheduled" }).click();
+      await expect(detail).toContainText(/Released\s*[1-9]/, { timeout: 5_000 });
+    }).toPass({ timeout: 90_000 });
+    await expect(detail).toContainText("start");   // the verb log names the move
+  });
+
   test("campaign R1: an excluded day halts release; an end date expires the remainder into a report", async ({ page, request }) => {
     // Two probes, created through the API like every campaign. The first excludes
     // TODAY from day one; the second was born already past its end date.
