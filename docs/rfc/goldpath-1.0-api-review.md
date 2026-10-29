@@ -118,17 +118,22 @@ a promise.
 
 | Mode | Fails on |
 |---|---|
-| (default) report | a stale row (its line is in no live ledger line), an unknown verdict, a non-keep without a reason, a `rename`/`experimental` without a target, a duplicate row, a `keep` in an experimental package, a missing or extra TSV, a wrong header or a malformed row |
-| `--require-complete [--package P …]` | the above, plus any live line without a row (all packages, or the named ones) |
-| `--require-applied` | after API-14: a `rename`/`remove` whose source line is still live, or a live line that is neither kept, experimental nor a rename's target |
+| (default) report | a stale row (a `keep`/`experimental` whose line is no longer live, or a `rename` whose source and target are both not live), an unknown verdict, a non-keep without a reason, a `rename`/`experimental` without a target, a duplicate row, a `keep` in an experimental package, a missing or extra TSV, a wrong header or a malformed row |
+| `--require-complete [--package P …]` | the above, plus any live line that is neither a row nor a `rename`'s target (all packages, or the named ones) |
+| `--require-applied` | the report mode's checks, plus, after API-14: a `rename`/`remove` whose source line is still live, or a live line that is neither kept, experimental nor a rename's target |
 | `--list-non-keep` | nothing: it prints the owner's reading list for API-13 |
-| `--selftest` | the gate itself: each fault is planted in a scratch copy and must go red, while the unplanted copy, a match across one `[ID]` prefix and an applied review stay green |
+| `--selftest` | the gate itself: each fault is planted in a scratch copy and must go red, while the unplanted copy, a match across one `[ID]` prefix and an applied review stay green; the applied review is checked in every mode `gates` runs after API-14 |
 
 - **Matching** strips one leading `[ID]` prefix on both sides, because PublicApiAnalyzers 5.x may
   prefix experimental members. Whether it does is measured in API-11 (#400).
 - **Each review part's bar** is `--require-complete --package <its packages>` green at its commit.
 - **API-13 adds** `--require-complete` (all packages) to `gates`.
-- **API-14 adds** `--require-applied`.
+- **API-14 adds** `--require-applied`; report and `--require-complete` stay in `gates` beside it.
+- **The modes compose on an applied review.** Once API-14 removes a `rename`'s or a `remove`'s source
+  and adds the `rename`'s target, the applied source is not stale and the target counts as covered by
+  its `rename` row, so all three modes are green together. What stays red in every mode is a member
+  leaving without a verdict that says so: a `keep` or `experimental` line that is no longer live, and a
+  `rename` applied as a plain deletion (neither its source nor its target live).
 
 ## 6. Ops Package
 

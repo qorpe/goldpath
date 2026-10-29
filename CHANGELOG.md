@@ -22,8 +22,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     - `--require-complete [--package …]`;
     - `--require-applied`;
     - `--list-non-keep`;
-    - `--selftest` (18 planted faults red; green unplanted, across one `[ID]` prefix and on an
-      applied review).
+    - `--selftest` (22 planted faults red; green unplanted, across one `[ID]` prefix, and on an
+      applied review in every mode `gates` runs after API-14).
+
+    The modes compose on an applied review: an applied source is not stale and a rename's target is
+    covered by its row. A `keep` line that disappears, or a rename applied as a plain deletion, is
+    red in every mode.
   - At `main` 92ad7a0: **0 of 2,648 live lines** reviewed.
 - **Admin surfaces: a read role, `goldpath-ops-read` (admin contract R4.1, slice R4-S1, #297).**
   - **What it is:** `GoldpathPolicies.OpsRead` (Abstractions) and `GoldpathAuthOptions.OpsReadRole`

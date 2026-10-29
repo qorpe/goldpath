@@ -40,7 +40,9 @@ API-14 (#403), in one train, with no compatibility shims.
 ```
 
 A table fails the gate on:
-- a row whose line is in no live ledger line (stale);
+- a stale row: a `keep` or `experimental` whose line is no longer live, or a `rename` whose source and
+  target are both not live (a `remove` whose line has gone, or a `rename` whose target is live, is an
+  applied verdict, not a stale one);
 - an unknown verdict;
 - a non-keep row without a reason;
 - a `rename` or `experimental` row without a target;

@@ -13,14 +13,25 @@
 #
 # Modes:
 #   (default)                          report covered/total and the verdict counts per package; fail
-#                                      on a malformed table: a row whose line is in no ledger (stale),
-#                                      an unknown verdict, a non-keep without a reason, a rename or
-#                                      experimental without a target, a duplicate row, a `keep` in an
-#                                      experimental package, a missing or extra TSV, a wrong header
-#   --require-complete [--package P …] also fail on any live line without a row (all packages, or P)
+#                                      on a malformed table: a stale row (a keep/experimental whose line
+#                                      is no longer live, or a rename whose source and target are both
+#                                      not live), an unknown verdict, a non-keep without a reason, a
+#                                      rename or experimental without a target, a duplicate row, a
+#                                      `keep` in an experimental package, a missing or extra TSV, a
+#                                      wrong header
+#   --require-complete [--package P …] also fail on any live line that is neither a row nor a rename's
+#                                      target (all packages, or P)
 #   --require-applied                  after API-14 (#403): every live line is covered by keep or
 #                                      experimental, or is the target of a rename; no rename/remove
-#                                      source line is still live
+#                                      source line is still live (a rename applied as a plain deletion
+#                                      is a stale row in every mode: neither its source nor its target
+#                                      is live)
+#
+# The modes compose on an applied review: once API-14 has removed a rename's or a removal's source
+# and added the rename's target, report and --require-complete stay green (an applied source is
+# not stale, a rename's target is covered by its row), so `gates` runs all three after API-14.
+# A keep or experimental row whose line has gone is stale in EVERY mode: a member the review
+# signed off cannot disappear without a verdict that says so.
 #   --list-non-keep                    the owner's reading list for API-13 (#402)
 #   --selftest                         plant each fault in a scratch copy; red for each, green unplanted
 set -euo pipefail
@@ -128,17 +139,21 @@ def check(root, require_complete=False, only=None, require_applied=False):
                 findings.append(f"{where}: a '{verdict}' needs a target ({'the full new ledger line' if verdict == 'rename' else 'the diagnostic id'})")
             if verdict == "keep" and package in EXPERIMENTAL_PACKAGES:
                 findings.append(f"{where}: {package} ships [Experimental] at 1.0 (GA readiness Q4): 'keep' is not a verdict there")
-            if not require_applied and row["line"] not in live[package]:
-                findings.append(f"{where}: stale row, the line is in no live ledger line of {package}: {row['line']}")
+            if row["line"] not in live[package]:
+                if verdict in ("keep", "experimental"):
+                    findings.append(f"{where}: stale row, a '{verdict}' line is no longer live in {package} (a signed-off member left without a verdict): {row['line']}")
+                elif verdict == "rename" and bare(row["target"]) not in live[package]:
+                    findings.append(f"{where}: stale row, neither the rename's source nor its target is live in {package}: {row['line']}")
+                # A remove whose line has gone, or a rename whose target is live, is an APPLIED verdict.
 
-        covered = live[package] & set(seen)
+        targets = {bare(row["target"]) for row in table if row["verdict"] == "rename" and row["target"]}
+        covered = live[package] & (set(seen) | targets)
         counts = {verdict: sum(1 for row in table if row["verdict"] == verdict) for verdict in VERDICTS}
         summary[package] = (len(covered), len(live[package]), counts)
         if require_complete and (only is None or package in only):
-            for line in sorted(live[package] - set(seen)):
+            for line in sorted(live[package] - set(seen) - targets):
                 findings.append(f"{package}: no verdict for a live line: {line}")
         if require_applied:
-            targets = {bare(row["target"]) for row in table if row["verdict"] == "rename"}
             kept = {row["line"] for row in table if row["verdict"] in ("keep", "experimental")}
             for row in table:
                 if row["verdict"] in ("rename", "remove") and row["line"] in live[package]:
@@ -206,6 +221,28 @@ def selftest():
 
     P = "Goldpath.Caching"
     X = "Goldpath.FileExchange"
+
+    def apply_review(root, add_target=True, drop_kept=False):
+        """P fully reviewed (one rename, one remove, the rest keep), then applied as API-14 would apply it."""
+        lines = sorted(ledgers(root)[P])
+        renamed_from, removed_line, rest = lines[0], lines[1], lines[2:]
+        gone = {renamed_from, removed_line} | ({rest[0]} if drop_kept else set())
+        path = os.path.join(root, "packages", P)
+        for name in ("PublicAPI.Shipped.txt", "PublicAPI.Unshipped.txt"):
+            full = os.path.join(path, name)
+            if os.path.exists(full):
+                kept_lines = [l for l in read_lines(full) if bare(l) not in gone]
+                open(full, "w", encoding="utf-8").write("\n".join(kept_lines) + "\n")
+        if add_target:
+            ledger_append(root, P, "Goldpath.Renamed.Target() -> void")
+        add_row(root, P, renamed_from, "rename", "Goldpath.Renamed.Target() -> void", "naming")
+        add_row(root, P, removed_line, "remove", "", "no adopter needs it")
+        for l in rest:
+            add_row(root, P, l)
+
+    def only_p(findings):
+        return [f for f in findings if f.startswith(f"{TABLES}/{P}.tsv") or f.startswith(P + ":")]
+
     planted = [
         ("a stale row (its line is in no ledger)", {}, lambda r: add_row(r, P, "Goldpath.Nothing.Here() -> void")),
         ("an unknown verdict", {}, lambda r: add_row(r, P, first_live(r, P), "maybe", "", "x")),
@@ -228,6 +265,12 @@ def selftest():
         ("a removal not applied under --require-applied", {"require_applied": True},
          lambda r: [add_row(r, P, line, "remove" if i == 0 else "keep", "", "unused" if i == 0 else "") for i, line in enumerate(sorted(ledgers(r)[P]))]),
         ("a live line with no verdict under --require-applied", {"require_applied": True}, lambda r: None),
+        ("a rename applied as a deletion (its target never added) under --require-applied", {"require_applied": True},
+         lambda r: apply_review(r, add_target=False)),
+        ("a rename applied as a deletion, in report mode", {}, lambda r: apply_review(r, add_target=False)),
+        ("a kept line deleted from the ledger under --require-applied", {"require_applied": True},
+         lambda r: apply_review(r, drop_kept=True)),
+        ("a kept line deleted from the ledger, in report mode", {}, lambda r: apply_review(r, drop_kept=True)),
         ("a prefixed ledger line with no verdict, every other line covered, under --require-complete",
          {"require_complete": True, "only": {P}},
          lambda r: ([add_row(r, P, line) for line in sorted(ledgers(r)[P])],
@@ -250,29 +293,23 @@ def selftest():
     if check(prefixed)[0]:
         failures.append(f"a line matched across one [ID] prefix went red: {check(prefixed)[0][:3]}")
 
-    # An applied review: every line kept, one renamed (target live, source gone), one removed (gone), one experimental.
+    # An applied review (one renamed: source gone, target live; one removed: gone; the rest kept) is green in
+    # EVERY mode `gates` runs after API-14 (record §5): report, --require-complete and --require-applied.
     applied = scratch()
-    lines = sorted(ledgers(applied)[P])
-    renamed_from, removed_line, rest = lines[0], lines[1], lines[2:]
-    path = os.path.join(applied, "packages", P)
-    for name in ("PublicAPI.Shipped.txt", "PublicAPI.Unshipped.txt"):
-        full = os.path.join(path, name)
-        if os.path.exists(full):
-            kept_lines = [l for l in read_lines(full) if bare(l) not in (renamed_from, removed_line)]
-            open(full, "w", encoding="utf-8").write("\n".join(kept_lines) + "\n")
-    ledger_append(applied, P, "Goldpath.Renamed.Target() -> void")
-    add_row(applied, P, renamed_from, "rename", "Goldpath.Renamed.Target() -> void", "naming")
-    add_row(applied, P, removed_line, "remove", "", "no adopter needs it")
-    for l in rest:
-        add_row(applied, P, l)
-    findings_applied = [f for f in check(applied, require_applied=True)[0] if f.startswith(f"{TABLES}/{P}.tsv") or f.startswith(P + ":")]
-    if findings_applied:
-        failures.append(f"an applied review went red under --require-applied: {findings_applied[:3]}")
+    apply_review(applied)
+    for mode, kwargs in (("report", {}), ("--require-complete --package", {"require_complete": True, "only": {P}}),
+                         ("--require-applied", {"require_applied": True})):
+        findings_applied = only_p(check(applied, **kwargs)[0])
+        if findings_applied:
+            failures.append(f"an applied review went red in {mode}: {findings_applied[:3]}")
 
     for name, kwargs, plant in planted:
         root = scratch()
         plant(root)
-        if not check(root, **kwargs)[0]:
+        found = check(root, **kwargs)[0]
+        if kwargs.get("require_applied"):
+            found = only_p(found)   # every other package has no verdicts, so it is red in this mode anyway
+        if not found:
             failures.append(f"planted fault NOT caught: {name}")
         else:
             print(f"api-review-gate selftest: red as it should be — {name}")
@@ -285,7 +322,7 @@ def selftest():
         for failure in failures:
             print(f"  - {failure}")
         return 1
-    print("api-review-gate selftest: green unplanted, across one [ID] prefix and on an applied review; every planted fault red.")
+    print("api-review-gate selftest: green unplanted, across one [ID] prefix and on an applied review in every mode; every planted fault red.")
     return 0
 
 
