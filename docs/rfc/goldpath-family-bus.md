@@ -31,7 +31,7 @@ library for .NET, scoped to what Goldpath consumes:
 | C1 | **RabbitMQ transport** | The one broker every template, CorPay and api-portal composes (`builder.AddRabbitMQ("messaging")` in each AppHost) | MassTransit 8.x's RabbitMQ transport, observed under the conformance suite |
 | C2 | **Envelope serialisation, wire-compatible with the 8.x envelope and topology (S4)** | A mixed fleet during a rolling deployment, in both directions, with no drained cutover (ADR-0015 §2) | The 8.x JSON envelope and RabbitMQ topology as messaging-engines §4.4 specifies them |
 | C3 | **Consumer pipeline with retry and an error queue** | Immediate retry, delayed redelivery, and a poison message parked in `<queue>_error` with its envelope intact (S2.3, S4.5) | 8.x retry and redelivery as observed, `MT-Redelivery-Count`, the `_error` / `_skipped` queues |
-| C4 | **EF Core outbox and inbox** | Publish atomic with the caller's `SaveChanges`, relay after a crash, exactly-once handling (S2.1, S2.6, S2.19, S4.2–S4.4) | The 8.x tables (`OutboxMessage`, `OutboxState`, `InboxState`) as messaging-engines §4.4 adopts them |
+| C4 | **EF Core outbox and inbox, on PostgreSQL and SQL Server** | Publish atomic with the caller's `SaveChanges`, relay after a crash, exactly-once handling (S2.1, S2.6, S2.19, S4.2–S4.4) — on both database providers the templates compose with a broker (`outbox.UseSqlServer()` under `--db sqlserver`, the PostgreSQL form otherwise), because ADR-0015 §2's zero adopter impact holds for every adopter, not only the PostgreSQL ones | The 8.x tables (`OutboxMessage`, `OutboxState`, `InboxState`) as messaging-engines §4.4 adopts them |
 | C5 | **Tenant and correlation headers** | `X-Goldpath-Tenant` and `X-Correlation-Id` as plain envelope `headers` (S2.2) | `GoldpathHeaders`; nothing of 8.x's own |
 | C6 | **OpenTelemetry** | One trace from publish to consume, across engines, with `goldpath.tenant_id` and `goldpath.correlation_id` (S2.16) | 8.x's `MT-Activity-Id` header for the parent context |
 | C7 | **In-memory test transport** | `GoldpathMessagingTestHost`'s default mode (messaging-engines §4.3) | The 8.x in-memory transport's observable behaviour |
@@ -100,9 +100,9 @@ Two working rules make the statement checkable rather than a promise:
 
 ## 4. API Surface
 
-**The adapter adds no public API to Goldpath.** `Goldpath.Messaging.QorpeBus`'s public surface is the
-assembly attribute and the `IGoldpathMessagingEngine` implementation type the attribute names —
-the same shape as the Wolverine adapter. `engine-gate.sh` gains the adapter's directory as an
+**The adapter adds no public API to Goldpath.** `Goldpath.Messaging.QorpeBus` adds no public type: its
+assembly attribute names an internal `IGoldpathMessagingEngine` implementation — the same shape as
+the Wolverine adapter. `engine-gate.sh` gains the adapter's directory as an
 allowed home for the engine's namespace (`Qorpe.Bus.`) and stays at zero everywhere else.
 
 ### 4.1 The wire contract the library must keep (S4)
@@ -119,9 +119,9 @@ against Wolverine, because all three speak the same wire:
 | W4 | `X-Goldpath-Tenant` and `X-Correlation-Id` are plain `headers` entries, read and written as such | S2.2, S4.1 |
 | W5 | Reads `MT-Redelivery-Count`, so a message redelivered across engines does not restart its ladder; writes it when it redelivers | S2.3 extended to a mixed fleet |
 | W6 | A faulted message parked in `<queue>_error` keeps its envelope, message id and headers, so either engine handles it once shovelled back | S4.5 |
-| W7 | Outbox: writes `OutboxMessage` rows as the 8.x envelope inside the caller's transaction; relays any pending row whichever engine wrote it, to the row's own type's exchange (the first of the `;`-separated `MessageType`); holds the relay lock per `OutboxState` row | S2.6, S4.3 |
-| W8 | Inbox: one `InboxState` row per **handler**, keyed (`MessageId`, consumer id) with the consumer id the 8.x adapter consumer derives (`MD5("{consumer}:{message}:{queue}")` as a GUID, SHA-256's first 16 bytes under FIPS), **claimed before it is locked** (`INSERT … ON CONFLICT DO NOTHING`, then `SELECT … FOR UPDATE`), swept by `Delivered` older than the duplicate-detection window | S4.2, S4.4, and S2.19 — the defect #467 found in the Wolverine adapter, which the family bus is designed not to have |
-| W9 | Trace continuity: writes `MT-Activity-Id` and opens its consume span under the publisher's | S2.16, extended to a mixed fleet |
+| W7 | Outbox: writes `OutboxMessage` rows as the 8.x envelope inside the caller's transaction; relays any pending row whichever engine wrote it, to the row's own type's exchange (the first of the `;`-separated `MessageType`); holds the relay lock per `OutboxState` row (`SELECT … FOR UPDATE` on PostgreSQL, `SELECT … WITH (UPDLOCK, ROWLOCK)` on SQL Server — the statements 8.x's lock statement providers issue) | S2.6, S4.3, on both providers |
+| W8 | Inbox: one `InboxState` row per **handler**, keyed (`MessageId`, consumer id) with the consumer id the 8.x adapter consumer derives (`MD5("{consumer}:{message}:{queue}")` as a GUID, SHA-256's first 16 bytes under FIPS), **claimed before it is locked**: the row is inserted so that a concurrent duplicate is absorbed rather than failing the delivery, and only then locked — on PostgreSQL `INSERT … ON CONFLICT DO NOTHING` then `SELECT … FOR UPDATE`; on SQL Server an insert that absorbs the duplicate key (an `INSERT … WHERE NOT EXISTS` under `(UPDLOCK, HOLDLOCK)`, or duplicate-key errors 2601/2627 absorbed — FB-4 chooses by measurement) then `SELECT … WITH (UPDLOCK, ROWLOCK)`; swept by `Delivered` older than the duplicate-detection window | S4.2, S4.4, and S2.19, on both providers — the defect #467 found in the Wolverine adapter, which the family bus is designed not to have |
+| W9 | Trace continuity: writes `MT-Activity-Id` (the W3C `traceparent`) into **both** the envelope `headers` and the AMQP message headers, as 8.x does; reads the parent from the AMQP header, falling back to the envelope's; opens its consume span under it. 8.x reads only the AMQP header, which is why an engine that writes only the envelope entry breaks a mixed-fleet trace at an 8.x consumer (measured on #467, T51) | S2.16, and a mixed-fleet S4 trace fact in **both** directions (8.x → family bus and family bus → 8.x): one trace id from publish to consume |
 
 S2.1–S2.12 and S4.1–S4.5 are on `main` today. S2.14–S2.19 and `[GoldpathMessageName]` (W3) arrive with
 #467 (G5 Part 2/5), open as this is written. W3, W8's claim and W9 cite those facts, so they bind the
@@ -155,6 +155,9 @@ is FB-3's measured result, recorded in the library's repository and in T40.
   clean-room checkbox (§2.1). Its dependencies are expected to be `RabbitMQ.Client`,
   `Microsoft.EntityFrameworkCore.Relational`, `System.Diagnostics.DiagnosticSource` and the Aspire
   client integration — each pinned and licence-gated before its first use.
+  The library takes no database provider package: the adopter's own (`Npgsql.EntityFrameworkCore.PostgreSQL` or `Microsoft.EntityFrameworkCore.SqlServer`)
+  is in the graph already, and the library carries the lock and claim statements for both (W7, W8),
+  chosen from the provider EF reports, as 8.x's lock statement providers are.
 
 ## 6. Ops Package
 
@@ -174,9 +177,9 @@ The proofs are messaging-exit §7.1's; this is when each runs for the family bus
 
 | Proof | Runs | Where |
 |---|---|---|
-| **S2** conformance | From FB-6, on every adapter pull request: the `BusConformanceTests` class registered with the family-bus engine, unchanged, on real RabbitMQ + PostgreSQL | this repository's `integration` job |
+| **S2** conformance | From FB-6, on every adapter pull request: the `BusConformanceTests` class registered with the family-bus engine, unchanged, on real RabbitMQ + PostgreSQL, and the outbox/inbox facts (S2.1, S2.6, S2.19) also on real SQL Server — the harness is PostgreSQL-only today, so FB-6 adds its SQL Server leg, which every engine then runs | this repository's `integration` job |
 | **S3** differential | With S2: observable outcomes compared against MassTransit 8.x (8.5.12 today; the pin moves with the oracle) | same |
-| **S4** wire | FB-6: `MixedFleetTests` with the pairs (8.x → family bus) and (family bus → 8.x), and the same pairs with Wolverine once G5 has shipped it; W1–W9 each held by a fact | same |
+| **S4** wire | FB-6: `MixedFleetTests` with the pairs (8.x → family bus) and (family bus → 8.x), the outbox/inbox facts (S4.2–S4.4) on both PostgreSQL and SQL Server, and the same pairs with Wolverine once G5 has shipped it; W1–W9 each held by a fact | same |
 | **S1** apps compile unchanged | FB-7: every broker-bearing GM shape, CorPay and api-portal built with `messagingEngine: qorpebus` and no source edit | GM matrix + the two reference apps |
 | **S6** rollback | FB-7: S1–S4 the other way (family bus → 8.x) | same |
 | **S5** shadow lane | After FB-7: **≥4 weeks** nightly on the GM broker shapes, CorPay and api-portal, before the opt-in ships in a 1.x minor | nightly workflow |
@@ -193,10 +196,10 @@ without its step is a finding at the next train-boundary re-measure, not a quiet
 |---|---|---|---|
 | **RFC** | 2026-10-30 written; **December 2026** owner review | This file, PROPOSED | the owner merges it (or answers §9 otherwise and the text changes first) |
 | **FB-0** | **December 2026** | The repository (#353, an owner action): licence, README with §2.1, `CONTRIBUTING.md` with the clean-room checkbox, CI with the licence and mutation gates, pinned SDK | an empty solution builds green in its CI |
-| **FB-1** | January 2027, weeks 1–2 | The wire captured: 8.x fixtures (envelopes, headers, topology declarations, the three tables' rows) recorded from the conformance harness with their 8.x version; the envelope reader and writer (W1, W3, W4) | the library round-trips every fixture byte-for-byte where 8.x is deterministic, and field-for-field where it is not (`sentTime`, ids) |
+| **FB-1** | January 2027, weeks 1–2 | The wire captured: 8.x fixtures (envelopes, headers, topology declarations, the three tables' rows) recorded from the conformance harness with their 8.x version, the inbox rows also under `MT_FIPS_ENABLE` so W8's SHA-256 branch is captured too, and the outbox and inbox rows on both PostgreSQL and SQL Server; the envelope reader and writer (W1, W3, W4) | the library round-trips every fixture byte-for-byte where 8.x is deterministic, and field-for-field where it is not (`sentTime`, ids) |
 | **FB-2** | January 2027, weeks 2–3 | RabbitMQ transport: the topology (W2), publisher confirms, consumers with concurrency and prefetch limits | a library integration test against a real broker declares exactly the fixtures' topology |
 | **FB-3** | January 2027, weeks 3–4 | The pipeline: immediate retry, plugin-free delayed redelivery (§4.2, measured and chosen), the error and skipped queues, `MT-Redelivery-Count` (W5, W6) | the ladder runs on stock RabbitMQ with no plugin, and a parked message keeps its envelope |
-| **FB-4** | February 2027, weeks 1–2 | EF outbox and inbox on the 8.x tables (W7, W8), including the claim-before-lock | a library test proves one handling of one message id delivered N times concurrently |
+| **FB-4** | February 2027, weeks 1–2 | EF outbox and inbox on the 8.x tables (W7, W8), including the claim-before-lock, on PostgreSQL and SQL Server | a library test proves one handling of one message id delivered N times concurrently, on each provider |
 | **FB-5** | February 2027, week 2 | Headers, OpenTelemetry (W9), the in-memory transport (C7), Aspire wiring (C8) | the library's own tests for each; the in-memory transport passes the harness's in-memory mode |
 | **FB-6** | February 2027, week 3 | `Goldpath.Messaging.QorpeBus` in this repository, binding the published preview packages; the conformance class and `MixedFleetTests` registered with it | S2, S3 and S4 green, linked in T40 |
 | **FB-7** | February 2027, week 4 | S1 and S6 across the GM broker shapes, CorPay and api-portal | S1 and S6 linked in T40; the shadow lane starts |
