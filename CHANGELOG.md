@@ -5,6 +5,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **The Data module, proven on Oracle (GA gate G7, slice O-2, #405).** Tests only: no package changes.
+  `OracleDataTests` (`Category=Oracle`) runs on the O-1 lane's container, one schema per fact, against a model that
+  composes Jobs, Campaign, Bulk and Archival in the 19c SQL form:
+  - every column's Oracle store type is pinned in a golden;
+  - every identifier fits in 128 bytes;
+  - every NOT NULL string column refuses `''`;
+  - the keyset suite passes with no Oracle branch, in a session that sorts BINARY;
+  - `DateOnly`/`TimeOnly` round-trip;
+  - D7 migrate up, down, up, and a second migrate changes nothing.
+
+  It found three things, filed as issues:
+  - the document columns are `NVARCHAR2(2000)` and refuse a NULL in the client (#475);
+  - three admin verbs can write `''` into a NOT NULL column (#476);
+  - the global ceiling row's empty name (#384, already open).
+
+  It also found that under a `tr-TR` culture ODP.NET opens the session with `NLS_SORT=TURKISH`, so a keyset walk
+  over a string key silently skips rows. A fact pins it, #496 holds the fix (pin the session's sort in the Oracle
+  composition), and `ops/data.md` gives the per-connection pin as the workaround until then.
+
+  `packages/Goldpath.Data/ops/data.md` gains an "Oracle" section: the container's cost, the 19c compatibility
+  setting, and the type mappings.
 - **Jobs: the clustered Quartz store runs on Oracle (G7, slice O-3, #406).**
   - **API (additive):** `GoldpathJobStoreProvider.Oracle = 2`. It is appended, so no stored value
     moves. The executor composes `UseOracle`, and the management head's never-started schedulers use
