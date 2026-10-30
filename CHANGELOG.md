@@ -33,6 +33,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   - An `experimental` row in Approvals or FileExchange must name that package's diagnostic id
     (`GPEXP001`/`GPEXP002`, compared exactly), and no other package's `experimental` row may name
     either. A mode that takes no arguments refuses any.
+- **The Data module, proven on Oracle (GA gate G7, slice O-2, #405).** Tests only: no package changes.
+  `OracleDataTests` (`Category=Oracle`) runs on the O-1 lane's container, one schema per fact, against a model that
+  composes Jobs, Campaign, Bulk and Archival in the 19c SQL form:
+  - every column's Oracle store type is pinned in a golden;
+  - every identifier fits in 128 bytes;
+  - every NOT NULL string column refuses `''`;
+  - the keyset suite passes with no Oracle branch, in a session that sorts BINARY;
+  - `DateOnly`/`TimeOnly` round-trip;
+  - D7 migrate up, down, up, and a second migrate changes nothing.
+
+  It found three things, filed as issues:
+  - the document columns are `NVARCHAR2(2000)` and refuse a NULL in the client (#475);
+  - three admin verbs can write `''` into a NOT NULL column (#476);
+  - the global ceiling row's empty name (#384, already open).
+
+  It also found that under a `tr-TR` culture ODP.NET opens the session with `NLS_SORT=TURKISH`, so a keyset walk
+  over a string key silently skips rows. A fact pins it, #496 holds the fix (pin the session's sort in the Oracle
+  composition), and `ops/data.md` gives the per-connection pin as the workaround until then.
+
+  `packages/Goldpath.Data/ops/data.md` gains an "Oracle" section: the container's cost, the 19c compatibility
+  setting, and the type mappings.
 - **Jobs: the clustered Quartz store runs on Oracle (G7, slice O-3, #406).**
   - **API (additive):** `GoldpathJobStoreProvider.Oracle = 2`. It is appended, so no stored value
     moves. The executor composes `UseOracle`, and the management head's never-started schedulers use
@@ -78,7 +99,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     01:29:59Z and releases at 01:30Z, and of the two 02:30s on fall-back Sunday only the
     chosen one starts. The pacer's start is guarded on the state and the start it read, so an
     operator's move or pause made during the tick wins. Mutation gate: 83.95 % (`stryker/README.md`).
-  - **Not yet:** the real-broker test and the console's view of `Ready` (R3-S3, #315).
+  - **On a real broker and in the console (R3-S3, #315):**
+    - `CampaignR3Tests` runs on RabbitMQ + PostgreSQL. A campaign created twenty seconds out reports
+      `Ready` and then `Running`. No item is claimed before its start, and every item completes once.
+    - The console governor lists, filters and counts `Ready` as live.
+    - It shows the start in the policy time zone, and moves or clears it through `throttle`.
+    - A local start in the spring-forward gap is refused before anything is sent. One in the repeated
+      hour asks which of its two instants is meant. A date the calendar does not have (`2026-02-30`,
+      `24:00`) is refused, never rolled over.
+    - A policy whose time zone is a Windows id the server accepts (`Turkey Standard Time`) is shown as
+      the instant alone, and moving its start says that the console reads IANA ids, naming the zone.
+    - A start still in the draft when a refresh shows the campaign running is not sent.
+    - The console smoke drives the move end to end, and checks that the verb log records it.
 - **Admin surfaces: a read role, `goldpath-ops-read` (admin contract R4.1, slice R4-S1, #297).**
   - **What it is:** `GoldpathPolicies.OpsRead` (Abstractions) and `GoldpathAuthOptions.OpsReadRole`
     (Auth, default `goldpath-ops-read`). `AddGoldpathAuth` registers the policy in both strategy
