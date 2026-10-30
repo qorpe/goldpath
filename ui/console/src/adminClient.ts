@@ -294,6 +294,8 @@ export interface CampaignInfo {
   completedAt?: string | null;
   lastVerb?: string | null;
   tenant?: string | null;
+  /** R3.1: the earliest instant it may release, UTC (ISO 8601); null = as soon as its snapshot is ready. */
+  startAt?: string | null;
 }
 
 /** One failed item — the drill-down; REPLAY belongs to the jobs console. */
@@ -337,6 +339,10 @@ export interface CampaignThrottle {
   clearEndDate?: boolean;
   /** R2.5: the share of a contended shared ceiling (High 3 · Normal 2 · Low 1); omitted = keep. */
   priority?: "Normal" | "High" | "Low";
+  /** R3.1: moves the scheduled start (an instant, ISO 8601 with its offset); omitted = keep. Only before it starts. */
+  startAt?: string;
+  /** R3.1: clears the scheduled start, so the campaign starts as soon as its snapshot is ready. */
+  clearStartAt?: boolean;
 }
 
 /** One template with its live queue numbers and its retention promise. */

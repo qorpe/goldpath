@@ -41,13 +41,19 @@ S-FLEET-01 — A 2.3M-device config push finishes in five working days without m
   modules:  campaign (R1 fields), jobs, console governor
   given:    2.3M enumerable targets; policy tps=800, dailyQuota=500000, window 10:00-21:00
             Europe/Istanbul, excludedDays=[Sat,Sun], endDate=+7d
-  when:     operator creates the campaign, watches day 1, throttles to 300 mid-day when the
-            downstream complains, restores to 800, lets it run
+  when:     operator creates the campaign with a scheduled start (it waits in Ready, the start
+            shown in the policy time zone, and can be moved or cleared until it starts),
+            watches day 1, throttles to 300 mid-day when the downstream complains, restores to
+            800, lets it run
   then:     daily released never exceeds the quota; nothing releases outside the window or
             on the weekend; the governor shows the live numbers; day-5 completion; the verb
             log carries every throttle with its actor
   needs:    scale-rig (targets can be synthetic; timing compressed via clock control where honest)
-  evidence: —
+  evidence: partial — the scheduled-start step only (#315): CampaignR3Tests.
+            ScheduledStart_ReadyThenRunning_FirstClaimNoEarlierThanStartAt on real RabbitMQ +
+            PostgreSQL (Ready, then Running; no item claimed before the start; every item once),
+            and the console smoke's "campaign R3.1" journey (the governor shows the start, moves
+            it, and the campaign starts). The push itself at 2.3M is not run
   notes:    the list-targeted variant (targets uploaded as a device list through Goldpath.Bulk,
             the app's selector reading the batch's staged rows) has its INTAKE leg measured:
             10M rows uploaded, validated and reported in 828 s on the agent's sandbox, peak
