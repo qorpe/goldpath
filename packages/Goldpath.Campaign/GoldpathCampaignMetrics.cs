@@ -85,7 +85,8 @@ public static class GoldpathCampaignMetrics
         lock (SnapshotLock)
         {
             Snapshots[campaign.Id] = (campaign.Type,
-                campaign.EnumeratedThrough - campaign.ReleasedThrough, inFlight, campaign.AwaitingAckCount);
+                campaign.EnumeratedThrough - campaign.ReleasedThrough, inFlight,
+                Math.Clamp(campaign.AwaitingAckCount, 0, Math.Max(0, inFlight)));   // as the detail reads it
         }
     }
 

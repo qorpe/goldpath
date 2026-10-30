@@ -128,15 +128,16 @@ public sealed class GoldpathCampaignAdminService<TContext>
                 $"No campaign type named '{type}' — registered: {string.Join(", ", _options.TypeMap.Keys)}.");
         }
 
-        if (policy?.MaxAwaitingAck is <= 0)
-        {
-            // R3.4: a ceiling of zero would create a campaign that never releases, and say nothing.
-            return new GoldpathAdminResult(false, "MaxAwaitingAck must be positive — omit it to keep acceptances under MaxInFlight.");
-        }
-
         var now = _time.GetUtcNow();
         var defaults = _options.Type(type).DefaultPolicy;
         var effective = policy is null ? defaults : Apply(defaults, policy, now);
+        if (effective.MaxAwaitingAck is <= 0)
+        {
+            // R3.4: a ceiling of zero would create a campaign that never releases, and say nothing. Checked on the
+            // policy the campaign would run under, so a type default cannot carry one past it either.
+            return new GoldpathAdminResult(false, "MaxAwaitingAck must be positive — omit it to keep acceptances under MaxInFlight.");
+        }
+
         if (StartRefusal(effective, now) is { } refusal)
         {
             return new GoldpathAdminResult(false, refusal);
@@ -448,7 +449,9 @@ public sealed class GoldpathCampaignAdminService<TContext>
         {
             StartAt = c.StartAt,
             MaxAwaitingAck = c.MaxAwaitingAck,
-            AwaitingAck = c.AwaitingAckCount,
+            // The stored count can briefly read below zero or above in flight (an upgraded row settled before the first
+            // slice's re-count, or a re-count racing a flush); what an operator reads is held inside [0, in flight].
+            AwaitingAck = Math.Clamp(c.AwaitingAckCount, 0, Math.Max(0, inFlight)),
         };
     }
 

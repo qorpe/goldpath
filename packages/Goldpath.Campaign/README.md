@@ -154,9 +154,16 @@ new GoldpathCampaignThrottle(Tps: 200, MaxInFlight: 10) { MaxAwaitingAck = 50_00
   split of live work from acceptances rides the cached count. A flush's item updates and its
   counter update are separate statements, so a re-count that lands between them can be off by
   that flush's rows until the next slice, and `MaxInFlight` by as much. The pacer clamps the
-  count to what is in flight, so a wrong count can never make live work look negative.
+  count to what is in flight, so a wrong count can never make live work look negative, and the
+  detail's `AwaitingAck` and the gauge read it through the same clamp, so an operator never sees a
+  negative number of outstanding acknowledgements (an upgraded row settled before the first slice's
+  re-count would otherwise read `-1`).
 - **Where it shows:** the detail returns `MaxAwaitingAck` and `AwaitingAck`, and the
   `goldpath_campaign_awaiting_ack` gauge is tagged like `goldpath_campaign_in_flight`.
+- **Refused when not positive:** a type's `DefaultPolicy(...)` with a non-positive
+  `MaxAwaitingAck` throws at registration, and `create` checks the policy the campaign would run
+  under — the type's default with the patch applied — so neither path can make a campaign that
+  never releases.
 - **Changing it:** `throttle` sets it (`maxAwaitingAck`, positive; omitted keeps it) or clears it
   (`clearMaxAwaitingAck`, back to R2's rule), audited old → new. The console does not show or edit
   it yet (R3-S6, #316).

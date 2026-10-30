@@ -275,6 +275,61 @@ public class R3AwaitingAckTests
     }
 
     [Fact]
+    public async Task ANonPositiveCeiling_InTheTypesDefault_IsRefusedAtCreateToo()
+    {
+        // The check reads the policy the campaign would run under, not only the patch: a default of zero, with no
+        // patch or a patch without the field, still never releases.
+        using var fixture = R2Tests.ActionFixture(sourceSize: 1);
+        var type = fixture.Options.Type("winback");
+        type.DefaultPolicy = type.DefaultPolicy with { MaxAwaitingAck = 0 };
+        var admin = fixture.Admin();
+        Assert.False((await admin.CreateAsync("winback", "no patch", new Dictionary<string, string>(), null, tenant: null, "op", CancellationToken.None)).Ok);
+        Assert.False((await admin.CreateAsync("winback", "other field", new Dictionary<string, string>(),
+            new GoldpathCampaignThrottle(Tps: 50), tenant: null, "op", CancellationToken.None)).Ok);
+        Assert.Equal(0, fixture.Query(db => db.Set<GoldpathCampaign>().Count()));
+        // A patch that sets a positive ceiling over the bad default is the operator's fix, and is accepted.
+        Assert.True((await admin.CreateAsync("winback", "fixed", new Dictionary<string, string>(),
+            new GoldpathCampaignThrottle(Tps: 50) { MaxAwaitingAck = 3 }, tenant: null, "op", CancellationToken.None)).Ok);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void ANonPositiveCeiling_InADefaultPolicy_IsRefusedWhenTheTypeIsRegistered(int ceiling)
+    {
+        var options = new GoldpathCampaignOptions();
+        var thrown = Assert.Throws<ArgumentOutOfRangeException>(() => options.AddCampaign<TestTarget>("winback", c => c
+            .MaxTargets(10).Targets((_, _) => NoTargets())
+            .DefaultPolicy(p => p with { MaxAwaitingAck = ceiling })));
+        Assert.Contains("MaxAwaitingAck", thrown.Message, StringComparison.Ordinal);
+    }
+
+    private static async IAsyncEnumerable<TestTarget> NoTargets()
+    {
+        await Task.CompletedTask;
+        yield break;
+    }
+
+    [Theory]
+    [InlineData(-1, 0)]    // an upgraded row settled before the first slice's re-count
+    [InlineData(5, 1)]     // a re-count racing a flush, above what is in flight
+    public async Task TheDetail_HoldsADriftedCountInsideWhatIsInFlight(long stored, long shown)
+    {
+        using var fixture = R2Tests.ActionFixture(sourceSize: 1);   // one item, accepted: exactly one in flight
+        fixture.Script[1] = GoldpathCampaignActionResult.Accepted("corr-1", TimeSpan.FromHours(1));
+        var campaign = await fixture.CreateAsync(R2Tests.Generous() with { MaxAwaitingAck = 7 });
+        await fixture.EnumerateAllAsync(campaign);
+        await fixture.RunPacerSliceAsync();
+        await fixture.ConsumeAllPublishedAsync();
+        fixture.Mutate(db => db.Set<GoldpathCampaign>().Single(c => c.Id == campaign.Id).AwaitingAckCount = stored);
+
+        var info = await fixture.Admin().GetAsync(campaign.Id, CancellationToken.None);
+        Assert.NotNull(info);
+        Assert.Equal(1, info.InFlight);
+        Assert.Equal(shown, info.AwaitingAck);
+    }
+
+    [Fact]
     public async Task APolicyWithoutTheField_AuditsExactlyAsBefore()
     {
         using var fixture = R2Tests.ActionFixture(sourceSize: 1);
@@ -340,6 +395,39 @@ public class R3AwaitingAckTests
     }
 
     // ---- the gauge ----
+
+    [Theory]
+    [InlineData(-3, 2, 0)]
+    [InlineData(9, 2, 2)]
+    [InlineData(1, 2, 1)]
+    public void TheAwaitingAckGauge_ReportsTheCountHeldInsideWhatIsInFlight(long stored, long inFlight, long reported)
+    {
+        var campaign = new GoldpathCampaign { Id = Guid.NewGuid(), Type = "winback", AwaitingAckCount = stored };
+        GoldpathCampaignMetrics.Snapshot(campaign, inFlight);
+
+        long? seen = null;
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Meter.Name == "Goldpath.Campaign" && instrument.Name == "goldpath_campaign_awaiting_ack")
+            {
+                l.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, value, tags, _) =>
+        {
+            foreach (var tag in tags)
+            {
+                if (tag.Key == "campaign" && Equals(tag.Value, campaign.Id.ToString("N")))
+                {
+                    seen = value;
+                }
+            }
+        });
+        listener.Start();
+        listener.RecordObservableInstruments();
+        Assert.Equal(reported, seen);
+    }
 
     [Fact]
     public async Task TheAwaitingAckGauge_IsTaggedLikeTheInFlightGauge()

@@ -107,7 +107,11 @@ the pacer's run health lives on the goldpath-jobs dashboard. This board owns the
   acknowledgement ceiling is holding, by design. The target system is answering more slowly than
   it accepts. Raise the ceiling only if it can carry that many open requests; otherwise wait for
   the callbacks or their deadlines. The gauge is the row's running count, re-counted from the items
-  at each leadership slice.
+  at each leadership slice, and held inside [0, in flight].
+- Nothing releasing while `goldpath_campaign_awaiting_ack` sits **below** `MaxAwaitingAck`: read
+  `goldpath_campaign_in_flight` too. The acknowledgement room is `MaxAwaitingAck − in flight`, so
+  retries waiting and live calls count against it as well; with `in_flight` at the ceiling the
+  pacer is holding by design.
 
 ## 9. Orphaned releases being published again (R2.6)
 

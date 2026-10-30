@@ -305,7 +305,13 @@ public sealed class GoldpathCampaignTypeBuilder<TTarget>
     /// <summary>Sets the default policy new instances start from.</summary>
     public GoldpathCampaignTypeBuilder<TTarget> DefaultPolicy(Func<GoldpathCampaignPolicy, GoldpathCampaignPolicy> configure)
     {
-        _type.DefaultPolicy = configure(_type.DefaultPolicy);
+        var policy = configure(_type.DefaultPolicy);
+        if (policy.MaxAwaitingAck is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(configure), "MaxAwaitingAck must be positive (R3.4) — leave it null to keep acceptances under MaxInFlight.");
+        }
+
+        _type.DefaultPolicy = policy;
         return this;
     }
 
