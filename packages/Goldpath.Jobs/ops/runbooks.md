@@ -74,3 +74,30 @@ never hit this (nodes join one at a time — Kubernetes' default maxSurge behave
 first-ever deploy, bring ONE node up before scaling out. Once the store has lived a single
 check-in cycle, concurrent (re)starts are ordinary cluster behavior. Found by the
 kill-9 integration proof and pinned by its staggered-start arrangement.
+
+## 9. Oracle: contention on `QRTZ_LOCKS` (G7, O-3, #406)
+
+**What it looks like.** On an Oracle store (`Provider = Oracle`) the cluster serialises trigger
+acquisition, misfire handling and check-in through row locks: `SELECT … FROM QRTZ_LOCKS WHERE
+SCHED_NAME = :name AND LOCK_NAME = :lock FOR UPDATE`, one row per lock (`TRIGGER_ACCESS`,
+`STATE_ACCESS`). Contention shows as:
+- scheduled fires starting late on every node at once (a run's `StartedAt` behind its trigger's
+  time), while `goldpath_jobs_run_duration_seconds` is unchanged: the work is no slower, getting
+  to it is;
+- sessions waiting on `enq: TX - row lock contention` in `V$SESSION` / ASH, with the blocking
+  statement on `QRTZ_LOCKS`;
+- at Debug level, Quartz logging `Lock 'TRIGGER_ACCESS' is desired by …` far more often than it
+  logs the lock obtained.
+
+**What to do.**
+1. Find the blocker: `SELECT sid, blocking_session, event, sql_id FROM v$session WHERE event
+   LIKE 'enq: TX%'`. A blocker that is not a Quartz session (a DBA script, a long transaction
+   that touched `QRTZ_LOCKS`) is ended first; nothing outside Quartz should ever lock that table.
+2. A blocker that IS a node: a node holding `TRIGGER_ACCESS` for seconds is usually starved
+   itself (pool exhausted, a GC pause, a network stall to the database). Check that node's
+   connection pool and the database round-trip before anything else.
+3. If the fleet is simply too many nodes polling one store, fewer executors per scheduler name
+   (one cluster per worker kind, jobs RFC D9) cuts acquisitions; the check-in interval is the
+   next lever (`CheckinInterval`), at the cost of slower failover.
+4. Never delete or truncate `QRTZ_LOCKS` rows on a running cluster: Quartz recreates them, but a
+   node mid-acquisition loses its lock and the cluster can fire a trigger twice.
