@@ -1,0 +1,207 @@
+GoldpathArchiveChainState.Definition: NVARCHAR2(120) not null
+GoldpathArchiveChainState.LastHash: NVARCHAR2(64) not null
+GoldpathArchiveChainState.LastIndex: NUMBER(19) not null
+GoldpathArchiveChainState.PurgedHeadHash: NVARCHAR2(64) not null
+GoldpathArchiveChainState.PurgedThroughIndex: NUMBER(19) not null
+GoldpathArchiveEntries.AggregateKey: NVARCHAR2(256) not null
+GoldpathArchiveEntries.ArchivedAt: TIMESTAMP(7) WITH TIME ZONE not null
+GoldpathArchiveEntries.ChainHash: NVARCHAR2(64) not null
+GoldpathArchiveEntries.ChainIndex: NUMBER(19) not null
+GoldpathArchiveEntries.ContentHash: NVARCHAR2(64) not null
+GoldpathArchiveEntries.Definition: NVARCHAR2(120) not null
+GoldpathArchiveEntries.Document: NVARCHAR2(2000) not null
+GoldpathArchiveEntries.DueAt: TIMESTAMP(7) WITH TIME ZONE not null
+GoldpathArchiveEntries.ErasedAt: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathArchiveEntries.Id: NUMBER(19) not null
+GoldpathArchiveEntries.PreErasureContentHash: NVARCHAR2(64) null
+GoldpathArchiveEntries.PreviousHash: NVARCHAR2(64) not null
+GoldpathArchiveEntries.SchemaVersion: NUMBER(10) not null
+GoldpathArchiveEntries.Tenant: NVARCHAR2(64) null
+GoldpathBulkBatches.CompletedAt: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathBulkBatches.DecidedAt: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathBulkBatches.DecidedBy: NVARCHAR2(256) null
+GoldpathBulkBatches.DecisionNote: NVARCHAR2(1024) null
+GoldpathBulkBatches.Definition: NVARCHAR2(128) not null
+GoldpathBulkBatches.ExecutedRows: NUMBER(10) not null
+GoldpathBulkBatches.FailedRows: NUMBER(10) not null
+GoldpathBulkBatches.FileId: RAW(16) not null
+GoldpathBulkBatches.Id: RAW(16) not null
+GoldpathBulkBatches.InvalidRows: NUMBER(10) not null
+GoldpathBulkBatches.ReceivedAt: TIMESTAMP(7) WITH TIME ZONE not null
+GoldpathBulkBatches.RunId: RAW(16) null
+GoldpathBulkBatches.State: NUMBER(10) not null
+GoldpathBulkBatches.Tenant: NVARCHAR2(128) null
+GoldpathBulkBatches.TotalRows: NUMBER(10) not null
+GoldpathBulkBatches.TraceParent: NVARCHAR2(55) null
+GoldpathBulkBatches.ValidRows: NUMBER(10) not null
+GoldpathBulkBatches.ValidatedAt: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathBulkFileChunks.Data: RAW(2000) not null
+GoldpathBulkFileChunks.FileId: RAW(16) not null
+GoldpathBulkFileChunks.Index: NUMBER(10) not null
+GoldpathBulkFiles.FileName: NVARCHAR2(260) not null
+GoldpathBulkFiles.Id: RAW(16) not null
+GoldpathBulkFiles.Length: NUMBER(19) not null
+GoldpathBulkFiles.Sha256: NVARCHAR2(64) not null
+GoldpathBulkFiles.UploadedAt: TIMESTAMP(7) WITH TIME ZONE not null
+GoldpathBulkRowErrors.BatchId: RAW(16) not null
+GoldpathBulkRowErrors.Field: NVARCHAR2(128) not null
+GoldpathBulkRowErrors.Id: NUMBER(19) not null
+GoldpathBulkRowErrors.Message: NVARCHAR2(512) not null
+GoldpathBulkRowErrors.RowNumber: NUMBER(10) not null
+GoldpathBulkRows.BatchId: RAW(16) not null
+GoldpathBulkRows.ClaimedAt: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathBulkRows.ExecutedAt: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathBulkRows.FailedAt: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathBulkRows.Payload: NVARCHAR2(2000) not null
+GoldpathBulkRows.RowNumber: NUMBER(10) not null
+GoldpathCampaignAudit.Action: NVARCHAR2(64) not null
+GoldpathCampaignAudit.Actor: NVARCHAR2(256) not null
+GoldpathCampaignAudit.At: TIMESTAMP(7) WITH TIME ZONE not null
+GoldpathCampaignAudit.CampaignId: RAW(16) not null
+GoldpathCampaignAudit.Detail: NVARCHAR2(1024) null
+GoldpathCampaignAudit.Id: NUMBER(19) not null
+GoldpathCampaignCeilings.Kind: NUMBER(10) not null
+GoldpathCampaignCeilings.MaxTps: NUMBER(10) null
+GoldpathCampaignCeilings.Name: NVARCHAR2(128) not null
+GoldpathCampaignCeilings.SeedMaxTps: NUMBER(10) null
+GoldpathCampaignCeilings.UpdatedAt: TIMESTAMP(7) WITH TIME ZONE not null
+GoldpathCampaignCeilings.UpdatedBy: NVARCHAR2(256) not null
+GoldpathCampaignItems.AckDeadline: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathCampaignItems.Attempts: NUMBER(10) not null
+GoldpathCampaignItems.CampaignId: RAW(16) not null
+GoldpathCampaignItems.ClaimedAt: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathCampaignItems.CompletedAt: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathCampaignItems.CorrelationId: NVARCHAR2(128) null
+GoldpathCampaignItems.Error: NVARCHAR2(1024) null
+GoldpathCampaignItems.ErrorCode: NVARCHAR2(64) null
+GoldpathCampaignItems.NextAttemptAt: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathCampaignItems.ReleasedAt: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathCampaignItems.Seq: NUMBER(19) not null
+GoldpathCampaignItems.State: NUMBER(10) not null
+GoldpathCampaignItems.TargetJson: NVARCHAR2(2000) not null
+GoldpathCampaignParkedCallbacks.CampaignId: RAW(16) not null
+GoldpathCampaignParkedCallbacks.CorrelationId: NVARCHAR2(128) not null
+GoldpathCampaignParkedCallbacks.Error: NVARCHAR2(1024) null
+GoldpathCampaignParkedCallbacks.ErrorCode: NVARCHAR2(64) null
+GoldpathCampaignParkedCallbacks.ReceivedAt: TIMESTAMP(7) WITH TIME ZONE not null
+GoldpathCampaignParkedCallbacks.Retryable: NUMBER(1) not null
+GoldpathCampaignParkedCallbacks.Succeeded: NUMBER(1) not null
+GoldpathCampaigns.AwaitingAckCount: NUMBER(19) not null
+GoldpathCampaigns.CompletedAt: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathCampaigns.CreatedAt: TIMESTAMP(7) WITH TIME ZONE not null
+GoldpathCampaigns.CreatedBy: NVARCHAR2(256) not null
+GoldpathCampaigns.DailyQuota: NUMBER(10) null
+GoldpathCampaigns.EndDate: NVARCHAR2(10) null
+GoldpathCampaigns.EnumeratedKey: NVARCHAR2(256) null
+GoldpathCampaigns.EnumeratedThrough: NUMBER(19) not null
+GoldpathCampaigns.EnumerationComplete: NUMBER(1) not null
+GoldpathCampaigns.ExcludedDays: NVARCHAR2(64) null
+GoldpathCampaigns.FailedCount: NUMBER(19) not null
+GoldpathCampaigns.Id: RAW(16) not null
+GoldpathCampaigns.LastVerb: NVARCHAR2(512) null
+GoldpathCampaigns.MaxAttempts: NUMBER(10) not null
+GoldpathCampaigns.MaxAwaitingAck: NUMBER(10) null
+GoldpathCampaigns.MaxInFlight: NUMBER(10) not null
+GoldpathCampaigns.Name: NVARCHAR2(256) not null
+GoldpathCampaigns.ParametersJson: NVARCHAR2(2000) not null
+GoldpathCampaigns.PolicyVersion: NUMBER(19) not null
+GoldpathCampaigns.Priority: NUMBER(10) not null
+GoldpathCampaigns.QuotaDay: NVARCHAR2(10) not null
+GoldpathCampaigns.ReleasedThrough: NUMBER(19) not null
+GoldpathCampaigns.ReleasedToday: NUMBER(19) not null
+GoldpathCampaigns.StartAt: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathCampaigns.State: NUMBER(10) not null
+GoldpathCampaigns.SucceededCount: NUMBER(19) not null
+GoldpathCampaigns.SuspendMinSample: NUMBER(10) null
+GoldpathCampaigns.SuspendOnFailureRatio: BINARY_DOUBLE null
+GoldpathCampaigns.SuspendWindow: NUMBER(10) null
+GoldpathCampaigns.SuspendedReason: NVARCHAR2(512) null
+GoldpathCampaigns.Tenant: NVARCHAR2(128) null
+GoldpathCampaigns.TimeZoneId: NVARCHAR2(64) not null
+GoldpathCampaigns.Tps: NUMBER(10) not null
+GoldpathCampaigns.Type: NVARCHAR2(128) not null
+GoldpathCampaigns.WindowEnd: NVARCHAR2(48) null
+GoldpathCampaigns.WindowFailures: NUMBER(19) not null
+GoldpathCampaigns.WindowOutcomes: NUMBER(19) not null
+GoldpathCampaigns.WindowStart: NVARCHAR2(48) null
+GoldpathCampaigns.WindowStartedAt: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathErasureRecords.Detail: NVARCHAR2(1024) null
+GoldpathErasureRecords.EntriesAffected: NUMBER(10) not null
+GoldpathErasureRecords.Id: NUMBER(19) not null
+GoldpathErasureRecords.RequestedAt: TIMESTAMP(7) WITH TIME ZONE not null
+GoldpathErasureRecords.RequestedBy: NVARCHAR2(256) not null
+GoldpathErasureRecords.SubjectKey: NVARCHAR2(256) not null
+GoldpathJobAdminAudit.Action: NVARCHAR2(32) not null
+GoldpathJobAdminAudit.Actor: NVARCHAR2(256) not null
+GoldpathJobAdminAudit.At: TIMESTAMP(7) WITH TIME ZONE not null
+GoldpathJobAdminAudit.Detail: NVARCHAR2(1024) null
+GoldpathJobAdminAudit.Fleet: NVARCHAR2(120) not null
+GoldpathJobAdminAudit.Id: NUMBER(19) not null
+GoldpathJobAdminAudit.Target: NVARCHAR2(256) not null
+GoldpathJobExecutions.DurationMs: NUMBER(19) not null
+GoldpathJobExecutions.Error: NVARCHAR2(2000) null
+GoldpathJobExecutions.FinishedAt: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathJobExecutions.FiredAt: TIMESTAMP(7) WITH TIME ZONE not null
+GoldpathJobExecutions.Id: NUMBER(19) not null
+GoldpathJobExecutions.InstanceName: NVARCHAR2(256) not null
+GoldpathJobExecutions.JobName: NVARCHAR2(150) not null
+GoldpathJobExecutions.Outcome: NVARCHAR2(16) not null
+GoldpathJobExecutions.RunId: RAW(16) null
+GoldpathJobExecutions.SchedulerName: NVARCHAR2(120) not null
+GoldpathJobItemFailures.ChunkIndex: NUMBER(10) not null
+GoldpathJobItemFailures.FailedAt: TIMESTAMP(7) WITH TIME ZONE not null
+GoldpathJobItemFailures.Id: NUMBER(19) not null
+GoldpathJobItemFailures.ItemKey: NVARCHAR2(256) not null
+GoldpathJobItemFailures.Reason: NVARCHAR2(2000) not null
+GoldpathJobItemFailures.RedrivenAt: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathJobItemFailures.RunId: RAW(16) not null
+GoldpathJobRunChunks.Attempts: NUMBER(10) not null
+GoldpathJobRunChunks.ClaimedAt: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathJobRunChunks.ClaimedBy: NVARCHAR2(256) null
+GoldpathJobRunChunks.CompletedAt: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathJobRunChunks.FireInstanceId: NVARCHAR2(256) null
+GoldpathJobRunChunks.Id: NUMBER(19) not null
+GoldpathJobRunChunks.Index: NUMBER(10) not null
+GoldpathJobRunChunks.LastError: NVARCHAR2(256) null
+GoldpathJobRunChunks.Payload: NVARCHAR2(2000) not null
+GoldpathJobRunChunks.RunId: RAW(16) not null
+GoldpathJobRunChunks.Status: NVARCHAR2(16) not null
+GoldpathJobRuns.CompletedChunks: NUMBER(10) not null
+GoldpathJobRuns.DeadlineAt: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathJobRuns.Executions: NUMBER(10) not null
+GoldpathJobRuns.FailedChunks: NUMBER(10) not null
+GoldpathJobRuns.FinishedAt: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathJobRuns.Id: RAW(16) not null
+GoldpathJobRuns.InputVersion: NVARCHAR2(256) null
+GoldpathJobRuns.ItemFailures: NUMBER(10) not null
+GoldpathJobRuns.JobName: NVARCHAR2(150) not null
+GoldpathJobRuns.PredictedFinishAt: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathJobRuns.SchedulerName: NVARCHAR2(120) not null
+GoldpathJobRuns.StartedAt: TIMESTAMP(7) WITH TIME ZONE not null
+GoldpathJobRuns.StartedBy: NVARCHAR2(256) null
+GoldpathJobRuns.Status: NVARCHAR2(16) not null
+GoldpathJobRuns.TotalChunks: NUMBER(10) not null
+GoldpathJobRuns.TotalItems: NUMBER(19) null
+GoldpathJobRuns.TriggeredBy: NVARCHAR2(256) null
+GoldpathLegalHolds.AggregateKey: NVARCHAR2(256) not null
+GoldpathLegalHolds.CaseReference: NVARCHAR2(256) not null
+GoldpathLegalHolds.Definition: NVARCHAR2(120) not null
+GoldpathLegalHolds.Id: NUMBER(19) not null
+GoldpathLegalHolds.LiftedAt: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathLegalHolds.LiftedBy: NVARCHAR2(256) null
+GoldpathLegalHolds.PlacedAt: TIMESTAMP(7) WITH TIME ZONE not null
+GoldpathLegalHolds.PlacedBy: NVARCHAR2(256) not null
+OracleDataRows.Amount: DECIMAL(18,4) not null
+OracleDataRows.At: NVARCHAR2(48) not null
+OracleDataRows.Correlation: RAW(16) not null
+OracleDataRows.Day: NVARCHAR2(10) not null
+OracleDataRows.Document: NVARCHAR2(2000) null
+OracleDataRows.EndDay: NVARCHAR2(10) null
+OracleDataRows.Flag: NUMBER(1) not null
+OracleDataRows.Id: NUMBER(19) not null
+OracleDataRows.Kind: NVARCHAR2(64) not null
+OracleDataRows.Label: NVARCHAR2(256) not null
+OracleDataRows.Note: NVARCHAR2(256) null
+OracleDataRows.StampedAt: TIMESTAMP(7) WITH TIME ZONE not null
+OracleDataRows.Tenant: NVARCHAR2(64) null
+OracleDataRows.Until: NVARCHAR2(48) null
