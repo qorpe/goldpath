@@ -30,8 +30,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     - The console governor lists, filters and counts `Ready` as live.
     - It shows the start in the policy time zone, and moves or clears it through `throttle`.
     - A local start in the spring-forward gap is refused before anything is sent. One in the repeated
-      hour asks which of its two instants is meant.
-    - The console smoke drives the move end to end.
+      hour asks which of its two instants is meant. A date the calendar does not have (`2026-02-30`,
+      `24:00`) is refused, never rolled over.
+    - A policy whose time zone is a Windows id the server accepts (`Turkey Standard Time`) is shown as
+      the instant alone, and moving its start says that the console reads IANA ids, naming the zone.
+    - A start still in the draft when a refresh shows the campaign running is not sent.
+    - The console smoke drives the move end to end, and checks that the verb log records it.
 - **Admin surfaces: a read role, `goldpath-ops-read` (admin contract R4.1, slice R4-S1, #297).**
   - **What it is:** `GoldpathPolicies.OpsRead` (Abstractions) and `GoldpathAuthOptions.OpsReadRole`
     (Auth, default `goldpath-ops-read`). `AddGoldpathAuth` registers the policy in both strategy

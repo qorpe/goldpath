@@ -467,7 +467,10 @@ test.describe("the run console against a real Goldpath app", () => {
       await page.getByRole("button", { name: "r3-scheduled" }).click();
       await expect(detail).toContainText(/Released\s*[1-9]/, { timeout: 5_000 });
     }).toPass({ timeout: 90_000 });
-    await expect(detail).toContainText("start");   // the verb log names the move
+    // The verb log names the move: a throttle entry from the start the campaign was created with to another one.
+    // (A start in the past is stored as the moment it lands, so the new value is not the minute that was typed.)
+    const original = `${later.toISOString().slice(0, 19)}Z`;
+    await expect(detail).toContainText(new RegExp(`throttled by \\S+: .* start=${original} -> .* start=(?!${original})\\d{4}-`));
   });
 
   test("campaign R1: an excluded day halts release; an end date expires the remainder into a report", async ({ page, request }) => {

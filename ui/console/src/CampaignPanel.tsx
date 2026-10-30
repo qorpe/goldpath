@@ -42,7 +42,15 @@ function wallClock(instant: number, timeZone: string): number {
     second: "2-digit",
   }).formatToParts(new Date(instant));
   const part = (type: string) => Number(parts.find((p) => p.type === type)?.value);
-  return Date.UTC(part("year"), part("month") - 1, part("day"), part("hour"), part("minute"), part("second"));
+  return utcMillis(part("year"), part("month"), part("day"), part("hour"), part("minute"), part("second"));
+}
+
+/** Date.UTC without its 0–99 → 1900–1999 year mapping. Fields out of range roll over, as Date.UTC's do. */
+function utcMillis(year: number, month: number, day: number, hour: number, minute: number, second = 0): number {
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  date.setUTCHours(hour, minute, second, 0);
+  return date.getTime();
 }
 
 /** "+03:00" for an offset in milliseconds. */
@@ -74,7 +82,12 @@ export function resolveStart(local: string, timeZone: string): StartResolution {
   const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(local);
   if (!match) return { kind: "invalid" };
   const [year, month, day, hour, minute] = match.slice(1).map(Number);
-  const naive = Date.UTC(year, month - 1, day, hour, minute);
+  const naive = utcMillis(year, month, day, hour, minute);
+  // A calendar that rolled over (2026-02-30, 24:00, month 13) is not the time the operator wrote.
+  const date = new Date(naive);
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day || date.getUTCHours() !== hour) {
+    return { kind: "invalid" };
+  }
   try {
     // The zone's offsets either side of the wall time cover any transition near it.
     const offsets = new Set([naive - 86_400_000, naive, naive + 86_400_000].map((at) => wallClock(at, timeZone) - at));
@@ -88,6 +101,19 @@ export function resolveStart(local: string, timeZone: string): StartResolution {
     return { kind: "ambiguous", earlier: instants[0], later: instants[instants.length - 1] };
   } catch {
     return { kind: "invalid" };
+  }
+}
+
+/**
+ * Whether this browser can read the zone. The server accepts what .NET does, which on Linux with ICU includes
+ * Windows ids ("Turkey Standard Time"); Intl reads IANA ids only.
+ */
+export function zoneReadable(timeZone: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone });
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -182,6 +208,9 @@ export function startProblem(draft: ThrottleDraft, timeZone: string): string | n
   const zone = draft.timeZoneId.trim() || timeZone;
   const start = resolveStart(draft.startLocal, zone);
   const [date, time] = draft.startLocal.split("T");
+  if (!zoneReadable(zone)) {
+    return `The console reads IANA time zone ids; '${zone}' is not one. Set an IANA zone (e.g. Europe/Istanbul) in this same patch.`;
+  }
   if (start.kind === "gap") return `${time} on ${date} does not exist in ${zone}: the clocks skip that hour. Choose another time.`;
   if (start.kind === "invalid") return `${draft.startLocal} cannot be read in ${zone}.`;
   if (start.kind === "ambiguous" && !draft.startChoice) return `${time} on ${date} happens twice in ${zone}: say which one.`;
@@ -274,10 +303,12 @@ export function CampaignPanel({ client }: CampaignPanelProps) {
   }, [client, selectedId, refreshToken]);
 
   const zone = selected?.timeZoneId ?? "UTC";
-  const patch = toThrottle(draft, zone);
-  const problem = startProblem(draft, zone);
+  // Once a refresh shows the campaign started, a start still in the draft is ignored: the server would refuse it.
+  const sendable = selected && BEFORE_START.has(selected.state) ? draft : { ...draft, startLocal: "", startChoice: "" as const, clearStartAt: false };
+  const patch = toThrottle(sendable, zone);
+  const problem = startProblem(sendable, zone);
   const patched = Object.keys(patch).length > 0 && problem === null;
-  const ambiguous = draft.startLocal && !draft.clearStartAt ? resolveStart(draft.startLocal, draft.timeZoneId.trim() || zone) : null;
+  const ambiguous = sendable.startLocal && !sendable.clearStartAt ? resolveStart(sendable.startLocal, sendable.timeZoneId.trim() || zone) : null;
 
   return (
     <div data-testid="campaign-panel" className="space-y-6">
@@ -473,9 +504,11 @@ export function CampaignPanel({ client }: CampaignPanelProps) {
                 },
                 {
                   key: "Start",
-                  value: selected.startAt
-                    ? `${formatInZone(selected.startAt, selected.timeZoneId)} ${selected.timeZoneId} (${selected.startAt})`
-                    : "as soon as it is ready",
+                  value: !selected.startAt
+                    ? "as soon as it is ready"
+                    : zoneReadable(selected.timeZoneId)
+                      ? `${formatInZone(selected.startAt, selected.timeZoneId)} ${selected.timeZoneId} (${selected.startAt})`
+                      : selected.startAt,   // a zone this browser cannot read: the instant alone, never beside the zone
                 },
                 { key: "Created", value: `${selected.createdAt} by ${selected.createdBy}`, mono: true },
                 { key: "Last verb", value: selected.lastVerb ?? "—" },
