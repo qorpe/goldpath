@@ -23,6 +23,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The store's provider-specific shape (QuartzStoreModel, StoreOf) is pinned from the tests. -->
+    <InternalsVisibleTo Include="Goldpath.Jobs.Tests" />
+    <InternalsVisibleTo Include="Goldpath.IntegrationTests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Mediant" />
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
