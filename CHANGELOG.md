@@ -270,6 +270,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
 ### Changed
+- **Console: jsdom 25.0.1 → 30.1.3 (#492, replaces Dependabot #470).** jsdom is the console's unit-test DOM, a dev
+  dependency, and it is now pinned exactly. vitest 5.0.5 and `@qorpe/ui` are unchanged, and the coverage floors hold
+  (98.05% statements, 91.14% branches).
+  - **What changed in jsdom:** `getComputedStyle` now reports an unstyled `<span>` as `inline`, where jsdom 25 said
+    `block`.
+  - **What it exposed:** a product console tile's accessible name (`Coexist /coexist/console/`) took its separator
+    only from Tailwind's `block` class, which jsdom does not load.
+  - **The fix:** the tile now carries the space itself. A browser renders nothing for it between two block lines, and
+    the name no longer depends on the stylesheet.
 - **Dependencies: the nuget minor/patch group of 2026-10-27.** MassTransit (and its RabbitMQ and EF Core
   packages) 8.5.11 → 8.5.12, so the conformance suite's oracle is 8.5.12. The templates, CorPay and the CLI's
   outbox recipe pin the same version, and the templates and CorPay move `System.Security.Cryptography.Pkcs` to
