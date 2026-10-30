@@ -166,13 +166,23 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
     {
         // #475: the provider sizes a HasMaxLength(-1) parameter at -1 and ODP.NET refuses a negative size for a NULL.
         // GoldpathJobExecutions.Error is null on every successful run. This fact flips when #475 lands.
+        // Asserted by behaviour, not by a stack frame: the JIT inlines the parameter setters once the path is hot.
         var connection = await oracle.CreateSchemaAsync("GP_NULL_DOCUMENT");
-        await using var db = OracleComposedDb.Create(connection);
+        var commands = new List<string>();
+        await using var db = new OracleComposedDb(new DbContextOptionsBuilder<OracleComposedDb>()
+            .UseOracle(connection, o => o.UseOracleSQLCompatibility(OracleSQLCompatibility.DatabaseVersion19))
+            .EnableServiceProviderCaching(false)
+            .LogTo(commands.Add, [RelationalEventId.CommandExecuting, RelationalEventId.CommandExecuted, RelationalEventId.CommandError])
+            .Options);
         await db.Database.EnsureCreatedAsync();
+        commands.Clear();
+
         db.Rows.Add(NewRow(1) with { Document = null });
         var refused = await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
         Assert.IsType<ArgumentOutOfRangeException>(refused.InnerException);
-        Assert.Contains(refused.InnerException!.StackTrace!.Split('\n'), frame => frame.Contains("OracleParameter.set_Size", StringComparison.Ordinal));
+        Assert.DoesNotContain(commands, line => line.Contains("INSERT", StringComparison.Ordinal));
+        db.ChangeTracker.Clear();
+        Assert.Equal(0, await db.Rows.CountAsync());
     }
 
     // ---- DateOnly / TimeOnly ----
@@ -338,6 +348,10 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
         var (db, _) = await KeysetDbAsync("GP_KEYSET_F", new SessionSortPin());
         await using (db)
         {
+            // Each open path on a fresh tr-TR pool: a session the other path already pinned would hide a missing override.
+            OracleConnection.ClearPool((OracleConnection)db.Database.GetDbConnection());
+            Assert.Equal("BINARY", SessionNlsSort(db));
+            OracleConnection.ClearPool((OracleConnection)db.Database.GetDbConnection());
             Assert.Equal("BINARY", await SessionNlsSortAsync(db));
 
             string[] labels = ["ı", "I", "i", "İ", "X", "XA", "x", "ğ", "G", "ı", "I", "X"];
@@ -368,7 +382,7 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
         await migrator.MigrateAsync();
         var tables = await UserTablesAsync(connection);
         Assert.Contains("GoldpathCampaignItems", tables);
-        Assert.Contains("qrtz_job_details", tables);
+        Assert.Contains("QRTZ_JOB_DETAILS", tables);   // upper-case on Oracle since O-3 (#406)
         Assert.Equal(model.Tables.Count() + 1, tables.Count);   // + __EFMigrationsHistory
 
         await migrator.MigrateAsync("0");
@@ -425,6 +439,22 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
         finally
         {
             await db.Database.CloseConnectionAsync();
+        }
+    }
+
+    private static string SessionNlsSort(DbContext db)
+    {
+        // The synchronous open: EF calls the interceptor's ConnectionOpened here, not ConnectionOpenedAsync.
+        db.Database.OpenConnection();
+        try
+        {
+            using var command = db.Database.GetDbConnection().CreateCommand();
+            command.CommandText = "SELECT value FROM nls_session_parameters WHERE parameter = 'NLS_SORT'";
+            return (string)command.ExecuteScalar()!;
+        }
+        finally
+        {
+            db.Database.CloseConnection();
         }
     }
 
@@ -513,6 +543,7 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
         => storeType switch
         {
             _ when storeType.StartsWith("NVARCHAR2", StringComparison.Ordinal) => "N'x'",
+            _ when storeType.StartsWith("VARCHAR2", StringComparison.Ordinal) => "'1'",   // Quartz's VARCHAR2(1) flags (O-3)
             _ when storeType.StartsWith("NUMBER", StringComparison.Ordinal) || storeType.StartsWith("DECIMAL", StringComparison.Ordinal) => "1",
             _ when storeType.StartsWith("TIMESTAMP", StringComparison.Ordinal) => "SYSTIMESTAMP",
             _ when storeType.StartsWith("RAW", StringComparison.Ordinal) => "SYS_GUID()",
@@ -587,13 +618,25 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
         }
     }
 
-    /// <summary>Pins every session to BINARY sort and comparison as its connection opens: the #496 workaround.</summary>
+    /// <summary>
+    /// Pins every session to BINARY sort and comparison as its connection opens: the #496 workaround. EF calls
+    /// <c>ConnectionOpened</c> for a synchronous open and <c>ConnectionOpenedAsync</c> for an asynchronous one, so both are pinned.
+    /// </summary>
     private sealed class SessionSortPin : DbConnectionInterceptor
     {
+        private const string Pin = "ALTER SESSION SET NLS_SORT=BINARY NLS_COMP=BINARY";
+
+        public override void ConnectionOpened(DbConnection connection, ConnectionEndEventData eventData)
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = Pin;
+            command.ExecuteNonQuery();
+        }
+
         public override async Task ConnectionOpenedAsync(DbConnection connection, ConnectionEndEventData eventData, CancellationToken cancellationToken = default)
         {
             await using var command = connection.CreateCommand();
-            command.CommandText = "ALTER SESSION SET NLS_SORT=BINARY NLS_COMP=BINARY";
+            command.CommandText = Pin;
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
     }

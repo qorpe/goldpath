@@ -50,13 +50,13 @@ public sealed class OracleComposedDb(DbContextOptions<OracleComposedDb> options)
 
     /// <summary>
     /// The model as Oracle will build it, one line per column, ordered: <c>table.column: store type [null|not null]</c>.
-    /// The Quartz <c>qrtz_*</c> tables are left out: their names and types are pinned against Quartz's own Oracle DDL
-    /// by slice O-3 (#406), which may change them.
+    /// The Quartz <c>QRTZ_*</c> tables are left out (upper-case on Oracle, so matched without regard to case): their names
+    /// and types are pinned against Quartz's own Oracle DDL by slice O-3 (#406, <c>JobsOracleTests</c>).
     /// </summary>
     public static string Describe(IModel model)
     {
         var lines = new List<string>();
-        foreach (var table in model.GetRelationalModel().Tables.Where(t => !t.Name.StartsWith("qrtz_", StringComparison.Ordinal)))
+        foreach (var table in model.GetRelationalModel().Tables.Where(t => !t.Name.StartsWith("qrtz_", StringComparison.OrdinalIgnoreCase)))
         {
             foreach (var column in table.Columns)
             {
