@@ -149,6 +149,27 @@ public class R3AwaitingAckTests
     }
 
     [Fact]
+    public async Task AFailureStraightFromProcessing_MovesNoAcknowledgement()
+    {
+        // One flush: item 1 is accepted, item 2 fails while Processing (retryable, then terminal).
+        // Only rows that LEAVE AwaitingAck may lower the count.
+        using var fixture = R2Tests.ActionFixture(sourceSize: 3);
+        fixture.Script[1] = GoldpathCampaignActionResult.Accepted("corr-1", TimeSpan.FromHours(1));
+        fixture.Script[2] = GoldpathCampaignActionResult.Failed("BUSY", "try later", retryable: true);
+        fixture.Script[3] = GoldpathCampaignActionResult.Failed("NO", "never", retryable: false);
+        var campaign = await fixture.CreateAsync(R2Tests.Generous(maxAttempts: 3));
+        await fixture.EnumerateAllAsync(campaign);
+        using (var scope = fixture.Services.CreateScope())
+        {
+            await fixture.Engine.ReleaseBatchAsync(scope.ServiceProvider, campaign, 3, CancellationToken.None);
+        }
+
+        await fixture.ConsumeAllPublishedAsync();
+        Assert.Equal(1, AwaitingAckRows(fixture, campaign.Id));
+        Assert.Equal(1, fixture.Reload(campaign.Id).AwaitingAckCount);
+    }
+
+    [Fact]
     public async Task ADriftedCounter_IsCorrectedAtTheNextSliceStart()
     {
         using var fixture = R2Tests.ActionFixture(sourceSize: 3);

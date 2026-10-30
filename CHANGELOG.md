@@ -24,13 +24,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     the policy text adds `maxAwaitingAck=…` only when either side has one, so existing audit
     text is unchanged. New gauge `goldpath_campaign_awaiting_ack`, tagged `campaign` and
     `type`, with a panel on the campaign dashboard and runbook §8 rewritten around it.
-  - **Proof:** `R3AwaitingAckTests` (22 cases), and ten planted faults that each turn them
+  - **Proof:** `R3AwaitingAckTests` (23 cases), and eleven planted faults that each turn them
     red: the pacer ignoring the field, counting only landed acceptances (one release past the
     ceiling), no clamp, no flush count (on either the success or the failure half), no slice
     re-count, the clear ignored, a non-positive ceiling accepted at create, the gauge reporting
     0. On real PostgreSQL and RabbitMQ, `CampaignR2Tests` ends with the count at 0 after
     callbacks, parking and the ack sweep, and a drifted count is re-counted by the next slice
-    (red without the re-count).
+    (red without the re-count). Mutation gate: 82.31 % (`stryker/README.md`).
   - **Not yet:** the real-broker proof with a slow-acknowledging target and the console's view
     and edit of the ceiling (R3-S6, #316).
 - **Campaign: a scheduled start and the `Ready` state (campaign RFC R3.1, slice R3-S2, #289).**
