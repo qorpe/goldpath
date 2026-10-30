@@ -85,5 +85,10 @@ jobs:
           GOLDPATH_GM_TEMPLATE: ${{ matrix.template || 'goldpath-solution' }}
           GOLDPATH_GM_POST: ${{ matrix.post || '' }}
           GOLDPATH_GM_VIA_CLI: ${{ matrix.viaCli || '' }}
-        # GM_ARGS unquoted on purpose: it is a list of dotnet new arguments.
-        run: ./scripts/validate-gm.sh "$GM_NAME" $GM_ARGS
+          GM_OFFLINE: ${{ matrix.offline || false }}
+        # GM_ARGS unquoted on purpose: it is a list of dotnet new arguments. An `offline` shape
+        # runs through validate-gm-offline.sh, which denies the runner's network itself (G14).
+        run: |
+          script=./scripts/validate-gm.sh
+          if [ "$GM_OFFLINE" = "true" ]; then script=./scripts/validate-gm-offline.sh; fi
+          "$script" "$GM_NAME" $GM_ARGS

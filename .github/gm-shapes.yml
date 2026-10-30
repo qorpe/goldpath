@@ -11,7 +11,8 @@
 # Keys: name (the shape, also the generated app's name) · args (dotnet new / goldpath new
 # arguments) · template (default goldpath-solution) · post (';'-separated goldpath verbs
 # run after generation) · viaCli ("1": generate with the CLI's verb, not dotnet new) ·
-# pr (true: also runs at PR time).
+# pr (true: also runs at PR time) · offline (true: validate-gm-offline.sh — the shape again with
+# outbound network denied, from a local feed and a local registry; GA gate G14).
 shapes:
   - name: GmOneAuthDefault
     args: ""
@@ -148,3 +149,12 @@ shapes:
     args: "--features multitenancy --features audittrail --features softdelete --features dataprotection --features locking --features notification --auth none"
     template: goldpath-worker
     pr: true
+  # The air-gapped install (GA gate G14, #338): a broker-bearing shape on PostgreSQL run twice
+  # by validate-gm-offline.sh — connected, to fill a local NuGet feed with the closure the app,
+  # its dotnet-ef tool and the CLI restore, and a local registry with every image its
+  # containers ran; then with outbound network denied (iptables; nuget.org and Docker Hub are
+  # checked unreachable first) from those two sources alone, through `goldpath db bundle`, the
+  # bundle applied twice to a real database, and the smoke. Nightly only: it is two shape runs.
+  - name: GmOffline
+    args: "--auth none"
+    offline: true

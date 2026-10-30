@@ -5,6 +5,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **The air-gapped install, proven by a golden-manifest shape (GA gate G14, #338).** CI only: no package
+  or template change.
+  - **The shape:** `GmOffline` (`.github/gm-shapes.yml`, nightly) runs through the new `scripts/validate-gm-offline.sh`.
+  - **Connected run:** `validate-gm.sh` runs the shape with its global-packages folder emptied after the repository's pack, so
+    the folder ends holding exactly the closure the app, its pinned `dotnet-ef` and the CLI restore. Every image a container ran is pushed to a
+    registry on 127.0.0.1 and removed from the daemon.
+  - **Denied run:** iptables rejects all non-loopback, non-bridge egress, including a local proxy's port. The script
+    refuses to go on unless nuget.org and Docker Hub are unreachable. The shape then runs again into an empty packages
+    folder, its `nuget.config` naming the flattened feed alone, through `goldpath db bundle`, the bundle applied twice to
+    a real PostgreSQL (the second must apply nothing), and the smoke.
+  - **Planted fault:** `GOLDPATH_GM_OFFLINE_DROP=<package id>` removes one package from the feed, and the restore must fail with
+    NU1101.
+  - **`validate-gm.sh`:** gains four knobs that only this shape sets: `GOLDPATH_GM_APP_PACKAGES`, `GOLDPATH_GM_FEED_ONLY`,
+    `GOLDPATH_GM_CLI` and `GOLDPATH_GM_BEFORE_SMOKE`. Every other shape runs exactly as before.
+  - **Docs:** the steps, by hand, are `docs/ops/air-gapped-install.md`. What one shape leaves uncovered is open-threads T56.
 - **The Data module, proven on Oracle (GA gate G7, slice O-2, #405).** Tests only: no package changes.
   `OracleDataTests` (`Category=Oracle`) runs on the O-1 lane's container, one schema per fact, against a model that
   composes Jobs, Campaign, Bulk and Archival in the 19c SQL form:
