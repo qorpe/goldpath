@@ -32,6 +32,32 @@ public sealed class OracleFixture : IAsyncLifetime
     }
 
     public Task DisposeAsync() => _oracle.DisposeAsync().AsTask();
+
+    /// <summary>
+    /// A fresh, empty schema (an Oracle user) on the container, created as SYSTEM, so a test that needs an empty
+    /// database does not depend on another test's order. Returns its ODP.NET connection string.
+    /// </summary>
+    public async Task<string> CreateSchemaAsync(string name)
+    {
+        var app = new OracleConnectionStringBuilder(ConnectionString);
+        var system = new OracleConnectionStringBuilder(ConnectionString) { UserID = "system" };
+        await using (var connection = new OracleConnection(system.ConnectionString))
+        {
+            await connection.OpenAsync();
+            foreach (var statement in new[]
+            {
+                $"CREATE USER {name} IDENTIFIED BY \"{app.Password}\" QUOTA UNLIMITED ON USERS",
+                $"GRANT CREATE SESSION, CREATE TABLE, CREATE SEQUENCE, CREATE VIEW, CREATE PROCEDURE, CREATE TRIGGER TO {name}",
+            })
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandText = statement;
+                await command.ExecuteNonQueryAsync();
+            }
+        }
+
+        return new OracleConnectionStringBuilder(ConnectionString) { UserID = name }.ConnectionString;
+    }
 }
 
 /// <summary>The collection every Oracle-backed test class joins, so they share one container.</summary>

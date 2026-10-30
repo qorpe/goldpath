@@ -10,6 +10,12 @@ public enum GoldpathJobStoreProvider
 
     /// <summary>SQL Server.</summary>
     SqlServer,
+
+    /// <summary>
+    /// Oracle (G7). Quartz's <c>OracleDelegate</c> over ODP.NET managed: the application references
+    /// <c>Oracle.ManagedDataAccess.Core</c>, which Quartz loads by name; this package takes no Oracle dependency.
+    /// </summary>
+    Oracle = 2,
 }
 
 /// <summary>

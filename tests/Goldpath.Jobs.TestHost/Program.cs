@@ -1,7 +1,9 @@
 // The killable half of the clustered-recovery proofs: a REAL executor process the
 // integration test spawns and Process.Kill()s mid-run (in-process hosts can only die
 // gracefully — a kill-9 needs a process). Usage:
-//   Goldpath.Jobs.TestHost <connectionString> [--trigger]            (jobs cluster mode)
+//   Goldpath.Jobs.TestHost <connectionString> [--trigger] [--provider oracle]
+//                                                                   (jobs cluster mode; PostgreSQL unless
+//                                                                    --provider oracle, G7 O-3 #406)
 //   Goldpath.Jobs.TestHost <connectionString> --bulk --fleet <name>  (bulk executor mode)
 //   Goldpath.Jobs.TestHost <connectionString> --console <url> [--broker <amqp>]
 //                                              [--secured] [--multitenant] [--fleet <name>]
@@ -18,12 +20,14 @@ using Goldpath.Jobs.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Oracle.EntityFrameworkCore.Infrastructure;
 using Quartz;
 
 var connectionString = args[0];
 var bulkMode = args.Contains("--bulk");
 var consoleMode = args.Contains("--console");
 var fleet = args.Contains("--fleet") ? args[Array.IndexOf(args, "--fleet") + 1] : "it-cluster";
+var onOracle = args.Contains("--provider") && args[Array.IndexOf(args, "--provider") + 1] == "oracle";
 
 if (consoleMode)
 {
@@ -39,7 +43,17 @@ if (consoleMode)
 
 var builder = Host.CreateApplicationBuilder();
 builder.Configuration["ConnectionStrings:jobsdb"] = connectionString;
-builder.Services.AddDbContext<ClusterDb>(o => o.UseNpgsql(connectionString));
+builder.Services.AddDbContext<ClusterDb>(o =>
+{
+    if (onOracle)
+    {
+        o.UseOracle(connectionString, oracle => oracle.UseOracleSQLCompatibility(OracleSQLCompatibility.DatabaseVersion19));
+    }
+    else
+    {
+        o.UseNpgsql(connectionString);
+    }
+});
 if (bulkMode)
 {
     builder.Services.AddScoped<IGoldpathBulkRowHandler<ClusterPaymentRow>, SlowPaymentHandler>();
@@ -56,6 +70,7 @@ builder.AddGoldpathJobs<HostApplicationBuilder, ClusterDb>(jobs =>
 {
     jobs.SchedulerName = fleet;
     jobs.ConnectionName = "jobsdb";
+    jobs.Provider = onOracle ? GoldpathJobStoreProvider.Oracle : GoldpathJobStoreProvider.Postgres;
     jobs.CheckinInterval = TimeSpan.FromSeconds(1);
     jobs.CheckinMisfireThreshold = TimeSpan.FromSeconds(3);
     if (bulkMode)

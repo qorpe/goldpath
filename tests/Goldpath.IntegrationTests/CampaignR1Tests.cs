@@ -124,20 +124,15 @@ public sealed class CampaignR1Tests : IAsyncLifetime
             await Task.Delay(200, token);
         }
 
-        // R1.4: sample one-second windows while both campaigns are hungry. The bucket
-        // banks at most ONE second of tokens, so a window may see a burst of up to
-        // GlobalTps plus one tick's refill — never two campaigns' worth.
-        var previous = Released();
+        // R1.4 (strict since #292): let both campaigns run hungry for a few seconds, then read when
+        // every item was released and check each one-second window, at tick granularity, against
+        // GlobalTps itself — no tolerance. The first release after the campaigns appear follows a
+        // stretch in which the global bucket refilled with nothing to release: the burst case.
         var sampled = 0;
         while (sampled < 6 && !Query(db => db.Set<GoldpathCampaign>().AsNoTracking()
             .All(c => c.ReleasedThrough >= c.EnumeratedThrough && c.EnumerationComplete)))
         {
             await Task.Delay(1_000, token);
-            var current = Released();
-            var delta = current - previous;
-            Assert.True(delta <= GlobalTps + GlobalTps / 2,
-                $"one-second window released {delta} > global ceiling {GlobalTps} (+tolerance)");
-            previous = current;
             sampled++;
         }
 
@@ -174,5 +169,52 @@ public sealed class CampaignR1Tests : IAsyncLifetime
             token.ThrowIfCancellationRequested();
             await Task.Delay(500, token);
         }
+
+        // The halt was an idle stretch too: the global bucket kept refilling while nothing released. Two more seconds of
+        // release after the lift, then every one-second window of the whole run — start, halt, resume — is held to
+        // GlobalTps itself.
+        await Task.Delay(2_000, token);
+        var worst = WorstSecondOfTicks(Query(db => db.Set<GoldpathCampaignItem>().AsNoTracking()
+            .Where(i => i.ReleasedAt != null)
+            .Select(i => i.ReleasedAt!.Value)
+            .ToList()));
+        Assert.True(worst.Released <= GlobalTps,
+            $"one second of ticks (from {worst.From:HH:mm:ss.fff}) released {worst.Released} > global ceiling {GlobalTps}");
+    }
+
+    /// <summary>
+    /// The most any one second of pacer ticks released, from the items' release stamps. A tick stamps each campaign's
+    /// batch with one instant, so stamps closer than half a tick are one tick; a gap of several ticks counts as the ticks
+    /// it spans, so a window never holds more ticks than one second has. A re-released item keeps only its last stamp,
+    /// which can hide a release but never invent one.
+    /// </summary>
+    private static (DateTimeOffset From, int Released) WorstSecondOfTicks(List<DateTimeOffset> stamps)
+    {
+        var tick = TimeSpan.FromMilliseconds(100);   // the host's LeaderTick
+        var perSecond = (int)(TimeSpan.FromSeconds(1).Ticks / tick.Ticks);
+        var ticks = new List<(DateTimeOffset At, long Index, int Released)>();
+        foreach (var stamp in stamps.Order())
+        {
+            if (ticks.Count > 0 && stamp - ticks[^1].At < tick / 2)
+            {
+                ticks[^1] = (ticks[^1].At, ticks[^1].Index, ticks[^1].Released + 1);
+                continue;
+            }
+
+            var index = ticks.Count == 0 ? 0 : ticks[^1].Index + Math.Max(1, (long)Math.Round((stamp - ticks[^1].At) / tick));
+            ticks.Add((stamp, index, 1));
+        }
+
+        var worst = (From: DateTimeOffset.MinValue, Released: 0);
+        foreach (var first in ticks)
+        {
+            var released = ticks.Where(t => t.Index >= first.Index && t.Index < first.Index + perSecond).Sum(t => t.Released);
+            if (released > worst.Released)
+            {
+                worst = (first.At, released);
+            }
+        }
+
+        return worst;
     }
 }
