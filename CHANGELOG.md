@@ -282,6 +282,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **Campaign: no second of pacer ticks releases more than its ceiling, even after an idle stretch (#292,
+  S-FLEET-03).** Every hard-ceiling bucket (a campaign's `Tps`, a type's `MaxTps`, the `GlobalTps`)
+  banked up to a whole second of tokens. What it saved while nothing released (a closed window, a full
+  in-flight cap, a pause, a spent quota) was spent in one tick when release resumed, so one second could
+  release the ceiling plus all but one tick of refill: 1.75 times the ceiling at the default 250 ms tick.
+  - **Now:** a bucket holds one tick's refill, plus the largest fraction a refill can leave behind (none
+    when the refill is a whole number of units). When `LeaderTick` divides one second (the default
+    250 ms does), the ticks of any one second therefore release at most the ceiling. A tick that does not
+    divide a second fits one more tick into some seconds, so such a second can release up to one more
+    tick's refill (56 against 50 at a 140 ms tick); that was already so before this change, and
+    `LeaderTick`'s documentation now says so. The steady rate is unchanged: 2.5 a tick still spends 2,
+    then 3. Each refill is snapped to the exact grid of its fraction, so floating point never costs a
+    unit at the cap: ten refills of 0.1 are exactly one, where 0.9999999999999999 would have released
+    2/s at a 50 ms tick as 1.82/s. No public API, option or migration changes.
+  - **Proof:** `BurstControlTests` counts each tick's releases exactly through the pacer's own tick scope.
+    After 30 idle ticks, the three buckets each released 100 in one tick and 195 in one second against a
+    ceiling of 100; now 5 a tick. S-FLEET-03 at its own numbers (GlobalTps 1000, two campaigns at 800):
+    1950 in one second before, at most 1000 now. `CampaignR1Tests` on RabbitMQ and PostgreSQL drops its
+    +50% tolerance and holds every second of ticks of the run to `GlobalTps` itself.
 - **`Goldpath.Messaging.Wolverine` (not published) is wire-compatible with a MassTransit fleet:
   S4, mixed-fleet compatibility, in the conformance suite (GA gate G5 Part 4/5, #333).**
   `MixedFleetTests` runs a MassTransit 8.5.11 process and a Wolverine process on one RabbitMQ and one
