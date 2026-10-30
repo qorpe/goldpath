@@ -56,3 +56,25 @@ public sealed class AuditTrailOracleTests(OracleFixture oracle) : AuditTrailFact
     protected override async Task<Action<DbContextOptionsBuilder>> OpenDatabaseAsync()
         => OracleTwin.Use(await oracle.CreateSchemaAsync($"GP_AUDIT_{Interlocked.Increment(ref _schemas)}"));
 }
+
+/// <summary>
+/// <see cref="NotificationFacts"/> on Oracle, with the Quartz store on Oracle too (O-3). The webhook alert's template exists
+/// only in the invariant culture, whose name is the empty string, and #502 is that Oracle refuses it.
+/// </summary>
+[Trait("Category", "Oracle")]
+[Collection(OracleCollection.Name)]
+public sealed class NotificationOracleTests(OracleFixture oracle) : NotificationFacts
+{
+    private static int _schemas;
+
+    protected override GoldpathJobStoreProvider JobStore => GoldpathJobStoreProvider.Oracle;
+
+    protected override string? InvariantCultureRefusedUnder => "#502";
+
+    protected override Task<string> StartDatabaseAsync()
+        => oracle.CreateSchemaAsync($"GP_NOTIFY_{Interlocked.Increment(ref _schemas)}");
+
+    protected override Task StopDatabaseAsync() => Task.CompletedTask;   // the collection's container is the fixture's
+
+    protected override void Use(DbContextOptionsBuilder options, string connection) => OracleTwin.Use(connection)(options);
+}
