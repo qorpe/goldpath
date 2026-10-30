@@ -105,14 +105,21 @@ public static class GoldpathJobsExtensions
             {
                 store.UseProperties = true;
                 store.RetryInterval = TimeSpan.FromSeconds(15);
+                // Every provider is its own case: an unknown value must never quietly become a PostgreSQL store.
                 switch (options.Provider)
                 {
+                    case GoldpathJobStoreProvider.Postgres:
+                        store.UsePostgres(pg => pg.ConnectionString = connectionString);
+                        break;
                     case GoldpathJobStoreProvider.SqlServer:
                         store.UseSqlServer(sql => sql.ConnectionString = connectionString);
                         break;
-                    default:
-                        store.UsePostgres(pg => pg.ConnectionString = connectionString);
+                    case GoldpathJobStoreProvider.Oracle:
+                        store.UseOracle(oracle => oracle.ConnectionString = connectionString);
                         break;
+                    default:
+                        throw new InvalidOperationException(
+                            $"Goldpath:Jobs:Provider '{options.Provider}' is not a store this module knows (Postgres, SqlServer, Oracle).");
                 }
 
                 store.UseSystemTextJsonSerializer();

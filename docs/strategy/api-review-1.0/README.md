@@ -48,4 +48,6 @@ A table fails the gate on:
 - a `rename` or `experimental` row without a target;
 - a duplicate row;
 - a `keep` in an experimental package (Approvals and FileExchange: GA readiness Q4);
+- an `experimental` in Approvals or FileExchange naming another id than its package's (`GPEXP001` /
+  `GPEXP002`, compared exactly), or an `experimental` in any other package naming one of those two ids;
 - a missing or extra file, or a wrong header.

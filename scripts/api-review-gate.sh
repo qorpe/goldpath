@@ -141,6 +141,8 @@ def check(root, require_complete=False, only=None, require_applied=False):
                 findings.append(f"{where}: a '{verdict}' needs a target ({'the full new ledger line' if verdict == 'rename' else 'the diagnostic id'})")
             if verdict == "experimental" and row["target"] and package in EXPERIMENTAL_PACKAGES and row["target"] != EXPERIMENTAL_PACKAGES[package]:
                 findings.append(f"{where}: an 'experimental' in {package} names '{row['target']}', not its diagnostic id {EXPERIMENTAL_PACKAGES[package]}")
+            if verdict == "experimental" and package not in EXPERIMENTAL_PACKAGES and row["target"] in EXPERIMENTAL_PACKAGES.values():
+                findings.append(f"{where}: an 'experimental' in {package} names '{row['target']}', which is another package's diagnostic id")
             if verdict == "keep" and package in EXPERIMENTAL_PACKAGES:
                 findings.append(f"{where}: {package} ships [Experimental] at 1.0 (GA readiness Q4): 'keep' is not a verdict there")
             if row["line"] not in live[package]:
@@ -255,7 +257,11 @@ def selftest():
         ("an experimental without a target", {}, lambda r: add_row(r, X, first_live(r, X), "experimental", "", "Q4")),
         ("a duplicate row", {}, lambda r: (add_row(r, P, first_live(r, P)), add_row(r, P, first_live(r, P)))),
         ("a keep in an experimental package", {}, lambda r: add_row(r, X, first_live(r, X))),
-        ("an experimental naming another package's diagnostic id", {}, lambda r: add_row(r, X, first_live(r, X), "experimental", "GPEXP999", "Q4")),
+        # The ids are literals here, never read from EXPERIMENTAL_PACKAGES, so a swapped mapping goes red.
+        ("an experimental naming another package's diagnostic id", {}, lambda r: add_row(r, X, first_live(r, X), "experimental", "GPEXP001", "Q4")),
+        ("an experimental naming an id no package has", {}, lambda r: add_row(r, X, first_live(r, X), "experimental", "GPEXP999", "Q4")),
+        ("an experimental naming its package's id in the wrong case", {}, lambda r: add_row(r, X, first_live(r, X), "experimental", "gpexp002", "Q4")),
+        ("an experimental outside Approvals/FileExchange naming their id", {}, lambda r: add_row(r, P, first_live(r, P), "experimental", "GPEXP002", "Q4")),
         ("a package's TSV missing", {}, lambda r: os.remove(os.path.join(r, TABLES, f"{P}.tsv"))),
         ("a TSV for a package with no ledger", {}, lambda r: shutil.copy(os.path.join(r, TABLES, f"{P}.tsv"), os.path.join(r, TABLES, "Goldpath.Ghost.tsv"))),
         ("a wrong header", {}, lambda r: open(os.path.join(r, TABLES, f"{P}.tsv"), "w", encoding="utf-8").write("line\tverdict\n")),
@@ -301,7 +307,7 @@ def selftest():
     # An experimental package reviewed line by line under its own diagnostic id is complete and green.
     experimental = scratch()
     for line in sorted(ledgers(experimental)[X]):
-        add_row(experimental, X, line, "experimental", EXPERIMENTAL_PACKAGES[X], "Q4")
+        add_row(experimental, X, line, "experimental", "GPEXP002", "Q4")
     if check(experimental, require_complete=True, only={X})[0]:
         failures.append(f"an experimental package under its own id went red: {check(experimental, require_complete=True, only={X})[0][:3]}")
 
@@ -339,11 +345,12 @@ def selftest():
 
 
 args = sys.argv[1:]
-if args[:1] == ["--selftest"]:
+# A mode that takes no arguments refuses any: `--require-applied --package X` must not read as package-scoped.
+if args == ["--selftest"]:
     sys.exit(selftest())
-if args[:1] == ["--list-non-keep"]:
+if args == ["--list-non-keep"]:
     sys.exit(list_non_keep("."))
-if args[:1] == ["--require-applied"]:
+if args == ["--require-applied"]:
     findings, summary = check(".", require_applied=True)
     sys.exit(report(findings, summary, "require-applied"))
 if args[:1] == ["--require-complete"]:

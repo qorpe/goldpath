@@ -16,7 +16,7 @@ Owner decision on #390, 2026-10-24: option (a), the record here and the tables t
   `--require-complete` fails on an uncovered one once the record is complete (§5).
 - **The non-.NET surfaces** listed in §2, each with its own freeze gate.
 
-At this record's commit (`main` 463e79f) the gate counts **2,657 live lines in 23 packages**. The count
+At this record's commit (`main` b1afb82) the gate counts **2,658 live lines in 23 packages**. The count
 moves before the review runs, for three reasons:
 - #335 (PublicApiAnalyzers 5.x) regenerates every ledger and adds record-synthesized members;
 - #329 moves MassTransit-typed lines into an adapter package;
@@ -101,13 +101,13 @@ the verdict is not `keep`:
 
 | Review part | Packages (live lines) | Lines |
 |---|---|---:|
-| API-2 (#391) | Goldpath.Jobs 423 | 423 |
+| API-2 (#391) | Goldpath.Jobs 424 | 424 |
 | API-3 (#392) | Goldpath.Bulk 253, Goldpath.Archival 197 | 450 |
 | API-4 (#393) | Goldpath.Notification 247, Goldpath.Abstractions 61, Goldpath.Idempotency 29, Goldpath.DataProtection 29, Goldpath.Caching 14, Goldpath.SoftDelete 10 | 390 |
 | API-5 (#394) | Goldpath.Approvals 275, Goldpath.FileExchange 187 | 462 |
 | API-6 (#395) | Goldpath.Campaign 519 | 519 |
 | API-7 (#396) | Goldpath.Messaging 140, Goldpath.Data 33, Goldpath.Locking 19, Goldpath.Locking.SqlServer 2, Goldpath.AuditTrail 44, Goldpath.Auth 45, Goldpath.MultiTenancy 36, Goldpath.ApiDefaults 25, Goldpath.ServiceDefaults 32, Goldpath.Sdk 17, Goldpath.Console 20 | 413 |
-| **All** | 23 packages | **2,657** |
+| **All** | 23 packages | **2,658** |
 
 Each part re-measures at its own commit with the gate. These numbers are this record's snapshot, not
 a promise.
@@ -118,7 +118,7 @@ a promise.
 
 | Mode | Fails on |
 |---|---|
-| (default) report | a stale row (a `keep`/`experimental` whose line is no longer live, or a `rename` whose source and target are both not live), an unknown verdict, a non-keep without a reason, a `rename`/`experimental` without a target, an `experimental` in Approvals or FileExchange naming another id than its package's, a duplicate row, a `keep` in an experimental package, a missing or extra TSV, a wrong header or a malformed row |
+| (default) report | a stale row (a `keep`/`experimental` whose line is no longer live, or a `rename` whose source and target are both not live), an unknown verdict, a non-keep without a reason, a `rename`/`experimental` without a target, an `experimental` in Approvals or FileExchange naming another id than its package's (compared exactly), an `experimental` in any other package naming one of those two ids, a duplicate row, a `keep` in an experimental package, a missing or extra TSV, a wrong header or a malformed row |
 | `--require-complete [--package P …]` | the above, plus any live line that is neither a row nor a `rename`'s target (all packages, or the named ones) |
 | `--require-applied` | the report mode's checks, plus, after API-14: a `rename`/`remove` whose source line is still live, or a live line that is neither kept, experimental nor a rename's target |
 | `--list-non-keep` | nothing: it prints the owner's reading list for API-13 |
@@ -145,12 +145,13 @@ None. The record is a build-time artefact: no runtime surface, metric or runbook
 ## 7. Test Plan — the coverage proof
 
 - **The proof that the review covers 100% of lines** is `./scripts/api-review-gate.sh
-  --require-complete` green at the review's commit. Today it is red, with 0 of 2,657 covered, by
+  --require-complete` green at the review's commit. Today it is red, with 0 of 2,658 covered, by
   design.
-- **The gate's own proof** is `--selftest`. It plants 23 faults, each red, against four green
+- **The gate's own proof** is `--selftest`. It plants 26 faults, each red, against four green
   controls: the unplanted tree, a line matched across one `[ID]` prefix, an experimental package
   reviewed under its own diagnostic id, and an applied review checked in all three modes. Each check of the checker can be removed to show the selftest go red; for example,
-  disabling the experimental-package `keep` rule turns its planted fault "NOT caught".
+  disabling the experimental-package `keep` rule turns its planted fault "NOT caught". The diagnostic ids in the planted faults and the controls are literals, never read
+  from the mapping under test, so a gate that swapped `GPEXP001` and `GPEXP002` goes red.
 - **The numbers in §4** are the gate's output at the PR's commit (§1), never typed by hand.
 
 ## 8. Sign-off

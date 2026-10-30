@@ -102,19 +102,35 @@ public sealed class GoldpathJobsFleetRegistry<TContext> : IGoldpathJobsFleetRegi
             ["quartz.scheduler.instanceId"] = "AUTO",
             ["quartz.threadPool.threadCount"] = "1",
             ["quartz.jobStore.type"] = "Quartz.Impl.AdoJobStore.JobStoreTX, Quartz",
-            ["quartz.jobStore.driverDelegateType"] = _provider == GoldpathJobStoreProvider.SqlServer
-                ? "Quartz.Impl.AdoJobStore.SqlServerDelegate, Quartz"
-                : "Quartz.Impl.AdoJobStore.PostgreSQLDelegate, Quartz",
+            ["quartz.jobStore.driverDelegateType"] = QuartzStoreProviders.StoreOf(_provider).DriverDelegateType,
             ["quartz.jobStore.tablePrefix"] = "qrtz_",
             ["quartz.jobStore.useProperties"] = "true",
             ["quartz.jobStore.clustered"] = "true",
             ["quartz.jobStore.dataSource"] = "default",
             ["quartz.dataSource.default.connectionString"] = _connectionString,
-            ["quartz.dataSource.default.provider"] = _provider == GoldpathJobStoreProvider.SqlServer ? "SqlServer" : "Npgsql",
+            ["quartz.dataSource.default.provider"] = QuartzStoreProviders.StoreOf(_provider).DataSourceProvider,
             ["quartz.serializer.type"] = "stj",
         };
 
         var factory = new StdSchedulerFactory(properties);
         return await factory.GetScheduler();
     }
+}
+
+/// <summary>The Quartz ADO settings each store provider runs on.</summary>
+internal static class QuartzStoreProviders
+{
+    /// <summary>
+    /// Quartz's driver delegate and ADO provider name for a store: the same pair <c>UsePostgres</c>,
+    /// <c>UseSqlServer</c> and <c>UseOracle</c> set on the executing members, so a management head reads the
+    /// store the way the cluster writes it. An unknown provider is refused, never read as PostgreSQL.
+    /// </summary>
+    internal static (string DriverDelegateType, string DataSourceProvider) StoreOf(GoldpathJobStoreProvider provider) => provider switch
+    {
+        GoldpathJobStoreProvider.Postgres => ("Quartz.Impl.AdoJobStore.PostgreSQLDelegate, Quartz", "Npgsql"),
+        GoldpathJobStoreProvider.SqlServer => ("Quartz.Impl.AdoJobStore.SqlServerDelegate, Quartz", "SqlServer"),
+        GoldpathJobStoreProvider.Oracle => ("Quartz.Impl.AdoJobStore.OracleDelegate, Quartz", "OracleODPManaged"),
+        _ => throw new InvalidOperationException(
+            $"Goldpath:Jobs:Provider '{provider}' is not a store this module knows (Postgres, SqlServer, Oracle)."),
+    };
 }
