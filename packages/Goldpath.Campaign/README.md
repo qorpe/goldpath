@@ -94,7 +94,8 @@ and nothing else — no ops credential. Unsigned, stale (more than five minutes 
 is `401`; mapping the surface with no signing type refuses to start (GP1704 at build time).
 A callback that arrives before its acceptance is visible is parked (`202`) and settles when
 the acceptance lands. An accepted item holds an in-flight slot until its answer or its
-deadline, so size `MaxInFlight` for the acceptances a campaign keeps outstanding.
+deadline, so size `MaxInFlight` for the acceptances a campaign keeps outstanding — or give the
+acceptances a ceiling of their own with `MaxAwaitingAck` (R3, below).
 
 An operator sets `Priority` (High · Normal · Low) on the policy — live, through the throttle
 verb — and a contended ceiling (`GlobalTps`, a type's `MaxTps`) splits 3 : 2 : 1 by weighted
@@ -125,6 +126,40 @@ has started (`Running`, or anything released); after that the move is refused. A
 past means now, and a start after the end date's local day is refused. `pause` accepts a
 `Ready` campaign, and `resume` returns it to `Ready` while its start is still ahead. A `Ready`
 campaign past its end date expires, like a running one.
+
+## R3: a ceiling for outstanding acknowledgements
+
+With acknowledgement deadlines in hours, `MaxInFlight` sized for the acceptances a campaign
+keeps outstanding (about `Tps × ackTimeout`) no longer limits the live calls hitting the target
+system. `MaxAwaitingAck` splits the two:
+
+```csharp
+// Ten calls at a time into the adapter, and up to fifty thousand devices allowed to answer later.
+new GoldpathCampaignThrottle(Tps: 200, MaxInFlight: 10) { MaxAwaitingAck = 50_000 }
+```
+
+- **Null (the default) is R2's rule, line for line:** an acceptance keeps its `MaxInFlight` slot.
+- **Set, `MaxInFlight` caps live work:** everything in flight except the acceptances. A retry
+  waiting on its rung keeps its slot, as in R2.
+- **`MaxAwaitingAck` caps the acceptances.** A release holds room under both ceilings until its
+  outcome says which one it stays under, since any live call may come back accepted. So the
+  pacer releases only while `MaxAwaitingAck − in flight` is positive too, and the number of
+  acceptances never passes the ceiling.
+- **How it is counted:** the campaign row's `AwaitingAckCount` is kept by the outcome flush,
+  which counts the rows it moved into and out of `AwaitingAck`; the ack sweep goes through the
+  same flush. Like every counter here it is a cache: the leader re-counts it from the items at
+  the start of every leadership slice.
+- **What is exact and what is not:** the acceptance ceiling is read from the watermarks
+  (`ReleasedThrough − SucceededCount − FailedCount`), so it holds whatever the count says. The
+  split of live work from acceptances rides the cached count. A flush's item updates and its
+  counter update are separate statements, so a re-count that lands between them can be off by
+  that flush's rows until the next slice, and `MaxInFlight` by as much. The pacer clamps the
+  count to what is in flight, so a wrong count can never make live work look negative.
+- **Where it shows:** the detail returns `MaxAwaitingAck` and `AwaitingAck`, and the
+  `goldpath_campaign_awaiting_ack` gauge is tagged like `goldpath_campaign_in_flight`.
+- **Changing it:** `throttle` sets it (`maxAwaitingAck`, positive; omitted keeps it) or clears it
+  (`clearMaxAwaitingAck`, back to R2's rule), audited old → new. The console does not show or edit
+  it yet (R3-S6, #316).
 
 ## The guarantees
 

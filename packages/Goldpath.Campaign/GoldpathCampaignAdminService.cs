@@ -42,6 +42,15 @@ public sealed record GoldpathCampaignInfo(
     /// snapshot is ready. The console shows it in <see cref="TimeZoneId"/>.
     /// </summary>
     public DateTimeOffset? StartAt { get; init; }
+
+    /// <summary>The ceiling on items awaiting a callback (R3.4); null = they count against <see cref="MaxInFlight"/>.</summary>
+    public int? MaxAwaitingAck { get; init; }
+
+    /// <summary>
+    /// Items awaiting a callback (R3.4): the sink's running count, re-counted from the items at
+    /// each leadership slice, so it can lag a flush that has not landed yet.
+    /// </summary>
+    public long AwaitingAck { get; init; }
 }
 
 /// <summary>One failed item (the drill-down; REPLAY delegates to the jobs console).</summary>
@@ -72,6 +81,12 @@ public sealed record GoldpathCampaignThrottle(
 
     /// <summary>Clears the scheduled start (R3.1): the campaign starts as soon as its snapshot is ready.</summary>
     public bool ClearStartAt { get; init; }
+
+    /// <summary>Sets the ceiling on items awaiting a callback (R3.4); null keeps it. Must be positive.</summary>
+    public int? MaxAwaitingAck { get; init; }
+
+    /// <summary>Clears that ceiling (R3.4): acceptances count against <c>MaxInFlight</c> again, as in R2.</summary>
+    public bool ClearMaxAwaitingAck { get; init; }
 }
 
 /// <summary>
@@ -113,6 +128,12 @@ public sealed class GoldpathCampaignAdminService<TContext>
                 $"No campaign type named '{type}' — registered: {string.Join(", ", _options.TypeMap.Keys)}.");
         }
 
+        if (policy?.MaxAwaitingAck is <= 0)
+        {
+            // R3.4: a ceiling of zero would create a campaign that never releases, and say nothing.
+            return new GoldpathAdminResult(false, "MaxAwaitingAck must be positive — omit it to keep acceptances under MaxInFlight.");
+        }
+
         var now = _time.GetUtcNow();
         var defaults = _options.Type(type).DefaultPolicy;
         var effective = policy is null ? defaults : Apply(defaults, policy, now);
@@ -125,7 +146,7 @@ public sealed class GoldpathCampaignAdminService<TContext>
         var campaign = await _engine.CreateAsync(scope.ServiceProvider, type, name, parameters, effective, tenant, actor, ct);
         var db = scope.ServiceProvider.GetRequiredService<TContext>();
         await AuditAsync(db, campaign.Id, "create", actor,
-            $"type={type} policy=({Describe(effective, effective.StartAt is not null)})", ct);
+            $"type={type} policy=({Describe(effective, effective.StartAt is not null, effective.MaxAwaitingAck is not null)})", ct);
         return new GoldpathAdminResult(true, $"Campaign '{name}' created as {campaign.Id:N} ({type}).");
     }
 
@@ -286,7 +307,7 @@ public sealed class GoldpathCampaignAdminService<TContext>
     /// <summary>The LIVE throttle (D6): patches policy on the row; takes effect within one leader tick.</summary>
     public Task<GoldpathAdminResult> ThrottleAsync(Guid id, GoldpathCampaignThrottle patch, string actor, CancellationToken ct)
     {
-        if (patch.Tps is <= 0 || patch.MaxInFlight is <= 0 || patch.DailyQuota is <= 0 || patch.MaxAttempts is <= 0)
+        if (patch.Tps is <= 0 || patch.MaxInFlight is <= 0 || patch.DailyQuota is <= 0 || patch.MaxAttempts is <= 0 || patch.MaxAwaitingAck is <= 0)
         {
             return Task.FromResult(new GoldpathAdminResult(false, "Throttle values must be positive."));
         }
@@ -342,7 +363,8 @@ public sealed class GoldpathCampaignAdminService<TContext>
             }
 
             var showStart = current.StartAt is not null || effective.StartAt is not null;
-            var before = Describe(current, showStart);
+            var showAck = current.MaxAwaitingAck is not null || effective.MaxAwaitingAck is not null;
+            var before = Describe(current, showStart, showAck);
             campaign.Tps = effective.Tps;
             campaign.DailyQuota = effective.DailyQuota;
             campaign.MaxInFlight = effective.MaxInFlight;
@@ -354,7 +376,8 @@ public sealed class GoldpathCampaignAdminService<TContext>
             campaign.MaxAttempts = effective.MaxAttempts;
             campaign.Priority = effective.Priority;
             campaign.StartAt = effective.StartAt;
-            campaign.LastVerb = $"throttled by {actor}: {before} -> {Describe(effective, showStart)}";
+            campaign.MaxAwaitingAck = effective.MaxAwaitingAck;
+            campaign.LastVerb = $"throttled by {actor}: {before} -> {Describe(effective, showStart, showAck)}";
             return null;
         }, ct, detailFactory: campaign => campaign.LastVerb);
     }
@@ -424,6 +447,8 @@ public sealed class GoldpathCampaignAdminService<TContext>
             eta, c.CreatedAt, c.CreatedBy, c.CompletedAt, c.LastVerb, c.Tenant)
         {
             StartAt = c.StartAt,
+            MaxAwaitingAck = c.MaxAwaitingAck,
+            AwaitingAck = c.AwaitingAckCount,
         };
     }
 
@@ -450,6 +475,7 @@ public sealed class GoldpathCampaignAdminService<TContext>
                 : patch.StartAt is { } start
                     ? (start < now ? now : start).ToUniversalTime()
                     : current.StartAt,
+            MaxAwaitingAck = patch.ClearMaxAwaitingAck ? null : patch.MaxAwaitingAck ?? current.MaxAwaitingAck,
         };
 
     /// <summary>
@@ -471,10 +497,11 @@ public sealed class GoldpathCampaignAdminService<TContext>
     }
 
     /// <summary>
-    /// The audit's policy text. <paramref name="showStart"/> adds the scheduled start (R3.1) when
-    /// either side of the change has one, so a policy without a start reads exactly as before.
+    /// The audit's policy text. <paramref name="showStart"/> adds the scheduled start (R3.1) and
+    /// <paramref name="showAck"/> the acknowledgement ceiling (R3.4) when either side of the change
+    /// has one, so a policy without them reads exactly as before.
     /// </summary>
-    private static string Describe(GoldpathCampaignPolicy p, bool showStart = false)
+    private static string Describe(GoldpathCampaignPolicy p, bool showStart = false, bool showAck = false)
         => string.Create(CultureInfo.InvariantCulture,
-            $"tps={p.Tps} quota={p.DailyQuota?.ToString(CultureInfo.InvariantCulture) ?? "none"} maxInFlight={p.MaxInFlight} window={(p.WindowStart is null ? "always" : $"{p.WindowStart}-{p.WindowEnd} {p.TimeZoneId}")} excludedDays={(p.ExcludedDays.Count == 0 ? "none" : string.Join("+", p.ExcludedDays))} endDate={p.EndDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "open"} maxAttempts={p.MaxAttempts} priority={p.Priority}{(showStart ? $" start={(p.StartAt is { } s ? s.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture) + "Z" : "when-ready")}" : "")}");
+            $"tps={p.Tps} quota={p.DailyQuota?.ToString(CultureInfo.InvariantCulture) ?? "none"} maxInFlight={p.MaxInFlight} window={(p.WindowStart is null ? "always" : $"{p.WindowStart}-{p.WindowEnd} {p.TimeZoneId}")} excludedDays={(p.ExcludedDays.Count == 0 ? "none" : string.Join("+", p.ExcludedDays))} endDate={p.EndDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "open"} maxAttempts={p.MaxAttempts} priority={p.Priority}{(showStart ? $" start={(p.StartAt is { } s ? s.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture) + "Z" : "when-ready")}" : "")}{(showAck ? $" maxAwaitingAck={p.MaxAwaitingAck?.ToString(CultureInfo.InvariantCulture) ?? "none"}" : "")}");
 }

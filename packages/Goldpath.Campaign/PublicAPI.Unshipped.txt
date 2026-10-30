@@ -201,3 +201,13 @@ Goldpath.GoldpathCampaignThrottle.ClearStartAt.get -> bool
 Goldpath.GoldpathCampaignThrottle.ClearStartAt.init -> void
 Goldpath.GoldpathCampaignThrottle.StartAt.get -> System.DateTimeOffset?
 Goldpath.GoldpathCampaignThrottle.StartAt.init -> void
+Goldpath.GoldpathCampaignInfo.AwaitingAck.get -> long
+Goldpath.GoldpathCampaignInfo.AwaitingAck.init -> void
+Goldpath.GoldpathCampaignInfo.MaxAwaitingAck.get -> int?
+Goldpath.GoldpathCampaignInfo.MaxAwaitingAck.init -> void
+Goldpath.GoldpathCampaignPolicy.MaxAwaitingAck.get -> int?
+Goldpath.GoldpathCampaignPolicy.MaxAwaitingAck.init -> void
+Goldpath.GoldpathCampaignThrottle.ClearMaxAwaitingAck.get -> bool
+Goldpath.GoldpathCampaignThrottle.ClearMaxAwaitingAck.init -> void
+Goldpath.GoldpathCampaignThrottle.MaxAwaitingAck.get -> int?
+Goldpath.GoldpathCampaignThrottle.MaxAwaitingAck.init -> void

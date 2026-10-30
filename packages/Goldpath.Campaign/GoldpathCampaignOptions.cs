@@ -87,6 +87,13 @@ public sealed record GoldpathCampaignPolicy(
     /// </summary>
     public DateTimeOffset? StartAt { get; init; }
 
+    /// <summary>
+    /// The ceiling on items awaiting a callback (R3.4); null = R2's single ceiling, where an
+    /// acceptance keeps its <see cref="MaxInFlight"/> slot. Set, <see cref="MaxInFlight"/> caps live
+    /// work only (a waiting retry keeps its slot) and this caps the acceptances.
+    /// </summary>
+    public int? MaxAwaitingAck { get; init; }
+
     /// <summary>True when <paramref name="utcNow"/> falls inside the send window (always true when no window).</summary>
     public bool IsWindowOpen(DateTimeOffset utcNow)
     {

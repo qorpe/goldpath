@@ -142,6 +142,22 @@
           "legendFormat": "{{type}}"
         }
       ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Awaiting a callback per campaign — flat at MaxAwaitingAck means the target system answers slower than it accepts (runbook §8)",
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "goldpath_campaign_awaiting_ack{type=~\"$type\"}",
+          "legendFormat": "{{campaign}}"
+        }
+      ]
     }
   ]
 }

@@ -95,9 +95,16 @@ the pacer's run health lives on the goldpath-jobs dashboard. This board owns the
   queue — never in a silent success. On a campaign the pacer no longer releases (aborted,
   expired, finished — a replay) the timeout is terminal at once and filed for repair. A
   second attempt is a new acceptance with a new correlation id.
-- A campaign that stalls with `AwaitingAck` at `MaxInFlight`: every acceptance holds an
-  in-flight slot until its answer or its deadline. Raise `MaxInFlight` toward Tps × the ack
-  timeout the handler declares, or shorten the timeout.
+- A campaign that stalls with `AwaitingAck` at `MaxInFlight`: without `MaxAwaitingAck`, every
+  acceptance holds an in-flight slot until its answer or its deadline. Set `MaxAwaitingAck`
+  (`POST /{id}/throttle {"maxAwaitingAck": <n>}`, audited), so `MaxInFlight` keeps limiting the
+  live calls into the target system while the acceptances wait under their own ceiling; or
+  shorten the timeout the handler declares.
+- `goldpath_campaign_awaiting_ack` flat at `MaxAwaitingAck` and nothing releasing: the
+  acknowledgement ceiling is holding, by design. The target system is answering more slowly than
+  it accepts. Raise the ceiling only if it can carry that many open requests; otherwise wait for
+  the callbacks or their deadlines. The gauge is the row's running count, re-counted from the items
+  at each leadership slice.
 
 ## 9. Orphaned releases being published again (R2.6)
 

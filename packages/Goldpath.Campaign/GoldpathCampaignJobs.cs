@@ -54,6 +54,13 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
         var streams = new Dictionary<Guid, LeaderStream>();
         var tick = 0;
         var nextDrainSweep = DateTimeOffset.MinValue;
+        // R3.4: the acknowledgement count is a cache (D3) — the slice is the takeover boundary,
+        // so the new leader corrects whatever a crashed flush left behind before it paces on it.
+        using (var recountScope = context.Services.CreateScope())
+        {
+            await _engine.RecountAwaitingAckAsync(recountScope.ServiceProvider.GetRequiredService<TContext>(), cancellationToken);
+        }
+
         try
         {
             while (_time.GetUtcNow() < sliceEnd)
@@ -311,10 +318,37 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
             + policy.Tps * _options.LeaderTick.TotalSeconds;
         budget = Math.Min(budget, policy.Tps);   // never bank more than one second of tokens
         tpsBudgets[campaign.Id] = budget;
-        var inFlight = campaign.ReleasedThrough - campaign.SucceededCount - campaign.FailedCount;
         return (int)Math.Floor(Math.Min(budget, Math.Max(0,
-            Math.Min(policy.MaxInFlight - inFlight,
+            Math.Min(InFlightRoom(policy, campaign),
                 policy.DailyQuota is { } quota ? quota - campaign.ReleasedToday : long.MaxValue))));
+    }
+
+    /// <summary>
+    /// How many more items the in-flight ceilings let this campaign release (R3.4). With
+    /// <see cref="GoldpathCampaignPolicy.MaxAwaitingAck"/> null it is R2's rule, line for line:
+    /// <c>MaxInFlight − (ReleasedThrough − SucceededCount − FailedCount)</c>, where an acceptance
+    /// keeps its slot. Set, <c>MaxInFlight</c> caps live work — everything in flight but the
+    /// acceptances, so a waiting retry keeps its slot (owner decision Q2) — and
+    /// <c>MaxAwaitingAck</c> caps the acceptances, and the campaign releases only while both have
+    /// room. A release holds a slot under BOTH ceilings until its outcome says which one it stays
+    /// under — any live call may come back accepted — so the acknowledgement room is
+    /// <c>MaxAwaitingAck − in flight</c>, and <c>AwaitingAckCount</c> can never pass the ceiling
+    /// (counting only the acceptances already landed would let it overshoot by up to
+    /// <c>MaxInFlight</c>). That room is read from the watermarks, so it is exact; the live room
+    /// rides the cached count, which a re-count landing between a flush's item updates and its
+    /// counter update can leave off by that flush's rows until the next slice. The count is held
+    /// inside [0, in flight], so a drifted cache can never make live work look negative.
+    /// </summary>
+    internal static long InFlightRoom(GoldpathCampaignPolicy policy, GoldpathCampaign campaign)
+    {
+        var inFlight = campaign.ReleasedThrough - campaign.SucceededCount - campaign.FailedCount;
+        if (policy.MaxAwaitingAck is not { } maxAwaitingAck)
+        {
+            return policy.MaxInFlight - inFlight;
+        }
+
+        var awaitingAck = Math.Clamp(campaign.AwaitingAckCount, 0, Math.Max(0, inFlight));
+        return Math.Min(policy.MaxInFlight - (inFlight - awaitingAck), maxAwaitingAck - inFlight);
     }
 
     /// <summary>The slowest enumeration step of the current tick — the estimate Phase 5 budgets the next step by.</summary>
