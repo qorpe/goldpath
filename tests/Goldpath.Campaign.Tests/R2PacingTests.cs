@@ -93,7 +93,7 @@ public class R2PacingTests
         var releasedA = fixture.Reload(a).ReleasedThrough;
         var releasedB = fixture.Reload(b).ReleasedThrough;
         var total = releasedA + releasedB;
-        // The bucket banks at most one second of the ceiling, and the slice is under half a second.
+        // The bucket banks at most one tick's worth of the ceiling plus its carry (#292), and the slice is under half a second.
         Assert.InRange(total, 20, 500);
         // Equal weights: neither side took more than 60% of what went out.
         Assert.InRange(releasedA, total * 0.4, total * 0.6);

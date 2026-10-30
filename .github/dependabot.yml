@@ -38,3 +38,9 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
+    groups:
+      # init and analyze must run at one version ("All steps in a workflow that use
+      # github/codeql-action must use the same version"); bumped one at a time, each PR
+      # fails CodeQL (#469/#471). One release train, so one pull request.
+      codeql-action:
+        patterns: ["github/codeql-action", "github/codeql-action/*"]
