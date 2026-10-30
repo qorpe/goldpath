@@ -1,12 +1,13 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AdminClient, type CampaignInfo } from "./adminClient";
-import { CampaignPanel, describeThrottle, toThrottle } from "./CampaignPanel";
+import { CampaignPanel, describeThrottle, formatInZone, resolveStart, startProblem, toThrottle, zoneReadable } from "./CampaignPanel";
 
 const emptyDraft = {
   tps: "", dailyQuota: "", maxInFlight: "", windowStart: "", windowEnd: "", timeZoneId: "",
   clearDailyQuota: false, clearWindow: false,
   excludedDays: [] as string[], endDate: "", maxAttempts: "", clearExcludedDays: false, clearEndDate: false, priority: "",
+  startLocal: "", startChoice: "" as "" | "earlier" | "later", clearStartAt: false,
 };
 
 const campaign = (over: Partial<CampaignInfo> = {}): CampaignInfo => ({
@@ -115,6 +116,80 @@ describe("the throttle patch (a null field KEEPS the server's current value)", (
   });
 });
 
+describe("R3.1: a scheduled start, read in the policy time zone", () => {
+  const draft = { ...emptyDraft };
+
+  it("one local time is usually one instant", () => {
+    expect(resolveStart("2026-11-02T09:00", "Europe/Istanbul")).toEqual({
+      kind: "ok",
+      instant: { utc: "2026-11-02T06:00:00.000Z", offset: "UTC+03:00" },
+    });
+  });
+
+  it("the spring-forward gap does not exist, so it is refused", () => {
+    // Berlin skips 02:00–03:00 on 2026-03-29.
+    expect(resolveStart("2026-03-29T02:30", "Europe/Berlin")).toEqual({ kind: "gap" });
+    expect(startProblem({ ...draft, startLocal: "2026-03-29T02:30" }, "Europe/Berlin"))
+      .toBe("02:30 on 2026-03-29 does not exist in Europe/Berlin: the clocks skip that hour. Choose another time.");
+    expect(toThrottle({ ...draft, startLocal: "2026-03-29T02:30" }, "Europe/Berlin")).toEqual({});
+  });
+
+  it("the repeated hour is two instants, and the operator says which", () => {
+    // Berlin repeats 02:00–03:00 on 2026-10-25: first at +02:00, then at +01:00.
+    expect(resolveStart("2026-10-25T02:30", "Europe/Berlin")).toEqual({
+      kind: "ambiguous",
+      earlier: { utc: "2026-10-25T00:30:00.000Z", offset: "UTC+02:00" },
+      later: { utc: "2026-10-25T01:30:00.000Z", offset: "UTC+01:00" },
+    });
+    const ambiguous = { ...draft, startLocal: "2026-10-25T02:30" };
+    expect(startProblem(ambiguous, "Europe/Berlin")).toBe("02:30 on 2026-10-25 happens twice in Europe/Berlin: say which one.");
+    expect(toThrottle(ambiguous, "Europe/Berlin")).toEqual({});
+    expect(toThrottle({ ...ambiguous, startChoice: "later" }, "Europe/Berlin")).toEqual({ startAt: "2026-10-25T01:30:00.000Z" });
+    expect(startProblem({ ...ambiguous, startChoice: "earlier" }, "Europe/Berlin")).toBeNull();
+  });
+
+  it("a zone changed in the same patch is the one the start is read in", () => {
+    expect(toThrottle({ ...draft, startLocal: "2026-11-02T09:00", timeZoneId: "Europe/Berlin" }, "Europe/Istanbul"))
+      .toEqual({ timeZoneId: "Europe/Berlin", startAt: "2026-11-02T08:00:00.000Z" });
+    // ...and the confirm line shows the start in that zone, not the one the policy had.
+    expect(describeThrottle({ timeZoneId: "Europe/Berlin", startAt: "2026-11-02T08:00:00.000Z" }, "Europe/Istanbul"))
+      .toBe("time zone Europe/Berlin, start 2026-11-02 09:00 Europe/Berlin (2026-11-02T08:00:00.000Z)");
+  });
+
+  it("a date the calendar does not have is refused, not rolled over", () => {
+    for (const local of ["2026-02-30T09:00", "2027-02-29T09:00", "2026-04-31T09:00", "2026-11-02T24:00", "2026-13-01T09:00", "2026-11-02T09:60"]) {
+      expect(resolveStart(local, "Europe/Istanbul")).toEqual({ kind: "invalid" });
+    }
+    expect(resolveStart("2028-02-29T09:00", "Europe/Istanbul")).toEqual({ kind: "ok", instant: { utc: "2028-02-29T06:00:00.000Z", offset: "UTC+03:00" } });
+    // A two-digit year stays itself (Date.UTC would read 0050 as 1950).
+    expect(resolveStart("0050-06-01T12:00", "UTC")).toEqual({ kind: "ok", instant: { utc: "0050-06-01T12:00:00.000Z", offset: "UTC+00:00" } });
+  });
+
+  it("a Windows zone id the server accepts is named as the problem, not the time", () => {
+    expect(zoneReadable("Europe/Istanbul")).toBe(true);
+    expect(zoneReadable("Turkey Standard Time")).toBe(false);
+    expect(startProblem({ ...draft, startLocal: "2026-11-02T09:00" }, "Turkey Standard Time"))
+      .toBe("The console reads IANA time zone ids; 'Turkey Standard Time' is not one. Set an IANA zone (e.g. Europe/Istanbul) in this same patch.");
+    // Setting an IANA zone in the same patch makes the start readable.
+    expect(startProblem({ ...draft, startLocal: "2026-11-02T09:00", timeZoneId: "Europe/Istanbul" }, "Turkey Standard Time")).toBeNull();
+  });
+
+  it("an unreadable time or an unknown zone is refused, never guessed", () => {
+    expect(resolveStart("tomorrow", "Europe/Berlin")).toEqual({ kind: "invalid" });
+    expect(resolveStart("2026-11-02T09:00", "Mars/Olympus")).toEqual({ kind: "invalid" });
+    expect(startProblem({ ...draft, startLocal: "2026-02-30T09:00" }, "Europe/Berlin")).toBe("2026-02-30T09:00 cannot be read in Europe/Berlin.");
+    expect(formatInZone("2026-11-02T06:00:00Z", "Mars/Olympus")).toBe("2026-11-02T06:00:00Z");
+  });
+
+  it("clearing the start wins over a typed one, and the confirm line names both", () => {
+    expect(toThrottle({ ...draft, startLocal: "2026-11-02T09:00", clearStartAt: true }, "Europe/Istanbul")).toEqual({ clearStartAt: true });
+    expect(startProblem({ ...draft, startLocal: "2026-03-29T02:30", clearStartAt: true }, "Europe/Berlin")).toBeNull();
+    expect(describeThrottle({ clearStartAt: true })).toBe("no scheduled start (it starts as soon as it is ready)");
+    expect(describeThrottle({ startAt: "2026-11-02T06:00:00.000Z" }, "Europe/Istanbul"))
+      .toBe("start 2026-11-02 09:00 Europe/Istanbul (2026-11-02T06:00:00.000Z)");
+  });
+});
+
 describe("the campaign governor panel", () => {
   it("lists campaigns with the pacer's numbers", async () => {
     const { client: api } = client();
@@ -140,6 +215,137 @@ describe("the campaign governor panel", () => {
     await userEvent.keyboard("{Escape}");
     // R3: both selections travel as REPEATED params — OR on the server.
     await waitFor(() => expect(seen.some((url) => url.includes("state=Paused") && url.includes("state=Running"))).toBe(true));
+  });
+
+  it("R3.1: Ready is a state to filter by", async () => {
+    const seen: string[] = [];
+    const fetcher = (async (input: RequestInfo | URL) => {
+      seen.push(String(input));
+      return new Response(JSON.stringify([]), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+    render(<CampaignPanel client={new AdminClient({ fetcher })} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /State/ }));
+    await userEvent.click(await screen.findByRole("menuitemcheckbox", { name: /Ready/ }));
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(seen.some((url) => url.includes("state=Ready"))).toBe(true));
+  });
+
+  it("R3.1: a Ready campaign shows its start in the policy time zone, is live, and can have the start moved", async () => {
+    const ready = campaign({ state: "Ready", releasedThrough: 0, startAt: "2026-11-02T06:00:00Z" });
+    const { client: api, posted } = client({ list: [ready], detail: ready, verb: { status: 200, body: { ok: true, message: "policy updated" } } });
+    render(<CampaignPanel client={api} />);
+
+    await open();
+    const detail = await screen.findByTestId("campaign-detail");
+    expect(detail).toHaveTextContent("Start2026-11-02 09:00 Europe/Istanbul (2026-11-02T06:00:00Z)");
+    expect(screen.getByRole("button", { name: "pause" })).toBeInTheDocument();   // Ready is live
+
+    await userEvent.type(screen.getByLabelText("start"), "2026-11-03T10:30");
+    await userEvent.click(screen.getByRole("button", { name: "throttle" }));
+    const dialog = screen.getByRole("alertdialog", { name: "confirm throttle" });
+    expect(dialog).toHaveTextContent("start 2026-11-03 10:30 Europe/Istanbul (2026-11-03T07:30:00.000Z)");
+    await userEvent.click(within(dialog).getByRole("button", { name: "throttle" }));
+
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(JSON.parse(String(posted[0].body))).toEqual({ startAt: "2026-11-03T07:30:00.000Z" });
+  });
+
+  it("R3.1: clearing the start posts the explicit clear", async () => {
+    const ready = campaign({ state: "Ready", releasedThrough: 0, startAt: "2026-11-02T06:00:00Z" });
+    const { client: api, posted } = client({ list: [ready], detail: ready });
+    render(<CampaignPanel client={api} />);
+
+    await open();
+    await userEvent.click(await screen.findByRole("checkbox", { name: "clear start" }));
+    await userEvent.click(screen.getByRole("button", { name: "throttle" }));
+    await userEvent.click(within(screen.getByRole("alertdialog", { name: "confirm throttle" })).getByRole("button", { name: "throttle" }));
+
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(JSON.parse(String(posted[0].body))).toEqual({ clearStartAt: true });
+  });
+
+  it("R3.1: a start in the spring-forward gap is refused before anything is sent", async () => {
+    const ready = campaign({ state: "Ready", releasedThrough: 0, timeZoneId: "Europe/Berlin", startAt: null });
+    const { client: api, posted } = client({ list: [ready], detail: ready });
+    render(<CampaignPanel client={api} />);
+
+    await open();
+    expect(await screen.findByTestId("campaign-detail")).toHaveTextContent("Startas soon as it is ready");
+    expect(screen.queryByRole("checkbox", { name: "clear start" })).toBeNull();   // nothing to clear
+    await userEvent.type(screen.getByLabelText("start"), "2026-03-29T02:30");
+    expect(screen.getByRole("alert")).toHaveTextContent("02:30 on 2026-03-29 does not exist in Europe/Berlin");
+    expect(screen.queryByRole("button", { name: "throttle" })).toBeNull();
+    expect(posted).toHaveLength(0);
+  });
+
+  it("R3.1: a start in the repeated hour asks which one, and sends the one chosen", async () => {
+    const ready = campaign({ state: "Ready", releasedThrough: 0, timeZoneId: "Europe/Berlin", startAt: null });
+    const { client: api, posted } = client({ list: [ready], detail: ready });
+    render(<CampaignPanel client={api} />);
+
+    await open();
+    await userEvent.type(await screen.findByLabelText("start"), "2026-10-25T02:30");
+    expect(screen.getByRole("alert")).toHaveTextContent("02:30 on 2026-10-25 happens twice in Europe/Berlin: say which one.");
+    expect(screen.queryByRole("button", { name: "throttle" })).toBeNull();
+
+    await userEvent.click(screen.getByRole("radio", { name: "the second (UTC+01:00)" }));
+    expect(screen.queryByRole("alert")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "throttle" }));
+    await userEvent.click(within(screen.getByRole("alertdialog", { name: "confirm throttle" })).getByRole("button", { name: "throttle" }));
+
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(JSON.parse(String(posted[0].body))).toEqual({ startAt: "2026-10-25T01:30:00.000Z" });
+  });
+
+  it("R3.1: a policy in a zone the browser cannot read shows the start as the instant alone", async () => {
+    const ready = campaign({ state: "Ready", releasedThrough: 0, timeZoneId: "Turkey Standard Time", startAt: "2026-11-02T06:00:00Z" });
+    const { client: api, posted } = client({ list: [ready], detail: ready });
+    render(<CampaignPanel client={api} />);
+
+    await open();
+    const detail = await screen.findByTestId("campaign-detail");
+    expect(detail).toHaveTextContent("Start2026-11-02T06:00:00Z");
+    expect(detail).not.toHaveTextContent("Turkey Standard Time (2026");   // never a UTC instant beside the zone
+    await userEvent.type(screen.getByLabelText("start"), "2026-11-03T10:30");
+    expect(screen.getByRole("alert")).toHaveTextContent("The console reads IANA time zone ids; 'Turkey Standard Time' is not one.");
+    expect(screen.queryByRole("button", { name: "throttle" })).toBeNull();
+    expect(posted).toHaveLength(0);
+  });
+
+  it("R3.1: a start left in the draft is not sent once a refresh shows the campaign running", async () => {
+    const ready = campaign({ state: "Ready", releasedThrough: 0, timeZoneId: "Europe/Berlin", startAt: null });
+    const routes: Routes = { list: [ready], detail: ready };
+    const { client: api, posted } = client(routes);
+    render(<CampaignPanel client={api} />);
+
+    await open();
+    await userEvent.type(await screen.findByLabelText("start"), "2026-10-25T02:30");
+    await userEvent.click(screen.getByRole("radio", { name: "the second (UTC+01:00)" }));
+    await userEvent.type(screen.getByLabelText("tps"), "40");
+
+    routes.detail = campaign({ timeZoneId: "Europe/Berlin", startAt: null });   // the pacer started it meanwhile
+    const refreshes = screen.getAllByRole("button", { name: "Refresh" });
+    await userEvent.click(refreshes[refreshes.length - 1]);
+    await waitFor(() => expect(screen.queryByLabelText("start")).toBeNull());
+    expect(screen.queryByRole("radio", { name: "the second (UTC+01:00)" })).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "throttle" }));
+    const dialog = screen.getByRole("alertdialog", { name: "confirm throttle" });
+    expect(dialog).not.toHaveTextContent("start");
+    await userEvent.click(within(dialog).getByRole("button", { name: "throttle" }));
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(JSON.parse(String(posted[0].body))).toEqual({ tps: 40 });
+  });
+
+  it("R3.1: once running, the start is shown but can no longer be moved", async () => {
+    const running = campaign({ startAt: "2026-07-27T06:00:00Z" });
+    const { client: api } = client({ list: [running], detail: running });
+    render(<CampaignPanel client={api} />);
+
+    await open();
+    expect(await screen.findByTestId("campaign-detail")).toHaveTextContent("Start2026-07-27 09:00 Europe/Istanbul");
+    expect(screen.queryByLabelText("start")).toBeNull();
   });
 
   it("shows the policy in force, including what the quota and window mean right now", async () => {
