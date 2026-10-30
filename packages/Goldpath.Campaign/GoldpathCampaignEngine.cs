@@ -53,6 +53,7 @@ public sealed class GoldpathCampaignEngine<TContext>
             Priority = effective.Priority,
             // R3.1: Npgsql refuses a non-zero offset on timestamptz, so the instant is stored in UTC.
             StartAt = effective.StartAt?.ToUniversalTime(),
+            MaxAwaitingAck = effective.MaxAwaitingAck,
             QuotaDay = effective.LocalDay(_time.GetUtcNow()),
             CreatedAt = _time.GetUtcNow(),
             CreatedBy = actor,
@@ -87,6 +88,7 @@ public sealed class GoldpathCampaignEngine<TContext>
             MaxAttempts = campaign.MaxAttempts,
             Priority = campaign.Priority,
             StartAt = campaign.StartAt,
+            MaxAwaitingAck = campaign.MaxAwaitingAck,
         };
 
     /// <summary>
@@ -543,6 +545,22 @@ public sealed class GoldpathCampaignEngine<TContext>
             };
     }
 
+    /// <summary>The states a success settles (R2.1), each updated on its own so the flush knows which rows left <c>AwaitingAck</c> (R3.4).</summary>
+    private static readonly GoldpathCampaignItemState[] SettleableStates =
+        [GoldpathCampaignItemState.Processing, GoldpathCampaignItemState.AwaitingAck];
+
+    /// <summary>
+    /// Re-counts <see cref="GoldpathCampaign.AwaitingAckCount"/> from the items (R3.4): the sink's
+    /// running count is a cache (D3), and the leader corrects any drift once per leadership slice.
+    /// One set-based update over the campaigns that hold work in flight or a non-zero count; R2's
+    /// <c>(CampaignId, State, …)</c> indexes serve the count. Returns how many rows it rewrote.
+    /// </summary>
+    internal async Task<int> RecountAwaitingAckAsync(TContext db, CancellationToken cancellationToken)
+        => await db.Set<GoldpathCampaign>()
+            .Where(c => c.ReleasedThrough > c.SucceededCount + c.FailedCount || c.AwaitingAckCount != 0)
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.AwaitingAckCount, c => db.Set<GoldpathCampaignItem>()
+                .LongCount(i => i.CampaignId == c.Id && i.State == GoldpathCampaignItemState.AwaitingAck)), cancellationToken);
+
     /// <summary>
     /// Applies one BATCH of outcomes (the sink's flush, constraint 4): set-based item
     /// updates + relative campaign counters — never a write per item. R2.1 adds the
@@ -550,7 +568,9 @@ public sealed class GoldpathCampaignEngine<TContext>
     /// R2.3 stamps the jittered ripe instant on every retry. Every update is bound to the
     /// ATTEMPT its outcome describes (R2 review #2): the row must still be on that attempt
     /// (<c>Attempts == Attempt - 1</c>), so a redelivered outcome of an earlier attempt is
-    /// a no-op instead of a verdict on the attempt now in flight.
+    /// a no-op instead of a verdict on the attempt now in flight. R3.4: the same flush keeps
+    /// <see cref="GoldpathCampaign.AwaitingAckCount"/>, by the rows it moved into and out of
+    /// <c>AwaitingAck</c>; the ack sweep comes through here too.
     /// </summary>
     public async Task ApplyOutcomesAsync(
         TContext db, Guid campaignId, IReadOnlyList<GoldpathCampaignOutcomeMessage> outcomes, CancellationToken cancellationToken)
@@ -573,21 +593,30 @@ public sealed class GoldpathCampaignEngine<TContext>
                 ? policy.MaxAttempts
                 : 0;
 
+        // R3.4: AwaitingAckCount moves by the ROWS this flush moved into and out of AwaitingAck,
+        // never by the outcomes it was handed — a duplicate or stale outcome whose guard matches
+        // nothing moves no row, so it moves no count either.
+        var enteredAck = 0;
+        var leftAck = 0;
         var settled = 0;
         foreach (var attempt in outcomes.Where(o => o.Succeeded).GroupBy(o => o.Attempt))
         {
             // A success settles a claimed item OR an accepted one (the callback said yes) —
-            // set-based per attempt number, and there are only ever a handful of those.
+            // set-based per attempt number and prior state, and there are only ever a handful of those.
             var seqs = attempt.Select(o => o.Seq).ToArray();
             var anyAttempt = attempt.Key == 0;
             var prior = attempt.Key - 1;
-            settled += await db.Set<GoldpathCampaignItem>()
-                .Where(i => i.CampaignId == campaignId && seqs.Contains(i.Seq)
-                    && (i.State == GoldpathCampaignItemState.Processing || i.State == GoldpathCampaignItemState.AwaitingAck)
-                    && (anyAttempt || i.Attempts == prior))
-                .ExecuteUpdateAsync(s => s
-                    .SetProperty(i => i.State, GoldpathCampaignItemState.Succeeded)
-                    .SetProperty(i => i.CompletedAt, now), cancellationToken);
+            foreach (var from in SettleableStates)
+            {
+                var moved = await db.Set<GoldpathCampaignItem>()
+                    .Where(i => i.CampaignId == campaignId && seqs.Contains(i.Seq) && i.State == from
+                        && (anyAttempt || i.Attempts == prior))
+                    .ExecuteUpdateAsync(s => s
+                        .SetProperty(i => i.State, GoldpathCampaignItemState.Succeeded)
+                        .SetProperty(i => i.CompletedAt, now), cancellationToken);
+                settled += moved;
+                leftAck += from == GoldpathCampaignItemState.AwaitingAck ? moved : 0;
+            }
         }
 
         foreach (var acceptance in accepted)
@@ -596,7 +625,7 @@ public sealed class GoldpathCampaignEngine<TContext>
             // names the correlation id or the deadline passes. Still in flight.
             var anyAttempt = acceptance.Attempt == 0;
             var prior = acceptance.Attempt - 1;
-            await db.Set<GoldpathCampaignItem>()
+            enteredAck += await db.Set<GoldpathCampaignItem>()
                 .Where(i => i.CampaignId == campaignId && i.Seq == acceptance.Seq && i.State == GoldpathCampaignItemState.Processing
                     && (anyAttempt || i.Attempts == prior))
                 .ExecuteUpdateAsync(s => s
@@ -626,11 +655,12 @@ public sealed class GoldpathCampaignEngine<TContext>
             }
 
             var attemptsAfter = current.Attempts + 1;
+            int moved;
             if (failure.Retryable && attemptsAfter < maxAttempts)
             {
                 // R1.3/R2.3: attempts LEFT → wait out the (jittered) rung, then the pacer re-releases.
                 var nextAttemptAt = now + _options.NextRetryDelay(attemptsAfter);
-                await db.Set<GoldpathCampaignItem>()
+                moved = await db.Set<GoldpathCampaignItem>()
                     .Where(i => i.CampaignId == campaignId && i.Seq == failure.Seq && i.State == current.State && i.Attempts == current.Attempts)
                     .ExecuteUpdateAsync(s => s
                         .SetProperty(i => i.State, GoldpathCampaignItemState.AwaitingRetry)
@@ -647,7 +677,7 @@ public sealed class GoldpathCampaignEngine<TContext>
             else
             {
                 // Exhausted, or the provider said a retry cannot help (R2.1): durable failure, once.
-                exhausted += await db.Set<GoldpathCampaignItem>()
+                moved = await db.Set<GoldpathCampaignItem>()
                     .Where(i => i.CampaignId == campaignId && i.Seq == failure.Seq && i.State == current.State && i.Attempts == current.Attempts)
                     .ExecuteUpdateAsync(s => s
                         .SetProperty(i => i.State, GoldpathCampaignItemState.Failed)
@@ -656,13 +686,18 @@ public sealed class GoldpathCampaignEngine<TContext>
                         .SetProperty(i => i.NextAttemptAt, (DateTimeOffset?)null)
                         .SetProperty(i => i.Error, failure.Error)
                         .SetProperty(i => i.ErrorCode, failure.ErrorCode), cancellationToken);
+                exhausted += moved;
             }
+
+            leftAck += current.State == GoldpathCampaignItemState.AwaitingAck ? moved : 0;
         }
 
+        var ackDelta = enteredAck - leftAck;
         await db.Set<GoldpathCampaign>().Where(c => c.Id == campaignId)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(c => c.SucceededCount, c => c.SucceededCount + settled)
-                .SetProperty(c => c.FailedCount, c => c.FailedCount + exhausted), cancellationToken);
+                .SetProperty(c => c.FailedCount, c => c.FailedCount + exhausted)
+                .SetProperty(c => c.AwaitingAckCount, c => c.AwaitingAckCount + ackDelta), cancellationToken);
         GoldpathCampaignMetrics.Outcomes(campaignId, settled, exhausted);
 
         if (accepted.Length > 0)

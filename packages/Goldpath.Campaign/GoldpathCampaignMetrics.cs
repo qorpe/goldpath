@@ -36,7 +36,7 @@ public static class GoldpathCampaignMetrics
         "goldpath_campaign_callbacks_rejected_total", description: "Callbacks refused for a missing, stale or wrong signature (R2.8).");
 
     private static readonly object SnapshotLock = new();
-    private static readonly Dictionary<Guid, (string Type, long Remaining, long InFlight)> Snapshots = [];
+    private static readonly Dictionary<Guid, (string Type, long Remaining, long InFlight, long AwaitingAck)> Snapshots = [];
 
     static GoldpathCampaignMetrics()
     {
@@ -44,6 +44,8 @@ public static class GoldpathCampaignMetrics
             description: "Released-but-not-terminal items per campaign (the MaxInFlight governor's view).");
         Meter.CreateObservableGauge("goldpath_campaign_remaining", ObserveRemaining,
             description: "Items not yet released per campaign (progress/ETA math).");
+        Meter.CreateObservableGauge("goldpath_campaign_awaiting_ack", ObserveAwaitingAck,
+            description: "Items awaiting a callback per campaign (the MaxAwaitingAck governor's view, R3.4).");
     }
 
     internal static void Released(string type, int count)
@@ -83,34 +85,26 @@ public static class GoldpathCampaignMetrics
         lock (SnapshotLock)
         {
             Snapshots[campaign.Id] = (campaign.Type,
-                campaign.EnumeratedThrough - campaign.ReleasedThrough, inFlight);
+                campaign.EnumeratedThrough - campaign.ReleasedThrough, inFlight,
+                Math.Clamp(campaign.AwaitingAckCount, 0, Math.Max(0, inFlight)));   // as the detail reads it
         }
     }
 
-    private static IEnumerable<Measurement<long>> ObserveInFlight()
+    private static IEnumerable<Measurement<long>> ObserveInFlight() => Observe(snapshot => snapshot.InFlight);
+
+    private static IEnumerable<Measurement<long>> ObserveRemaining() => Observe(snapshot => snapshot.Remaining);
+
+    private static IEnumerable<Measurement<long>> ObserveAwaitingAck() => Observe(snapshot => snapshot.AwaitingAck);
+
+    /// <summary>One measurement per campaign snapshot, tagged <c>campaign</c> and <c>type</c> like every campaign gauge.</summary>
+    private static List<Measurement<long>> Observe(Func<(string Type, long Remaining, long InFlight, long AwaitingAck), long> value)
     {
         List<Measurement<long>> measurements = [];
         lock (SnapshotLock)
         {
             foreach (var (id, snapshot) in Snapshots)
             {
-                measurements.Add(new Measurement<long>(snapshot.InFlight,
-                    new KeyValuePair<string, object?>("campaign", id.ToString("N")),
-                    new KeyValuePair<string, object?>("type", snapshot.Type)));
-            }
-        }
-
-        return measurements;
-    }
-
-    private static IEnumerable<Measurement<long>> ObserveRemaining()
-    {
-        List<Measurement<long>> measurements = [];
-        lock (SnapshotLock)
-        {
-            foreach (var (id, snapshot) in Snapshots)
-            {
-                measurements.Add(new Measurement<long>(snapshot.Remaining,
+                measurements.Add(new Measurement<long>(value(snapshot),
                     new KeyValuePair<string, object?>("campaign", id.ToString("N")),
                     new KeyValuePair<string, object?>("type", snapshot.Type)));
             }

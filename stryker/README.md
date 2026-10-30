@@ -123,7 +123,7 @@ at f459fe2, so its row carries it (minutes not recorded).
 | Console | 91.46 % (75.00) | 21.46 | — | 75.00 %, 24.3 |
 | Bulk | 88.37 % (88.38) | 18.37 | 19.7 | never finished (timeout) |
 | Idempotency | 84.91 % (73.58) | 14.91 | 1.8 | 73.58 %, 3.3 |
-| Campaign | 83.95 % (76.30) | 13.95 | 43.4 | never finished (OOM) |
+| Campaign | 82.31 % (83.95) | 12.31 | 48.4 | never finished (OOM) |
 | Messaging | 82.70 % (86.09) | 12.70 | 99.8 | 80.72 %, 69.4 |
 | AuditTrail | 81.97 % | 11.97 | 5.1 | 81.97 %, 5.7 |
 | MultiTenancy | 81.40 % (72.09) | 11.40 | 6.1 | 75.58 %, 38.5 |
@@ -258,3 +258,14 @@ branching logic; each has a unit suite. A gate joins the moment one of them grow
 path (the 2026-09-01 audit's rule). `Console`, `Messaging` and `ServiceDefaults` gained
 gates on 2026-09-03 (the thin-suites PR): each carries real branching (asset resolution,
 the publish/consume filters, correlation + concurrency guard) that a unit suite can score.
+
+
+**Campaign after R3-S5, `MaxAwaitingAck` (#293), 2026-10-30.** A full local run of
+`mutation-gate.sh Goldpath.Campaign` at 4831cbb on the #293 branch: 83.95 % → **82.31 %**
+(1,191 mutants tested, 261 tests; 48 minutes, the agent sandbox's, not the CI profile's), still
+green against the break at 70. The run is honest about the drop: the per-state settle split and the
+re-count added mutants, and the package's older survivors (callback prose, `ChangeTracker.Clear()`
+hygiene, the pre-existing throttle positivity checks for the other fields) still stand. On the
+lines R3-S5 changed, one survivor was a real gap: a failure straight from `Processing` counted as
+leaving `AwaitingAck` (`leftAck += moved` survived). `AFailureStraightFromProcessing_MovesNoAcknowledgement`
+was added after the run and kills it (planted, red); the score above predates that test.

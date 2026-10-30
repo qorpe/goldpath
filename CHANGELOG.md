@@ -5,6 +5,37 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **Campaign: a ceiling for outstanding acknowledgements, `MaxAwaitingAck` (campaign RFC R3.4,
+  slice R3-S5, #293).**
+  - **API (additive, init-only):** `GoldpathCampaignPolicy.MaxAwaitingAck`,
+    `GoldpathCampaignThrottle.MaxAwaitingAck` and `ClearMaxAwaitingAck`,
+    `GoldpathCampaignInfo.MaxAwaitingAck` and `AwaitingAck`. No positional constructor changes.
+  - **The rule:** with `MaxAwaitingAck` null, a campaign's in-flight room is R2's, line for line.
+    Set, `MaxInFlight` caps live work (in flight minus the acceptances; a waiting retry keeps its
+    slot) and `MaxAwaitingAck` caps the acceptances. A release holds room under both ceilings
+    until its outcome says which one it stays under, so the acknowledgement room is
+    `MaxAwaitingAck − in flight`, and the acceptances never pass their ceiling.
+  - **The count:** the outcome flush keeps `AwaitingAckCount` by the rows it moved into and out
+    of `AwaitingAck` (the ack sweep goes through the same flush), so a duplicate outcome moves
+    nothing. The leader re-counts it from the items at the start of every leadership slice; the
+    pacer clamps a drifted count to what is in flight, and so do the detail's `AwaitingAck` and the
+    gauge, so neither ever reads below zero.
+  - **Verbs and signals:** `create` and `throttle` take the ceiling (a non-positive value is
+    refused by both — `create` checks the type's default with the patch applied, and a type's
+    `DefaultPolicy(...)` with a non-positive one throws at registration; omitted keeps it, `clearMaxAwaitingAck` clears it), audited old → new;
+    the policy text adds `maxAwaitingAck=…` only when either side has one, so existing audit
+    text is unchanged. New gauge `goldpath_campaign_awaiting_ack`, tagged `campaign` and
+    `type`, with a panel on the campaign dashboard and runbook §8 rewritten around it.
+  - **Proof:** `R3AwaitingAckTests` (31 cases), and fifteen planted faults that each turn them
+    red: the pacer ignoring the field, counting only landed acceptances (one release past the
+    ceiling), no clamp, no flush count (on either the success or the failure half), no slice
+    re-count, every failure counted out of `AwaitingAck`, the clear ignored, a non-positive
+    ceiling accepted at create, the gauge reporting 0, a zero ceiling in the type's default accepted
+    at create or at registration, and the detail or the gauge reading the stored count unclamped. On real PostgreSQL and RabbitMQ, `CampaignR2Tests` ends with the count at 0 after
+    callbacks, parking and the ack sweep, and a drifted count is re-counted by the next slice
+    (red without the re-count). Mutation gate: 82.31 % (`stryker/README.md`).
+  - **Not yet:** the real-broker proof with a slow-acknowledging target and the console's view
+    and edit of the ceiling (R3-S6, #316).
 - **The Data module, proven on Oracle (GA gate G7, slice O-2, #405).** Tests only: no package changes.
   `OracleDataTests` (`Category=Oracle`) runs on the O-1 lane's container, one schema per fact, against a model that
   composes Jobs, Campaign, Bulk and Archival in the 19c SQL form:

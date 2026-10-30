@@ -462,7 +462,7 @@ Proofs: the signed path settles and a signed repeat is 200; seven unauthentic va
 each have a red-then-green test; the recipe is pinned by a vector; the integration suite
 signs every callback on real infrastructure and refuses unsigned, forged and stale ones.
 
-## Revision R3 — scheduled start, ceilings as data, an acknowledgement ceiling, a policy version, auto-suspend (ACCEPTED 2026-10-21 — owner decision in chat, the seven questions Q1–Q7 answered as recommended; the merge of PR #313 records it. Implementation: the eleven slices below; R3-S1, the schema, landed 2026-10-23 (#314); R3-S2, the scheduled start and `Ready` in the engine, pacer and admin service (#289); the other nine not yet)
+## Revision R3 — scheduled start, ceilings as data, an acknowledgement ceiling, a policy version, auto-suspend (ACCEPTED 2026-10-21 — owner decision in chat, the seven questions Q1–Q7 answered as recommended; the merge of PR #313 records it. Implementation: the eleven slices below; R3-S1, the schema, landed 2026-10-23 (#314); R3-S2, the scheduled start and `Ready` in the engine, pacer and admin service (#289); R3-S5, `MaxAwaitingAck` with its count, re-count, pacer rule, throttle field and gauge (#293); the other eight not yet)
 
 **Finding.** A coverage analysis on 2026-10-20 compared R2 with a device-fleet adopter's
 bulk-operations design (controlled actions against tens of millions of devices, several target
