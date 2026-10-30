@@ -33,6 +33,32 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     (red without the re-count). Mutation gate: 82.31 % (`stryker/README.md`).
   - **Not yet:** the real-broker proof with a slow-acknowledging target and the console's view
     and edit of the ceiling (R3-S6, #316).
+- **Jobs: the clustered Quartz store runs on Oracle (G7, slice O-3, #406).**
+  - **API (additive):** `GoldpathJobStoreProvider.Oracle = 2`. It is appended, so no stored value
+    moves. The executor composes `UseOracle`, and the management head's never-started schedulers use
+    `OracleDelegate` and `OracleODPManaged`. The application references ODP.NET; `Goldpath.Jobs`
+    takes no Oracle dependency.
+  - **An unknown provider is refused** with the value named, on both the executor and the management
+    head. Before this change, any value other than `SqlServer` silently became a PostgreSQL store.
+  - **The `qrtz_` tables take Quartz's own Oracle shape on Oracle only:**
+    - **Names:** upper-case table, column and index names. EF quotes what it creates, and
+      `OracleDelegate`'s unquoted SQL folds to upper case. Without this, the store's first query fails
+      with `ORA-00942: table or view "…"."QRTZ_JOB_DETAILS" does not exist`.
+    - **Flags:** `VARCHAR2(1)` holding `'0'`/`'1'`.
+    - **Binary data:** job data, calendars and blob triggers are `BLOB`, where EF's default
+      `RAW(2000)` would cap a job's data at 2,000 bytes.
+    - The PostgreSQL DDL is byte-for-byte unchanged (a golden generated from `main` before the
+      change).
+  - **Proof** (`JobsOracleTests` and `JobsRunListOracleTests`, `Category=Oracle`, on the pinned
+    Oracle Free container):
+    - the model against Quartz.NET's own `tables_oracle.sql`, vendored from tag v3.22.9;
+    - two schedulers fire one trigger exactly once;
+    - a misfired trigger follows its stored instruction;
+    - a kill -9 mid-run is recovered on the other node from the checkpoint;
+    - the run list's filters and keyset walk hold.
+  - **Runbook:** §9 covers `QRTZ_LOCKS` row-lock contention.
+  - **Still open:** `GoldpathJobExecutions` loses the history row of a fire with no error on Oracle.
+    The `Error` document column refuses a NULL in ODP.NET (#475).
 - **Campaign: a scheduled start and the `Ready` state (campaign RFC R3.1, slice R3-S2, #289).**
   - **API (additive, init-only):** `GoldpathCampaignPolicy.StartAt` and `IsBeforeStart(utcNow)`,
     `GoldpathCampaignThrottle.StartAt` and `ClearStartAt`, `GoldpathCampaignInfo.StartAt`. No
@@ -310,6 +336,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **Campaign: no second of pacer ticks releases more than its ceiling, even after an idle stretch (#292,
+  S-FLEET-03).** Every hard-ceiling bucket (a campaign's `Tps`, a type's `MaxTps`, the `GlobalTps`)
+  banked up to a whole second of tokens. What it saved while nothing released (a closed window, a full
+  in-flight cap, a pause, a spent quota) was spent in one tick when release resumed, so one second could
+  release the ceiling plus all but one tick of refill: 1.75 times the ceiling at the default 250 ms tick.
+  - **Now:** a bucket holds one tick's refill, plus the largest fraction a refill can leave behind (none
+    when the refill is a whole number of units). When `LeaderTick` divides one second (the default
+    250 ms does), the ticks of any one second therefore release at most the ceiling. A tick that does not
+    divide a second fits one more tick into some seconds, so such a second can release up to one more
+    tick's refill (56 against 50 at a 140 ms tick); that was already so before this change, and
+    `LeaderTick`'s documentation now says so. The steady rate is unchanged: 2.5 a tick still spends 2,
+    then 3. Each refill is snapped to the exact grid of its fraction, so floating point never costs a
+    unit at the cap: ten refills of 0.1 are exactly one, where 0.9999999999999999 would have released
+    2/s at a 50 ms tick as 1.82/s. No public API, option or migration changes.
+  - **Proof:** `BurstControlTests` counts each tick's releases exactly through the pacer's own tick scope.
+    After 30 idle ticks, the three buckets each released 100 in one tick and 195 in one second against a
+    ceiling of 100; now 5 a tick. S-FLEET-03 at its own numbers (GlobalTps 1000, two campaigns at 800):
+    1950 in one second before, at most 1000 now. `CampaignR1Tests` on RabbitMQ and PostgreSQL drops its
+    +50% tolerance and holds every second of ticks of the run to `GlobalTps` itself.
 - **`Goldpath.Messaging.Wolverine` (not published) is wire-compatible with a MassTransit fleet:
   S4, mixed-fleet compatibility, in the conformance suite (GA gate G5 Part 4/5, #333).**
   `MixedFleetTests` runs a MassTransit 8.5.11 process and a Wolverine process on one RabbitMQ and one

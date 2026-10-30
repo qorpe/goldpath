@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Goldpath;
 
@@ -7,7 +8,9 @@ namespace Goldpath;
 // never a side-channel SQL script. Quartz accesses these tables through its own ADO
 // delegates; EF only owns the DDL. Column names are lowercase ON PURPOSE: Quartz emits
 // unquoted identifiers, and PostgreSQL folds those to lowercase (SQL Server is
-// case-insensitive, so one casing serves both providers). Lengths follow the standard
+// case-insensitive, so one casing serves both providers). Oracle folds them to UPPER case
+// and EF quotes what it creates, so on Oracle the store takes Quartz's own Oracle shape
+// (ShapeForOracle, G7 O-3 #406). Lengths follow the standard
 // Quartz DDL — key columns MUST be bounded (SQL Server cannot key nvarchar(max)).
 
 internal sealed class QrtzJobDetail
@@ -312,6 +315,54 @@ internal static class QuartzStoreModel
             e.Property(x => x.LockName).HasColumnName("lock_name").HasMaxLength(40);
         });
 
+        if (IsOracle(modelBuilder))
+        {
+            ShapeForOracle(modelBuilder);
+        }
+
         return modelBuilder;
+    }
+
+    /// <summary>
+    /// The Oracle EF provider marks the model it builds with its own annotations (<c>Oracle:…</c>) before
+    /// <c>OnModelCreating</c> runs; nothing else does, so the PostgreSQL and SQL Server models never take this path.
+    /// </summary>
+    internal static bool IsOracle(ModelBuilder modelBuilder)
+        => modelBuilder.Model.GetAnnotations().Any(a => a.Name.StartsWith("Oracle:", StringComparison.Ordinal));
+
+    /// <summary>
+    /// The store as Quartz's own <c>tables_oracle.sql</c> declares it (G7, O-3, #406). EF quotes every identifier it
+    /// creates, so the lower-case names that serve PostgreSQL would be created lower-case on Oracle, while
+    /// <c>OracleDelegate</c>'s unquoted <c>QRTZ_JOB_DETAILS</c> folds to upper case and would not find them
+    /// (ORA-00942): on Oracle every name is upper case. The booleans are <c>VARCHAR2(1)</c> holding <c>'0'</c>/<c>'1'</c>,
+    /// and job data, calendars and blob triggers are <c>BLOB</c>, where EF's defaults (<c>NUMBER(1)</c> or
+    /// <c>BOOLEAN</c>, and <c>RAW(2000)</c>) would cap a job's data at 2,000 bytes.
+    /// </summary>
+    private static void ShapeForOracle(ModelBuilder modelBuilder)
+    {
+        var flag = new BoolToStringConverter("0", "1");
+        foreach (var entity in modelBuilder.Model.GetEntityTypes().Where(e => e.ClrType.Name.StartsWith("Qrtz", StringComparison.Ordinal)))
+        {
+            entity.SetTableName(entity.GetTableName()!.ToUpperInvariant());
+            foreach (var property in entity.GetProperties())
+            {
+                property.SetColumnName(property.GetColumnName().ToUpperInvariant());
+                var type = Nullable.GetUnderlyingType(property.ClrType) ?? property.ClrType;
+                if (type == typeof(bool))
+                {
+                    property.SetValueConverter(flag);
+                    property.SetColumnType("VARCHAR2(1)");
+                }
+                else if (type == typeof(byte[]))
+                {
+                    property.SetColumnType("BLOB");
+                }
+            }
+
+            foreach (var index in entity.GetIndexes())
+            {
+                index.SetDatabaseName(index.GetDatabaseName()!.ToUpperInvariant());
+            }
+        }
     }
 }

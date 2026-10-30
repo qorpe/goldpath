@@ -384,7 +384,12 @@ public sealed class GoldpathCampaignOptions
     /// <summary>Items released per broker publish batch (bounded so a tick stays cheap).</summary>
     public int ReleaseBatchSize { get; set; } = 500;
 
-    /// <summary>The leader's in-memory tick (constraint 1: local ticks, not cluster locks).</summary>
+    /// <summary>
+    /// The leader's in-memory tick (constraint 1: local ticks, not cluster locks). The hard ceilings (a campaign's
+    /// <c>Tps</c>, a type's <c>MaxTps</c>, <c>GlobalTps</c>) hold for every one-second window of ticks only when this
+    /// divides one second, as the default 250 ms does; any other tick lets a second release up to one more tick's
+    /// refill (#292).
+    /// </summary>
     public TimeSpan LeaderTick { get; set; } = TimeSpan.FromMilliseconds(250);
 
     /// <summary>

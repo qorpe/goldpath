@@ -1,1 +1,2 @@
 #nullable enable
+Goldpath.GoldpathJobStoreProvider.Oracle = 2 -> Goldpath.GoldpathJobStoreProvider
