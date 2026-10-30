@@ -202,9 +202,17 @@ a browser cannot keep one.
 - **The token lives in memory only.** The console uses `InMemoryWebStorage` for the user store,
   never `localStorage` or `sessionStorage`, so a script injected into the page cannot read a
   token that outlives the tab.
+- **The sign-in state is tab-scoped, short-lived and token-free.** A redirect flow must keep the
+  PKCE `code_verifier` and `nonce` across the navigation to the IdP and back, so they cannot live
+  in memory. `oidc-client-ts` 3.5.0 defaults its `stateStore` to `localStorage`, which outlives the
+  tab and is shared by every tab of the origin, so the console sets it explicitly:
+  `stateStore: new WebStorageStateStore({ store: window.sessionStorage })`. The callback removes
+  the entry it redeems; `staleStateAgeInSeconds` bounds an abandoned one, and the console calls
+  `clearStaleState()` at start-up. The state never holds a token.
 - **A reload loses the token.** The console then redirects once more. The IdP's own session
   makes that round trip silent for an operator who is still signed in there.
-- **The only thing that may outlive the tab** is the IdP's session cookie, on the IdP's origin.
+- **Nothing the console writes outlives the tab.** The only sign-in artefact that does is the
+  IdP's session cookie, on the IdP's origin. `localStorage` stays empty.
 
 ### OIDC-1.3 Where the authority and the client id come from (no per-adopter rebuild)
 
@@ -326,8 +334,10 @@ The console smoke gains a second mode, `scripts/console-smoke.sh oidc`, and a jo
   same job.
 - **Red proofs**, one per slice. Examples:
   - a token sent to the wrong audience is refused by the service;
-  - a console that put the token in `sessionStorage` fails the unit fact asserting nothing is in
+  - a console that put the token in `sessionStorage` fails the unit fact asserting no token is in
     web storage;
+  - a console that left `stateStore` at the library's default fails the fact asserting
+    `localStorage` stays empty through a full sign-in;
   - a wildcard origin is refused at startup.
 
 ### OIDC-1.7 Slices (each ≤ ~3 hours of agent time, in order)
@@ -337,8 +347,8 @@ The console smoke gains a second mode, `scripts/console-smoke.sh oidc`, and a jo
 | C-1 | The npm licence gate. `scripts/license-gate.py`, or a sibling, reads `ui/console`'s production dependency graph from `pnpm-lock.yaml`, applies the same allowlist, and runs in `gates`. Then `oidc-client-ts@3.5.0` (exact) enters `dependencies` | A planted GPL dependency turns the gate red. The current graph is green |
 | C-2 | Server configuration: `UseOidc`, `Goldpath:Console:Oidc`, the anonymous `console.auth.json` (404 when off), the anonymous shell only when OIDC is on, and `AddService(…, audience, scopes)` | Console route tests: the auth route is anonymous and minimal; the registry stays behind the floor; with OIDC off, every route is byte-identical to today |
 | C-3 | `AddGoldpathConsoleOrigins` with preflight-before-floor, no credentials, and wildcards refused | Sdk tests: the preflight answers; the actual call still gets `401` without a token; a wildcard refuses at startup |
-| C-4 | The console signs in: `UserManager` with PKCE, in-memory store, redirect handling; `AdminClient` sends the bearer token with `credentials: "omit"` per service | Vitest with a fake `UserManager`: the bearer goes per service, nothing lands in web storage, and with no `auth.json` the console runs in case-1 mode. Coverage floors held |
-| C-5 | Expiry and refusals: silent renew, the one retry for reads only, a verb never retried, `401` vs `403` wording, IdP-unreachable and signed-out states, sign-out. Case 2 of OIDC-1.4: per-scope-set redemption through `OidcClient.useRefreshToken`, the console-owned token map keyed by the requested set, the rotated refresh token written back, one single-flight queue for every redemption including the default renew (`automaticSilentRenew: false`) | Vitest on each branch; a planted retry of a verb turns its fact red. Case 2, against the real `oidc-client-ts` 3.5.0 with only the token endpoint faked: refreshing for service B leaves service A's token **and** the shared refresh token usable, with rotation on. Routing the redemption through `UserManager.signinSilent` turns it red (B's token arrives with A's scope, and the default user is replaced). With rotation on, a default renew and a redemption for B issued together leave A's token, B's token and the shared refresh token usable; leaving `automaticSilentRenew` at its default `true` turns it red. An IdP that omits `scope` in the response still files B's token under B's requested set |
+| C-4 | The console signs in: `UserManager` with PKCE, in-memory user store, a `sessionStorage` state store with stale-state cleanup, redirect handling; `AdminClient` sends the bearer token with `credentials: "omit"` per service | Vitest against the **real** `oidc-client-ts` 3.5.0 `UserManager`, with only the IdP's endpoints faked: the bearer goes per service; no access or refresh token is in `localStorage` or `sessionStorage` at any point; `localStorage` stays empty through a full sign-in; the sign-in state is gone from `sessionStorage` after the callback; with no `auth.json` the console runs in case-1 mode. Leaving `stateStore` at its default turns the `localStorage` fact red. Coverage floors held |
+| C-5 | Expiry and refusals: silent renew, the one retry for reads only, a verb never retried, `401` vs `403` wording, IdP-unreachable and signed-out states, sign-out. Case 2 of OIDC-1.4: per-scope-set redemption through `OidcClient.useRefreshToken`, the console-owned token map keyed by the requested set, the rotated refresh token written back, one single-flight queue for every redemption including the default renew (`automaticSilentRenew: false`) | Vitest on each branch; a planted retry of a verb turns its fact red. Case 2, against the real `oidc-client-ts` 3.5.0 with only the token endpoint faked: refreshing for service B leaves service A's token **and** the shared refresh token usable, with rotation on. Routing the redemption through `UserManager.signinSilent` turns it red (B's token arrives with A's scope, and the default user is replaced). With rotation on, a default renew and a redemption for B issued together leave A's token, B's token and the shared refresh token usable; leaving `automaticSilentRenew` at its default `true` turns it red, deterministically: the fact uses fake timers advanced to the library's expiring notification (`expires_in` − `accessTokenExpiringNotificationTimeInSeconds`), so the library's own renew fires inside the fact rather than whenever the clock allows. An IdP that omits `scope` in the response still files B's token under B's requested set |
 | C-6 | `console-smoke.sh oidc` with Keycloak pinned, the realm file, two origins, the OIDC-1.6 journeys and axe, in `console-smoke.yml` and the nightly | The full mode green. A wrong audience on one service turns its journey red (CI link) |
 | C-7 | Docs: Console README, `ops/` runbook (Keycloak and Entra setup, the two audience shapes, CORS), upgrade guide, T10 closed, `ga-gate-status` G6 | `docs-freshness`; T10's proof is C-6's green run |
 
