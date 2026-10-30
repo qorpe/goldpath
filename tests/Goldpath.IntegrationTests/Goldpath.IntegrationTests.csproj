@@ -43,4 +43,9 @@
     <ProjectReference Include="../Goldpath.Jobs.TestHost/Goldpath.Jobs.TestHost.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Quartz's own Oracle DDL, vendored for the qrtz_ comparison (G7, O-3, #406), and the PostgreSQL golden. -->
+    <None Include="Quartz/*.sql" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

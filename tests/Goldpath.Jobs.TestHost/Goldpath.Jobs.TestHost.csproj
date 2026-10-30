@@ -8,6 +8,9 @@
 
   <ItemGroup>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <!-- The Oracle lane (G7, O-3, #406): the kill -9 recovery on an Oracle store. FUTC packages, test-only. -->
+    <PackageReference Include="Oracle.EntityFrameworkCore" />
+    <PackageReference Include="Oracle.ManagedDataAccess.Core" />
     <PackageReference Include="MassTransit.RabbitMQ" />
   </ItemGroup>
 
