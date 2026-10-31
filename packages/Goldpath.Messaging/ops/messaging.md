@@ -24,7 +24,9 @@ through `Goldpath.ServiceDefaults`, and the outbox is a table you can query.
    the error queue (shovel) and it applies exactly once.
 
 ## Poison messages
-A message that faults on every retry lands in `<queue>_error`. Inspect it there (headers
+A message that faults on every retry lands in `<queue>_error`, provided the delayed stage can run: with a
+redelivery ladder configured on a broker without the delayed-message exchange plugin, the redelivery is refused
+and the message stays on its own queue (open-threads T52), so clear the ladder there. Inspect it there (headers
 carry `X-Goldpath-Tenant` and the correlation id — the trace is one search away), fix or
 park, then shovel it back. Never purge an error queue in production without exporting it:
 it is the only copy of what the producer promised.

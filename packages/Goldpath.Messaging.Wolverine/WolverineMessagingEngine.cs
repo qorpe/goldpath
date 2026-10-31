@@ -53,6 +53,12 @@ internal sealed class WolverineMessagingEngine : IGoldpathMessagingEngine
                 composition.Options.Retry.ImmediateCount, "Immediate retries cannot be negative.");
         }
 
+        // Every handled type's wire name is read now, so a refused one stops the start rather than the first delivery.
+        foreach (var handled in composition.Handlers.Select(h => h.Event).Concat(composition.BatchHandlers.Select(b => b.Event)).Distinct())
+        {
+            _ = GoldpathWire.NameOf(handled);
+        }
+
         var broker = GoldpathWire.BrokerOf(composition, configuration);
         var state = new WolverineEngineState(composition.OutboxContext, composition.Outbox);
 
@@ -122,8 +128,22 @@ internal sealed class WolverineMessagingEngine : IGoldpathMessagingEngine
                 var listener = options.ListenToRabbitQueue(endpoint)
                     .UseMassTransitInterop()
                     .DefaultIncomingMessage(events[0])
-                    .DeadLetterQueueing(new DeadLetterQueue($"{endpoint}_error", DeadLetterQueueMode.InteropFriendly))
-                    .ProcessInline();
+                    .DeadLetterQueueing(new DeadLetterQueue($"{endpoint}_error", DeadLetterQueueMode.InteropFriendly));
+
+                // A concurrency limit (§4.1 row 14) runs that many deliveries at once, each acknowledged to the broker
+                // only once handled, and holds no more than that from the broker; without one, the listener handles
+                // on the transport's own callback, as before.
+                if (registrations[0].ConcurrencyLimit is { } limit)
+                {
+                    listener.ProcessInParallelWithNativeAcks()
+                        .MaximumParallelMessages(limit)
+                        .PreFetchCount((ushort)Math.Min(limit, ushort.MaxValue));
+                }
+                else
+                {
+                    listener.ProcessInline();
+                }
+
                 foreach (var byEvent in registrations.GroupBy(r => r.Event))
                 {
                     options.RegisterMessageType(byEvent.Key);
@@ -180,6 +200,7 @@ internal sealed class WolverineMessagingEngine : IGoldpathMessagingEngine
             headers[key] = value?.ToString() ?? "";
         }
 
+        GoldpathWire.StampTrace(headers);
         var messageId = message.MessageId ?? Guid.NewGuid();
         return wire.PublishAsync(GoldpathWire.ExchangeOf(contract), messageId, wire.Envelope(contract, body, messageId, headers, DateTimeOffset.UtcNow), cancellationToken);
     }
@@ -225,6 +246,11 @@ internal sealed class WolverineTopology(GoldpathWire wire, IReadOnlyDictionary<s
 /// </summary>
 internal abstract class SeamHandler : IMessageHandler
 {
+    /// <summary>The adapter's spans: an application's tracing listens to it by this name.</summary>
+    public const string ActivitySourceName = "Goldpath.Messaging.Wolverine";
+
+    private static readonly ActivitySource s_source = new(ActivitySourceName);
+
     public abstract Type MessageType { get; }
 
     public LogLevel SuccessLogLevel => LogLevel.Debug;
@@ -254,6 +280,24 @@ internal abstract class SeamHandler : IMessageHandler
             : null;
         var correlationId = headers.TryGetValue(GoldpathHeaders.CorrelationId, out var correlation) ? correlation as string : null;
         return (headers, tenant, correlationId);
+    }
+
+    /// <summary>
+    /// Opens the consume span under the publisher's span the delivery carries (<see cref="GoldpathWire.ActivityIdHeader"/>),
+    /// linked to the span current here; null when the delivery carries none, or when the current span already
+    /// continues that trace.
+    /// </summary>
+    protected static Activity? StartConsume(string endpoint, IReadOnlyDictionary<string, object?> headers)
+    {
+        if (!headers.TryGetValue(GoldpathWire.ActivityIdHeader, out var raw) || raw is not string traceParent
+            || !ActivityContext.TryParse(traceParent, null, isRemote: true, out var publisher)
+            || Activity.Current?.TraceId == publisher.TraceId)
+        {
+            return null;
+        }
+
+        ActivityLink[] links = Activity.Current is { } current ? [new ActivityLink(current.Context)] : [];
+        return s_source.StartActivity($"{endpoint} consume", ActivityKind.Consumer, publisher, links: links);
     }
 
     /// <summary>
@@ -300,9 +344,18 @@ internal sealed class SeamHandler<TEvent>(Type[] handlers, string endpoint, Wolv
             GoldpathAmbientTenant.Current = restored;
         }
 
+        // The delivery's span continues the publisher's trace: Wolverine's own span starts a trace of its own from the
+        // 8.x envelope, so the adapter opens the consume span under the publisher's (linked to Wolverine's), and the
+        // handler runs inside it.
+        using var consume = StartConsume(endpoint, headers);
         if (correlationId is not null)
         {
             Activity.Current?.SetTag("goldpath.correlation_id", correlationId);
+        }
+
+        if (tenant is { } tagged)
+        {
+            Activity.Current?.SetTag("goldpath.tenant_id", tagged.Value);
         }
 
         try
@@ -330,14 +383,23 @@ internal sealed class SeamHandler<TEvent>(Type[] handlers, string endpoint, Wolv
     /// message is acknowledged without running a handler again. One row per handler, as the default engine keeps
     /// them, so a handler that already ran under either engine is skipped and only the others run.
     /// </summary>
+    /// <remarks>
+    /// The row is claimed before it is locked: an insert that does nothing when the key exists, then the locking
+    /// select. On an endpoint run at a concurrency limit, deliveries of one message id can arrive together; a lock
+    /// alone finds no row on a first delivery, so every one of them would run the handler before the key collided
+    /// (S2.19). The insert makes a concurrent duplicate wait on the key until the first delivery's transaction ends,
+    /// and then see it consumed, or claim it itself if that delivery failed and rolled back.
+    /// </remarks>
     private async Task HandleOnceAsync(IServiceProvider services, DbContext db, GoldpathOutboxOptions outbox, TEvent message, IntegrationEventContext eventContext, CancellationToken cancellation)
     {
         var messageId = eventContext.MessageId ?? throw new InvalidOperationException("The inbox needs a message id.");
         await using var transaction = await db.Database.BeginTransactionAsync(cancellation);
+        var claimSql = InboxClaimSql(db);
         var lockSql = InboxLockSql(db);
         var ran = false;
         foreach (var (handlerType, consumerId) in _consumers)
         {
+            await db.Database.ExecuteSqlRawAsync(claimSql, [messageId, consumerId, Guid.NewGuid(), DateTime.UtcNow], cancellation);
             var seen = await db.Set<InboxState>()
                 .FromSqlRaw(lockSql, messageId, consumerId)
                 .AsTracking()
@@ -350,6 +412,7 @@ internal sealed class SeamHandler<TEvent>(Type[] handlers, string endpoint, Wolv
             var now = DateTime.UtcNow;
             if (seen is null)
             {
+                // Only when the sweep removed an expired row between the claim and the lock: a first delivery again.
                 seen = new InboxState { MessageId = messageId, ConsumerId = consumerId, LockId = Guid.NewGuid(), Received = now, ReceiveCount = 0 };
                 db.Set<InboxState>().Add(seen);
             }
@@ -385,11 +448,26 @@ internal sealed class SeamHandler<TEvent>(Type[] handlers, string endpoint, Wolv
 
     private static string InboxLockSql(DbContext db)
     {
+        var (table, column) = Inbox(db);
+        return $"SELECT * FROM {table} WHERE {column(nameof(InboxState.MessageId))} = {{0}} AND {column(nameof(InboxState.ConsumerId))} = {{1}} FOR UPDATE";
+    }
+
+    private static string InboxClaimSql(DbContext db)
+    {
+        // (MessageId, ConsumerId) is the inbox's alternate key, so a second claim of one key does nothing, after
+        // waiting for the first claim's transaction to end.
+        var (table, column) = Inbox(db);
+        return $"INSERT INTO {table} ({column(nameof(InboxState.MessageId))}, {column(nameof(InboxState.ConsumerId))}, "
+            + $"{column(nameof(InboxState.LockId))}, {column(nameof(InboxState.Received))}, {column(nameof(InboxState.ReceiveCount))}) "
+            + "VALUES ({0}, {1}, {2}, {3}, 0) ON CONFLICT DO NOTHING";
+    }
+
+    /// <summary>The inbox table as the context maps it, and its columns by property, quoted.</summary>
+    private static (string Table, Func<string, string> Column) Inbox(DbContext db)
+    {
         var entity = db.Model.FindEntityType(typeof(InboxState))
             ?? throw new InvalidOperationException($"'{db.GetType().Name}' maps no inbox table; call modelBuilder.AddGoldpathOutboxEntities().");
         var table = entity.GetSchema() is { } schema ? $"\"{schema}\".\"{entity.GetTableName()}\"" : $"\"{entity.GetTableName()}\"";
-        var messageId = entity.FindProperty(nameof(InboxState.MessageId))!.GetColumnName();
-        var consumerId = entity.FindProperty(nameof(InboxState.ConsumerId))!.GetColumnName();
-        return $"SELECT * FROM {table} WHERE \"{messageId}\" = {{0}} AND \"{consumerId}\" = {{1}} FOR UPDATE";
+        return (table, property => $"\"{entity.FindProperty(property)!.GetColumnName()}\"");
     }
 }

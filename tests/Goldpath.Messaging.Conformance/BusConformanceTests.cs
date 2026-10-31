@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
+using OpenTelemetry.Trace;
 using Xunit;
 
 namespace Goldpath.Messaging.Conformance;
@@ -227,6 +229,200 @@ public abstract class BusConformanceTests(ConformanceContainers containers, stri
         Assert.Equal(published, observed.PingCount);
         Assert.Equal(published, observed.Pings.Select(p => p.Event.Id).Distinct().Count());   // no duplicates across the two lifetimes
         await second.StopAsync();
+    }
+
+    // The suite's named gaps (messaging-exit §7.1 S2, G5 Part 2/5, #331), numbered after S2.12.
+
+    [Fact]
+    public async Task S2_14_with_a_concurrency_limit_of_one_an_endpoint_handles_its_queue_in_publish_order()
+    {
+        // The ordering the seam promises (messaging-exit §7.1): one publisher's messages, on one endpoint run at a
+        // ConcurrencyLimit of 1 in one process, are handled in the order they were published. Nothing wider: at any
+        // other limit, across processes, or once a retry puts a message back, the seam promises no order.
+        var work = new WorkObserved();
+        await using var host = await containers.BuildHostAsync(
+            engine, new Observed(),
+            compose: messaging => messaging.AddHandler<Work, WorkHandler>(new GoldpathHandlerOptions { ConcurrencyLimit = 1 }),
+            services: services => services.AddSingleton(work));
+        await host.StartAsync();
+
+        for (var i = 0; i < 30; i++)
+        {
+            await host.PublishAsync(new Work { Number = i });
+        }
+
+        await work.WaitForHandledAsync(30, Wait);
+        Assert.Equal(Enumerable.Range(0, 30), work.Handled);
+        Assert.Equal(1, work.Peak);
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task S2_15_a_concurrency_limit_of_n_never_runs_more_than_n_handlers_at_once()
+    {
+        // The limit is reached, not merely never exceeded: 24 queued deliveries held 300 ms each fill three slots,
+        // and an engine that ignored the limit would run its own window, which is larger on the default engine.
+        var work = new WorkObserved { Hold = TimeSpan.FromMilliseconds(300) };
+        await using var host = await containers.BuildHostAsync(
+            engine, new Observed(),
+            compose: messaging => messaging.AddHandler<Work, WorkHandler>(new GoldpathHandlerOptions { ConcurrencyLimit = 3 }),
+            services: services => services.AddSingleton(work));
+        await host.StartAsync();
+
+        for (var i = 0; i < 24; i++)
+        {
+            await host.PublishAsync(new Work { Number = i });
+        }
+
+        await work.WaitForHandledAsync(24, Wait);
+        Assert.Equal(24, work.Handled.Distinct().Count());
+        Assert.Equal(3, work.Peak);
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task S2_18_an_endpoint_run_at_a_concurrency_limit_keeps_the_retry_ladder_and_the_error_queue()
+    {
+        // A limit changes how an engine runs the endpoint (Wolverine: in parallel with native acknowledgements rather
+        // than inline), so S2.3 is asked again of a limited endpoint: every attempt, then the error queue.
+        var observed = new Observed();
+        await using var host = await containers.BuildHostAsync(
+            engine, observed,
+            compose: messaging => messaging.AddHandler<LimitedPoison, LimitedPoisonHandler>(new GoldpathHandlerOptions { ConcurrencyLimit = 2 }));
+        await host.StartAsync();
+        var before = await containers.QueueDepthAsync("limited-poison_error");   // the other engine's run may have left one
+
+        await host.PublishCommittedAsync(new LimitedPoison { Id = Guid.NewGuid() });
+
+        var deadline = DateTime.UtcNow + Wait;
+        while (observed.PoisonAttempts.Count < 3 && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(100);
+        }
+
+        Assert.Equal([0, 1, 2], observed.PoisonAttempts.Order());
+        var depth = before;
+        deadline = DateTime.UtcNow + Wait;
+        while (depth == before && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(500);
+            depth = await containers.QueueDepthAsync("limited-poison_error");
+        }
+
+        Assert.Equal(before + 1, depth);
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task S2_19_at_a_concurrency_limit_the_same_message_delivered_concurrently_handles_once()
+    {
+        // S2.1 asked of a limited endpoint: there the deliveries of one message id can be in flight AT ONCE, so the
+        // inbox's claim itself must be race-free. A claim that only locks a row that already exists lets every
+        // concurrent first delivery through, and each would run the handler's effects before the key collides.
+        var work = new WorkObserved { Hold = TimeSpan.FromMilliseconds(800) };
+        await using var host = await containers.BuildHostAsync(
+            engine, new Observed(),
+            compose: messaging => messaging.AddHandler<Work, WorkHandler>(new GoldpathHandlerOptions { ConcurrencyLimit = 4 }),
+            services: services => services.AddSingleton(work));
+        await host.StartAsync();
+        var messageId = Guid.NewGuid();
+
+        for (var i = 0; i < 5; i++)
+        {
+            await host.PublishAsync(new Work { Number = 1 }, message => message.MessageId = messageId);
+        }
+
+        await work.WaitForHandledAsync(1, Wait);
+        await Task.Delay(TimeSpan.FromSeconds(4));   // grace for a wrong second delivery, past every held slot
+        Assert.Single(work.Handled);
+        await host.StopAsync();
+    }
+
+    [Fact]
+    public async Task S2_16_publish_and_consume_are_one_trace_whose_consume_span_carries_tenant_and_correlation()
+    {
+        var exported = new List<Activity>();
+        using var tracing = OpenTelemetry.Sdk.CreateTracerProviderBuilder()
+            .AddSource("*")
+            .SetSampler(new OpenTelemetry.Trace.AlwaysOnSampler())
+            .AddInMemoryExporter(exported)
+            .Build();
+        var observed = new Observed();
+        await using var host = await containers.BuildHostAsync(engine, observed, tenant: "acme");
+        await host.StartAsync();
+
+        ActivityTraceId trace;
+        using (var request = new ActivitySource("conformance").StartActivity("request"))
+        {
+            request!.SetTag("goldpath.correlation_id", "corr-16");
+            trace = request.TraceId;
+            await host.PublishCommittedAsync(new Ping { Id = Guid.NewGuid(), Payload = "traced" });
+        }
+
+        await observed.WaitForPingsAsync(1, Wait);
+        var handled = Assert.Single(observed.Spans);
+        Assert.Equal(trace, handled.TraceId);   // the hop continues the publisher's trace: one trace, not two
+
+        // The span the engine opened for the delivery carries the tenant and the correlation as tags; it is the
+        // handler's own span or one of its in-process ancestors, and the exporter received it.
+        Activity? tagged = null;
+        for (var span = handled; span is not null && tagged is null; span = span.Parent)
+        {
+            if (span.GetTagItem("goldpath.correlation_id") as string == "corr-16")
+            {
+                tagged = span;
+            }
+        }
+
+        Assert.NotNull(tagged);
+        Assert.Equal("acme", tagged.GetTagItem("goldpath.tenant_id"));
+        var deadline = DateTime.UtcNow + Wait;
+        while (!Exported(tagged.SpanId) && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(100);
+        }
+
+        Assert.True(Exported(tagged.SpanId), "the consume span was never exported");
+        await host.StopAsync();
+
+        bool Exported(ActivitySpanId span)
+        {
+            lock (exported)
+            {
+                return exported.Any(e => e.SpanId == span && e.TraceId == trace);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task S2_17_a_renamed_message_type_keeps_its_wire_name_in_both_directions()
+    {
+        // OrderSubmitted is OrderPlaced renamed and moved, carrying [GoldpathMessageName] with the old identity. An old
+        // producer's OrderPlaced reaches the renamed handler; the renamed type, published through the outbox the way
+        // the application publishes, reaches a consumer that still knows only OrderPlaced. One exchange carries both.
+        var renamed = new RenameObserved();
+        await using var host = await containers.BuildHostAsync(
+            engine, new Observed(),
+            compose: messaging =>
+            {
+                messaging.AddHandler<Legacy.OrderPlaced, OrderPlacedHandler>();
+                messaging.AddHandler<OrderSubmitted, OrderSubmittedHandler>();
+            },
+            services: services => services.AddSingleton(renamed));
+        await host.StartAsync();
+        var fromOld = Guid.NewGuid();
+        var fromNew = Guid.NewGuid();
+
+        await host.PublishAsync(new Legacy.OrderPlaced { Id = fromOld });
+        await host.PublishCommittedAsync(new OrderSubmitted { Id = fromNew });
+
+        await renamed.WaitForAsync(2, Wait);
+        await Task.Delay(TimeSpan.FromSeconds(2));   // grace for a wrong second delivery
+        Guid[] both = [.. new[] { fromOld, fromNew }.Order()];
+        Assert.Equal(both, renamed.AsOld.Order());
+        Assert.Equal(both, renamed.AsNew.Order());
+        Assert.False(await containers.ExchangeExistsAsync("Goldpath.Messaging.Conformance:OrderSubmitted"), "the renamed type published under its CLR name");
+        await host.StopAsync();
     }
 }
 
