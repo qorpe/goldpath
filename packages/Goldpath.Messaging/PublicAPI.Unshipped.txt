@@ -91,3 +91,27 @@ Goldpath.IGoldpathMessagingEngine
 Goldpath.IGoldpathMessagingEngine.Compose(Goldpath.GoldpathMessagingComposition! composition, Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration) -> void
 Goldpath.IGoldpathMessagingEngine.Name.get -> string!
 Goldpath.IGoldpathMessagingEngine.PublishAsync(System.IServiceProvider! services, System.Type! contract, object! body, Goldpath.GoldpathOutgoingMessage! message, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+Goldpath.GoldpathBatchHandlerRegistration.<Clone>$() -> Goldpath.GoldpathBatchHandlerRegistration!
+Goldpath.GoldpathBatchHandlerRegistration.Deconstruct(out System.Type! Event, out System.Type! Handler, out Goldpath.GoldpathBatchOptions! Options, out string! EndpointName) -> void
+Goldpath.GoldpathBatchHandlerRegistration.Equals(Goldpath.GoldpathBatchHandlerRegistration? other) -> bool
+Goldpath.GoldpathHandlerRegistration.<Clone>$() -> Goldpath.GoldpathHandlerRegistration!
+Goldpath.GoldpathHandlerRegistration.Deconstruct(out System.Type! Event, out System.Type! Handler, out string! EndpointName) -> void
+Goldpath.GoldpathHandlerRegistration.Equals(Goldpath.GoldpathHandlerRegistration? other) -> bool
+Goldpath.IntegrationEvent<TEvent>.Deconstruct(out TEvent! Message, out Goldpath.IntegrationEventContext! Context) -> void
+override Goldpath.GoldpathBatchHandlerRegistration.Equals(object? obj) -> bool
+override Goldpath.GoldpathBatchHandlerRegistration.GetHashCode() -> int
+override Goldpath.GoldpathBatchHandlerRegistration.ToString() -> string!
+override Goldpath.GoldpathHandlerRegistration.Equals(object? obj) -> bool
+override Goldpath.GoldpathHandlerRegistration.GetHashCode() -> int
+override Goldpath.GoldpathHandlerRegistration.ToString() -> string!
+override Goldpath.IntegrationEvent<TEvent>.Equals(object? obj) -> bool
+override Goldpath.IntegrationEvent<TEvent>.GetHashCode() -> int
+override Goldpath.IntegrationEvent<TEvent>.ToString() -> string!
+static Goldpath.GoldpathBatchHandlerRegistration.operator !=(Goldpath.GoldpathBatchHandlerRegistration? left, Goldpath.GoldpathBatchHandlerRegistration? right) -> bool
+static Goldpath.GoldpathBatchHandlerRegistration.operator ==(Goldpath.GoldpathBatchHandlerRegistration? left, Goldpath.GoldpathBatchHandlerRegistration? right) -> bool
+static Goldpath.GoldpathHandlerRegistration.operator !=(Goldpath.GoldpathHandlerRegistration? left, Goldpath.GoldpathHandlerRegistration? right) -> bool
+static Goldpath.GoldpathHandlerRegistration.operator ==(Goldpath.GoldpathHandlerRegistration? left, Goldpath.GoldpathHandlerRegistration? right) -> bool
+~Goldpath.IntegrationEvent<TEvent>.<Clone>$() -> Goldpath.IntegrationEvent<TEvent>!
+~Goldpath.IntegrationEvent<TEvent>.Equals(Goldpath.IntegrationEvent<TEvent>? other) -> bool
+~static Goldpath.IntegrationEvent<TEvent>.operator !=(Goldpath.IntegrationEvent<TEvent>? left, Goldpath.IntegrationEvent<TEvent>? right) -> bool
+~static Goldpath.IntegrationEvent<TEvent>.operator ==(Goldpath.IntegrationEvent<TEvent>? left, Goldpath.IntegrationEvent<TEvent>? right) -> bool
