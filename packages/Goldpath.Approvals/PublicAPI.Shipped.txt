@@ -274,3 +274,99 @@ Goldpath.GoldpathApprovalRequestDetail.Trail.get -> System.Collections.Generic.I
 Goldpath.GoldpathApprovalRequestDetail.Trail.init -> void
 Goldpath.GoldpathApprovalRequestDetail.Signatures.get -> System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathApprovalSignature!>!
 Goldpath.GoldpathApprovalRequestDetail.Signatures.init -> void
+Goldpath.GoldpathApprovalDecisionRequest.<Clone>$() -> Goldpath.GoldpathApprovalDecisionRequest!
+Goldpath.GoldpathApprovalDecisionRequest.Deconstruct(out string! Role, out string? Reason) -> void
+Goldpath.GoldpathApprovalDecisionRequest.Equals(Goldpath.GoldpathApprovalDecisionRequest? other) -> bool
+Goldpath.GoldpathApprovalDelegation.<Clone>$() -> Goldpath.GoldpathApprovalDelegation!
+Goldpath.GoldpathApprovalDelegation.Deconstruct(out string! From, out string! To, out System.DateTimeOffset Until) -> void
+Goldpath.GoldpathApprovalDelegation.Equals(Goldpath.GoldpathApprovalDelegation? other) -> bool
+Goldpath.GoldpathApprovalEscalated.<Clone>$() -> Goldpath.GoldpathApprovalEscalated!
+Goldpath.GoldpathApprovalEscalated.Deconstruct(out System.Guid ApprovalId, out string! Ladder, out string! Subject, out string! FromRole, out string! ToRole) -> void
+Goldpath.GoldpathApprovalEscalated.Equals(Goldpath.GoldpathApprovalEscalated? other) -> bool
+Goldpath.GoldpathApprovalExpired.<Clone>$() -> Goldpath.GoldpathApprovalExpired!
+Goldpath.GoldpathApprovalExpired.Deconstruct(out System.Guid ApprovalId, out string! Ladder, out string! Subject, out string! AtRole) -> void
+Goldpath.GoldpathApprovalExpired.Equals(Goldpath.GoldpathApprovalExpired? other) -> bool
+Goldpath.GoldpathApprovalGranted.<Clone>$() -> Goldpath.GoldpathApprovalGranted!
+Goldpath.GoldpathApprovalGranted.Deconstruct(out System.Guid ApprovalId, out string! Ladder, out string! Subject, out string! DecidedBy) -> void
+Goldpath.GoldpathApprovalGranted.Equals(Goldpath.GoldpathApprovalGranted? other) -> bool
+Goldpath.GoldpathApprovalRejected.<Clone>$() -> Goldpath.GoldpathApprovalRejected!
+Goldpath.GoldpathApprovalRejected.Deconstruct(out System.Guid ApprovalId, out string! Ladder, out string! Subject, out string! DecidedBy, out string! Reason) -> void
+Goldpath.GoldpathApprovalRejected.Equals(Goldpath.GoldpathApprovalRejected? other) -> bool
+Goldpath.GoldpathApprovalRequestDetail.<Clone>$() -> Goldpath.GoldpathApprovalRequestDetail!
+Goldpath.GoldpathApprovalRequestDetail.Deconstruct(out Goldpath.GoldpathApprovalRequestInfo! Request, out System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathApprovalTrailEntry!>! Trail, out System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathApprovalSignature!>! Signatures) -> void
+Goldpath.GoldpathApprovalRequestDetail.Equals(Goldpath.GoldpathApprovalRequestDetail? other) -> bool
+Goldpath.GoldpathApprovalRequestInfo.<Clone>$() -> Goldpath.GoldpathApprovalRequestInfo!
+Goldpath.GoldpathApprovalRequestInfo.Deconstruct(out System.Guid Id, out string! Ladder, out string! Subject, out decimal Amount, out string! RequestedBy, out System.DateTimeOffset RequestedAt, out string! PendingRole, out System.DateTimeOffset PendingSince, out string! Status, out string? DecidedBy, out string? Reason, out System.Guid? SupersedesId, out int SignatureCount, out int RequiredApprovals) -> void
+Goldpath.GoldpathApprovalRequestInfo.Equals(Goldpath.GoldpathApprovalRequestInfo? other) -> bool
+Goldpath.GoldpathApprovalRequested.<Clone>$() -> Goldpath.GoldpathApprovalRequested!
+Goldpath.GoldpathApprovalRequested.Deconstruct(out System.Guid ApprovalId, out string! Ladder, out string! Subject, out decimal Amount, out string! PendingRole) -> void
+Goldpath.GoldpathApprovalRequested.Equals(Goldpath.GoldpathApprovalRequested? other) -> bool
+Goldpath.GoldpathApprovalRung.<Clone>$() -> Goldpath.GoldpathApprovalRung!
+Goldpath.GoldpathApprovalRung.Deconstruct(out string! Role, out decimal? UpToInclusive, out System.TimeSpan EscalateAfter, out int RequiredApprovals) -> void
+Goldpath.GoldpathApprovalRung.Equals(Goldpath.GoldpathApprovalRung? other) -> bool
+Goldpath.GoldpathApprovalSignature.<Clone>$() -> Goldpath.GoldpathApprovalSignature!
+Goldpath.GoldpathApprovalSignature.Deconstruct(out System.Guid RequestId, out string! SignedBy, out string! Role, out System.DateTimeOffset At) -> void
+Goldpath.GoldpathApprovalSignature.Equals(Goldpath.GoldpathApprovalSignature? other) -> bool
+Goldpath.GoldpathApprovalTrailEntry.<Clone>$() -> Goldpath.GoldpathApprovalTrailEntry!
+Goldpath.GoldpathApprovalTrailEntry.Deconstruct(out System.DateTimeOffset At, out string! Actor, out string! Action, out string! Detail) -> void
+Goldpath.GoldpathApprovalTrailEntry.Equals(Goldpath.GoldpathApprovalTrailEntry? other) -> bool
+override Goldpath.GoldpathApprovalDecisionRequest.Equals(object? obj) -> bool
+override Goldpath.GoldpathApprovalDecisionRequest.GetHashCode() -> int
+override Goldpath.GoldpathApprovalDecisionRequest.ToString() -> string!
+override Goldpath.GoldpathApprovalDelegation.Equals(object? obj) -> bool
+override Goldpath.GoldpathApprovalDelegation.GetHashCode() -> int
+override Goldpath.GoldpathApprovalDelegation.ToString() -> string!
+override Goldpath.GoldpathApprovalEscalated.Equals(object? obj) -> bool
+override Goldpath.GoldpathApprovalEscalated.GetHashCode() -> int
+override Goldpath.GoldpathApprovalEscalated.ToString() -> string!
+override Goldpath.GoldpathApprovalExpired.Equals(object? obj) -> bool
+override Goldpath.GoldpathApprovalExpired.GetHashCode() -> int
+override Goldpath.GoldpathApprovalExpired.ToString() -> string!
+override Goldpath.GoldpathApprovalGranted.Equals(object? obj) -> bool
+override Goldpath.GoldpathApprovalGranted.GetHashCode() -> int
+override Goldpath.GoldpathApprovalGranted.ToString() -> string!
+override Goldpath.GoldpathApprovalRejected.Equals(object? obj) -> bool
+override Goldpath.GoldpathApprovalRejected.GetHashCode() -> int
+override Goldpath.GoldpathApprovalRejected.ToString() -> string!
+override Goldpath.GoldpathApprovalRequestDetail.Equals(object? obj) -> bool
+override Goldpath.GoldpathApprovalRequestDetail.GetHashCode() -> int
+override Goldpath.GoldpathApprovalRequestDetail.ToString() -> string!
+override Goldpath.GoldpathApprovalRequestInfo.Equals(object? obj) -> bool
+override Goldpath.GoldpathApprovalRequestInfo.GetHashCode() -> int
+override Goldpath.GoldpathApprovalRequestInfo.ToString() -> string!
+override Goldpath.GoldpathApprovalRequested.Equals(object? obj) -> bool
+override Goldpath.GoldpathApprovalRequested.GetHashCode() -> int
+override Goldpath.GoldpathApprovalRequested.ToString() -> string!
+override Goldpath.GoldpathApprovalRung.Equals(object? obj) -> bool
+override Goldpath.GoldpathApprovalRung.GetHashCode() -> int
+override Goldpath.GoldpathApprovalRung.ToString() -> string!
+override Goldpath.GoldpathApprovalSignature.Equals(object? obj) -> bool
+override Goldpath.GoldpathApprovalSignature.GetHashCode() -> int
+override Goldpath.GoldpathApprovalSignature.ToString() -> string!
+override Goldpath.GoldpathApprovalTrailEntry.Equals(object? obj) -> bool
+override Goldpath.GoldpathApprovalTrailEntry.GetHashCode() -> int
+override Goldpath.GoldpathApprovalTrailEntry.ToString() -> string!
+static Goldpath.GoldpathApprovalDecisionRequest.operator !=(Goldpath.GoldpathApprovalDecisionRequest? left, Goldpath.GoldpathApprovalDecisionRequest? right) -> bool
+static Goldpath.GoldpathApprovalDecisionRequest.operator ==(Goldpath.GoldpathApprovalDecisionRequest? left, Goldpath.GoldpathApprovalDecisionRequest? right) -> bool
+static Goldpath.GoldpathApprovalDelegation.operator !=(Goldpath.GoldpathApprovalDelegation? left, Goldpath.GoldpathApprovalDelegation? right) -> bool
+static Goldpath.GoldpathApprovalDelegation.operator ==(Goldpath.GoldpathApprovalDelegation? left, Goldpath.GoldpathApprovalDelegation? right) -> bool
+static Goldpath.GoldpathApprovalEscalated.operator !=(Goldpath.GoldpathApprovalEscalated? left, Goldpath.GoldpathApprovalEscalated? right) -> bool
+static Goldpath.GoldpathApprovalEscalated.operator ==(Goldpath.GoldpathApprovalEscalated? left, Goldpath.GoldpathApprovalEscalated? right) -> bool
+static Goldpath.GoldpathApprovalExpired.operator !=(Goldpath.GoldpathApprovalExpired? left, Goldpath.GoldpathApprovalExpired? right) -> bool
+static Goldpath.GoldpathApprovalExpired.operator ==(Goldpath.GoldpathApprovalExpired? left, Goldpath.GoldpathApprovalExpired? right) -> bool
+static Goldpath.GoldpathApprovalGranted.operator !=(Goldpath.GoldpathApprovalGranted? left, Goldpath.GoldpathApprovalGranted? right) -> bool
+static Goldpath.GoldpathApprovalGranted.operator ==(Goldpath.GoldpathApprovalGranted? left, Goldpath.GoldpathApprovalGranted? right) -> bool
+static Goldpath.GoldpathApprovalRejected.operator !=(Goldpath.GoldpathApprovalRejected? left, Goldpath.GoldpathApprovalRejected? right) -> bool
+static Goldpath.GoldpathApprovalRejected.operator ==(Goldpath.GoldpathApprovalRejected? left, Goldpath.GoldpathApprovalRejected? right) -> bool
+static Goldpath.GoldpathApprovalRequestDetail.operator !=(Goldpath.GoldpathApprovalRequestDetail? left, Goldpath.GoldpathApprovalRequestDetail? right) -> bool
+static Goldpath.GoldpathApprovalRequestDetail.operator ==(Goldpath.GoldpathApprovalRequestDetail? left, Goldpath.GoldpathApprovalRequestDetail? right) -> bool
+static Goldpath.GoldpathApprovalRequestInfo.operator !=(Goldpath.GoldpathApprovalRequestInfo? left, Goldpath.GoldpathApprovalRequestInfo? right) -> bool
+static Goldpath.GoldpathApprovalRequestInfo.operator ==(Goldpath.GoldpathApprovalRequestInfo? left, Goldpath.GoldpathApprovalRequestInfo? right) -> bool
+static Goldpath.GoldpathApprovalRequested.operator !=(Goldpath.GoldpathApprovalRequested? left, Goldpath.GoldpathApprovalRequested? right) -> bool
+static Goldpath.GoldpathApprovalRequested.operator ==(Goldpath.GoldpathApprovalRequested? left, Goldpath.GoldpathApprovalRequested? right) -> bool
+static Goldpath.GoldpathApprovalRung.operator !=(Goldpath.GoldpathApprovalRung? left, Goldpath.GoldpathApprovalRung? right) -> bool
+static Goldpath.GoldpathApprovalRung.operator ==(Goldpath.GoldpathApprovalRung? left, Goldpath.GoldpathApprovalRung? right) -> bool
+static Goldpath.GoldpathApprovalSignature.operator !=(Goldpath.GoldpathApprovalSignature? left, Goldpath.GoldpathApprovalSignature? right) -> bool
+static Goldpath.GoldpathApprovalSignature.operator ==(Goldpath.GoldpathApprovalSignature? left, Goldpath.GoldpathApprovalSignature? right) -> bool
+static Goldpath.GoldpathApprovalTrailEntry.operator !=(Goldpath.GoldpathApprovalTrailEntry? left, Goldpath.GoldpathApprovalTrailEntry? right) -> bool
+static Goldpath.GoldpathApprovalTrailEntry.operator ==(Goldpath.GoldpathApprovalTrailEntry? left, Goldpath.GoldpathApprovalTrailEntry? right) -> bool

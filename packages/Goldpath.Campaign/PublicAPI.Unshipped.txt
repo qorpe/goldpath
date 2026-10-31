@@ -201,3 +201,61 @@ Goldpath.GoldpathCampaignThrottle.ClearStartAt.get -> bool
 Goldpath.GoldpathCampaignThrottle.ClearStartAt.init -> void
 Goldpath.GoldpathCampaignThrottle.StartAt.get -> System.DateTimeOffset?
 Goldpath.GoldpathCampaignThrottle.StartAt.init -> void
+Goldpath.GoldpathCampaignActionAccepted.Equals(Goldpath.GoldpathCampaignActionAccepted? other) -> bool
+Goldpath.GoldpathCampaignActionFailed.Equals(Goldpath.GoldpathCampaignActionFailed? other) -> bool
+Goldpath.GoldpathCampaignActionResult.GoldpathCampaignActionResult(Goldpath.GoldpathCampaignActionResult! original) -> void
+Goldpath.GoldpathCampaignActionSucceeded.Equals(Goldpath.GoldpathCampaignActionSucceeded? other) -> bool
+Goldpath.GoldpathCampaignActionSucceeded.GoldpathCampaignActionSucceeded() -> void
+Goldpath.GoldpathCampaignCallbackRequest.<Clone>$() -> Goldpath.GoldpathCampaignCallbackRequest!
+Goldpath.GoldpathCampaignCallbackRequest.Deconstruct(out bool Succeeded, out string? ErrorCode, out string? Error, out bool Retryable) -> void
+Goldpath.GoldpathCampaignCallbackRequest.Equals(Goldpath.GoldpathCampaignCallbackRequest? other) -> bool
+Goldpath.GoldpathCampaignCallbackResolution.<Clone>$() -> Goldpath.GoldpathCampaignCallbackResolution!
+Goldpath.GoldpathCampaignCallbackResolution.Deconstruct(out Goldpath.GoldpathCampaignCallbackStatus Status, out Goldpath.GoldpathCampaignOutcomeMessage? Outcome) -> void
+Goldpath.GoldpathCampaignCallbackResolution.Equals(Goldpath.GoldpathCampaignCallbackResolution? other) -> bool
+Goldpath.GoldpathCampaignFairShareClaim.Deconstruct(out int Weight, out int Demand) -> void
+Goldpath.GoldpathCampaignFairShareClaim.Equals(Goldpath.GoldpathCampaignFairShareClaim other) -> bool
+abstract Goldpath.GoldpathCampaignActionResult.<Clone>$() -> Goldpath.GoldpathCampaignActionResult!
+override Goldpath.GoldpathCampaignActionAccepted.<Clone>$() -> Goldpath.GoldpathCampaignActionAccepted!
+override Goldpath.GoldpathCampaignActionAccepted.Equals(object? obj) -> bool
+override Goldpath.GoldpathCampaignActionAccepted.GetHashCode() -> int
+override Goldpath.GoldpathCampaignActionAccepted.ToString() -> string!
+override Goldpath.GoldpathCampaignActionFailed.<Clone>$() -> Goldpath.GoldpathCampaignActionFailed!
+override Goldpath.GoldpathCampaignActionFailed.Equals(object? obj) -> bool
+override Goldpath.GoldpathCampaignActionFailed.GetHashCode() -> int
+override Goldpath.GoldpathCampaignActionFailed.ToString() -> string!
+override Goldpath.GoldpathCampaignActionResult.Equals(object? obj) -> bool
+override Goldpath.GoldpathCampaignActionResult.GetHashCode() -> int
+override Goldpath.GoldpathCampaignActionResult.ToString() -> string!
+override Goldpath.GoldpathCampaignActionSucceeded.<Clone>$() -> Goldpath.GoldpathCampaignActionSucceeded!
+override Goldpath.GoldpathCampaignActionSucceeded.Equals(object? obj) -> bool
+override Goldpath.GoldpathCampaignActionSucceeded.GetHashCode() -> int
+override Goldpath.GoldpathCampaignActionSucceeded.ToString() -> string!
+override Goldpath.GoldpathCampaignCallbackRequest.Equals(object? obj) -> bool
+override Goldpath.GoldpathCampaignCallbackRequest.GetHashCode() -> int
+override Goldpath.GoldpathCampaignCallbackRequest.ToString() -> string!
+override Goldpath.GoldpathCampaignCallbackResolution.Equals(object? obj) -> bool
+override Goldpath.GoldpathCampaignCallbackResolution.GetHashCode() -> int
+override Goldpath.GoldpathCampaignCallbackResolution.ToString() -> string!
+override Goldpath.GoldpathCampaignFairShareClaim.GetHashCode() -> int
+override sealed Goldpath.GoldpathCampaignActionAccepted.Equals(Goldpath.GoldpathCampaignActionResult? other) -> bool
+override sealed Goldpath.GoldpathCampaignActionFailed.Equals(Goldpath.GoldpathCampaignActionResult? other) -> bool
+override sealed Goldpath.GoldpathCampaignActionSucceeded.Equals(Goldpath.GoldpathCampaignActionResult? other) -> bool
+static Goldpath.GoldpathCampaignActionAccepted.operator !=(Goldpath.GoldpathCampaignActionAccepted? left, Goldpath.GoldpathCampaignActionAccepted? right) -> bool
+static Goldpath.GoldpathCampaignActionAccepted.operator ==(Goldpath.GoldpathCampaignActionAccepted? left, Goldpath.GoldpathCampaignActionAccepted? right) -> bool
+static Goldpath.GoldpathCampaignActionFailed.operator !=(Goldpath.GoldpathCampaignActionFailed? left, Goldpath.GoldpathCampaignActionFailed? right) -> bool
+static Goldpath.GoldpathCampaignActionFailed.operator ==(Goldpath.GoldpathCampaignActionFailed? left, Goldpath.GoldpathCampaignActionFailed? right) -> bool
+static Goldpath.GoldpathCampaignActionResult.operator !=(Goldpath.GoldpathCampaignActionResult? left, Goldpath.GoldpathCampaignActionResult? right) -> bool
+static Goldpath.GoldpathCampaignActionResult.operator ==(Goldpath.GoldpathCampaignActionResult? left, Goldpath.GoldpathCampaignActionResult? right) -> bool
+static Goldpath.GoldpathCampaignActionSucceeded.operator !=(Goldpath.GoldpathCampaignActionSucceeded? left, Goldpath.GoldpathCampaignActionSucceeded? right) -> bool
+static Goldpath.GoldpathCampaignActionSucceeded.operator ==(Goldpath.GoldpathCampaignActionSucceeded? left, Goldpath.GoldpathCampaignActionSucceeded? right) -> bool
+static Goldpath.GoldpathCampaignCallbackRequest.operator !=(Goldpath.GoldpathCampaignCallbackRequest? left, Goldpath.GoldpathCampaignCallbackRequest? right) -> bool
+static Goldpath.GoldpathCampaignCallbackRequest.operator ==(Goldpath.GoldpathCampaignCallbackRequest? left, Goldpath.GoldpathCampaignCallbackRequest? right) -> bool
+static Goldpath.GoldpathCampaignCallbackResolution.operator !=(Goldpath.GoldpathCampaignCallbackResolution? left, Goldpath.GoldpathCampaignCallbackResolution? right) -> bool
+static Goldpath.GoldpathCampaignCallbackResolution.operator ==(Goldpath.GoldpathCampaignCallbackResolution? left, Goldpath.GoldpathCampaignCallbackResolution? right) -> bool
+static Goldpath.GoldpathCampaignFairShareClaim.operator !=(Goldpath.GoldpathCampaignFairShareClaim left, Goldpath.GoldpathCampaignFairShareClaim right) -> bool
+static Goldpath.GoldpathCampaignFairShareClaim.operator ==(Goldpath.GoldpathCampaignFairShareClaim left, Goldpath.GoldpathCampaignFairShareClaim right) -> bool
+virtual Goldpath.GoldpathCampaignActionResult.EqualityContract.get -> System.Type!
+virtual Goldpath.GoldpathCampaignActionResult.Equals(Goldpath.GoldpathCampaignActionResult? other) -> bool
+virtual Goldpath.GoldpathCampaignActionResult.PrintMembers(System.Text.StringBuilder! builder) -> bool
+~override Goldpath.GoldpathCampaignFairShareClaim.Equals(object obj) -> bool
+~override Goldpath.GoldpathCampaignFairShareClaim.ToString() -> string

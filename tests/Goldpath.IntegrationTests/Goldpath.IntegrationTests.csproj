@@ -24,6 +24,7 @@
     <PackageReference Include="Oracle.ManagedDataAccess.Core" />
     <PackageReference Include="Testcontainers.Oracle" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
   </ItemGroup>
@@ -38,6 +39,9 @@
     <ProjectReference Include="../../packages/Goldpath.Archival/Goldpath.Archival.csproj" />
     <ProjectReference Include="../../packages/Goldpath.Bulk/Goldpath.Bulk.csproj" />
     <ProjectReference Include="../../packages/Goldpath.Notification/Goldpath.Notification.csproj" />
+    <ProjectReference Include="../../packages/Goldpath.Approvals/Goldpath.Approvals.csproj" />
+    <ProjectReference Include="../../packages/Goldpath.FileExchange/Goldpath.FileExchange.csproj" />
+    <ProjectReference Include="../../packages/Goldpath.AuditTrail/Goldpath.AuditTrail.csproj" />
     <ProjectReference Include="../../packages/Goldpath.Campaign/Goldpath.Campaign.csproj" />
     <ProjectReference Include="../../packages/Goldpath.DataProtection/Goldpath.DataProtection.csproj" />
     <ProjectReference Include="../Goldpath.Jobs.TestHost/Goldpath.Jobs.TestHost.csproj" />
@@ -46,6 +50,13 @@
   <ItemGroup>
     <!-- Quartz's own Oracle DDL, vendored for the qrtz_ comparison (G7, O-3, #406), and the PostgreSQL golden. -->
     <None Include="Quartz/*.sql" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <!-- The provider-neutral store facts of three unit projects, run here on Oracle (G7, O-5b, #410): linked, not copied,
+       so the SQLite run and the Oracle run can never drift apart. -->
+  <ItemGroup>
+    <Compile Include="../Goldpath.Approvals.Tests/EfApprovalStoreFacts.cs" Link="Twins/EfApprovalStoreFacts.cs" />
+    <Compile Include="../Goldpath.FileExchange.Tests/EfFileLedgerFacts.cs" Link="Twins/EfFileLedgerFacts.cs" />
+    <Compile Include="../Goldpath.AuditTrail.Tests/AuditTrailFacts.cs" Link="Twins/AuditTrailFacts.cs" />
   </ItemGroup>
 
 </Project>

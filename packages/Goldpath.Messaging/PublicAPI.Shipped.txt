@@ -47,3 +47,11 @@ Goldpath.IntegrationEventContext.RetryAttempt.get -> int
 Goldpath.IntegrationEventContext.RetryAttempt.init -> void
 Goldpath.IntegrationEventContext.Headers.get -> System.Collections.Generic.IReadOnlyDictionary<string!, object?>!
 Goldpath.IntegrationEventContext.Headers.init -> void
+Goldpath.IntegrationEventContext.<Clone>$() -> Goldpath.IntegrationEventContext!
+Goldpath.IntegrationEventContext.Deconstruct(out System.Guid? MessageId, out string? CorrelationId, out Goldpath.TenantId? Tenant, out int RetryAttempt, out System.Collections.Generic.IReadOnlyDictionary<string!, object?>! Headers) -> void
+Goldpath.IntegrationEventContext.Equals(Goldpath.IntegrationEventContext? other) -> bool
+override Goldpath.IntegrationEventContext.Equals(object? obj) -> bool
+override Goldpath.IntegrationEventContext.GetHashCode() -> int
+override Goldpath.IntegrationEventContext.ToString() -> string!
+static Goldpath.IntegrationEventContext.operator !=(Goldpath.IntegrationEventContext? left, Goldpath.IntegrationEventContext? right) -> bool
+static Goldpath.IntegrationEventContext.operator ==(Goldpath.IntegrationEventContext? left, Goldpath.IntegrationEventContext? right) -> bool
