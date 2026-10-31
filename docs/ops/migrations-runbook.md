@@ -58,7 +58,9 @@ enterprise data are a fiction we refuse to sell — plan backups into the deploy
 ## 6. Air-gapped delivery
 
 `goldpath db bundle` produces the same artifacts locally; ship them with the release
-package. Nothing in the apply path needs the internet — the bundle is self-contained.
+package. Nothing in the apply path needs the internet — the bundle is self-contained. The
+nightly GmOffline shape bundles and applies with the network denied, as part of the whole
+[air-gapped install](air-gapped-install.md).
 
 ## 7. Triage
 

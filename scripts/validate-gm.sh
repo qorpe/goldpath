@@ -51,6 +51,25 @@ if [ ! -d "$FEED" ] || [ -z "$(ls -A "$FEED" 2>/dev/null)" ]; then
   dotnet pack "$ROOT/Goldpath.sln" -c Release -o "$FEED" --nologo -v q
 fi
 
+# The offline shape (validate-gm-offline.sh) sets four knobs (the fourth, GOLDPATH_GM_BEFORE_SMOKE,
+# is read before the smoke); every other shape sets none.
+# - GOLDPATH_GM_APP_PACKAGES: the global-packages folder from here on, AFTER the pack, so it
+#   collects exactly what the app, its tools and the CLI restore — the closure an air-gapped
+#   mirror must carry, not everything the repository's own solution needs.
+# - GOLDPATH_GM_FEED_ONLY=1: the generated app's nuget.config names the local feed and nothing
+#   else (its own comment: "in enterprise environments this points at an internal mirror").
+# - GOLDPATH_GM_CLI_NO_BUILD=1: run the goldpath CLI with --no-build, so an offline run uses the
+#   CLI built while connected instead of restoring one through the repository's nuget.org config.
+if [ -n "${GOLDPATH_GM_APP_PACKAGES:-}" ]; then
+  mkdir -p "$GOLDPATH_GM_APP_PACKAGES"
+  export NUGET_PACKAGES="$GOLDPATH_GM_APP_PACKAGES"
+fi
+if [ "${GOLDPATH_GM_CLI_NO_BUILD:-}" = "1" ]; then
+  GOLDPATH_CLI=(dotnet run --no-build --project "$ROOT/tools/Goldpath.Cli" --)
+else
+  GOLDPATH_CLI=(dotnet run --project "$ROOT/tools/Goldpath.Cli" --)
+fi
+
 dotnet new uninstall "$ROOT/templates/$TEMPLATE" >/dev/null 2>&1 || true
 dotnet new install "$ROOT/templates/$TEMPLATE" --force >/dev/null
 
@@ -63,16 +82,19 @@ if [ "${GOLDPATH_GM_VIA_CLI:-}" = "1" ]; then
   # as pending; the explicit `db init` further down is what must succeed.
   KIND=${TEMPLATE#goldpath-}
   echo "── generate (goldpath new $KIND — the VERB, not dotnet new)"
-  dotnet run --project "$ROOT/tools/Goldpath.Cli" -- new "$KIND" -n "$NAME" -o "$APP" "$@"
+  "${GOLDPATH_CLI[@]}" new "$KIND" -n "$NAME" -o "$APP" "$@"
   test -f "$APP/.goldpath/manifest.yaml" || { echo "── THE VERB GENERATED NO APP"; exit 1; }
 else
   echo "── generate ($TEMPLATE)"
   dotnet new "$TEMPLATE" -n "$NAME" -o "$APP" "$@" >/dev/null
 fi
-python3 - "$APP/nuget.config" "$FEED" <<'PY'
-import sys
-path, feed = sys.argv[1], sys.argv[2]
+python3 - "$APP/nuget.config" "$FEED" "${GOLDPATH_GM_FEED_ONLY:-}" <<'PY'
+import re, sys
+path, feed, feed_only = sys.argv[1], sys.argv[2], sys.argv[3] == "1"
 s = open(path).read().replace("<!-- GOLDPATH_FEED -->", f'<add key="goldpath-local" value="{feed}" />')
+if feed_only:
+    s, n = re.subn(r'\s*<add key="nuget\.org"[^>]*/>', "", s)
+    assert n == 1, "the template's nuget.config no longer names nuget.org: the offline shape cannot remove it"
 open(path, "w").write(s)
 PY
 
@@ -108,7 +130,7 @@ echo "── build (before db init, so a compile error names its rule)"
 dotnet build "$APP" --nologo -v q -m:1
 
 echo "── initial migration (goldpath db init — Development migrates, EnsureCreated is gone)"
-(cd "$APP" && dotnet run --project "$ROOT/tools/Goldpath.Cli" -- db init --path .)
+(cd "$APP" && "${GOLDPATH_CLI[@]}" db init --path .)
 
 # Optional post-generation CLI verbs (';'-separated) — the multi-head shapes are built by
 # the SAME verbs an adopter runs (goldpath new service|gateway), never by a special path.
@@ -124,7 +146,7 @@ if [ -n "${GOLDPATH_GM_POST:-}" ]; then
         dotnet build "$APP" --nologo -v q -m:1 ;;
     esac
     echo "── goldpath $post"
-    (cd "$APP" && dotnet run --project "$ROOT/tools/Goldpath.Cli" -- $post --path .)
+    (cd "$APP" && "${GOLDPATH_CLI[@]}" $post --path .)
   done
 fi
 
@@ -145,6 +167,12 @@ if [ -d "$APP/src/$NAME.Api" ]; then
   cp "$APP/src/$NAME.Api/openapi/$NAME.Api.json" "$APP/specs/$NAME.Api.json"
 fi
 $SPECDRIFT drift --repo "$APP"
+
+# The offline shape's step between the contract and the smoke: `goldpath db bundle`, then the
+# bundle applied to a real database (validate-gm-offline.sh --apply). No other shape sets it.
+if [ -n "${GOLDPATH_GM_BEFORE_SMOKE:-}" ]; then
+  "$GOLDPATH_GM_BEFORE_SMOKE" --apply "$APP" "${GOLDPATH_CLI[@]}"
+fi
 
 echo "── smoke (real AppHost + containers)"
 dotnet test "$APP/tests/$NAME.SmokeTests" --no-build --nologo
