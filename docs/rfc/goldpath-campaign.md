@@ -157,7 +157,7 @@ added, renamed or re-tagged without this table changing fails that test.
 |---|---|---|---|
 | `goldpath_campaign_released_total` | counter | `type` | items published to the broker |
 | `goldpath_campaign_succeeded_total`, `…_failed_total` | counter | `campaign` | items the sink settled, and items terminally failed (sink or stale-claim sweep) |
-| `goldpath_campaign_outcomes_total` | counter | `type`, `outcome`, `error_code` | rows the sink MOVED, by `outcome` (`succeeded`, `accepted`, `retry`, `failed`) and the provider's code (R2.1). `error_code` is `none` without one; a type's first 32 distinct codes are themselves; every later one, any code over 64 characters, and any with a character other than a letter, a digit, `_`, `-` or `.` (free text: an address, a phrase) reads `other` |
+| `goldpath_campaign_outcomes_total` | counter | `type`, `outcome`, `error_code` | rows the sink MOVED, by `outcome` (`succeeded`, `accepted`, `retry`, `failed`) and the provider's code (R2.1). `error_code` is `none` without one; a type's first 32 distinct codes are themselves; every later one, any code over 64 characters, any with a character other than a letter, a digit, `_`, `-` or `.` (free text: an address, a phrase), and any with a run of more than six digits (an identifier echoed back as the code: a phone or account number) reads `other`; a numeric provider code such as `503` or `30007` is itself |
 | `goldpath_campaign_handler_duration` | histogram, s | `type` | one item handler call — the adapter's latency; a throw is timed too |
 | `goldpath_campaign_sink_flush_lag` | histogram, s | `type` | from an attempt's claim to the flush that made its outcome durable, once per item answered straight from `Processing`. It is the handler's time plus the sink's lag: the seam carries no send instant, so the sink's share alone is this minus `goldpath_campaign_handler_duration` (T57) |
 | `goldpath_campaign_window_closed_ticks_total` | counter | `type` | leader ticks that released nothing because the window or the day was closed |
@@ -170,8 +170,13 @@ added, renamed or re-tagged without this table changing fails that test.
 | `goldpath_campaign_released_today`, `…_daily_quota` | gauge | `campaign`, `type` | quota consumption: what the quota day released, against `DailyQuota` (absent without one) |
 | `goldpath_campaign_leader_last_tick` | gauge, s | — | when this process's pacer last ticked, in Unix seconds. Every process that ever led keeps its last value, so liveness is `time() - max(goldpath_campaign_leader_last_tick)` |
 
-The per-campaign gauges come from the leader's last tick: a campaign that stops running (paused,
-finished, expired) leaves the ceiling, quota and binding gauges with the next tick.
+The per-campaign gauges (`tps_ceiling`, `binding_constraint`, `released_today`, `daily_quota`) and
+the shared ceilings (`type_max_tps`, `global_tps`) come from the last tick of a leadership slice that
+is still running: a campaign that stops running (paused, finished, expired) leaves them with the
+next tick, and when a slice ends they all leave with it, because leadership may move. A process
+that no longer leads therefore exports none of them, and only the leader's live view is scraped;
+between two slices of the same leader they are absent until the next slice's first tick.
+`leader_last_tick` is the exception: it stays, per process, as the liveness signal.
 
 **Not built**, and therefore not listed: *counter-reconcile events*. The D3 reconcile is reading the
 row at takeover; it has no event to count. R3-S5's slice re-count of `AwaitingAckCount` will add

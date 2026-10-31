@@ -55,6 +55,13 @@ public static class GoldpathCampaignMetrics
     /// <summary>The longest error code reported as itself; a longer one reads <see cref="OtherErrorCode"/>.</summary>
     internal const int MaxErrorCodeLength = 64;
 
+    /// <summary>
+    /// The longest run of digits an error code may carry and still be a label: a
+    /// numeric provider code (<c>503</c>, <c>30007</c>) is one, a phone or account number echoed
+    /// back as the code (<c>905551112233</c>, an IBAN) is an identifier and reads <c>other</c>.
+    /// </summary>
+    internal const int MaxErrorCodeDigitRun = 6;
+
     /// <summary>The error-code tag of a failure whose code is over the cap or too long.</summary>
     internal const string OtherErrorCode = "other";
 
@@ -137,8 +144,9 @@ public static class GoldpathCampaignMetrics
     /// <summary>
     /// The error-code tag, its cardinality bounded: the first <see cref="MaxErrorCodesPerType"/>
     /// distinct codes a type reports are themselves, every later one reads <see cref="OtherErrorCode"/>,
-    /// and so does a code longer than <see cref="MaxErrorCodeLength"/> or one with a character that
-    /// is not a letter, a digit, <c>_</c>, <c>-</c> or <c>.</c>. A code comes from a provider: an
+    /// and so does a code longer than <see cref="MaxErrorCodeLength"/>, one with a character that
+    /// is not a letter, a digit, <c>_</c>, <c>-</c> or <c>.</c>, or one with a run of more than
+    /// <see cref="MaxErrorCodeDigitRun"/> digits. A code comes from a provider: an
     /// unbounded tag would let one misbehaving target system grow every scrape, and a free-text one
     /// (an address, a message) would carry what the item's own row keeps to every metrics reader.
     /// </summary>
@@ -149,7 +157,7 @@ public static class GoldpathCampaignMetrics
             return NoErrorCode;
         }
 
-        if (errorCode.Length > MaxErrorCodeLength || !errorCode.All(IsCodeCharacter))
+        if (errorCode.Length > MaxErrorCodeLength || !errorCode.All(IsCodeCharacter) || LongestDigitRun(errorCode) > MaxErrorCodeDigitRun)
         {
             return OtherErrorCode;
         }
@@ -169,6 +177,18 @@ public static class GoldpathCampaignMetrics
     }
 
     private static bool IsCodeCharacter(char c) => char.IsLetterOrDigit(c) || c is '_' or '-' or '.';
+
+    private static int LongestDigitRun(string code)
+    {
+        int longest = 0, run = 0;
+        foreach (var c in code)
+        {
+            run = char.IsDigit(c) ? run + 1 : 0;
+            longest = Math.Max(longest, run);
+        }
+
+        return longest;
+    }
 
     /// <summary>One item handler call's duration.</summary>
     internal static void HandlerCall(string type, TimeSpan elapsed)
@@ -190,6 +210,37 @@ public static class GoldpathCampaignMetrics
         lock (SnapshotLock)
         {
             Ticks[owner] = state;
+        }
+
+        Ticked?.Invoke();
+    }
+
+    /// <summary>
+    /// Raised after a tick's view is published, outside the lock: an in-process reader (the
+    /// metrics tests) reads the gauges at the instant they hold that tick, since a slice's
+    /// per-campaign view leaves the gauges when the slice ends.
+    /// </summary>
+    internal static event Action? Ticked;
+
+    /// <summary>
+    /// A pacer's leadership slice ended: its per-campaign facts and the shared ceilings leave the
+    /// gauges, and only its last-tick instant stays. The process may no longer lead, and a former
+    /// leader still exporting the campaigns it last ticked would put a second, frozen value beside
+    /// the new leader's live one. A slice the pacer runs again publishes them with its first tick.
+    /// </summary>
+    internal static void EndSlice(object owner)
+    {
+        lock (SnapshotLock)
+        {
+            if (Ticks.TryGetValue(owner, out var state))
+            {
+                Ticks[owner] = state with
+                {
+                    Campaigns = new Dictionary<Guid, GoldpathCampaignTickFacts>(),
+                    TypeCeilings = new Dictionary<string, int>(StringComparer.Ordinal),
+                    GlobalTps = null,
+                };
+            }
         }
     }
 

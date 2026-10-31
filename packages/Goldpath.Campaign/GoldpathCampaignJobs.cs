@@ -144,6 +144,9 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
         }
         finally
         {
+            // The slice is over and leadership may move: the per-campaign gauges leave with it,
+            // so a former leader never exports a frozen view beside the new leader's (RFC §7).
+            GoldpathCampaignMetrics.EndSlice(_options);
             foreach (var stream in streams.Values)
             {
                 await stream.DisposeAsync();

@@ -62,8 +62,7 @@ public class MetricsExportTests
         fixture.FailIds.Add(3);
         // Two attempts, so the item that throws walks the ladder: its outcome is a retry.
         var campaign = await CreateAsync(fixture, new GoldpathCampaignPolicy(1_000, 50, 100, null, null, "UTC") { MaxAttempts = 2 });
-        await fixture.RunPacerSliceAsync();
-        probe.Listener.RecordObservableInstruments();
+        await probe.ObserveWhileAsync(fixture.RunPacerSliceAsync);
 
         // The fleet, through the shipped handler and sink: one item throws, so its outcome carries HANDLER_EXCEPTION.
         await RunHandlerAndSinkAsync(fixture);
@@ -105,8 +104,8 @@ public class MetricsExportTests
         Assert.Contains(probe.Seen("goldpath_campaign_global_tps", _ => true), m => m.Value == ProbeGlobalTps);
         Assert.Contains(probe.Seen("goldpath_campaign_leader_last_tick", _ => true),
             m => m.Value >= startedAt.ToUnixTimeMilliseconds() / 1000d - 1);
-        Assert.Equal("none", Assert.Single(probe.Seen("goldpath_campaign_binding_constraint", m => Equals(m.Tag("campaign"), id))
-            .Select(m => m.Tag("constraint")).Distinct()));
+        Assert.Equal("none", probe.Seen("goldpath_campaign_binding_constraint", m => Equals(m.Tag("campaign"), id))
+            .Last().Tag("constraint"));
         Assert.Equal(3, probe.Sum("goldpath_campaign_outcomes_total",
             m => Equals(m.Tag("type"), ProbeType) && Equals(m.Tag("outcome"), "succeeded") && Equals(m.Tag("error_code"), "none")));
         Assert.Equal(1, probe.Sum("goldpath_campaign_outcomes_total",
@@ -182,6 +181,18 @@ public class MetricsExportTests
     }
 
     [Fact]
+    public async Task Binding_Window_OnAnExcludedDay()
+    {
+        // Today and tomorrow (UTC), so a run that crosses midnight still lands on an excluded day.
+        var today = DateTime.UtcNow.DayOfWeek;
+        var policy = new GoldpathCampaignPolicy(10_000, null, 100, null, null, "UTC")
+        {
+            ExcludedDays = [today, (DayOfWeek)(((int)today + 1) % 7)],
+        };
+        Assert.Equal("window", await BindingAfterOneSliceAsync(policy));
+    }
+
+    [Fact]
     public async Task Binding_Tps_WhenTheCampaignsOwnRateHoldsIt()
         => Assert.Equal("tps", await BindingAfterOneSliceAsync(new GoldpathCampaignPolicy(2, null, 100, null, null, "UTC"), sourceSize: 200));
 
@@ -206,17 +217,55 @@ public class MetricsExportTests
         using var probe = new MetricsProbe();
         using var fixture = new CampaignFixture(Fast, sourceSize: 10);
         var campaign = await fixture.CreateAsync(new GoldpathCampaignPolicy(10_000, null, 2, null, null, "UTC"));
-        await fixture.RunPacerSliceAsync();
+        // A second campaign that keeps running: the next slice's ticks publish IT, and not the paused one.
+        var other = await fixture.CreateAsync(new GoldpathCampaignPolicy(10_000, null, 2, null, null, "UTC"));
+        await probe.ObserveWhileAsync(fixture.RunPacerSliceAsync);
         var id = campaign.Id.ToString("N");
-        probe.Listener.RecordObservableInstruments();
+        var otherId = other.Id.ToString("N");
         Assert.NotEmpty(probe.Seen("goldpath_campaign_binding_constraint", m => Equals(m.Tag("campaign"), id)));
 
         Assert.True((await fixture.Admin().PauseAsync(campaign.Id, "tester", CancellationToken.None)).Ok);
-        await fixture.RunPacerSliceAsync();
         probe.Clear();
-        probe.Listener.RecordObservableInstruments();
+        await probe.ObserveWhileAsync(fixture.RunPacerSliceAsync);
+        Assert.NotEmpty(probe.Seen("goldpath_campaign_binding_constraint", m => Equals(m.Tag("campaign"), otherId)));
         Assert.Empty(probe.Seen("goldpath_campaign_binding_constraint", m => Equals(m.Tag("campaign"), id)));
         Assert.Empty(probe.Seen("goldpath_campaign_tps_ceiling", m => Equals(m.Tag("campaign"), id)));
+    }
+
+    /// <summary>
+    /// A slice that ends takes its per-campaign and ceiling gauges with it (RFC §7): leadership may
+    /// move, and a former leader must not keep exporting a frozen view beside the new leader's.
+    /// Its last-tick instant stays: that is the liveness signal.
+    /// </summary>
+    [Fact]
+    public async Task AnEndedSlice_LeavesThePerCampaignGauges_AndKeepsItsLastTick()
+    {
+        using var probe = new MetricsProbe();
+        var type = "slice-" + Guid.NewGuid().ToString("N")[..12];
+        using var fixture = new CampaignFixture(o =>
+        {
+            Fast(o);
+            o.AddCampaign<TestTarget>(type, c => c.MaxTargets(100).MaxTps(555).Targets((_, _) => Targets(10)));
+        });
+        var campaign = await CreateAsync(fixture, new GoldpathCampaignPolicy(10_000, 50, 2, null, null, "UTC"), type);
+        var id = campaign.Id.ToString("N");
+        await probe.ObserveWhileAsync(fixture.RunPacerSliceAsync);
+        Assert.NotEmpty(probe.Seen("goldpath_campaign_binding_constraint", m => Equals(m.Tag("campaign"), id)));
+        Assert.NotEmpty(probe.Seen("goldpath_campaign_type_max_tps", m => Equals(m.Tag("type"), type)));
+
+        probe.Clear();
+        probe.Listener.RecordObservableInstruments();
+        foreach (var name in new[]
+        {
+            "goldpath_campaign_binding_constraint", "goldpath_campaign_tps_ceiling",
+            "goldpath_campaign_released_today", "goldpath_campaign_daily_quota",
+        })
+        {
+            Assert.Empty(probe.Seen(name, m => Equals(m.Tag("campaign"), id)));
+        }
+
+        Assert.Empty(probe.Seen("goldpath_campaign_type_max_tps", m => Equals(m.Tag("type"), type)));
+        Assert.NotEmpty(probe.Seen("goldpath_campaign_leader_last_tick", _ => true));
     }
 
     // ---- the pure rules ----
@@ -267,8 +316,26 @@ public class MetricsExportTests
     [InlineData("HTTP 503", "other")]            // a phrase,
     [InlineData("a=b;c", "other")]               // a pair
     [InlineData("TIMEOUT\n", "other")]
+    [InlineData("503", "503")]                   // a numeric provider code is a code,
+    [InlineData("E-123456", "E-123456")]         // up to six digits in a row,
+    [InlineData("905551112233", "other")]        // a phone number echoed back is not,
+    [InlineData("TR330006100519786457841326", "other")]   // nor an account number,
+    [InlineData("1234567", "other")]             // seven digits in a row are an identifier
     public void ErrorCodes_WithoutAValue_ReadNone_AndFreeText_ReadsOther(string? code, string expected)
         => Assert.Equal(expected, GoldpathCampaignMetrics.ErrorCodeTag("codes-" + Guid.NewGuid().ToString("N"), code));
+
+    /// <summary>Clock skew between the claiming and the flushing node never records a negative lag.</summary>
+    [Theory]
+    [InlineData(-5.0, 0.0)]
+    [InlineData(0.0, 0.0)]
+    [InlineData(1.5, 1.5)]
+    public void FlushLag_IsNeverNegative(double sinceClaim, double recorded)
+    {
+        using var probe = new MetricsProbe();
+        var type = "lag-" + Guid.NewGuid().ToString("N");
+        GoldpathCampaignMetrics.Flushed(type, TimeSpan.FromSeconds(sinceClaim));
+        Assert.Equal(recorded, Assert.Single(probe.Seen("goldpath_campaign_sink_flush_lag", m => Equals(m.Tag("type"), type))).Value);
+    }
 
     [Fact]
     public void ErrorCodes_LongerThanTheCap_ReadOther_WithoutTakingASlot()
@@ -354,11 +421,11 @@ public class MetricsExportTests
         var campaign = await CreateAsync(fixture, policy, type);
         // Enumerated BEFORE the slice (as R2PacingTests do): the binding constraint is about release.
         await fixture.EnumerateAllAsync(campaign);
-        await fixture.RunPacerSliceAsync();
-        probe.Listener.RecordObservableInstruments();
+        await probe.ObserveWhileAsync(fixture.RunPacerSliceAsync);
         var id = campaign.Id.ToString("N");
-        return Assert.Single(probe.Seen("goldpath_campaign_binding_constraint", m => Equals(m.Tag("campaign"), id)))
-            .Tag("constraint") as string;
+        // The last tick's constraint: every tick reports one, and the slice ends on its last.
+        return probe.Seen("goldpath_campaign_binding_constraint", m => Equals(m.Tag("campaign"), id))
+            .Last().Tag("constraint") as string;
     }
 
     /// <summary>One measurement: its value and its tags.</summary>
@@ -374,6 +441,8 @@ public class MetricsExportTests
 
         public MetricsProbe()
         {
+            // The meter's instruments exist from its first use; a probe that starts earlier must still see them.
+            RuntimeHelpers.RunClassConstructor(typeof(GoldpathCampaignMetrics).TypeHandle);
             Listener.InstrumentPublished = (instrument, l) =>
             {
                 if (instrument.Meter.Name == "Goldpath.Campaign")
@@ -400,6 +469,24 @@ public class MetricsExportTests
         public double Sum(string name, Func<Seen, bool> mine) => Seen(name, mine).Sum(m => m.Value);
 
         public void Clear() => _seen.Clear();
+
+        /// <summary>
+        /// Runs <paramref name="work"/> reading the observable gauges at every pacer tick: a
+        /// slice's per-campaign gauges exist while it runs and leave when it ends.
+        /// </summary>
+        public async Task ObserveWhileAsync(Func<Task> work)
+        {
+            void Read() => Listener.RecordObservableInstruments();
+            GoldpathCampaignMetrics.Ticked += Read;
+            try
+            {
+                await work();
+            }
+            finally
+            {
+                GoldpathCampaignMetrics.Ticked -= Read;
+            }
+        }
 
         public void Dispose() => Listener.Dispose();
 
