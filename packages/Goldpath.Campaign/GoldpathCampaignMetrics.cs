@@ -136,9 +136,11 @@ public static class GoldpathCampaignMetrics
 
     /// <summary>
     /// The error-code tag, its cardinality bounded: the first <see cref="MaxErrorCodesPerType"/>
-    /// distinct codes a type reports are themselves, every later one and any code longer than
-    /// <see cref="MaxErrorCodeLength"/> reads <see cref="OtherErrorCode"/>. A code comes from a
-    /// provider, so an unbounded tag would let one misbehaving target system grow every scrape.
+    /// distinct codes a type reports are themselves, every later one reads <see cref="OtherErrorCode"/>,
+    /// and so does a code longer than <see cref="MaxErrorCodeLength"/> or one with a character that
+    /// is not a letter, a digit, <c>_</c>, <c>-</c> or <c>.</c>. A code comes from a provider: an
+    /// unbounded tag would let one misbehaving target system grow every scrape, and a free-text one
+    /// (an address, a message) would carry what the item's own row keeps to every metrics reader.
     /// </summary>
     internal static string ErrorCodeTag(string type, string? errorCode)
     {
@@ -147,7 +149,7 @@ public static class GoldpathCampaignMetrics
             return NoErrorCode;
         }
 
-        if (errorCode.Length > MaxErrorCodeLength)
+        if (errorCode.Length > MaxErrorCodeLength || !errorCode.All(IsCodeCharacter))
         {
             return OtherErrorCode;
         }
@@ -165,6 +167,8 @@ public static class GoldpathCampaignMetrics
                 : OtherErrorCode;
         }
     }
+
+    private static bool IsCodeCharacter(char c) => char.IsLetterOrDigit(c) || c is '_' or '-' or '.';
 
     /// <summary>One item handler call's duration.</summary>
     internal static void HandlerCall(string type, TimeSpan elapsed)

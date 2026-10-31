@@ -262,7 +262,12 @@ public class MetricsExportTests
     [InlineData("", "none")]
     [InlineData("   ", "none")]
     [InlineData("İPTAL_ı", "İPTAL_ı")]   // a code is reported verbatim, culture plays no part
-    public void ErrorCodes_WithoutAValue_ReadNone(string? code, string expected)
+    [InlineData("SMS-4.2", "SMS-4.2")]
+    [InlineData("user@example.test", "other")]   // free text never reaches a label: an address,
+    [InlineData("HTTP 503", "other")]            // a phrase,
+    [InlineData("a=b;c", "other")]               // a pair
+    [InlineData("TIMEOUT\n", "other")]
+    public void ErrorCodes_WithoutAValue_ReadNone_AndFreeText_ReadsOther(string? code, string expected)
         => Assert.Equal(expected, GoldpathCampaignMetrics.ErrorCodeTag("codes-" + Guid.NewGuid().ToString("N"), code));
 
     [Fact]

@@ -157,7 +157,7 @@ added, renamed or re-tagged without this table changing fails that test.
 |---|---|---|---|
 | `goldpath_campaign_released_total` | counter | `type` | items published to the broker |
 | `goldpath_campaign_succeeded_total`, `…_failed_total` | counter | `campaign` | items the sink settled, and items terminally failed (sink or stale-claim sweep) |
-| `goldpath_campaign_outcomes_total` | counter | `type`, `outcome`, `error_code` | rows the sink MOVED, by `outcome` (`succeeded`, `accepted`, `retry`, `failed`) and the provider's code (R2.1). `error_code` is `none` without one; a type's first 32 distinct codes are themselves and every later one, or any code over 64 characters, reads `other` |
+| `goldpath_campaign_outcomes_total` | counter | `type`, `outcome`, `error_code` | rows the sink MOVED, by `outcome` (`succeeded`, `accepted`, `retry`, `failed`) and the provider's code (R2.1). `error_code` is `none` without one; a type's first 32 distinct codes are themselves; every later one, any code over 64 characters, and any with a character other than a letter, a digit, `_`, `-` or `.` (free text: an address, a phrase) reads `other` |
 | `goldpath_campaign_handler_duration` | histogram, s | `type` | one item handler call — the adapter's latency; a throw is timed too |
 | `goldpath_campaign_sink_flush_lag` | histogram, s | `type` | from an attempt's claim to the flush that made its outcome durable, once per item answered straight from `Processing`. It is the handler's time plus the sink's lag: the seam carries no send instant, so the sink's share alone is this minus `goldpath_campaign_handler_duration` (T57) |
 | `goldpath_campaign_window_closed_ticks_total` | counter | `type` | leader ticks that released nothing because the window or the day was closed |
