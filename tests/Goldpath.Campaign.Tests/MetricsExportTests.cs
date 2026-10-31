@@ -46,6 +46,9 @@ public class MetricsExportTests
     /// <summary>A GlobalTps no other test configures, so its measurement is recognisably this test's.</summary>
     private const int ProbeGlobalTps = 4321;
 
+    /// <summary>The ended-slice fact's GlobalTps — distinct from <see cref="ProbeGlobalTps"/>, so its absence is its own.</summary>
+    private const int SliceGlobalTps = 4322;
+
     [Fact]
     public async Task EveryInstrument_IsExported_WithItsNameUnitAndTags()
     {
@@ -245,6 +248,7 @@ public class MetricsExportTests
         using var fixture = new CampaignFixture(o =>
         {
             Fast(o);
+            o.GlobalTps = SliceGlobalTps;
             o.AddCampaign<TestTarget>(type, c => c.MaxTargets(100).MaxTps(555).Targets((_, _) => Targets(10)));
         });
         var campaign = await CreateAsync(fixture, new GoldpathCampaignPolicy(10_000, 50, 2, null, null, "UTC"), type);
@@ -252,6 +256,7 @@ public class MetricsExportTests
         await probe.ObserveWhileAsync(fixture.RunPacerSliceAsync);
         Assert.NotEmpty(probe.Seen("goldpath_campaign_binding_constraint", m => Equals(m.Tag("campaign"), id)));
         Assert.NotEmpty(probe.Seen("goldpath_campaign_type_max_tps", m => Equals(m.Tag("type"), type)));
+        Assert.Contains(probe.Seen("goldpath_campaign_global_tps", _ => true), m => m.Value == SliceGlobalTps);
 
         probe.Clear();
         probe.Listener.RecordObservableInstruments();
@@ -265,6 +270,7 @@ public class MetricsExportTests
         }
 
         Assert.Empty(probe.Seen("goldpath_campaign_type_max_tps", m => Equals(m.Tag("type"), type)));
+        Assert.DoesNotContain(probe.Seen("goldpath_campaign_global_tps", _ => true), m => m.Value == SliceGlobalTps);
         Assert.NotEmpty(probe.Seen("goldpath_campaign_leader_last_tick", _ => true));
     }
 
@@ -320,7 +326,11 @@ public class MetricsExportTests
     [InlineData("E-123456", "E-123456")]         // up to six digits in a row,
     [InlineData("905551112233", "other")]        // a phone number echoed back is not,
     [InlineData("TR330006100519786457841326", "other")]   // nor an account number,
-    [InlineData("1234567", "other")]             // seven digits in a row are an identifier
+    [InlineData("1234567", "other")]             // seven digits in a row are an identifier,
+    [InlineData("0555-111-2233", "other")]       // and so is one printed in groups (eleven digits in all),
+    [InlineData("TR33-0006-1005-1978-6457-8413-26", "other")]   // an account number in blocks of four,
+    [InlineData("E-123456-7", "E-123456-7")]     // while seven digits in all stay a code,
+    [InlineData("A12-3456-7890", "A12-3456-7890")] // and ten in all is the boundary
     public void ErrorCodes_WithoutAValue_ReadNone_AndFreeText_ReadsOther(string? code, string expected)
         => Assert.Equal(expected, GoldpathCampaignMetrics.ErrorCodeTag("codes-" + Guid.NewGuid().ToString("N"), code));
 

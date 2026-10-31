@@ -62,6 +62,13 @@ public static class GoldpathCampaignMetrics
     /// </summary>
     internal const int MaxErrorCodeDigitRun = 6;
 
+    /// <summary>
+    /// The most digits an error code may carry in total and still be a label: an identifier
+    /// printed in groups (<c>0555-111-2233</c>, an IBAN in blocks of four) has no run longer than
+    /// <see cref="MaxErrorCodeDigitRun"/> and is still an identifier, so it reads <c>other</c>.
+    /// </summary>
+    internal const int MaxErrorCodeDigits = 10;
+
     /// <summary>The error-code tag of a failure whose code is over the cap or too long.</summary>
     internal const string OtherErrorCode = "other";
 
@@ -146,9 +153,10 @@ public static class GoldpathCampaignMetrics
     /// distinct codes a type reports are themselves, every later one reads <see cref="OtherErrorCode"/>,
     /// and so does a code longer than <see cref="MaxErrorCodeLength"/>, one with a character that
     /// is not a letter, a digit, <c>_</c>, <c>-</c> or <c>.</c>, or one with a run of more than
-    /// <see cref="MaxErrorCodeDigitRun"/> digits. A code comes from a provider: an
-    /// unbounded tag would let one misbehaving target system grow every scrape, and a free-text one
-    /// (an address, a message) would carry what the item's own row keeps to every metrics reader.
+    /// <see cref="MaxErrorCodeDigitRun"/> digits or more than <see cref="MaxErrorCodeDigits"/> digits in
+    /// all. A code comes from a provider: an unbounded tag would let one misbehaving target system grow
+    /// every scrape, and a free-text one (an address, a message) would carry what the item's own row
+    /// keeps to every metrics reader.
     /// </summary>
     internal static string ErrorCodeTag(string type, string? errorCode)
     {
@@ -157,7 +165,8 @@ public static class GoldpathCampaignMetrics
             return NoErrorCode;
         }
 
-        if (errorCode.Length > MaxErrorCodeLength || !errorCode.All(IsCodeCharacter) || LongestDigitRun(errorCode) > MaxErrorCodeDigitRun)
+        if (errorCode.Length > MaxErrorCodeLength || !errorCode.All(IsCodeCharacter)
+            || LongestDigitRun(errorCode) > MaxErrorCodeDigitRun || errorCode.Count(char.IsDigit) > MaxErrorCodeDigits)
         {
             return OtherErrorCode;
         }

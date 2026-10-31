@@ -11,8 +11,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   - `goldpath_campaign_handler_duration` (s, by type): the adapter's latency, a throw timed too.
   - `goldpath_campaign_outcomes_total` (by type, outcome and `error_code`): rows the sink moved, not messages it
     received. The code's cardinality is bounded: a type's first 32 distinct codes, then `other`; over 64
-    characters, free text (anything but letters, digits, `_`, `-`, `.`), or a run of more than six digits (a
-    phone or account number echoed back as the code) is `other`; none is `none`.
+    characters, free text (anything but letters, digits, `_`, `-`, `.`), a run of more than six digits, or more
+    than ten digits in all (a phone or account number echoed back as the code, grouped or not) is `other`; none is `none`.
   - Ceilings: `goldpath_campaign_tps_ceiling` per running campaign, `goldpath_campaign_type_max_tps` per type,
     `goldpath_campaign_global_tps`.
   - `goldpath_campaign_binding_constraint`: the limit that bound each running campaign's last tick —
