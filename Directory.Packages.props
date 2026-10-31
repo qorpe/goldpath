@@ -38,7 +38,7 @@
     <!-- The CLI reads authoring artefacts with the SAME parser and version the engine uses
          (specdrift 0.4.2 pins YamlDotNet 18.1.0), so the two cannot disagree on what a file says. -->
     <PackageVersion Include="YamlDotNet" Version="18.1.0" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
     <PackageVersion Include="MassTransit.RabbitMQ" Version="8.5.12" />
     <!-- The Wolverine engine adapter (G5, #330): the newest release targeting net10.0 on 2026-10-25, all MIT.
          The adapter project pins the transitive family exactly (CentralPackageTransitivePinningEnabled). -->
