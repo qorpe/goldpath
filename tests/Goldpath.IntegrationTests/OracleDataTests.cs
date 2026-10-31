@@ -37,6 +37,13 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
         ["GoldpathCampaigns.Name"] = "#476 — campaign create takes a blank name",
         ["GoldpathBulkFiles.FileName"] = "#476 — an upload's empty ?fileName= is stored as is",
         ["GoldpathErasureRecords.SubjectKey"] = "#476 — erase takes a blank subject key",
+        ["GoldpathNotifications.Culture"] = "#502 — the invariant fallback's culture is the empty name",
+        ["GoldpathApprovals.Subject"] = "#503 — the engine takes a blank subject",
+        ["GoldpathApprovals.RequestedBy"] = "#503 — the engine takes a blank requester",
+        ["GoldpathApprovalSignatures.SignedBy"] = "#503 — the engine takes a blank decider",
+        ["GoldpathApprovalDelegations.From"] = "#503 — delegation takes a blank delegator",
+        ["GoldpathApprovalDelegations.To"] = "#503 — delegation takes a blank delegate",
+        ["GoldpathFileQuarantine.Reason"] = "#503 — a rail may return a blank quarantine reason",
     };
 
     private static string ModelGolden([CallerFilePath] string thisFile = "")

@@ -1,3 +1,25 @@
+GoldpathApprovalDelegations.From: NVARCHAR2(128) not null
+GoldpathApprovalDelegations.Id: NUMBER(19) not null
+GoldpathApprovalDelegations.To: NVARCHAR2(128) not null
+GoldpathApprovalDelegations.Until: TIMESTAMP(7) WITH TIME ZONE not null
+GoldpathApprovalSignatures.At: TIMESTAMP(7) WITH TIME ZONE not null
+GoldpathApprovalSignatures.Id: NUMBER(19) not null
+GoldpathApprovalSignatures.RequestId: RAW(16) not null
+GoldpathApprovalSignatures.Role: NVARCHAR2(128) not null
+GoldpathApprovalSignatures.SignedBy: NVARCHAR2(128) not null
+GoldpathApprovals.Amount: DECIMAL(18,4) not null
+GoldpathApprovals.DecidedBy: NVARCHAR2(128) null
+GoldpathApprovals.Id: RAW(16) not null
+GoldpathApprovals.Ladder: NVARCHAR2(128) not null
+GoldpathApprovals.PendingRole: NVARCHAR2(128) not null
+GoldpathApprovals.PendingSince: TIMESTAMP(7) WITH TIME ZONE not null
+GoldpathApprovals.Reason: NVARCHAR2(1024) null
+GoldpathApprovals.RequestedAt: TIMESTAMP(7) WITH TIME ZONE not null
+GoldpathApprovals.RequestedBy: NVARCHAR2(128) not null
+GoldpathApprovals.Status: NVARCHAR2(16) not null
+GoldpathApprovals.Subject: NVARCHAR2(256) not null
+GoldpathApprovals.SupersedesId: RAW(16) null
+GoldpathApprovals.Trail: NVARCHAR2(2000) not null
 GoldpathArchiveChainState.Definition: NVARCHAR2(120) not null
 GoldpathArchiveChainState.LastHash: NVARCHAR2(64) not null
 GoldpathArchiveChainState.LastIndex: NUMBER(19) not null
@@ -17,6 +39,17 @@ GoldpathArchiveEntries.PreErasureContentHash: NVARCHAR2(64) null
 GoldpathArchiveEntries.PreviousHash: NVARCHAR2(64) not null
 GoldpathArchiveEntries.SchemaVersion: NUMBER(10) not null
 GoldpathArchiveEntries.Tenant: NVARCHAR2(64) null
+GoldpathAuditLog.Action: NVARCHAR2(16) not null
+GoldpathAuditLog.CorrelationId: NVARCHAR2(256) null
+GoldpathAuditLog.EntityKey: NVARCHAR2(512) not null
+GoldpathAuditLog.EntityType: NVARCHAR2(256) not null
+GoldpathAuditLog.Id: NUMBER(19) not null
+GoldpathAuditLog.NewValue: NVARCHAR2(2000) null
+GoldpathAuditLog.OldValue: NVARCHAR2(2000) null
+GoldpathAuditLog.PropertyName: NVARCHAR2(256) not null
+GoldpathAuditLog.Tenant: NVARCHAR2(256) null
+GoldpathAuditLog.Timestamp: TIMESTAMP(7) WITH TIME ZONE not null
+GoldpathAuditLog.User: NVARCHAR2(256) null
 GoldpathBulkBatches.CompletedAt: TIMESTAMP(7) WITH TIME ZONE null
 GoldpathBulkBatches.DecidedAt: TIMESTAMP(7) WITH TIME ZONE null
 GoldpathBulkBatches.DecidedBy: NVARCHAR2(256) null
@@ -131,6 +164,17 @@ GoldpathErasureRecords.Id: NUMBER(19) not null
 GoldpathErasureRecords.RequestedAt: TIMESTAMP(7) WITH TIME ZONE not null
 GoldpathErasureRecords.RequestedBy: NVARCHAR2(256) not null
 GoldpathErasureRecords.SubjectKey: NVARCHAR2(256) not null
+GoldpathFileArchive.ArchivedAt: TIMESTAMP(7) WITH TIME ZONE not null
+GoldpathFileArchive.File: NVARCHAR2(256) not null
+GoldpathFileArchive.Rail: NVARCHAR2(128) not null
+GoldpathFileProcessed.File: NVARCHAR2(256) not null
+GoldpathFileProcessed.Line: NUMBER(10) not null
+GoldpathFileProcessed.Rail: NVARCHAR2(128) not null
+GoldpathFileQuarantine.File: NVARCHAR2(256) not null
+GoldpathFileQuarantine.Line: NUMBER(10) not null
+GoldpathFileQuarantine.QuarantinedAt: TIMESTAMP(7) WITH TIME ZONE not null
+GoldpathFileQuarantine.Rail: NVARCHAR2(128) not null
+GoldpathFileQuarantine.Reason: NVARCHAR2(1024) not null
 GoldpathJobAdminAudit.Action: NVARCHAR2(32) not null
 GoldpathJobAdminAudit.Actor: NVARCHAR2(256) not null
 GoldpathJobAdminAudit.At: TIMESTAMP(7) WITH TIME ZONE not null
@@ -191,6 +235,47 @@ GoldpathLegalHolds.LiftedAt: TIMESTAMP(7) WITH TIME ZONE null
 GoldpathLegalHolds.LiftedBy: NVARCHAR2(256) null
 GoldpathLegalHolds.PlacedAt: TIMESTAMP(7) WITH TIME ZONE not null
 GoldpathLegalHolds.PlacedBy: NVARCHAR2(256) not null
+GoldpathNotificationAttachments.Content: RAW(2000) null
+GoldpathNotificationAttachments.ContentType: NVARCHAR2(128) not null
+GoldpathNotificationAttachments.Id: NUMBER(19) not null
+GoldpathNotificationAttachments.Name: NVARCHAR2(260) not null
+GoldpathNotificationAttachments.NotificationId: RAW(16) not null
+GoldpathNotifications.Attempts: NUMBER(10) not null
+GoldpathNotifications.Body: NVARCHAR2(2000) null
+GoldpathNotifications.BodyDeletedAt: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathNotifications.Channel: NVARCHAR2(64) not null
+GoldpathNotifications.ClaimedAt: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathNotifications.CorrelationId: NVARCHAR2(128) null
+GoldpathNotifications.Culture: NVARCHAR2(16) not null
+GoldpathNotifications.DedupKey: NVARCHAR2(256) not null
+GoldpathNotifications.Detail: NVARCHAR2(1024) null
+GoldpathNotifications.FailedAt: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathNotifications.Id: RAW(16) not null
+GoldpathNotifications.NotBefore: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathNotifications.Recipient: NVARCHAR2(512) not null
+GoldpathNotifications.RequestedAt: TIMESTAMP(7) WITH TIME ZONE not null
+GoldpathNotifications.SentAt: TIMESTAMP(7) WITH TIME ZONE null
+GoldpathNotifications.State: NUMBER(10) not null
+GoldpathNotifications.Subject: NVARCHAR2(1024) null
+GoldpathNotifications.Template: NVARCHAR2(128) not null
+GoldpathNotifications.TemplateHash: NVARCHAR2(64) not null
+GoldpathNotifications.Tenant: NVARCHAR2(128) null
+MediantAuditEntries.ActionName: NVARCHAR2(256) null
+MediantAuditEntries.CorrelationId: NVARCHAR2(256) not null
+MediantAuditEntries.DurationMs: BINARY_DOUBLE not null
+MediantAuditEntries.EntityId: NVARCHAR2(256) null
+MediantAuditEntries.EntityType: NVARCHAR2(256) null
+MediantAuditEntries.ErrorMessage: NVARCHAR2(256) null
+MediantAuditEntries.ExceptionType: NVARCHAR2(256) null
+MediantAuditEntries.Id: NVARCHAR2(256) not null
+MediantAuditEntries.IsSuccess: NUMBER(1) not null
+MediantAuditEntries.Metadata: NVARCHAR2(2000) not null
+MediantAuditEntries.RequestData: NVARCHAR2(256) null
+MediantAuditEntries.RequestType: NVARCHAR2(256) not null
+MediantAuditEntries.ResponseData: NVARCHAR2(256) null
+MediantAuditEntries.Timestamp: TIMESTAMP(7) WITH TIME ZONE not null
+MediantAuditEntries.UserId: NVARCHAR2(256) not null
+MediantAuditEntries.UserName: NVARCHAR2(256) null
 OracleDataRows.Amount: DECIMAL(18,4) not null
 OracleDataRows.At: NVARCHAR2(48) not null
 OracleDataRows.Correlation: RAW(16) not null
