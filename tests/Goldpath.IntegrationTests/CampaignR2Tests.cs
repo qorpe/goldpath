@@ -302,7 +302,8 @@ public sealed class CampaignR2Tests : IAsyncLifetime
 
             var migration = new Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder(db.Database.ProviderName);
             migration.GoldpathCampaignR2Backfill();
-            var step = (Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation)Assert.Single(migration.Operations);
+            Assert.Equal(2, migration.Operations.Count);   // the R2 rung stamp, then R3's ceiling-name step (#384)
+            var step = (Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation)migration.Operations[0];
             Assert.Equal(2, await db.Database.ExecuteSqlRawAsync(step.Sql));
             Assert.Equal(0, await db.Database.ExecuteSqlRawAsync(step.Sql));   // idempotent
         }
@@ -311,5 +312,48 @@ public sealed class CampaignR2Tests : IAsyncLifetime
         Assert.InRange((items[0].NextAttemptAt!.Value - failedAt - TimeSpan.FromSeconds(30)).Duration(), TimeSpan.Zero, TimeSpan.FromMilliseconds(1));
         Assert.InRange((items[1].NextAttemptAt!.Value - failedAt - TimeSpan.FromMinutes(2)).Duration(), TimeSpan.Zero, TimeSpan.FromMilliseconds(1));
         Assert.Null(items[2].NextAttemptAt);
+    }
+
+    /// <summary>
+    /// #384 on real PostgreSQL: the migration's ceiling step moves a global row an earlier build wrote with the
+    /// empty name to <c>"*"</c>, leaves every target system's row alone (an empty-named one included), drops a stale empty-named copy when a <c>"*"</c>
+    /// row already exists (the key would collide otherwise), and changes nothing when it runs again.
+    /// </summary>
+    [Fact]
+    public async Task The_R3_ceiling_step_moves_the_empty_global_name_to_star_on_PostgreSQL()
+    {
+        using var scope = _app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<CampaignTests.CampDb>();
+        var migration = new Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder(db.Database.ProviderName);
+        migration.GoldpathCampaignR2Backfill();
+        var step = ((Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation)migration.Operations[1]).Sql;
+        var now = DateTimeOffset.UtcNow;
+
+        db.Set<GoldpathCampaignCeiling>().AddRange(
+            new GoldpathCampaignCeiling { Kind = GoldpathCampaignCeilingKind.Global, Name = "", MaxTps = 100, SeedMaxTps = 100, UpdatedAt = now, UpdatedBy = "old-build" },
+            new GoldpathCampaignCeiling { Kind = GoldpathCampaignCeilingKind.TargetSystem, Name = "crm", MaxTps = 50, UpdatedAt = now, UpdatedBy = "seed" },
+            new GoldpathCampaignCeiling { Kind = GoldpathCampaignCeilingKind.TargetSystem, Name = "", MaxTps = 9, UpdatedAt = now, UpdatedBy = "seed" });   // only the GLOBAL row moves
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        Assert.Equal(1, await db.Database.ExecuteSqlRawAsync(step));   // renamed
+        Assert.Equal(0, await db.Database.ExecuteSqlRawAsync(step));   // idempotent
+        var rows = Query(d => d.Set<GoldpathCampaignCeiling>().AsNoTracking().OrderBy(c => c.Kind).ThenBy(c => c.Name).ToList());
+        Assert.Equal(
+            [(GoldpathCampaignCeilingKind.Global, "*", (int?)100), (GoldpathCampaignCeilingKind.TargetSystem, "", (int?)9), (GoldpathCampaignCeilingKind.TargetSystem, "crm", (int?)50)],
+            rows.Select(c => (c.Kind, c.Name, c.MaxTps)));
+
+        // A stale empty-named copy beside a live "*" row: dropped, and the live row keeps its value.
+        db.Set<GoldpathCampaignCeiling>().Add(
+            new GoldpathCampaignCeiling { Kind = GoldpathCampaignCeilingKind.Global, Name = "", MaxTps = 7, UpdatedAt = now, UpdatedBy = "old-build" });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        Assert.Equal(1, await db.Database.ExecuteSqlRawAsync(step));   // deleted, nothing renamed
+        Assert.Equal(0, await db.Database.ExecuteSqlRawAsync(step));
+        rows = Query(d => d.Set<GoldpathCampaignCeiling>().AsNoTracking().OrderBy(c => c.Kind).ThenBy(c => c.Name).ToList());
+        Assert.Equal(
+            [(GoldpathCampaignCeilingKind.Global, "*", (int?)100), (GoldpathCampaignCeilingKind.TargetSystem, "", (int?)9), (GoldpathCampaignCeilingKind.TargetSystem, "crm", (int?)50)],
+            rows.Select(c => (c.Kind, c.Name, c.MaxTps)));
     }
 }

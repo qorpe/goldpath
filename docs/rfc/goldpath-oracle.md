@@ -130,6 +130,13 @@ Oracle test projects.
 - **Empty string.** Oracle stores `''` as `NULL`. No Goldpath column distinguishes an empty
   string from null, which O-2 asserts across the model. The adopter guide states it, because an
   adopter's `required` string column will refuse `""`.
+- **The campaign global ceiling row's name** (#384, owner decision 2026-10-24). R3.2 keyed the
+  global row `(Global, "")`, which Oracle cannot store in a primary key. The row is named
+  `"*"` (`GoldpathCampaignCeiling.GlobalName`) on **every** provider, not only Oracle, so no
+  reader of the row needs a provider branch. An empty-named global row on PostgreSQL or SQL
+  Server moves to `"*"` in `GoldpathCampaignR2Backfill()`, the migration's existing data step.
+  That step has no Oracle branch and needs none for this: an Oracle database cannot hold the
+  empty-named row. Its Oracle branch for the R2 rung stamp stays §2.7's.
 
 ### 2.3 The Quartz job store (Jobs §11)
 

@@ -48,7 +48,7 @@ public enum GoldpathCampaignState
 /// <summary>Which ceiling a <see cref="GoldpathCampaignCeiling"/> row holds (campaign RFC R3.2).</summary>
 public enum GoldpathCampaignCeilingKind
 {
-    /// <summary>The one global release ceiling; its row's name is empty.</summary>
+    /// <summary>The one global release ceiling; its row's name is <see cref="GoldpathCampaignCeiling.GlobalName"/>.</summary>
     Global = 0,
 
     /// <summary>A named target system's ceiling, shared by every campaign type that calls it.</summary>
@@ -355,11 +355,18 @@ public class GoldpathCampaignAudit
 /// </summary>
 public class GoldpathCampaignCeiling
 {
+    /// <summary>
+    /// The global row's name, <c>"*"</c>, on every provider. It is not empty because Oracle stores
+    /// <c>''</c> as NULL, and a primary-key column cannot hold NULL (#384); one representation on
+    /// every provider keeps every reader of the row provider-blind.
+    /// </summary>
+    public const string GlobalName = "*";
+
     /// <summary>Global or a target system.</summary>
     public GoldpathCampaignCeilingKind Kind { get; set; }
 
-    /// <summary>The target system's name; empty on the global row.</summary>
-    public string Name { get; set; } = "";
+    /// <summary>The target system's name; <see cref="GlobalName"/> on the global row, which is the default.</summary>
+    public string Name { get; set; } = GlobalName;
 
     /// <summary>The live ceiling the pacer reads (releases per second); null on the global row = off.</summary>
     public int? MaxTps { get; set; }
