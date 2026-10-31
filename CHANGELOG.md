@@ -282,6 +282,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
 ### Changed
+- **Console: jsdom 25.0.1 → 30.1.3 (#492, replaces Dependabot #470).** jsdom is the console's unit-test DOM, a dev
+  dependency, and it is now pinned exactly (`"jsdom": "30.1.3"`, no range). vitest 5.0.5 and `@qorpe/ui` are unchanged, and the coverage floors hold
+  (98.05% statements, 91.14% branches).
+  - **What changed in jsdom:** `getComputedStyle` now reports an unstyled `<span>` as `inline`. jsdom 25 returned an
+    empty `display`, which the accessible-name computation treats as a block (measured on both versions).
+  - **What it exposed:** a product console tile's accessible name (`Coexist /coexist/console/`) took its separator
+    only from Tailwind's `block` class, which jsdom does not load.
+  - **The fix:** the tile now carries the space itself. A browser renders nothing for it between two block lines, and
+    the name no longer depends on the stylesheet.
 - **Dependencies: `Microsoft.CodeAnalysis.PublicApiAnalyzers` 3.3.4 → 5.6.0 (GA gate G2, #335/#491; supersedes
   #246).** The analyzer guarding every package's `PublicAPI.Shipped.txt` / `PublicAPI.Unshipped.txt` is two majors
   newer. It loads on the SDK floor (10.0.101, measured), so `global.json` does not move. Its one new demand: it
