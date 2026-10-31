@@ -275,7 +275,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   newer. It loads on the SDK floor (10.0.101, measured), so `global.json` does not move. Its one new demand: it
   counts the members a `record` synthesizes (`Equals`, `GetHashCode`, `ToString`, `PrintMembers`,
   `EqualityContract`, `<Clone>$`, `==`, `!=`) as public API. 606 such lines are added across fourteen packages,
-  each to the ledger that already declares its record (548 Shipped, 58 Unshipped). The surface did not change, only
+  each to the ledger that already declares its record (516 Shipped, 90 Unshipped). The surface did not change, only
   the ledger now describes all of it: no line is removed or reworded, and nothing is suppressed. An adopter sees
   no difference; a package author adding a record now lists those members too.
 - **Dependencies: the nuget minor/patch group of 2026-10-27.** MassTransit (and its RabbitMQ and EF Core
