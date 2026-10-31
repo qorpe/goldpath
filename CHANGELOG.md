@@ -369,6 +369,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **GP1202 no longer flags a literal client name beside a stored API key (#337).** `ApiKeys` maps a client name to its
+  key, but `options.ApiKeys.Add("job", keyFromVault)` was reported as a secret in source because ANY string argument
+  that was a literal counted. On `Add`, only the value (the key) counts now, as it already did for the indexer form
+  `ApiKeys["job"] = …`; a literal key is still flagged either way. Found while adding the tests that lift Analyzers,
+  Jobs and Archival above GA gate G9's 75 % (77.37 / 79.39 / 79.55 % on full local runs; `stryker/README.md`). The
+  Jobs and Archival model-contract suites build their model fresh instead of reading a cached one (open thread T33).
 - **Campaign: no second of pacer ticks releases more than its ceiling, even after an idle stretch (#292,
   S-FLEET-03).** Every hard-ceiling bucket (a campaign's `Tps`, a type's `MaxTps`, the `GlobalTps`)
   banked up to a whole second of tokens. What it saved while nothing released (a closed window, a full

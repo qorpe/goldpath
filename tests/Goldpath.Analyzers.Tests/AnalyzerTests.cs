@@ -136,6 +136,48 @@ public class AnalyzerTests
             """,
             new DiagnosticResult(Descriptors.RuntimeMigrate).WithLocation(0).WithArguments("Migrate"));
 
+    [Theory]
+    [InlineData("ISoftDeletable")]
+    [InlineData("IMultiTenant")]
+    public Task GOLDPATH0301_flags_datetime_under_every_goldpath_marker(string marker)
+        => Verify<DateTimeOnEntityAnalyzer>($$"""
+            public class Order : Goldpath.{{marker}}
+            {
+                public System.DateTime {|#0:CreatedOn|} { get; set; }
+            }
+            namespace Goldpath { public interface ISoftDeletable { } public interface IMultiTenant { } }
+            """,
+            new DiagnosticResult(Descriptors.DateTimeOnEntity).WithLocation(0).WithArguments("CreatedOn"));
+
+    [Fact]
+    public Task GOLDPATH0302_flags_every_runtime_schema_call_and_only_EF_Cores()
+        => Verify<RuntimeMigrateAnalyzer>("""
+            using Microsoft.EntityFrameworkCore;
+            public class C
+            {
+                public async System.Threading.Tasks.Task M(object db)
+                {
+                    await {|#0:db.MigrateAsync()|};
+                    {|#1:db.EnsureCreated()|};
+                    await {|#2:db.EnsureCreatedAsync()|};
+                    Other.Tools.Migrate(db);   // quiet: not EF Core's
+                }
+            }
+            namespace Microsoft.EntityFrameworkCore
+            {
+                public static class EfSchema
+                {
+                    public static System.Threading.Tasks.Task MigrateAsync(this object database) => System.Threading.Tasks.Task.CompletedTask;
+                    public static bool EnsureCreated(this object database) => true;
+                    public static System.Threading.Tasks.Task<bool> EnsureCreatedAsync(this object database) => System.Threading.Tasks.Task.FromResult(true);
+                }
+            }
+            namespace Other { public static class Tools { public static void Migrate(object database) { } } }
+            """,
+            new DiagnosticResult(Descriptors.RuntimeMigrate).WithLocation(0).WithArguments("MigrateAsync"),
+            new DiagnosticResult(Descriptors.RuntimeMigrate).WithLocation(1).WithArguments("EnsureCreated"),
+            new DiagnosticResult(Descriptors.RuntimeMigrate).WithLocation(2).WithArguments("EnsureCreatedAsync"));
+
     [Fact]
     public Task GOLDPATH0302_allows_development_guarded_migrate()
         => Verify<RuntimeMigrateAnalyzer>("""
