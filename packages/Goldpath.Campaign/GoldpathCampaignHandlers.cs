@@ -48,15 +48,18 @@ public sealed class GoldpathCampaignItemHandler<TContext> : IIntegrationEventHan
             .SingleAsync(c => c.Id == message.CampaignId, cancellationToken);
         GoldpathCampaignOutcomeMessage outcome;
         var attempt = item.Attempts + 1;
+        var started = _engine.Time.GetTimestamp();
         try
         {
             var result = await _engine.ExecuteItemAsync(
                 _services, message.Type, message.CampaignId, message.Seq, item.TargetJson,
                 campaign.Tenant, attempt, replay: false, cancellationToken);
+            GoldpathCampaignMetrics.HandlerCall(message.Type, _engine.Time.GetElapsedTime(started));
             outcome = _engine.OutcomeFor(message.CampaignId, message.Seq, attempt, result);
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
+            GoldpathCampaignMetrics.HandlerCall(message.Type, _engine.Time.GetElapsedTime(started));
             _logger.LogWarning(e, "Campaign item {CampaignId}#{Seq} failed in its handler.", message.CampaignId, message.Seq);
             outcome = new GoldpathCampaignOutcomeMessage(
                 message.CampaignId, message.Seq, false, e.Message.Length > 1000 ? e.Message[..1000] : e.Message)

@@ -5,6 +5,30 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **Campaign: the metrics RFC §7 promised, and the ones an impact dashboard needs (#294).** Ten new instruments
+  on the `Goldpath.Campaign` meter; no `PublicAPI` change. RFC campaign §7 is rewritten as the table of every
+  exported instrument, and `MetricsExportTests` holds each one's name, unit and tags against it.
+  - `goldpath_campaign_handler_duration` (s, by type): the adapter's latency, a throw timed too.
+  - `goldpath_campaign_outcomes_total` (by type, outcome and `error_code`): rows the sink moved, not messages it
+    received. The code's cardinality is bounded: a type's first 32 distinct codes, then `other`; over 64
+    characters, free text (anything but letters, digits, `_`, `-`, `.`), or a run of more than six digits (a
+    phone or account number echoed back as the code) is `other`; none is `none`.
+  - Ceilings: `goldpath_campaign_tps_ceiling` per running campaign, `goldpath_campaign_type_max_tps` per type,
+    `goldpath_campaign_global_tps`.
+  - `goldpath_campaign_binding_constraint`: the limit that bound each running campaign's last tick —
+    `tps | in_flight | quota | window | type | global | none`.
+  - `goldpath_campaign_leader_last_tick` (Unix seconds): the pacer's liveness.
+  - **Only the leader exports the per-campaign and ceiling gauges:** they leave when a leadership slice ends, so a
+    process that stopped leading never scrapes a frozen view beside the new leader's live one. Its
+    `leader_last_tick` stays.
+  - Quota consumption: `goldpath_campaign_released_today` against `goldpath_campaign_daily_quota`.
+  - `goldpath_campaign_sink_flush_lag` (s): from an attempt's claim to the flush that made its outcome durable —
+    the handler's time plus the sink's, because nothing on the seam carries a send instant (T57).
+  - **Behaviour:** the sink now reads the campaign's type and the claimed items once per flush (sliced at 500
+    for a provider's IN-list limit). An outcome naming a campaign that does not exist is a no-op; before, a
+    failure for one threw and the batch went to the retry ladder.
+  - **RFC §7 no longer claims** counter-reconcile events (there is no event: the D3 reconcile reads the row) or
+    an ETA instrument (it is `remaining / tps_ceiling`, computed by the board).
 - **Notification, Approvals, FileExchange and the audit log, proven on Oracle (GA gate G7, slice O-5b, #410).** Tests
   only: no package changes.
   - **Goldens.** The O-2 composed model now adds the four modules' contributions, so the Oracle golden pins their columns,

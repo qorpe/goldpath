@@ -82,26 +82,37 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
                     }
                 }
 
-                // Phase 1 — each campaign's OWN allowance this tick (policy, window, quota, in-flight).
+                // Phase 1 — each campaign's OWN allowance this tick (policy, window, quota, in-flight),
+                // and which of its own limits set it (RFC §7's binding constraint).
                 var demands = new int[campaigns.Count];
+                var ownLimits = new Dictionary<Guid, string>();
                 for (var i = 0; i < campaigns.Count; i++)
                 {
-                    demands[i] = await PrepareTickAsync(tickScope.ServiceProvider, campaigns[i], tpsBudgets, streams, cancellationToken);
+                    demands[i] = await PrepareTickAsync(tickScope.ServiceProvider, campaigns[i], tpsBudgets, streams, ownLimits, cancellationToken);
                 }
 
                 // Phase 2 — the shared ceilings, split by weighted fair share (R2.4 + R2.5).
-                var grants = Allocate(campaigns, demands, typeBudgets, _options.GlobalTps is null ? null : globalBudget, tick, fairCredit);
+                var grants = Allocate(campaigns, demands, typeBudgets, _options.GlobalTps is null ? null : globalBudget, tick, fairCredit,
+                    out var afterType);
 
                 // Phase 3 — release under the grant, then the sweeps and the completion math.
                 var swept = new HashSet<Guid>();
+                var facts = new Dictionary<Guid, GoldpathCampaignTickFacts>();
                 for (var i = 0; i < campaigns.Count; i++)
                 {
                     if (demands[i] < 0)
                     {
+                        if (ownLimits.TryGetValue(campaigns[i].Id, out var closed))
+                        {
+                            facts[campaigns[i].Id] = FactsOf(campaigns[i], closed);   // running, its window or day closed
+                        }
+
                         continue;   // not releasing this tick (paused, enumerating, closed window, expired)
                     }
 
                     var spent = await ReleaseTickAsync(tickScope.ServiceProvider, campaigns[i], grants[i], tpsBudgets, chunk, cancellationToken);
+                    facts[campaigns[i].Id] = FactsOf(campaigns[i],
+                        BindingConstraint(ownLimits[campaigns[i].Id], demands[i], afterType[i], grants[i], spent));
                     swept.Add(campaigns[i].Id);
                     globalBudget -= spent;
                     if (typeBudgets.ContainsKey(campaigns[i].Type))
@@ -121,6 +132,8 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
                 // so a snapshot no longer waits one batch per tick, and no release waits on it.
                 await EnumerateAheadAsync(tickScope.ServiceProvider, campaigns, streams, tickStart,
                     releasing: demands.Any(d => d >= 0), cancellationToken);
+                GoldpathCampaignMetrics.Tick(_options,
+                    new GoldpathCampaignTickState(facts, TypeCeilings(), _options.GlobalTps, _time.GetUtcNow()));
 
                 var elapsed = _time.GetElapsedTime(tickStart);
                 if (elapsed < _options.LeaderTick)
@@ -131,6 +144,9 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
         }
         finally
         {
+            // The slice is over and leadership may move: the per-campaign gauges leave with it,
+            // so a former leader never exports a frozen view beside the new leader's (RFC §7).
+            GoldpathCampaignMetrics.EndSlice(_options);
             foreach (var stream in streams.Values)
             {
                 await stream.DisposeAsync();
@@ -147,7 +163,7 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
     /// </summary>
     private static int[] Allocate(
         List<GoldpathCampaign> campaigns, int[] demands, Dictionary<string, double> typeBudgets, double? globalBudget, int tick,
-        Dictionary<string, Dictionary<Guid, double>> fairCredit)
+        Dictionary<string, Dictionary<Guid, double>> fairCredit, out int[] afterType)
     {
         var capped = new int[campaigns.Count];
         for (var i = 0; i < campaigns.Count; i++)
@@ -173,6 +189,7 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
             }
         }
 
+        afterType = (int[])capped.Clone();
         if (globalBudget is { } shared)
         {
             var claims = campaigns
@@ -227,7 +244,8 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
     /// </summary>
     private async Task<int> PrepareTickAsync(
         IServiceProvider services, GoldpathCampaign campaign,
-        Dictionary<Guid, double> tpsBudgets, Dictionary<Guid, LeaderStream> streams, CancellationToken cancellationToken)
+        Dictionary<Guid, double> tpsBudgets, Dictionary<Guid, LeaderStream> streams, Dictionary<Guid, string> ownLimits,
+        CancellationToken cancellationToken)
     {
         var db = services.GetRequiredService<TContext>();
 
@@ -297,21 +315,86 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
             // R1.1: an excluded day releases nothing — and the day AFTER resumes
             // without a human. In-flight items still drain; the sink still applies.
             GoldpathCampaignMetrics.WindowClosed(campaign.Type);
+            ownLimits[campaign.Id] = BindingWindow;
             return -1;
         }
 
         if (!policy.IsWindowOpen(now))
         {
             GoldpathCampaignMetrics.WindowClosed(campaign.Type);
+            ownLimits[campaign.Id] = BindingWindow;
             return -1;
         }
 
         var budget = Refill(tpsBudgets.GetValueOrDefault(campaign.Id), policy.Tps, _options.LeaderTick);
         tpsBudgets[campaign.Id] = budget;
         var inFlight = campaign.ReleasedThrough - campaign.SucceededCount - campaign.FailedCount;
+        long? quotaRoom = policy.DailyQuota is { } quota ? quota - campaign.ReleasedToday : null;
+        ownLimits[campaign.Id] = OwnLimit(budget, policy.MaxInFlight - inFlight, quotaRoom);
         return (int)Math.Floor(Math.Min(budget, Math.Max(0,
-            Math.Min(policy.MaxInFlight - inFlight,
-                policy.DailyQuota is { } quota ? quota - campaign.ReleasedToday : long.MaxValue))));
+            Math.Min(policy.MaxInFlight - inFlight, quotaRoom ?? long.MaxValue))));
+    }
+
+    /// <summary>The binding constraint of a running campaign whose send window or day is closed.</summary>
+    internal const string BindingWindow = "window";
+
+    /// <summary>
+    /// Which of a campaign's OWN limits set its allowance this tick (RFC §7): the smallest room
+    /// among the TPS budget, the in-flight cap and the day's quota. A tie names the limit that
+    /// will not lift by itself on the next tick first — <c>quota</c>, then <c>in_flight</c>,
+    /// then <c>tps</c> — because that is the one an operator acts on.
+    /// </summary>
+    internal static string OwnLimit(double tpsRoom, long inFlightRoom, long? quotaRoom)
+    {
+        var inFlight = (double)Math.Max(0, inFlightRoom);
+        var quota = quotaRoom is { } room ? Math.Max(0, room) : double.PositiveInfinity;
+        if (quota <= inFlight && quota <= tpsRoom)
+        {
+            return "quota";
+        }
+
+        return inFlight <= tpsRoom ? "in_flight" : "tps";
+    }
+
+    /// <summary>
+    /// The limit that bound a released tick (RFC §7): <c>none</c> when the campaign released less
+    /// than it was granted (nothing more was ready, so no limit held it back); otherwise the
+    /// shared ceiling that cut the allowance last — <c>global</c>, then <c>type</c> — and when
+    /// neither cut it, its own limit. A tick granted nothing names the limit that zeroed it.
+    /// </summary>
+    internal static string BindingConstraint(string ownLimit, int demand, int afterType, int grant, int spent)
+    {
+        if (spent < grant)
+        {
+            return "none";
+        }
+
+        if (grant < afterType)
+        {
+            return "global";
+        }
+
+        return afterType < demand ? "type" : ownLimit;
+    }
+
+    private static GoldpathCampaignTickFacts FactsOf(GoldpathCampaign campaign, string binding)
+    {
+        var policy = GoldpathCampaignEngine<TContext>.PolicyOf(campaign);
+        return new GoldpathCampaignTickFacts(campaign.Type, policy.Tps, policy.DailyQuota, campaign.ReleasedToday, binding);
+    }
+
+    private Dictionary<string, int> TypeCeilings()
+    {
+        var ceilings = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var type in _options.Types)
+        {
+            if (type.MaxTps is { } maxTps)
+            {
+                ceilings[type.Key] = maxTps;
+            }
+        }
+
+        return ceilings;
     }
 
     /// <summary>
