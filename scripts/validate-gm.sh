@@ -51,20 +51,21 @@ if [ ! -d "$FEED" ] || [ -z "$(ls -A "$FEED" 2>/dev/null)" ]; then
   dotnet pack "$ROOT/Goldpath.sln" -c Release -o "$FEED" --nologo -v q
 fi
 
-# The offline shape (validate-gm-offline.sh) sets three knobs; every other shape sets none.
+# The offline shape (validate-gm-offline.sh) sets four knobs (the fourth, GOLDPATH_GM_BEFORE_SMOKE,
+# is read before the smoke); every other shape sets none.
 # - GOLDPATH_GM_APP_PACKAGES: the global-packages folder from here on, AFTER the pack, so it
 #   collects exactly what the app, its tools and the CLI restore — the closure an air-gapped
 #   mirror must carry, not everything the repository's own solution needs.
 # - GOLDPATH_GM_FEED_ONLY=1: the generated app's nuget.config names the local feed and nothing
 #   else (its own comment: "in enterprise environments this points at an internal mirror").
-# - GOLDPATH_GM_CLI: the goldpath CLI command, so an offline run uses a CLI built while
-#   connected instead of restoring one through the repository's nuget.org config.
+# - GOLDPATH_GM_CLI_NO_BUILD=1: run the goldpath CLI with --no-build, so an offline run uses the
+#   CLI built while connected instead of restoring one through the repository's nuget.org config.
 if [ -n "${GOLDPATH_GM_APP_PACKAGES:-}" ]; then
   mkdir -p "$GOLDPATH_GM_APP_PACKAGES"
   export NUGET_PACKAGES="$GOLDPATH_GM_APP_PACKAGES"
 fi
-if [ -n "${GOLDPATH_GM_CLI:-}" ]; then
-  read -ra GOLDPATH_CLI <<< "$GOLDPATH_GM_CLI"
+if [ "${GOLDPATH_GM_CLI_NO_BUILD:-}" = "1" ]; then
+  GOLDPATH_CLI=(dotnet run --no-build --project "$ROOT/tools/Goldpath.Cli" --)
 else
   GOLDPATH_CLI=(dotnet run --project "$ROOT/tools/Goldpath.Cli" --)
 fi

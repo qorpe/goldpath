@@ -22,6 +22,14 @@ on:
         type: choice
         options: [all, pr]
         default: all
+      shape:
+        description: "one shape by name (empty — every shape the scope selects)"
+        type: string
+        default: ""
+      offline_drop:
+        description: "an offline shape's planted fault: this package id is removed from its feed, so restore must fail (NU1101)"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -41,13 +49,17 @@ jobs:
         name: read the shapes (${{ inputs.scope }})
         env:
           SCOPE: ${{ inputs.scope }}
+          SHAPE: ${{ inputs.shape || '' }}
         run: |
           case "$SCOPE" in
             all) filter='.shapes' ;;
             pr)  filter='[.shapes[] | select(.pr == true)]' ;;
             *)   echo "::error::scope must be all or pr, got '$SCOPE'"; exit 1 ;;
           esac
+          # A dispatch may name one shape (an offline shape's runner proof, a single shape's fix).
+          if [ -n "$SHAPE" ]; then filter="[$filter[] | select(.name == strenv(SHAPE))]"; fi
           shapes=$(yq -o=json -I=0 "$filter" .github/gm-shapes.yml)
+          if [ "$shapes" = "[]" ]; then echo "::error::no shape in scope '$SCOPE' is named '$SHAPE'"; exit 1; fi
           echo "$shapes" | yq -P '.[].name'
           echo "shapes=$shapes" >> "$GITHUB_OUTPUT"
 
@@ -86,8 +98,10 @@ jobs:
           GOLDPATH_GM_POST: ${{ matrix.post || '' }}
           GOLDPATH_GM_VIA_CLI: ${{ matrix.viaCli || '' }}
           GM_OFFLINE: ${{ matrix.offline || false }}
+          GOLDPATH_GM_OFFLINE_DROP: ${{ inputs.offline_drop || '' }}
         # GM_ARGS unquoted on purpose: it is a list of dotnet new arguments. An `offline` shape
-        # runs through validate-gm-offline.sh, which denies the runner's network itself (G14).
+        # runs through validate-gm-offline.sh, which denies the network to its own run and the
+        # Docker daemon — never to the runner's connection to GitHub (G14).
         run: |
           script=./scripts/validate-gm.sh
           if [ "$GM_OFFLINE" = "true" ]; then script=./scripts/validate-gm-offline.sh; fi

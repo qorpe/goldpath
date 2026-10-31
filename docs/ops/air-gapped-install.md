@@ -50,14 +50,22 @@ image registry. The **air-gapped** side reaches nothing else.
 ## 2. Air-gapped side: install from the mirror alone
 
 1. **Deny the network, and check it is denied.**
-   - **What CI rejects:** `iptables` rejects every outbound packet except loopback and the
-     Docker bridges (172.16.0.0/12). That includes the port of any HTTP proxy listening on
-     loopback.
+   - **Whose network:** the denial is scoped to the run, not the host. The script moves itself
+     and the Docker daemon (`dockerd`, `containerd`) into their own cgroup-v2 group, and the
+     rules match only sockets of that group (`iptables -m cgroup --path gm-offline-<pid>`).
+     Everything else on the host keeps its network, which matters on a CI runner: its own
+     connection to GitHub would otherwise be cut and the job reported as a lost runner. An
+     operator's site denies the network with its own firewall instead; the scoping exists so
+     the proof can run on a shared machine.
+   - **What CI rejects:** `iptables` rejects every outbound packet of the group except loopback
+     and the Docker bridges (172.16.0.0/12). That includes the port of any HTTP proxy
+     listening on loopback.
    - **Forwarded traffic:** the `DOCKER-USER` chain rejects every forwarded packet leaving the
      bridges.
-   - **Proxy variables** are unset.
-   - **The check:** the job stops unless `curl https://api.nuget.org/v3/index.json` and
-     `docker pull docker.io/library/busybox:1.37.0` both fail.
+   - **Proxy variables** are unset, and the build servers the connected run left behind are
+     shut down (a reused MSBuild node would sit outside the group).
+   - **The check:** the job stops unless `curl https://api.nuget.org/v3/index.json` (from inside
+     the group) and `docker pull docker.io/library/busybox:1.37.0` (by the daemon) both fail.
 2. **Pull the images from the registry** and tag them with the names the AppHost asks for.
    The AppHost's pull policy is "missing", so it uses them as they are.
 3. **Point the app at the feed and nothing else.** The generated `nuget.config` names one
@@ -93,6 +101,25 @@ anything other than the feed could serve a package, that run would stay green.
 ```bash
 GOLDPATH_GM_OFFLINE_DROP=Npgsql.EntityFrameworkCore.PostgreSQL ./scripts/validate-gm-offline.sh GmOffline --auth none
 ```
+
+### If a run is killed
+
+The rules and the group are removed when the script exits, on success, on failure, and on
+`SIGINT`, `SIGTERM` or `SIGHUP` (a CI cancel or timeout). Only `SIGKILL` leaves them. To remove
+them by hand, as root:
+
+```bash
+for t in iptables ip6tables; do
+  $t -S OUTPUT | grep -- '-j GM_OFFLINE$' | sed 's/^-A/-D/' | while read -r rule; do eval "$t $rule"; done
+  $t -F GM_OFFLINE; $t -X GM_OFFLINE
+done
+iptables -D DOCKER-USER -j GM_OFFLINE_FWD; iptables -F GM_OFFLINE_FWD; iptables -X GM_OFFLINE_FWD
+# the daemons back to where they were (on systemd: system.slice/docker.service, …), then:
+cg=$(findmnt -n -t cgroup2 -o TARGET); rmdir "$cg"/gm-offline-*/* "$cg"/gm-offline-*
+```
+
+`iptables -S | grep -c GM_OFFLINE` printing `0` is the check. Restarting the Docker service puts
+the daemon back in its own group.
 
 ## 4. What it does not cover
 

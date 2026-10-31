@@ -9,10 +9,15 @@
 #      repository is packed, so that folder ends holding exactly the closure the app, its pinned
 #      dotnet-ef tool and the CLI restored. Every image a container was created from during that
 #      run is pushed to a registry on 127.0.0.1 and then removed from the daemon.
-#   2. Denied. iptables rejects every outbound packet that is not loopback or a Docker bridge,
-#      including a local HTTP proxy's port, and every forwarded one leaving the bridges; the proxy
-#      variables are unset; and the script refuses to go on unless nuget.org and Docker Hub are
-#      really unreachable. The closure is flattened into a feed, the images are pulled back from
+#   2. Denied. The denial is scoped, not host-wide: this script and the Docker daemon (dockerd,
+#      containerd) are moved into their own cgroup-v2 group, and iptables rejects every outbound
+#      packet a socket of THAT group sends unless it is loopback or a Docker bridge — a local HTTP
+#      proxy's port included — plus every forwarded packet leaving the bridges. Everything else on
+#      the host (a CI runner's own connection to its server, an operator's shell) keeps its
+#      network: a host-wide denial cut exactly that connection. The proxy variables are unset,
+#      the build servers left by the connected run are shut down (a reused MSBuild node would sit
+#      outside the group), and the script refuses to go on unless nuget.org and Docker Hub are
+#      really unreachable from inside the group and from the daemon. The closure is flattened into a feed, the images are pulled back from
 #      the local registry only, and validate-gm.sh runs again into a fresh global-packages folder
 #      with the generated app's nuget.config naming that feed and nothing else.
 #
@@ -20,7 +25,10 @@
 #        GOLDPATH_GM_OFFLINE_DROP=<package id>  removes that package from the offline feed: the
 #        planted fault, which must fail at restore (NU1101) — the proof that nothing else serves it.
 # The shape must use PostgreSQL: the apply step starts the shape's own postgres image.
-# Needs root or passwordless sudo for iptables (a GitHub-hosted runner has it).
+# Needs root or passwordless sudo for iptables and the cgroup moves (a GitHub-hosted runner has
+# it), a cgroup-v2 hierarchy (mounted on every current distribution), and iptables' cgroup match.
+# The rules and the groups are removed on exit, on INT/TERM/HUP (a CI cancel or timeout), and on
+# failure; by hand: docs/ops/air-gapped-install.md, "If a run is killed".
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -44,6 +52,9 @@ if [ "${1:-}" = "--apply" ]; then
   PASSWORD=gm-offline-$RANDOM$RANDOM
   docker run -d --rm --name "$PG" -e POSTGRES_PASSWORD="$PASSWORD" -p 127.0.0.1::5432 "$GOLDPATH_GM_PG_IMAGE" >/dev/null
   trap 'docker rm -f "$PG" >/dev/null 2>&1 || true' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  trap 'exit 129' HUP
   for _ in $(seq 1 60); do
     docker exec "$PG" pg_isready -U postgres -h 127.0.0.1 >/dev/null 2>&1 && break
     sleep 1
@@ -85,25 +96,93 @@ PROXY_VARS=(http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY np
 PROXY_PORTS=$(for v in "${PROXY_VARS[@]}"; do printf '%s\n' "${!v:-}"; done \
   | sed -nE 's#^[a-z]+://([^@/]*@)?(127\.[0-9.]+|localhost|\[::1\]):([0-9]+).*#\3#p' | sort -u)
 
+# The cgroup-v2 hierarchy, and the group the denial is scoped to: one leaf per process moved in,
+# each remembering where its process came from so cleanup can put it back.
+CG2=$(findmnt -n -t cgroup2 -o TARGET 2>/dev/null | head -1 || true)
+GROUP=gm-offline-$$
+FROM="$WORK/cgroup-from"   # cgroupfs holds no plain files: where each leaf's process came from
+DAEMONS=(dockerd containerd)
+
+as_root_write() { printf '%s\n' "$2" | $SUDO tee "$1" >/dev/null; }
+
+# Move one pid into its own leaf of the group, recording its current cgroup.
+enter_group() {
+  local pid=$1 leaf=$2 from
+  from=$(sed -n 's/^0:://p' "/proc/$pid/cgroup")
+  $SUDO mkdir -p "$CG2/$GROUP/$leaf"
+  mkdir -p "$FROM"
+  printf '%s\n' "$from" > "$FROM/$leaf"
+  as_root_write "$CG2/$GROUP/$leaf/cgroup.procs" "$pid"
+}
+
 restore_network() {
   for t in iptables ip6tables; do
-    $SUDO "$t" -D OUTPUT -j GM_OFFLINE 2>/dev/null || true
+    while $SUDO "$t" -D OUTPUT -j GM_OFFLINE 2>/dev/null; do :; done
+    while $SUDO "$t" -D OUTPUT -m cgroup --path "$GROUP" -j GM_OFFLINE 2>/dev/null; do :; done
     $SUDO "$t" -F GM_OFFLINE 2>/dev/null || true
     $SUDO "$t" -X GM_OFFLINE 2>/dev/null || true
   done
-  $SUDO iptables -D DOCKER-USER -j GM_OFFLINE_FWD 2>/dev/null || true
+  while $SUDO iptables -D DOCKER-USER -j GM_OFFLINE_FWD 2>/dev/null; do :; done
   $SUDO iptables -F GM_OFFLINE_FWD 2>/dev/null || true
   $SUDO iptables -X GM_OFFLINE_FWD 2>/dev/null || true
+  # Every process still in the group (this script, the daemons, anything they started since)
+  # goes back where its leaf's process came from; then the group goes.
+  if [ -n "$CG2" ] && [ -d "$CG2/$GROUP" ]; then
+    local leaf from pid
+    for leaf in "$CG2/$GROUP"/*/; do
+      leaf=${leaf%/}
+      from=$(cat "$FROM/$(basename "$leaf")" 2>/dev/null || echo /)
+      for pid in $(cat "$leaf/cgroup.procs" 2>/dev/null); do
+        as_root_write "$CG2${from%/}/cgroup.procs" "$pid" 2>/dev/null \
+          || as_root_write "$CG2/cgroup.procs" "$pid" 2>/dev/null || true
+      done
+      $SUDO rmdir "$leaf" 2>/dev/null || true
+    done
+    $SUDO rmdir "$CG2/$GROUP" 2>/dev/null || echo "── warning: $CG2/$GROUP could not be removed"
+  fi
 }
 
+CHILD=""
 cleanup() {
+  [ -z "$CHILD" ] || kill "$CHILD" 2>/dev/null || true
   restore_network
   docker rm -f "$REGISTRY_NAME" >/dev/null 2>&1 || true
 }
+# EXIT alone does not run on a signal: a CI cancel or timeout (SIGINT, then SIGTERM) would leave
+# the denial in place. Each signal exits, and the exit runs the cleanup.
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+
+# A long child runs in the background and is waited for, so a signal is handled at once rather
+# than after the child finishes (bash defers a trap while a foreground child runs).
+run() {
+  "$@" &
+  CHILD=$!
+  local status=0
+  wait "$CHILD" || status=$?
+  CHILD=""
+  return "$status"
+}
 
 deny_network() {
   restore_network
+  [ -n "$CG2" ] || { echo "── no cgroup-v2 hierarchy is mounted: the denial cannot be scoped to this run"; exit 1; }
+  # Build servers the connected run left behind sit outside the group and would restore for us.
+  dotnet build-server shutdown >/dev/null 2>&1 || true
+  export MSBUILDDISABLENODEREUSE=1 DOTNET_CLI_USE_MSBUILD_SERVER=0 UseSharedCompilation=false
+
+  enter_group "$$" self
+  local d pid n=0
+  for d in "${DAEMONS[@]}"; do
+    for pid in $(pidof "$d" 2>/dev/null); do
+      enter_group "$pid" "$d-$pid"
+      n=$((n + 1))
+    done
+  done
+  [ "$n" -gt 0 ] || { echo "── neither dockerd nor containerd is running: nothing pulls images to deny"; exit 1; }
+
   for t in iptables ip6tables; do
     $SUDO "$t" -N GM_OFFLINE
     for port in $PROXY_PORTS; do
@@ -112,11 +191,11 @@ deny_network() {
     $SUDO "$t" -A GM_OFFLINE -o lo -j RETURN
   done
   # Docker's default address pool: the bridges the registry, the database and the AppHost's
-  # containers sit on. Nothing else is reachable.
+  # containers sit on. Nothing else is reachable from the group.
   $SUDO iptables -A GM_OFFLINE -d 172.16.0.0/12 -j RETURN
   for t in iptables ip6tables; do
     $SUDO "$t" -A GM_OFFLINE -j REJECT
-    $SUDO "$t" -I OUTPUT 1 -j GM_OFFLINE
+    $SUDO "$t" -I OUTPUT 1 -m cgroup --path "$GROUP" -j GM_OFFLINE
   done
   # Containers' own traffic is forwarded, not output: refuse anything leaving the bridges.
   $SUDO iptables -N GM_OFFLINE_FWD
@@ -133,7 +212,8 @@ deny_network() {
   if timeout 60 docker pull docker.io/library/busybox:1.37.0 >/dev/null 2>&1; then
     echo "── Docker Hub is still reachable from the daemon: the network is NOT denied"; exit 1
   fi
-  echo "── network denied: nuget.org and Docker Hub unreachable; loopback and the Docker bridges only"
+  echo "── network denied for this run and the Docker daemon ($GROUP): nuget.org and Docker Hub"
+  echo "   unreachable; loopback and the Docker bridges only. The rest of the host keeps its network."
 }
 
 # The image a container was created from, as the mirror stores it: registry host dropped.
@@ -153,7 +233,7 @@ docker run -d --name "$REGISTRY_NAME" -p "$REGISTRY:5000" "$REGISTRY_IMAGE" >/de
 SINCE=$(date +%s)
 GOLDPATH_GM_WORK="$STAGE" GOLDPATH_GM_APP_PACKAGES="$CLOSURE" \
   GOLDPATH_GM_BEFORE_SMOKE="$ROOT/scripts/validate-gm-offline.sh" \
-  "$ROOT/scripts/validate-gm.sh" "$NAME" "$@"
+  run "$ROOT/scripts/validate-gm.sh" "$NAME" "$@"
 UNTIL=$(date +%s)
 
 # Every image a container was created from during the connected run, the registry's own excepted.
@@ -195,8 +275,8 @@ for image in "${IMAGES[@]}"; do
 done
 
 GOLDPATH_GM_WORK="$OFFLINE" GOLDPATH_GM_APP_PACKAGES="$OFFLINE/packages" GOLDPATH_GM_FEED_ONLY=1 \
-  GOLDPATH_GM_CLI="dotnet run --no-build --project $ROOT/tools/Goldpath.Cli --" \
+  GOLDPATH_GM_CLI_NO_BUILD=1 \
   GOLDPATH_GM_PG_IMAGE="$PG_IMAGE" GOLDPATH_GM_BEFORE_SMOKE="$ROOT/scripts/validate-gm-offline.sh" \
-  "$ROOT/scripts/validate-gm.sh" "$NAME" "$@"
+  run "$ROOT/scripts/validate-gm.sh" "$NAME" "$@"
 
 echo "── $NAME GREEN OFFLINE (network denied; sources: $OFFLINE/feed and $REGISTRY)"
