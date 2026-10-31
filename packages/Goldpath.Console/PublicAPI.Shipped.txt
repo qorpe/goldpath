@@ -11,3 +11,11 @@ Goldpath.GoldpathConsoleService.GoldpathConsoleService(string! Name, string! Adm
 Goldpath.GoldpathConsoleService.Name.get -> string!
 Goldpath.GoldpathConsoleService.Name.init -> void
 static Goldpath.GoldpathConsoleEndpoints.MapGoldpathConsole(this Microsoft.AspNetCore.Routing.IEndpointRouteBuilder! endpoints, string! prefix = "/goldpath/console", bool exposeUnsecured = false, System.Action<Goldpath.GoldpathConsoleOptions!>? configure = null) -> Microsoft.AspNetCore.Routing.IEndpointRouteBuilder!
+Goldpath.GoldpathConsoleService.<Clone>$() -> Goldpath.GoldpathConsoleService!
+Goldpath.GoldpathConsoleService.Deconstruct(out string! Name, out string! AdminBaseUrl) -> void
+Goldpath.GoldpathConsoleService.Equals(Goldpath.GoldpathConsoleService? other) -> bool
+override Goldpath.GoldpathConsoleService.Equals(object? obj) -> bool
+override Goldpath.GoldpathConsoleService.GetHashCode() -> int
+override Goldpath.GoldpathConsoleService.ToString() -> string!
+static Goldpath.GoldpathConsoleService.operator !=(Goldpath.GoldpathConsoleService? left, Goldpath.GoldpathConsoleService? right) -> bool
+static Goldpath.GoldpathConsoleService.operator ==(Goldpath.GoldpathConsoleService? left, Goldpath.GoldpathConsoleService? right) -> bool

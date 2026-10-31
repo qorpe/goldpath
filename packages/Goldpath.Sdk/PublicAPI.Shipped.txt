@@ -16,3 +16,10 @@ static Goldpath.AdminSurfaceGuard.Apply(Microsoft.AspNetCore.Routing.IEndpointRo
 static Goldpath.AdminTenantScope.RequireAllTenantsAsync(Microsoft.AspNetCore.Http.HttpContext! http) -> System.Threading.Tasks.Task<Microsoft.AspNetCore.Http.IResult?>!
 static Goldpath.AdminTenantScope.ResolveAsync(Microsoft.AspNetCore.Http.HttpContext! http, string? requested) -> System.Threading.Tasks.Task<Goldpath.AdminTenantScope.Resolution>!
 static Goldpath.TraceLink.To(string? traceParent) -> System.Collections.Generic.IEnumerable<System.Diagnostics.ActivityLink>?
+Goldpath.AdminTenantScope.Resolution.Deconstruct(out Microsoft.AspNetCore.Http.IResult? Refusal, out string? Tenant) -> void
+Goldpath.AdminTenantScope.Resolution.Equals(Goldpath.AdminTenantScope.Resolution other) -> bool
+override Goldpath.AdminTenantScope.Resolution.GetHashCode() -> int
+static Goldpath.AdminTenantScope.Resolution.operator !=(Goldpath.AdminTenantScope.Resolution left, Goldpath.AdminTenantScope.Resolution right) -> bool
+static Goldpath.AdminTenantScope.Resolution.operator ==(Goldpath.AdminTenantScope.Resolution left, Goldpath.AdminTenantScope.Resolution right) -> bool
+~override Goldpath.AdminTenantScope.Resolution.Equals(object obj) -> bool
+~override Goldpath.AdminTenantScope.Resolution.ToString() -> string

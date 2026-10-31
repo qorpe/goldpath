@@ -196,3 +196,43 @@ static Goldpath.GoldpathArchiveModelExtensions.AddGoldpathArchiveModel(this Micr
 static Goldpath.GoldpathDocumentRedactor.Redact(object! root, Goldpath.IGoldpathDataProtector! protector) -> int
 Goldpath.GoldpathArchiveEntry.PreErasureContentHash.get -> string?
 Goldpath.GoldpathArchiveEntry.PreErasureContentHash.set -> void
+Goldpath.GoldpathArchiveCandidate.<Clone>$() -> Goldpath.GoldpathArchiveCandidate!
+Goldpath.GoldpathArchiveCandidate.Deconstruct(out string! Key, out object! Root, out System.DateTimeOffset DueAt, out string? Tenant) -> void
+Goldpath.GoldpathArchiveCandidate.Equals(Goldpath.GoldpathArchiveCandidate? other) -> bool
+Goldpath.GoldpathArchiveDefinitionStatus.<Clone>$() -> Goldpath.GoldpathArchiveDefinitionStatus!
+Goldpath.GoldpathArchiveDefinitionStatus.Deconstruct(out string! Name, out long Entries, out int DueBacklog, out int ActiveHolds, out long ChainHead, out long PurgedThrough) -> void
+Goldpath.GoldpathArchiveDefinitionStatus.Equals(Goldpath.GoldpathArchiveDefinitionStatus? other) -> bool
+Goldpath.GoldpathChainFinding.<Clone>$() -> Goldpath.GoldpathChainFinding!
+Goldpath.GoldpathChainFinding.Deconstruct(out string! Definition, out long ChainIndex, out string! AggregateKey, out string! Problem) -> void
+Goldpath.GoldpathChainFinding.Equals(Goldpath.GoldpathChainFinding? other) -> bool
+Goldpath.GoldpathErasureRequest.<Clone>$() -> Goldpath.GoldpathErasureRequest!
+Goldpath.GoldpathErasureRequest.Deconstruct(out string! SubjectKey, out string? Detail) -> void
+Goldpath.GoldpathErasureRequest.Equals(Goldpath.GoldpathErasureRequest? other) -> bool
+Goldpath.GoldpathHoldRequest.<Clone>$() -> Goldpath.GoldpathHoldRequest!
+Goldpath.GoldpathHoldRequest.Deconstruct(out string! CaseReference) -> void
+Goldpath.GoldpathHoldRequest.Equals(Goldpath.GoldpathHoldRequest? other) -> bool
+override Goldpath.GoldpathArchiveCandidate.Equals(object? obj) -> bool
+override Goldpath.GoldpathArchiveCandidate.GetHashCode() -> int
+override Goldpath.GoldpathArchiveCandidate.ToString() -> string!
+override Goldpath.GoldpathArchiveDefinitionStatus.Equals(object? obj) -> bool
+override Goldpath.GoldpathArchiveDefinitionStatus.GetHashCode() -> int
+override Goldpath.GoldpathArchiveDefinitionStatus.ToString() -> string!
+override Goldpath.GoldpathChainFinding.Equals(object? obj) -> bool
+override Goldpath.GoldpathChainFinding.GetHashCode() -> int
+override Goldpath.GoldpathChainFinding.ToString() -> string!
+override Goldpath.GoldpathErasureRequest.Equals(object? obj) -> bool
+override Goldpath.GoldpathErasureRequest.GetHashCode() -> int
+override Goldpath.GoldpathErasureRequest.ToString() -> string!
+override Goldpath.GoldpathHoldRequest.Equals(object? obj) -> bool
+override Goldpath.GoldpathHoldRequest.GetHashCode() -> int
+override Goldpath.GoldpathHoldRequest.ToString() -> string!
+static Goldpath.GoldpathArchiveCandidate.operator !=(Goldpath.GoldpathArchiveCandidate? left, Goldpath.GoldpathArchiveCandidate? right) -> bool
+static Goldpath.GoldpathArchiveCandidate.operator ==(Goldpath.GoldpathArchiveCandidate? left, Goldpath.GoldpathArchiveCandidate? right) -> bool
+static Goldpath.GoldpathArchiveDefinitionStatus.operator !=(Goldpath.GoldpathArchiveDefinitionStatus? left, Goldpath.GoldpathArchiveDefinitionStatus? right) -> bool
+static Goldpath.GoldpathArchiveDefinitionStatus.operator ==(Goldpath.GoldpathArchiveDefinitionStatus? left, Goldpath.GoldpathArchiveDefinitionStatus? right) -> bool
+static Goldpath.GoldpathChainFinding.operator !=(Goldpath.GoldpathChainFinding? left, Goldpath.GoldpathChainFinding? right) -> bool
+static Goldpath.GoldpathChainFinding.operator ==(Goldpath.GoldpathChainFinding? left, Goldpath.GoldpathChainFinding? right) -> bool
+static Goldpath.GoldpathErasureRequest.operator !=(Goldpath.GoldpathErasureRequest? left, Goldpath.GoldpathErasureRequest? right) -> bool
+static Goldpath.GoldpathErasureRequest.operator ==(Goldpath.GoldpathErasureRequest? left, Goldpath.GoldpathErasureRequest? right) -> bool
+static Goldpath.GoldpathHoldRequest.operator !=(Goldpath.GoldpathHoldRequest? left, Goldpath.GoldpathHoldRequest? right) -> bool
+static Goldpath.GoldpathHoldRequest.operator ==(Goldpath.GoldpathHoldRequest? left, Goldpath.GoldpathHoldRequest? right) -> bool

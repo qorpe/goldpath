@@ -32,3 +32,11 @@ static Goldpath.GoldpathModelConventions.ApplyGoldpathModelDefaults(this Microso
 Goldpath.GoldpathQueryFilters
 static Goldpath.GoldpathQueryFilters.AddFilter(Microsoft.EntityFrameworkCore.Metadata.IMutableEntityType! entityType, System.Linq.Expressions.LambdaExpression! filter) -> void
 static Goldpath.GoldpathModelConventions.AddGoldpathContribution(this Microsoft.EntityFrameworkCore.ModelBuilder! modelBuilder, bool excludeFromMigrations, System.Action<Microsoft.EntityFrameworkCore.ModelBuilder!>! contribute) -> Microsoft.EntityFrameworkCore.ModelBuilder!
+Goldpath.GoldpathSaveContext.<Clone>$() -> Goldpath.GoldpathSaveContext!
+Goldpath.GoldpathSaveContext.Deconstruct(out System.TimeProvider! Clock, out Goldpath.TenantId? Tenant, out string? User) -> void
+Goldpath.GoldpathSaveContext.Equals(Goldpath.GoldpathSaveContext? other) -> bool
+override Goldpath.GoldpathSaveContext.Equals(object? obj) -> bool
+override Goldpath.GoldpathSaveContext.GetHashCode() -> int
+override Goldpath.GoldpathSaveContext.ToString() -> string!
+static Goldpath.GoldpathSaveContext.operator !=(Goldpath.GoldpathSaveContext? left, Goldpath.GoldpathSaveContext? right) -> bool
+static Goldpath.GoldpathSaveContext.operator ==(Goldpath.GoldpathSaveContext? left, Goldpath.GoldpathSaveContext? right) -> bool

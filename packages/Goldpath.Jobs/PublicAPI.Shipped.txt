@@ -422,3 +422,115 @@ Goldpath.GoldpathFleetStatus.SchedulerName.get -> string!
 Goldpath.GoldpathFleetStatus.SchedulerName.init -> void
 Goldpath.GoldpathJobsAdminService<TContext>.GetFleetStatusAsync(string! fleet, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathFleetStatus?>!
 Goldpath.GoldpathJobsAdminService<TContext>.GetRunsAsync(string! fleet, string? job, int take, System.Threading.CancellationToken ct, string![]? status = null, System.DateTimeOffset? from = null, System.DateTimeOffset? to = null, System.Guid? afterId = null) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathJobRun!>!>!
+Goldpath.GoldpathAddTriggerRequest.<Clone>$() -> Goldpath.GoldpathAddTriggerRequest!
+Goldpath.GoldpathAddTriggerRequest.Deconstruct(out string! Name, out string? Cron, out string? TimeZoneId, out System.TimeSpan? Interval, out int? RepeatCount, out string? CalendarName, out int? Priority) -> void
+Goldpath.GoldpathAddTriggerRequest.Equals(Goldpath.GoldpathAddTriggerRequest? other) -> bool
+Goldpath.GoldpathAdminResult.<Clone>$() -> Goldpath.GoldpathAdminResult!
+Goldpath.GoldpathAdminResult.Deconstruct(out bool Ok, out string! Message) -> void
+Goldpath.GoldpathAdminResult.Equals(Goldpath.GoldpathAdminResult? other) -> bool
+Goldpath.GoldpathCalendarInfo.<Clone>$() -> Goldpath.GoldpathCalendarInfo!
+Goldpath.GoldpathCalendarInfo.Deconstruct(out string! Name, out string? Description, out System.Collections.Generic.IReadOnlyList<string!>! UsedByTriggers) -> void
+Goldpath.GoldpathCalendarInfo.Equals(Goldpath.GoldpathCalendarInfo? other) -> bool
+Goldpath.GoldpathCalendarSpec.<Clone>$() -> Goldpath.GoldpathCalendarSpec!
+Goldpath.GoldpathCalendarSpec.Deconstruct(out string! Type, out string? Description, out System.Collections.Generic.IReadOnlyList<System.DateTime>? ExcludedDates, out System.Collections.Generic.IReadOnlyList<System.DayOfWeek>? ExcludedDays, out string? CronExpression) -> void
+Goldpath.GoldpathCalendarSpec.Equals(Goldpath.GoldpathCalendarSpec? other) -> bool
+Goldpath.GoldpathFireFacts.<Clone>$() -> Goldpath.GoldpathFireFacts!
+Goldpath.GoldpathFireFacts.Deconstruct(out string! SchedulerName, out string! InstanceName, out string! FireInstanceId, out bool Recovering, out string? TraceParent, out string? TriggeredBy) -> void
+Goldpath.GoldpathFireFacts.Equals(Goldpath.GoldpathFireFacts? other) -> bool
+Goldpath.GoldpathFleetConnection.<Clone>$() -> Goldpath.GoldpathFleetConnection!
+Goldpath.GoldpathFleetConnection.Deconstruct(out string! InstanceId, out System.DateTimeOffset? RunningSince, out int ThreadPoolSize, out int JobsExecuted, out bool IsShutdown, out bool InStandbyMode) -> void
+Goldpath.GoldpathFleetConnection.Equals(Goldpath.GoldpathFleetConnection? other) -> bool
+Goldpath.GoldpathFleetInfo.<Clone>$() -> Goldpath.GoldpathFleetInfo!
+Goldpath.GoldpathFleetInfo.Deconstruct(out string! SchedulerName, out int JobCount, out System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathFleetNode!>! Nodes) -> void
+Goldpath.GoldpathFleetInfo.Equals(Goldpath.GoldpathFleetInfo? other) -> bool
+Goldpath.GoldpathFleetNode.<Clone>$() -> Goldpath.GoldpathFleetNode!
+Goldpath.GoldpathFleetNode.Deconstruct(out string! InstanceName, out System.DateTimeOffset LastCheckin, out System.TimeSpan CheckinInterval) -> void
+Goldpath.GoldpathFleetNode.Equals(Goldpath.GoldpathFleetNode? other) -> bool
+Goldpath.GoldpathFleetStatus.<Clone>$() -> Goldpath.GoldpathFleetStatus!
+Goldpath.GoldpathFleetStatus.Deconstruct(out string! SchedulerName, out int JobCount, out bool IsPaused, out System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathFleetNode!>! Nodes, out Goldpath.GoldpathFleetConnection! Connection) -> void
+Goldpath.GoldpathFleetStatus.Equals(Goldpath.GoldpathFleetStatus? other) -> bool
+Goldpath.GoldpathJobInfo.<Clone>$() -> Goldpath.GoldpathJobInfo!
+Goldpath.GoldpathJobInfo.Deconstruct(out string! Name, out string? Description, out bool RequestsRecovery, out System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathTriggerInfo!>! Triggers, out System.Collections.Generic.IReadOnlyDictionary<string!, string!>? DataMap) -> void
+Goldpath.GoldpathJobInfo.Equals(Goldpath.GoldpathJobInfo? other) -> bool
+Goldpath.GoldpathRescheduleRequest.<Clone>$() -> Goldpath.GoldpathRescheduleRequest!
+Goldpath.GoldpathRescheduleRequest.Deconstruct(out string! Cron, out string? TimeZoneId) -> void
+Goldpath.GoldpathRescheduleRequest.Equals(Goldpath.GoldpathRescheduleRequest? other) -> bool
+Goldpath.GoldpathRunDetail.<Clone>$() -> Goldpath.GoldpathRunDetail!
+Goldpath.GoldpathRunDetail.Deconstruct(out Goldpath.GoldpathJobRun! Run, out System.Collections.Generic.IReadOnlyDictionary<string!, int>! ChunksByStatus, out System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathJobItemFailure!>! OpenFailures) -> void
+Goldpath.GoldpathRunDetail.Equals(Goldpath.GoldpathRunDetail? other) -> bool
+Goldpath.GoldpathTriggerInfo.<Clone>$() -> Goldpath.GoldpathTriggerInfo!
+Goldpath.GoldpathTriggerInfo.Deconstruct(out string! Name, out string! State, out string? CronExpression, out string? CalendarName, out System.DateTimeOffset? NextFireAt, out System.DateTimeOffset? PreviousFireAt, out string! Type, out int Priority, out int MisfireInstruction, out string? TimeZoneId, out System.DateTimeOffset? StartAt, out System.DateTimeOffset? EndAt, out int? TimesTriggered, out System.TimeSpan? RepeatInterval, out int? RepeatCount) -> void
+Goldpath.GoldpathTriggerInfo.Equals(Goldpath.GoldpathTriggerInfo? other) -> bool
+Goldpath.GoldpathTriggerSpec.<Clone>$() -> Goldpath.GoldpathTriggerSpec!
+Goldpath.GoldpathTriggerSpec.Deconstruct(out string? Cron, out string? TimeZoneId, out System.TimeSpan? Interval, out int? RepeatCount, out string? CalendarName, out int Priority) -> void
+Goldpath.GoldpathTriggerSpec.Equals(Goldpath.GoldpathTriggerSpec? other) -> bool
+override Goldpath.GoldpathAddTriggerRequest.Equals(object? obj) -> bool
+override Goldpath.GoldpathAddTriggerRequest.GetHashCode() -> int
+override Goldpath.GoldpathAddTriggerRequest.ToString() -> string!
+override Goldpath.GoldpathAdminResult.Equals(object? obj) -> bool
+override Goldpath.GoldpathAdminResult.GetHashCode() -> int
+override Goldpath.GoldpathAdminResult.ToString() -> string!
+override Goldpath.GoldpathCalendarInfo.Equals(object? obj) -> bool
+override Goldpath.GoldpathCalendarInfo.GetHashCode() -> int
+override Goldpath.GoldpathCalendarInfo.ToString() -> string!
+override Goldpath.GoldpathCalendarSpec.Equals(object? obj) -> bool
+override Goldpath.GoldpathCalendarSpec.GetHashCode() -> int
+override Goldpath.GoldpathCalendarSpec.ToString() -> string!
+override Goldpath.GoldpathFireFacts.Equals(object? obj) -> bool
+override Goldpath.GoldpathFireFacts.GetHashCode() -> int
+override Goldpath.GoldpathFireFacts.ToString() -> string!
+override Goldpath.GoldpathFleetConnection.Equals(object? obj) -> bool
+override Goldpath.GoldpathFleetConnection.GetHashCode() -> int
+override Goldpath.GoldpathFleetConnection.ToString() -> string!
+override Goldpath.GoldpathFleetInfo.Equals(object? obj) -> bool
+override Goldpath.GoldpathFleetInfo.GetHashCode() -> int
+override Goldpath.GoldpathFleetInfo.ToString() -> string!
+override Goldpath.GoldpathFleetNode.Equals(object? obj) -> bool
+override Goldpath.GoldpathFleetNode.GetHashCode() -> int
+override Goldpath.GoldpathFleetNode.ToString() -> string!
+override Goldpath.GoldpathFleetStatus.Equals(object? obj) -> bool
+override Goldpath.GoldpathFleetStatus.GetHashCode() -> int
+override Goldpath.GoldpathFleetStatus.ToString() -> string!
+override Goldpath.GoldpathJobInfo.Equals(object? obj) -> bool
+override Goldpath.GoldpathJobInfo.GetHashCode() -> int
+override Goldpath.GoldpathJobInfo.ToString() -> string!
+override Goldpath.GoldpathRescheduleRequest.Equals(object? obj) -> bool
+override Goldpath.GoldpathRescheduleRequest.GetHashCode() -> int
+override Goldpath.GoldpathRescheduleRequest.ToString() -> string!
+override Goldpath.GoldpathRunDetail.Equals(object? obj) -> bool
+override Goldpath.GoldpathRunDetail.GetHashCode() -> int
+override Goldpath.GoldpathRunDetail.ToString() -> string!
+override Goldpath.GoldpathTriggerInfo.Equals(object? obj) -> bool
+override Goldpath.GoldpathTriggerInfo.GetHashCode() -> int
+override Goldpath.GoldpathTriggerInfo.ToString() -> string!
+override Goldpath.GoldpathTriggerSpec.Equals(object? obj) -> bool
+override Goldpath.GoldpathTriggerSpec.GetHashCode() -> int
+override Goldpath.GoldpathTriggerSpec.ToString() -> string!
+static Goldpath.GoldpathAddTriggerRequest.operator !=(Goldpath.GoldpathAddTriggerRequest? left, Goldpath.GoldpathAddTriggerRequest? right) -> bool
+static Goldpath.GoldpathAddTriggerRequest.operator ==(Goldpath.GoldpathAddTriggerRequest? left, Goldpath.GoldpathAddTriggerRequest? right) -> bool
+static Goldpath.GoldpathAdminResult.operator !=(Goldpath.GoldpathAdminResult? left, Goldpath.GoldpathAdminResult? right) -> bool
+static Goldpath.GoldpathAdminResult.operator ==(Goldpath.GoldpathAdminResult? left, Goldpath.GoldpathAdminResult? right) -> bool
+static Goldpath.GoldpathCalendarInfo.operator !=(Goldpath.GoldpathCalendarInfo? left, Goldpath.GoldpathCalendarInfo? right) -> bool
+static Goldpath.GoldpathCalendarInfo.operator ==(Goldpath.GoldpathCalendarInfo? left, Goldpath.GoldpathCalendarInfo? right) -> bool
+static Goldpath.GoldpathCalendarSpec.operator !=(Goldpath.GoldpathCalendarSpec? left, Goldpath.GoldpathCalendarSpec? right) -> bool
+static Goldpath.GoldpathCalendarSpec.operator ==(Goldpath.GoldpathCalendarSpec? left, Goldpath.GoldpathCalendarSpec? right) -> bool
+static Goldpath.GoldpathFireFacts.operator !=(Goldpath.GoldpathFireFacts? left, Goldpath.GoldpathFireFacts? right) -> bool
+static Goldpath.GoldpathFireFacts.operator ==(Goldpath.GoldpathFireFacts? left, Goldpath.GoldpathFireFacts? right) -> bool
+static Goldpath.GoldpathFleetConnection.operator !=(Goldpath.GoldpathFleetConnection? left, Goldpath.GoldpathFleetConnection? right) -> bool
+static Goldpath.GoldpathFleetConnection.operator ==(Goldpath.GoldpathFleetConnection? left, Goldpath.GoldpathFleetConnection? right) -> bool
+static Goldpath.GoldpathFleetInfo.operator !=(Goldpath.GoldpathFleetInfo? left, Goldpath.GoldpathFleetInfo? right) -> bool
+static Goldpath.GoldpathFleetInfo.operator ==(Goldpath.GoldpathFleetInfo? left, Goldpath.GoldpathFleetInfo? right) -> bool
+static Goldpath.GoldpathFleetNode.operator !=(Goldpath.GoldpathFleetNode? left, Goldpath.GoldpathFleetNode? right) -> bool
+static Goldpath.GoldpathFleetNode.operator ==(Goldpath.GoldpathFleetNode? left, Goldpath.GoldpathFleetNode? right) -> bool
+static Goldpath.GoldpathFleetStatus.operator !=(Goldpath.GoldpathFleetStatus? left, Goldpath.GoldpathFleetStatus? right) -> bool
+static Goldpath.GoldpathFleetStatus.operator ==(Goldpath.GoldpathFleetStatus? left, Goldpath.GoldpathFleetStatus? right) -> bool
+static Goldpath.GoldpathJobInfo.operator !=(Goldpath.GoldpathJobInfo? left, Goldpath.GoldpathJobInfo? right) -> bool
+static Goldpath.GoldpathJobInfo.operator ==(Goldpath.GoldpathJobInfo? left, Goldpath.GoldpathJobInfo? right) -> bool
+static Goldpath.GoldpathRescheduleRequest.operator !=(Goldpath.GoldpathRescheduleRequest? left, Goldpath.GoldpathRescheduleRequest? right) -> bool
+static Goldpath.GoldpathRescheduleRequest.operator ==(Goldpath.GoldpathRescheduleRequest? left, Goldpath.GoldpathRescheduleRequest? right) -> bool
+static Goldpath.GoldpathRunDetail.operator !=(Goldpath.GoldpathRunDetail? left, Goldpath.GoldpathRunDetail? right) -> bool
+static Goldpath.GoldpathRunDetail.operator ==(Goldpath.GoldpathRunDetail? left, Goldpath.GoldpathRunDetail? right) -> bool
+static Goldpath.GoldpathTriggerInfo.operator !=(Goldpath.GoldpathTriggerInfo? left, Goldpath.GoldpathTriggerInfo? right) -> bool
+static Goldpath.GoldpathTriggerInfo.operator ==(Goldpath.GoldpathTriggerInfo? left, Goldpath.GoldpathTriggerInfo? right) -> bool
+static Goldpath.GoldpathTriggerSpec.operator !=(Goldpath.GoldpathTriggerSpec? left, Goldpath.GoldpathTriggerSpec? right) -> bool
+static Goldpath.GoldpathTriggerSpec.operator ==(Goldpath.GoldpathTriggerSpec? left, Goldpath.GoldpathTriggerSpec? right) -> bool

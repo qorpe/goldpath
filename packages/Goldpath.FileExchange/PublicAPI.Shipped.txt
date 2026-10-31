@@ -186,3 +186,75 @@ Goldpath.GoldpathInMemoryFileLedger.ListQuarantineAsync(string? rail, int take, 
 Goldpath.IGoldpathFileLedgerQueries
 Goldpath.IGoldpathFileLedgerQueries.ListFilesAsync(string? rail, int take, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathFileInfo!>!>!
 Goldpath.IGoldpathFileLedgerQueries.ListQuarantineAsync(string? rail, int take, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathFileQuarantineInfo!>!>!
+Goldpath.GoldpathFileInfo.<Clone>$() -> Goldpath.GoldpathFileInfo!
+Goldpath.GoldpathFileInfo.Deconstruct(out string! Rail, out string! File, out int ProcessedRows, out int QuarantinedRows, out bool Archived, out System.DateTimeOffset? ArchivedAt) -> void
+Goldpath.GoldpathFileInfo.Equals(Goldpath.GoldpathFileInfo? other) -> bool
+Goldpath.GoldpathFileIngested.<Clone>$() -> Goldpath.GoldpathFileIngested!
+Goldpath.GoldpathFileIngested.Deconstruct(out string! Rail, out string! File, out int Processed, out int SkippedAsDuplicate, out int Quarantined) -> void
+Goldpath.GoldpathFileIngested.Equals(Goldpath.GoldpathFileIngested? other) -> bool
+Goldpath.GoldpathFileQuarantineInfo.<Clone>$() -> Goldpath.GoldpathFileQuarantineInfo!
+Goldpath.GoldpathFileQuarantineInfo.Deconstruct(out string! Rail, out string! File, out int Line, out string! Reason, out System.DateTimeOffset QuarantinedAt) -> void
+Goldpath.GoldpathFileQuarantineInfo.Equals(Goldpath.GoldpathFileQuarantineInfo? other) -> bool
+Goldpath.GoldpathFileRailInfo.<Clone>$() -> Goldpath.GoldpathFileRailInfo!
+Goldpath.GoldpathFileRailInfo.Deconstruct(out string! Name, out int HeaderLines, out int FilesArchived, out int QuarantineDepth, out System.DateTimeOffset? LastArchivedAt) -> void
+Goldpath.GoldpathFileRailInfo.Equals(Goldpath.GoldpathFileRailInfo? other) -> bool
+Goldpath.GoldpathFileRailResult.<Clone>$() -> Goldpath.GoldpathFileRailResult!
+Goldpath.GoldpathFileRailResult.Deconstruct(out string! Rail, out string! File, out string? FileRejectedReason, out int Processed, out int SkippedAsDuplicate, out System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathQuarantinedRow!>! Quarantined) -> void
+Goldpath.GoldpathFileRailResult.Equals(Goldpath.GoldpathFileRailResult? other) -> bool
+Goldpath.GoldpathFileReceived.<Clone>$() -> Goldpath.GoldpathFileReceived!
+Goldpath.GoldpathFileReceived.Deconstruct(out string! Rail, out string! File, out int DataRows) -> void
+Goldpath.GoldpathFileReceived.Equals(Goldpath.GoldpathFileReceived? other) -> bool
+Goldpath.GoldpathFileRejected.<Clone>$() -> Goldpath.GoldpathFileRejected!
+Goldpath.GoldpathFileRejected.Deconstruct(out string! Rail, out string! File, out string! Reason) -> void
+Goldpath.GoldpathFileRejected.Equals(Goldpath.GoldpathFileRejected? other) -> bool
+Goldpath.GoldpathQuarantinedRow.<Clone>$() -> Goldpath.GoldpathQuarantinedRow!
+Goldpath.GoldpathQuarantinedRow.Deconstruct(out string! Rail, out string! File, out int Line, out string! Reason) -> void
+Goldpath.GoldpathQuarantinedRow.Equals(Goldpath.GoldpathQuarantinedRow? other) -> bool
+Goldpath.GoldpathRowsQuarantined.<Clone>$() -> Goldpath.GoldpathRowsQuarantined!
+Goldpath.GoldpathRowsQuarantined.Deconstruct(out string! Rail, out string! File, out int Count) -> void
+Goldpath.GoldpathRowsQuarantined.Equals(Goldpath.GoldpathRowsQuarantined? other) -> bool
+override Goldpath.GoldpathFileInfo.Equals(object? obj) -> bool
+override Goldpath.GoldpathFileInfo.GetHashCode() -> int
+override Goldpath.GoldpathFileInfo.ToString() -> string!
+override Goldpath.GoldpathFileIngested.Equals(object? obj) -> bool
+override Goldpath.GoldpathFileIngested.GetHashCode() -> int
+override Goldpath.GoldpathFileIngested.ToString() -> string!
+override Goldpath.GoldpathFileQuarantineInfo.Equals(object? obj) -> bool
+override Goldpath.GoldpathFileQuarantineInfo.GetHashCode() -> int
+override Goldpath.GoldpathFileQuarantineInfo.ToString() -> string!
+override Goldpath.GoldpathFileRailInfo.Equals(object? obj) -> bool
+override Goldpath.GoldpathFileRailInfo.GetHashCode() -> int
+override Goldpath.GoldpathFileRailInfo.ToString() -> string!
+override Goldpath.GoldpathFileRailResult.Equals(object? obj) -> bool
+override Goldpath.GoldpathFileRailResult.GetHashCode() -> int
+override Goldpath.GoldpathFileRailResult.ToString() -> string!
+override Goldpath.GoldpathFileReceived.Equals(object? obj) -> bool
+override Goldpath.GoldpathFileReceived.GetHashCode() -> int
+override Goldpath.GoldpathFileReceived.ToString() -> string!
+override Goldpath.GoldpathFileRejected.Equals(object? obj) -> bool
+override Goldpath.GoldpathFileRejected.GetHashCode() -> int
+override Goldpath.GoldpathFileRejected.ToString() -> string!
+override Goldpath.GoldpathQuarantinedRow.Equals(object? obj) -> bool
+override Goldpath.GoldpathQuarantinedRow.GetHashCode() -> int
+override Goldpath.GoldpathQuarantinedRow.ToString() -> string!
+override Goldpath.GoldpathRowsQuarantined.Equals(object? obj) -> bool
+override Goldpath.GoldpathRowsQuarantined.GetHashCode() -> int
+override Goldpath.GoldpathRowsQuarantined.ToString() -> string!
+static Goldpath.GoldpathFileInfo.operator !=(Goldpath.GoldpathFileInfo? left, Goldpath.GoldpathFileInfo? right) -> bool
+static Goldpath.GoldpathFileInfo.operator ==(Goldpath.GoldpathFileInfo? left, Goldpath.GoldpathFileInfo? right) -> bool
+static Goldpath.GoldpathFileIngested.operator !=(Goldpath.GoldpathFileIngested? left, Goldpath.GoldpathFileIngested? right) -> bool
+static Goldpath.GoldpathFileIngested.operator ==(Goldpath.GoldpathFileIngested? left, Goldpath.GoldpathFileIngested? right) -> bool
+static Goldpath.GoldpathFileQuarantineInfo.operator !=(Goldpath.GoldpathFileQuarantineInfo? left, Goldpath.GoldpathFileQuarantineInfo? right) -> bool
+static Goldpath.GoldpathFileQuarantineInfo.operator ==(Goldpath.GoldpathFileQuarantineInfo? left, Goldpath.GoldpathFileQuarantineInfo? right) -> bool
+static Goldpath.GoldpathFileRailInfo.operator !=(Goldpath.GoldpathFileRailInfo? left, Goldpath.GoldpathFileRailInfo? right) -> bool
+static Goldpath.GoldpathFileRailInfo.operator ==(Goldpath.GoldpathFileRailInfo? left, Goldpath.GoldpathFileRailInfo? right) -> bool
+static Goldpath.GoldpathFileRailResult.operator !=(Goldpath.GoldpathFileRailResult? left, Goldpath.GoldpathFileRailResult? right) -> bool
+static Goldpath.GoldpathFileRailResult.operator ==(Goldpath.GoldpathFileRailResult? left, Goldpath.GoldpathFileRailResult? right) -> bool
+static Goldpath.GoldpathFileReceived.operator !=(Goldpath.GoldpathFileReceived? left, Goldpath.GoldpathFileReceived? right) -> bool
+static Goldpath.GoldpathFileReceived.operator ==(Goldpath.GoldpathFileReceived? left, Goldpath.GoldpathFileReceived? right) -> bool
+static Goldpath.GoldpathFileRejected.operator !=(Goldpath.GoldpathFileRejected? left, Goldpath.GoldpathFileRejected? right) -> bool
+static Goldpath.GoldpathFileRejected.operator ==(Goldpath.GoldpathFileRejected? left, Goldpath.GoldpathFileRejected? right) -> bool
+static Goldpath.GoldpathQuarantinedRow.operator !=(Goldpath.GoldpathQuarantinedRow? left, Goldpath.GoldpathQuarantinedRow? right) -> bool
+static Goldpath.GoldpathQuarantinedRow.operator ==(Goldpath.GoldpathQuarantinedRow? left, Goldpath.GoldpathQuarantinedRow? right) -> bool
+static Goldpath.GoldpathRowsQuarantined.operator !=(Goldpath.GoldpathRowsQuarantined? left, Goldpath.GoldpathRowsQuarantined? right) -> bool
+static Goldpath.GoldpathRowsQuarantined.operator ==(Goldpath.GoldpathRowsQuarantined? left, Goldpath.GoldpathRowsQuarantined? right) -> bool
