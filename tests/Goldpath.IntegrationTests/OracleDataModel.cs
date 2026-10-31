@@ -6,8 +6,9 @@ namespace Goldpath.Tests.Integration;
 
 /// <summary>
 /// The composed model the Oracle Data proofs run against (G7, slice O-2, #405): Data's own conventions on an
-/// app entity, then the four module contributions an adopter's context composes the way the template does —
-/// Jobs (the run model and the Quartz store), Campaign, Bulk and Archival.
+/// app entity, then the module contributions an adopter's context composes the way the template does —
+/// Jobs (the run model and the Quartz store), Campaign, Bulk and Archival (O-2), then Notification, Approvals,
+/// FileExchange and the audit log (O-5b, #410).
 /// </summary>
 public sealed class OracleComposedDb(DbContextOptions<OracleComposedDb> options) : DbContext(options)
 {
@@ -35,6 +36,10 @@ public sealed class OracleComposedDb(DbContextOptions<OracleComposedDb> options)
         modelBuilder.AddGoldpathBulk();
         modelBuilder.AddGoldpathCampaign();
         modelBuilder.AddGoldpathJobs();
+        modelBuilder.AddGoldpathNotification();
+        modelBuilder.AddGoldpathApprovalModel();
+        modelBuilder.AddGoldpathFileExchangeModel();
+        modelBuilder.AddGoldpathAuditLog();
     }
 
     /// <summary>
