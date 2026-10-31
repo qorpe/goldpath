@@ -7,3 +7,11 @@ Goldpath.GoldpathConsoleLink.Url.get -> string!
 Goldpath.GoldpathConsoleLink.Url.init -> void
 Goldpath.GoldpathConsoleOptions.AddLink(string! name, string! url) -> Goldpath.GoldpathConsoleOptions!
 Goldpath.GoldpathConsoleOptions.Links.get -> System.Collections.Generic.IList<Goldpath.GoldpathConsoleLink!>!
+Goldpath.GoldpathConsoleLink.<Clone>$() -> Goldpath.GoldpathConsoleLink!
+Goldpath.GoldpathConsoleLink.Deconstruct(out string! Name, out string! Url) -> void
+Goldpath.GoldpathConsoleLink.Equals(Goldpath.GoldpathConsoleLink? other) -> bool
+override Goldpath.GoldpathConsoleLink.Equals(object? obj) -> bool
+override Goldpath.GoldpathConsoleLink.GetHashCode() -> int
+override Goldpath.GoldpathConsoleLink.ToString() -> string!
+static Goldpath.GoldpathConsoleLink.operator !=(Goldpath.GoldpathConsoleLink? left, Goldpath.GoldpathConsoleLink? right) -> bool
+static Goldpath.GoldpathConsoleLink.operator ==(Goldpath.GoldpathConsoleLink? left, Goldpath.GoldpathConsoleLink? right) -> bool
