@@ -29,6 +29,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     failure for one threw and the batch went to the retry ladder.
   - **RFC §7 no longer claims** counter-reconcile events (there is no event: the D3 reconcile reads the row) or
     an ETA instrument (it is `remaining / tps_ceiling`, computed by the board).
+- **Notification, Approvals, FileExchange and the audit log, proven on Oracle (GA gate G7, slice O-5b, #410).** Tests
+  only: no package changes.
+  - **Goldens.** The O-2 composed model now adds the four modules' contributions, so the Oracle golden pins their columns,
+    the 128-byte identifier check covers their names, and the `''` probe covers their NOT NULL strings. Seven columns
+    the modules may write empty are listed against two new issues: the invariant-fallback culture (#502), and blank
+    Approvals identities and file-rail quarantine reasons (#503).
+  - **Twins.** `EfApprovalStoreTests`, `EfFileLedgerTests` and `AuditTrailTests` became provider-neutral facts files
+    (`*Facts.cs`) with a SQLite subclass in their unit projects. The integration project links the same files and runs
+    them on Oracle (`Category=Oracle`). `NotificationTests` became `NotificationFacts` with PostgreSQL and Oracle
+    subclasses, the Oracle one using the Quartz Oracle store.
+  - **Known refusals.** Where a known issue refuses a write on Oracle, the twin asserts that refusal instead of skipping:
+    #475 for an audit row's NULL document, and #502 for the `""` culture. Each assertion flips when its issue lands.
 - **The Data module, proven on Oracle (GA gate G7, slice O-2, #405).** Tests only: no package changes.
   `OracleDataTests` (`Category=Oracle`) runs on the O-1 lane's container, one schema per fact, against a model that
   composes Jobs, Campaign, Bulk and Archival in the 19c SQL form:
@@ -294,6 +306,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
 ### Changed
+- **Dependencies: `Microsoft.CodeAnalysis.PublicApiAnalyzers` 3.3.4 → 5.6.0 (GA gate G2, #335/#491; supersedes
+  #246).** The analyzer guarding every package's `PublicAPI.Shipped.txt` / `PublicAPI.Unshipped.txt` is two majors
+  newer. It loads on the SDK floor (10.0.101, measured), so `global.json` does not move. Its one new demand: it
+  counts the members a `record` synthesizes (`Equals`, `GetHashCode`, `ToString`, `PrintMembers`,
+  `EqualityContract`, `<Clone>$`, `==`, `!=`) as public API. 606 such lines are added across fourteen packages,
+  each to the ledger that already declares its record (516 Shipped, 90 Unshipped). The surface did not change, only
+  the ledger now describes all of it: no line is removed or reworded, and nothing is suppressed. An adopter sees
+  no difference; a package author adding a record now lists those members too.
 - **Dependencies: the nuget minor/patch group of 2026-10-27.** MassTransit (and its RabbitMQ and EF Core
   packages) 8.5.11 → 8.5.12, so the conformance suite's oracle is 8.5.12. The templates, CorPay and the CLI's
   outbox recipe pin the same version, and the templates and CorPay move `System.Security.Cryptography.Pkcs` to
