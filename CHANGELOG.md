@@ -5,6 +5,34 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **The 1.0 API review's record and its counter (GA gate G4, API-1, #390).** Repository only: no
+  package changes.
+  - `docs/rfc/goldpath-1.0-api-review.md` is DRAFT, in the eight RFC sections. It holds the scope,
+    the verdict vocabulary (`keep` · `rename` with its target line · `remove` with its reason ·
+    `experimental` with its diagnostic id), the review method, cross-cutting policies P1–P3, the
+    gates, and the sign-off left for API-13 (#402).
+  - Diagnostic ids `GPEXP001` (Approvals) and `GPEXP002` (FileExchange) are proposed; they collide
+    with none of the 50 `GP…` ids.
+  - `docs/strategy/api-review-1.0/` has a README and one header-only TSV per package with a ledger
+    (23). Owner decision (a): these are Tier A data.
+  - `scripts/api-review-gate.sh` (run in `gates`) has these modes:
+    - report: covered/total per package; it fails on a stale row, an unknown verdict, a missing
+      reason or target, a duplicate, `keep` in an experimental package, a missing or extra TSV, or
+      a bad header;
+    - `--require-complete [--package …]`;
+    - `--require-applied`;
+    - `--list-non-keep`;
+    - `--selftest` (26 planted faults red; green unplanted, across one `[ID]` prefix, on an
+      experimental package under its own diagnostic id, and on an applied review in every mode
+      `gates` runs after API-14).
+
+    The modes compose on an applied review: an applied source is not stale and a rename's target is
+    covered by its row. A `keep` line that disappears, or a rename applied as a plain deletion, is
+    red in every mode.
+  - At `main` b1afb82: **0 of 2,658 live lines** reviewed.
+  - An `experimental` row in Approvals or FileExchange must name that package's diagnostic id
+    (`GPEXP001`/`GPEXP002`, compared exactly), and no other package's `experimental` row may name
+    either. A mode that takes no arguments refuses any.
 - **Notification, Approvals, FileExchange and the audit log, proven on Oracle (GA gate G7, slice O-5b, #410).** Tests
   only: no package changes.
   - **Goldens.** The O-2 composed model now adds the four modules' contributions, so the Oracle golden pins their columns,
