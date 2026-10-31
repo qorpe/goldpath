@@ -270,6 +270,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
 ### Changed
+- **Dependencies: `Microsoft.CodeAnalysis.PublicApiAnalyzers` 3.3.4 → 5.6.0 (GA gate G2, #335/#491; supersedes
+  #246).** The analyzer guarding every package's `PublicAPI.Shipped.txt` / `PublicAPI.Unshipped.txt` is two majors
+  newer. It loads on the SDK floor (10.0.101, measured), so `global.json` does not move. Its one new demand: it
+  counts the members a `record` synthesizes (`Equals`, `GetHashCode`, `ToString`, `PrintMembers`,
+  `EqualityContract`, `<Clone>$`, `==`, `!=`) as public API. 606 such lines are added across fourteen packages,
+  each to the ledger that already declares its record (548 Shipped, 58 Unshipped). The surface did not change, only
+  the ledger now describes all of it: no line is removed or reworded, and nothing is suppressed. An adopter sees
+  no difference; a package author adding a record now lists those members too.
 - **Dependencies: the nuget minor/patch group of 2026-10-27.** MassTransit (and its RabbitMQ and EF Core
   packages) 8.5.11 → 8.5.12, so the conformance suite's oracle is 8.5.12. The templates, CorPay and the CLI's
   outbox recipe pin the same version, and the templates and CorPay move `System.Security.Cryptography.Pkcs` to

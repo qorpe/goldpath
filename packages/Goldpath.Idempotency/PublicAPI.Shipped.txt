@@ -28,3 +28,11 @@ Goldpath.StoredHttpResponse.StatusCode.init -> void
 static Goldpath.GoldpathIdempotencyExtensions.AddGoldpathIdempotency<TBuilder>(this TBuilder builder, System.Action<Goldpath.GoldpathIdempotencyOptions!>? configure = null) -> TBuilder
 Goldpath.StoredHttpResponse.Location.get -> string?
 Goldpath.StoredHttpResponse.Location.init -> void
+Goldpath.StoredHttpResponse.<Clone>$() -> Goldpath.StoredHttpResponse!
+Goldpath.StoredHttpResponse.Equals(Goldpath.StoredHttpResponse? other) -> bool
+Goldpath.StoredHttpResponse.StoredHttpResponse() -> void
+override Goldpath.StoredHttpResponse.Equals(object? obj) -> bool
+override Goldpath.StoredHttpResponse.GetHashCode() -> int
+override Goldpath.StoredHttpResponse.ToString() -> string!
+static Goldpath.StoredHttpResponse.operator !=(Goldpath.StoredHttpResponse? left, Goldpath.StoredHttpResponse? right) -> bool
+static Goldpath.StoredHttpResponse.operator ==(Goldpath.StoredHttpResponse? left, Goldpath.StoredHttpResponse? right) -> bool
