@@ -235,6 +235,121 @@ public class R3PolicyVersionTests
         Assert.Equal(10_000, fixture.Reload(campaign.Id).Tps);
     }
 
+    [Fact]
+    public async Task AThrottleThatLosesEveryRace_StopsAfterEightAttempts_AndSaysNothingWasApplied()
+    {
+        var racer = new LoseEveryRace();
+        using var fixture = new CampaignFixture(extraServices: s => s.ConfigureDbContext<CampaignTestContext>(o => o.AddInterceptors(racer)));
+        var campaign = await fixture.CreateAsync(Fast);
+        racer.Arm(fixture, campaign.Id);
+
+        var result = await fixture.Admin().ThrottleAsync(campaign.Id, new GoldpathCampaignThrottle(Tps: 50), null, "alice", CancellationToken.None);
+
+        Assert.Equal(8, racer.Attempts);   // bounded: it reports, it does not spin
+        Assert.False(result.Ok);
+        Assert.False(result.Stale);
+        Assert.Contains("lost 8 races", result.Message, StringComparison.Ordinal);
+        Assert.Contains("nothing was applied", result.Message, StringComparison.Ordinal);
+        var row = fixture.Reload(campaign.Id);
+        Assert.Equal(10_000, row.Tps);
+        Assert.Equal(8, row.PolicyVersion);   // the eight competing writes, none of alice's
+        Assert.Equal(7, result.PolicyVersion);   // the version the last attempt read
+    }
+
+    [Fact]
+    public async Task AStaleRefusal_NamesTheNewestThrottleOfThisCampaign_NotAnotherVerbOrAnotherCampaign()
+    {
+        using var fixture = new CampaignFixture();
+        var campaign = await fixture.CreateAsync(Fast);
+        var other = await fixture.CreateAsync(Fast);
+        var admin = fixture.Admin();
+
+        Assert.True((await admin.ThrottleAsync(campaign.Id, new GoldpathCampaignThrottle(Tps: 50), 0, "alice", CancellationToken.None)).Ok);
+        Assert.True((await admin.ThrottleAsync(campaign.Id, new GoldpathCampaignThrottle(Tps: 60), 1, "bob", CancellationToken.None)).Ok);
+        Assert.True((await admin.PauseAsync(campaign.Id, "carol", CancellationToken.None)).Ok);                                   // newer, but not a throttle
+        Assert.True((await admin.ThrottleAsync(other.Id, new GoldpathCampaignThrottle(Tps: 70), 0, "dave", CancellationToken.None)).Ok);   // newer, another campaign
+
+        var stale = await admin.ThrottleAsync(campaign.Id, new GoldpathCampaignThrottle(Tps: 5), 1, "erin", CancellationToken.None);
+
+        Assert.True(stale.Stale);
+        Assert.Contains("version 2, by bob at ", stale.Message, StringComparison.Ordinal);
+        Assert.Contains("you read version 1", stale.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(GoldpathCampaignState.Completed)]
+    [InlineData(GoldpathCampaignState.CompletedWithFailures)]
+    [InlineData(GoldpathCampaignState.Aborted)]
+    [InlineData(GoldpathCampaignState.ExpiredIncomplete)]
+    public async Task EveryTerminalState_RefusesTheThrottle_AndLeavesTheVersion(GoldpathCampaignState terminal)
+    {
+        using var fixture = new CampaignFixture();
+        var campaign = await fixture.CreateAsync(Fast);
+        using (var scope = fixture.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<CampaignTestContext>();
+            await db.Set<GoldpathCampaign>().Where(c => c.Id == campaign.Id)
+                .ExecuteUpdateAsync(s => s.SetProperty(c => c.State, terminal));
+        }
+
+        var refused = await fixture.Admin().ThrottleAsync(campaign.Id, new GoldpathCampaignThrottle(Tps: 5), 0, "op", CancellationToken.None);
+
+        Assert.False(refused.Ok);
+        Assert.False(refused.Stale);
+        Assert.Contains($"is terminal ({terminal})", refused.Message, StringComparison.Ordinal);
+        Assert.Equal(0, fixture.Reload(campaign.Id).PolicyVersion);
+        Assert.Equal(10_000, fixture.Reload(campaign.Id).Tps);
+    }
+
+    [Fact]
+    public async Task ClearedExcludedDays_AreStoredAsNoValue_ThroughTheConditionalUpdate()
+    {
+        using var fixture = new CampaignFixture();
+        var campaign = await fixture.CreateAsync(Fast);
+        var admin = fixture.Admin();
+
+        Assert.True((await admin.ThrottleAsync(campaign.Id, new GoldpathCampaignThrottle(ExcludedDays: ["Saturday", "Sunday"]), null, "op", CancellationToken.None)).Ok);
+        Assert.Equal("Saturday,Sunday", fixture.Reload(campaign.Id).ExcludedDays);
+        Assert.True((await admin.ThrottleAsync(campaign.Id, new GoldpathCampaignThrottle(ClearExcludedDays: true), null, "op", CancellationToken.None)).Ok);
+        Assert.Null(fixture.Reload(campaign.Id).ExcludedDays);   // NULL, as the model reads "none" — never an empty string
+    }
+
+    /// <summary>Moves the policy under every one of the throttle's conditional updates, so each attempt loses.</summary>
+    private sealed class LoseEveryRace : DbCommandInterceptor
+    {
+        private CampaignFixture? _fixture;
+        private Guid _id;
+        private bool _racing;
+
+        public int Attempts { get; private set; }
+
+        public void Arm(CampaignFixture fixture, Guid id) => (_fixture, _id) = (fixture, id);
+
+        public override async ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (_fixture is { } fixture && !_racing && command.CommandText.Contains("\"PolicyVersion\" = ", StringComparison.Ordinal)
+                && command.CommandText.TrimStart().StartsWith("UPDATE", StringComparison.OrdinalIgnoreCase))
+            {
+                Attempts++;
+                _racing = true;   // the competing write runs through here too
+                try
+                {
+                    using var scope = fixture.Services.CreateScope();
+                    var db = scope.ServiceProvider.GetRequiredService<CampaignTestContext>();
+                    await db.Set<GoldpathCampaign>().Where(c => c.Id == _id)
+                        .ExecuteUpdateAsync(s => s.SetProperty(c => c.PolicyVersion, c => c.PolicyVersion + 1), cancellationToken);
+                }
+                finally
+                {
+                    _racing = false;
+                }
+            }
+
+            return result;
+        }
+    }
+
     /// <summary>
     /// Runs a competing verb at the exact moment the throttle's conditional UPDATE is about to
     /// execute — after it read the row, before it writes — once.
