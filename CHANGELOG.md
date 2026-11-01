@@ -70,7 +70,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     `StaleClaimAfter`. A key present in configuration wins, and the value set in code is the default; a key
     that leaves configuration falls back to it. The change reaches the next tick and the next outcome flush.
   - **A ladder replaces, never appends:** each key binds into a fresh value, so two configured rungs are two
-    rungs, not the code's three plus two.
+    rungs, not the code's three plus two. Each rung binds on its own, in index order: the binder's list
+    binding skips an element it cannot convert, which would have shortened the ladder silently, so a bad
+    rung refuses the reload instead.
   - **A bad reload is refused whole:** an empty ladder, a ladder written as one value rather than a list, a negative rung, jitter outside [0, 1] (NaN included),
     a non-positive age or a value that does not parse (configuration is read invariantly, so `0,5` is
     refused on any host culture) leaves the last valid values in force. The refusal is logged as a warning
@@ -81,10 +83,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     startup values.
   - **API:** none. The properties keep their names and setters, and no shipped constructor changes.
     Behaviour without a `Goldpath:Campaign` section is unchanged.
-  - **Proof:** `R3TuningReloadTests` (20 cases, every host built through `AddGoldpathCampaign`), red on
-    `main` and against three planted faults (an ignored refusal, a ladder bound into the code ladder, a getter
-    that skips the reloaded value). The last case drives the engine with the host's instance and finds a
-    failed item scheduled on the reloaded rung.
+  - **Proof:** `R3TuningReloadTests` (32 cases, every host built through `AddGoldpathCampaign`). 29 of 31 are
+    red on `main` (the 32nd names the new internal type); the two that pass there are the "not reloaded" and
+    "empty value" guards. Three planted faults also turn it red: an ignored refusal, a ladder bound into the
+    code ladder, and a getter that skips the reloaded value. One case drives the engine with the host's
+    instance and finds a failed item scheduled on the reloaded rung. Stryker scoped to the two changed files:
+    `GoldpathCampaignTuning.cs` 51/51 killed. The `GoldpathCampaignOptions.cs` survivors near the change are
+    pre-existing and equivalent: jitter 0 against `< 0`, and the factor's sign.
 - **Campaign: a scheduled start and the `Ready` state (campaign RFC R3.1, slice R3-S2, #289).**
   - **API (additive, init-only):** `GoldpathCampaignPolicy.StartAt` and `IsBeforeStart(utcNow)`,
     `GoldpathCampaignThrottle.StartAt` and `ClearStartAt`, `GoldpathCampaignInfo.StartAt`. No

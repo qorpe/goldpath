@@ -72,6 +72,19 @@ public class R3TuningReloadTests
     }
 
     [Fact]
+    public void Rungs_are_ordered_by_their_index_not_by_how_configuration_lists_them()
+    {
+        using var rig = new Rig(configuration: new()
+        {
+            ["Goldpath:Campaign:RetryBackoff:10"] = "00:11:00",
+            ["Goldpath:Campaign:RetryBackoff:2"] = "00:03:00",
+            ["Goldpath:Campaign:RetryBackoff:0"] = "00:00:15",
+        });
+
+        Assert.Equal([TimeSpan.FromSeconds(15), TimeSpan.FromMinutes(3), TimeSpan.FromMinutes(11)], rig.Options.RetryBackoff);
+    }
+
+    [Fact]
     public void A_code_value_set_after_the_host_is_built_still_reads_while_configuration_leaves_its_key_unset()
     {
         using var rig = new Rig(configuration: new() { ["Goldpath:Campaign:OrphanReleaseAfter"] = "00:02:00" });
@@ -84,19 +97,22 @@ public class R3TuningReloadTests
     }
 
     [Theory]
-    [InlineData("RetryBackoff", "")]                     // how a JSON [] arrives: an empty ladder
-    [InlineData("RetryBackoff", "00:01:00")]             // one value where a list belongs
-    [InlineData("RetryBackoff:0", "-00:00:30")]          // a negative rung
-    [InlineData("RetryBackoff:0", "half a minute")]      // not a TimeSpan
-    [InlineData("RetryJitter", "1.5")]
-    [InlineData("RetryJitter", "-0.1")]
-    [InlineData("RetryJitter", "NaN")]
-    [InlineData("RetryJitter", "0,5")]                   // a tr-TR decimal comma: configuration is invariant
-    [InlineData("OrphanReleaseAfter", "00:00:00")]
-    [InlineData("OrphanReleaseAfter", "-00:01:00")]
-    [InlineData("StaleClaimAfter", "00:00:00")]
-    [InlineData("StaleClaimAfter", "ten minutes")]
-    public void An_invalid_reload_is_refused_whole_logged_with_its_key_and_counted(string key, string value)
+    [InlineData("RetryBackoff", "", "at least one rung")]                         // how a JSON [] arrives: an empty ladder
+    [InlineData("RetryBackoff", "00:01:00", "a ladder is a list")]                // one value where a list belongs
+    [InlineData("RetryBackoff:1", "-00:00:30", "a rung cannot be negative")]      // one negative rung after a valid one
+    [InlineData("RetryBackoff:0", "half a minute", "the value cannot be read")]   // not a TimeSpan
+    [InlineData("RetryBackoff:1", "half a minute", "the value cannot be read")]   // a bad rung after a good one: never silently dropped
+    [InlineData("RetryBackoff:first", "00:01:00", "not a rung index")]
+    [InlineData("RetryJitter", "1.5", "within [0, 1]")]
+    [InlineData("RetryJitter", "1.0000001", "within [0, 1]")]
+    [InlineData("RetryJitter", "-0.1", "within [0, 1]")]
+    [InlineData("RetryJitter", "NaN", "within [0, 1]")]
+    [InlineData("RetryJitter", "0,5", "the value cannot be read")]               // a tr-TR decimal comma: configuration is invariant
+    [InlineData("OrphanReleaseAfter", "00:00:00", "must be positive")]
+    [InlineData("OrphanReleaseAfter", "-00:01:00", "must be positive")]
+    [InlineData("StaleClaimAfter", "00:00:00", "must be positive")]
+    [InlineData("StaleClaimAfter", "ten minutes", "the value cannot be read")]
+    public void An_invalid_reload_is_refused_whole_logged_with_its_key_and_counted(string key, string value, string reason)
     {
         using var rig = new Rig(configuration: new()
         {
@@ -115,7 +131,7 @@ public class R3TuningReloadTests
             ["Goldpath:Campaign:OrphanReleaseAfter"] = "00:09:00",
             ["Goldpath:Campaign:StaleClaimAfter"] = "00:09:00",
         };
-        if (key.StartsWith("RetryBackoff", StringComparison.Ordinal))
+        if (key == "RetryBackoff")
         {
             reload.Remove("Goldpath:Campaign:RetryBackoff:0");
         }
@@ -130,6 +146,7 @@ public class R3TuningReloadTests
         Assert.Equal(1, refusals.Count);
         var warning = Assert.Single(rig.Logs.Warnings);
         Assert.Contains($"Goldpath:Campaign:{key.Split(':')[0]}", warning, StringComparison.Ordinal);
+        Assert.Contains(reason, warning, StringComparison.Ordinal);
         Assert.Contains("previous values stay in force", warning, StringComparison.Ordinal);
 
         // The next valid reload applies again.
@@ -137,6 +154,71 @@ public class R3TuningReloadTests
         Assert.Equal(TimeSpan.FromMinutes(4), rig.Options.StaleClaimAfter);
         Assert.Equal(CodeLadder, rig.Options.RetryBackoff);
         Assert.Equal(1, refusals.Count);
+    }
+
+    [Theory]
+    [InlineData("RetryJitter", "0")]
+    [InlineData("RetryJitter", "1")]
+    [InlineData("RetryBackoff:0", "00:00:00")]                    // a zero rung retries at once; it is not refused
+    [InlineData("OrphanReleaseAfter", "00:00:00.0000001")]        // the smallest positive age
+    [InlineData("StaleClaimAfter", "00:00:00.0000001")]
+    public void The_boundaries_of_each_range_are_accepted(string key, string value)
+    {
+        using var rig = new Rig();
+        using var refusals = new RefusalCounter();
+
+        rig.Config.Set(new() { [$"Goldpath:Campaign:{key}"] = value });
+
+        Assert.Equal(0, refusals.Count);
+        Assert.Empty(rig.Logs.Warnings);
+        object actual = key switch
+        {
+            "RetryJitter" => rig.Options.RetryJitter,
+            "RetryBackoff:0" => Assert.Single(rig.Options.RetryBackoff),
+            "OrphanReleaseAfter" => rig.Options.OrphanReleaseAfter,
+            _ => rig.Options.StaleClaimAfter,
+        };
+        object expected = key == "RetryJitter"
+            ? double.Parse(value, CultureInfo.InvariantCulture)
+            : TimeSpan.Parse(value, CultureInfo.InvariantCulture);
+        Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void With_two_invalid_keys_the_first_one_read_is_the_one_named()
+    {
+        using var rig = new Rig();
+
+        rig.Config.Set(new() { ["Goldpath:Campaign:RetryJitter"] = "lots", ["Goldpath:Campaign:StaleClaimAfter"] = "never" });
+
+        var warning = Assert.Single(rig.Logs.Warnings);
+        Assert.Contains("Goldpath:Campaign:RetryJitter", warning, StringComparison.Ordinal);
+        Assert.DoesNotContain("StaleClaimAfter", warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Tracking_again_replaces_the_first_subscription_so_a_refusal_counts_once()
+    {
+        using var rig = new Rig();
+        var monitor = rig.Host.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<GoldpathCampaignTuning>>();
+        rig.Options.Track(monitor, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);
+        using var refusals = new RefusalCounter();
+
+        rig.Config.Set(new() { ["Goldpath:Campaign:RetryJitter"] = "3" });
+
+        Assert.Equal(1, refusals.Count);
+    }
+
+    [Fact]
+    public void Jitter_spreads_a_rung_both_ways_within_its_fraction()
+    {
+        using var rig = new Rig(configuration: new() { ["Goldpath:Campaign:RetryBackoff:0"] = "00:01:00", ["Goldpath:Campaign:RetryJitter"] = "0.5" });
+
+        var delays = Enumerable.Range(0, 400).Select(_ => rig.Options.NextRetryDelay(1)).ToList();
+
+        Assert.All(delays, d => Assert.InRange(d, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(90)));
+        Assert.Contains(delays, d => d > TimeSpan.FromSeconds(62));
+        Assert.Contains(delays, d => d < TimeSpan.FromSeconds(58));
     }
 
     [Fact]

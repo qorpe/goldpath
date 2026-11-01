@@ -72,7 +72,8 @@ target system is struggling:
 - **Precedence:** a key present in `Goldpath:Campaign` wins; the value set in the
   `AddGoldpathCampaign` delegate is the default, and a key removed from configuration falls back to
   it. The change reaches the next tick and the next outcome flush.
-- **A ladder replaces, never appends:** the two rungs above are the whole ladder.
+- **A ladder replaces, never appends:** the two rungs above are the whole ladder. Rungs are
+  read in index order, and one that does not parse refuses the reload rather than vanishing.
 - **A bad reload is refused whole** — an empty ladder, a negative rung, jitter outside [0, 1], a
   non-positive age, a value that does not parse (numbers and times are read invariantly: `0.5`,
   never `0,5`). The last valid values stay in force, a warning names `Goldpath:Campaign:<key>`,

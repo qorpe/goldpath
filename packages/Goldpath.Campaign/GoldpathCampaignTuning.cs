@@ -41,16 +41,13 @@ internal sealed class GoldpathCampaignTuning
     /// </summary>
     internal void ReadFrom(IConfiguration section)
     {
-        RetryBackoff = Read<List<TimeSpan>>(section, nameof(RetryBackoff), s => s.Get<List<TimeSpan>>() ?? []);
+        RetryBackoff = Read<List<TimeSpan>>(section, nameof(RetryBackoff), ReadLadder);
         RetryJitter = Read<double?>(section, nameof(RetryJitter), s => s.Get<double>());
         OrphanReleaseAfter = Read<TimeSpan?>(section, nameof(OrphanReleaseAfter), s => s.Get<TimeSpan>());
         StaleClaimAfter = Read<TimeSpan?>(section, nameof(StaleClaimAfter), s => s.Get<TimeSpan>());
 
-        if (Refusal is not null)
-        {
-            return;
-        }
-
+        // A key that did not parse is already the refusal (Refuse keeps the first), and it reads
+        // as unset below, so the checks that follow cannot replace it.
         if (RetryBackoff is { Count: 0 })
         {
             Refuse(nameof(RetryBackoff), "the ladder needs at least one rung");
@@ -71,6 +68,27 @@ internal sealed class GoldpathCampaignTuning
         {
             Refuse(nameof(StaleClaimAfter), string.Create(CultureInfo.InvariantCulture, $"the age must be positive, not {stale}"));
         }
+    }
+
+    /// <summary>
+    /// Binds each rung on its own, in index order. The binder's own list binding skips an element
+    /// it cannot convert, so <c>RetryBackoff:1=garbage</c> would quietly shorten the ladder; here it
+    /// throws, and the reload is refused.
+    /// </summary>
+    private static List<TimeSpan> ReadLadder(IConfigurationSection ladder)
+    {
+        var rungs = new List<(int Index, TimeSpan Rung)>();
+        foreach (var rung in ladder.GetChildren())
+        {
+            if (!int.TryParse(rung.Key, NumberStyles.None, CultureInfo.InvariantCulture, out var index))
+            {
+                throw new InvalidOperationException($"'{rung.Key}' is not a rung index");
+            }
+
+            rungs.Add((index, rung.Get<TimeSpan>()));
+        }
+
+        return [.. rungs.OrderBy(r => r.Index).Select(r => r.Rung)];
     }
 
     private T? Read<T>(IConfiguration section, string key, Func<IConfigurationSection, T?> bind)
