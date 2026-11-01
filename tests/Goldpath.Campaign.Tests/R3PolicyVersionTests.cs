@@ -223,6 +223,8 @@ public class R3PolicyVersionTests
         Assert.False(missing.Ok);
         Assert.False(missing.Stale);
         Assert.StartsWith("No campaign", missing.Message, StringComparison.Ordinal);
+        Assert.Equal("Throttle values must be positive.",   // a nonsense patch is named first, as the shipped verb did
+            (await admin.ThrottleAsync(Guid.NewGuid(), new GoldpathCampaignThrottle(Tps: 0), null, "op", CancellationToken.None)).Message);
 
         var campaign = await fixture.CreateAsync(Fast);
         var future = await admin.ThrottleAsync(campaign.Id, new GoldpathCampaignThrottle(Tps: 5), 41, "op", CancellationToken.None);

@@ -51,13 +51,13 @@ public sealed record GoldpathCampaignInfo(
 }
 
 /// <summary>
-/// What a versioned throttle did (R3.5). <paramref name="PolicyVersion"/> is the version the row
-/// carries after the call (0 when no campaign exists); <paramref name="Stale"/> is true only when
+/// What a versioned throttle did (R3.5). <paramref name="PolicyVersion"/> is the version the call
+/// wrote, or the one it last read when it applied nothing (0 when no campaign exists); <paramref name="Stale"/> is true only when
 /// the throttle named a version the policy no longer has, so a caller can map it (admin-contract R4: 412).
 /// </summary>
 /// <param name="Ok">True when the patch was applied.</param>
 /// <param name="Message">The server's words: the outcome, or why it was refused.</param>
-/// <param name="PolicyVersion">The campaign's policy version after the call.</param>
+/// <param name="PolicyVersion">The policy version the call wrote, or last read when it applied nothing.</param>
 /// <param name="Stale">True when the refusal is a stale expected version.</param>
 public sealed record GoldpathCampaignThrottleResult(bool Ok, string Message, long PolicyVersion, bool Stale);
 
@@ -332,7 +332,8 @@ public sealed class GoldpathCampaignAdminService<TContext>
             var campaign = await db.Set<GoldpathCampaign>().AsNoTracking().SingleOrDefaultAsync(c => c.Id == id, ct);
             if (campaign is null)
             {
-                return new GoldpathCampaignThrottleResult(false, $"No campaign {id:N}.", 0, Stale: false);
+                // A nonsense patch is named before a missing campaign, exactly as the shipped verb did.
+                return new GoldpathCampaignThrottleResult(false, invalid ?? $"No campaign {id:N}.", 0, Stale: false);
             }
 
             var readState = campaign.State;
