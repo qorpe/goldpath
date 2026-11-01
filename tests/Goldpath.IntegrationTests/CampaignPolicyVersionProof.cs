@@ -51,7 +51,8 @@ internal static class CampaignPolicyVersionProof
         var applied = await admin.ThrottleAsync(id, new GoldpathCampaignThrottle(
             Tps: 40, DailyQuota: 900, MaxInFlight: 5, WindowStart: new TimeOnly(9, 0), WindowEnd: new TimeOnly(18, 30),
             TimeZoneId: "Europe/Berlin", ExcludedDays: ["Sunday"], EndDate: DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30)),
-            MaxAttempts: 3, Priority: GoldpathCampaignPriority.High) { StartAt = start }, expectedPolicyVersion: 0, "alice", CancellationToken.None);
+            MaxAttempts: 3, Priority: GoldpathCampaignPriority.High)
+        { StartAt = start }, expectedPolicyVersion: 0, "alice", CancellationToken.None);
         Assert.True(applied.Ok, applied.Message);
         Assert.Equal(1, applied.PolicyVersion);
 
