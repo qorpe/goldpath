@@ -64,6 +64,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   - **Runbook:** §9 covers `QRTZ_LOCKS` row-lock contention.
   - **Still open:** `GoldpathJobExecutions` loses the history row of a fire with no error on Oracle.
     The `Error` document column refuses a NULL in ODP.NET (#475).
+- **Campaign: the four options an operator tunes reload without a restart (campaign RFC R3.3, slice R3-S7, #317).**
+  - **What reloads:** `AddGoldpathCampaign` now reads the section `Goldpath:Campaign` through
+    `IOptionsMonitor`. Exactly four keys reload: `RetryBackoff`, `RetryJitter`, `OrphanReleaseAfter` and
+    `StaleClaimAfter`. A key present in configuration wins, and the value set in code is the default; a key
+    that leaves configuration falls back to it. The change reaches the next tick and the next outcome flush.
+  - **A ladder replaces, never appends:** each key binds into a fresh value, so two configured rungs are two
+    rungs, not the code's three plus two.
+  - **A bad reload is refused whole:** an empty ladder, a ladder written as one value rather than a list, a negative rung, jitter outside [0, 1] (NaN included),
+    a non-positive age or a value that does not parse (configuration is read invariantly, so `0,5` is
+    refused on any host culture) leaves the last valid values in force. The refusal is logged as a warning
+    naming `Goldpath:Campaign:<key>` and counted in the new `goldpath_campaign_tuning_reload_refused_total`.
+    A section invalid at startup is refused the same way, and the code values hold. An empty scalar
+    (`""`) reads as unset.
+  - **Not reloaded:** `GlobalTps` (a row, R3.2), `LeaderTick`, `LeadershipSlice` and the batch sizes stay
+    startup values.
+  - **API:** none. The properties keep their names and setters, and no shipped constructor changes.
+    Behaviour without a `Goldpath:Campaign` section is unchanged.
+  - **Proof:** `R3TuningReloadTests` (20 cases, every host built through `AddGoldpathCampaign`), red on
+    `main` and against three planted faults (an ignored refusal, a ladder bound into the code ladder, a getter
+    that skips the reloaded value). The last case drives the engine with the host's instance and finds a
+    failed item scheduled on the reloaded rung.
 - **Campaign: a scheduled start and the `Ready` state (campaign RFC R3.1, slice R3-S2, #289).**
   - **API (additive, init-only):** `GoldpathCampaignPolicy.StartAt` and `IsBeforeStart(utcNow)`,
     `GoldpathCampaignThrottle.StartAt` and `ClearStartAt`, `GoldpathCampaignInfo.StartAt`. No

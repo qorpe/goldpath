@@ -51,6 +51,36 @@ builder.AddGoldpathMessaging(messaging => messaging          // campaign REQUIRE
 // DbContext: modelBuilder.AddGoldpathCampaign();  modelBuilder.AddGoldpathJobs();
 ```
 
+## Tuning during an incident (R3.3)
+
+Four options reload from configuration without a restart — the dials an operator turns while a
+target system is struggling:
+
+```json
+{
+  "Goldpath": {
+    "Campaign": {
+      "RetryBackoff": [ "00:05:00", "00:30:00" ],
+      "RetryJitter": 0.2,
+      "OrphanReleaseAfter": "00:10:00",
+      "StaleClaimAfter": "00:20:00"
+    }
+  }
+}
+```
+
+- **Precedence:** a key present in `Goldpath:Campaign` wins; the value set in the
+  `AddGoldpathCampaign` delegate is the default, and a key removed from configuration falls back to
+  it. The change reaches the next tick and the next outcome flush.
+- **A ladder replaces, never appends:** the two rungs above are the whole ladder.
+- **A bad reload is refused whole** — an empty ladder, a negative rung, jitter outside [0, 1], a
+  non-positive age, a value that does not parse (numbers and times are read invariantly: `0.5`,
+  never `0,5`). The last valid values stay in force, a warning names `Goldpath:Campaign:<key>`,
+  and `goldpath_campaign_tuning_reload_refused_total` counts it. An invalid section at startup is
+  refused the same way and the code values hold. An empty value (`""`) reads as unset.
+- **Not reloaded:** `GlobalTps`, `LeaderTick`, `LeadershipSlice` and the batch sizes are startup
+  values.
+
 ## R2: a target that answers later, a shared ceiling, a keyset takeover
 
 ```csharp
