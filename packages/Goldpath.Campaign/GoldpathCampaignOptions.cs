@@ -1,5 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Goldpath;
 
@@ -366,6 +368,14 @@ public sealed class GoldpathCampaignTypeBuilder<TTarget>
 /// </summary>
 public sealed class GoldpathCampaignOptions
 {
+    private readonly object _trackLock = new();
+    private IReadOnlyList<TimeSpan> _retryBackoff = [TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(10)];
+    private double _retryJitter = 0.2;
+    private TimeSpan _orphanReleaseAfter = TimeSpan.FromMinutes(5);
+    private TimeSpan _staleClaimAfter = TimeSpan.FromMinutes(10);
+    private volatile GoldpathCampaignTuning? _tuning;
+    private IDisposable? _subscription;
+
     internal Dictionary<string, GoldpathCampaignType> TypeMap { get; } = new(StringComparer.Ordinal);
 
     /// <summary>The registered campaign types.</summary>
@@ -393,17 +403,29 @@ public sealed class GoldpathCampaignOptions
     /// </summary>
     public TimeSpan LeadershipSlice { get; set; } = TimeSpan.FromSeconds(60);
 
-    /// <summary>A Processing claim older than this is an interrupted consumer (sweep to repair).</summary>
-    public TimeSpan StaleClaimAfter { get; set; } = TimeSpan.FromMinutes(10);
+    /// <summary>
+    /// A Processing claim older than this is an interrupted consumer (sweep to repair). Reloads from
+    /// <c>Goldpath:Campaign:StaleClaimAfter</c> when configured (R3.3); this value is the default.
+    /// </summary>
+    public TimeSpan StaleClaimAfter
+    {
+        get => _tuning?.StaleClaimAfter ?? _staleClaimAfter;
+        set => _staleClaimAfter = value;
+    }
 
     /// <summary>
     /// A Released item still unclaimed after this long is an orphan (R2.6): its message
     /// was dropped — the campaign was paused while it sat in the queue, the broker lost
     /// it, a consumer refused the claim — and the pacer publishes it again under the same
     /// allowance. A resume marks every Released item due at once, so this is the ceiling
-    /// on how long a lost message waits, not the usual wait.
+    /// on how long a lost message waits, not the usual wait. Reloads from
+    /// <c>Goldpath:Campaign:OrphanReleaseAfter</c> when configured (R3.3); this value is the default.
     /// </summary>
-    public TimeSpan OrphanReleaseAfter { get; set; } = TimeSpan.FromMinutes(5);
+    public TimeSpan OrphanReleaseAfter
+    {
+        get => _tuning?.OrphanReleaseAfter ?? _orphanReleaseAfter;
+        set => _orphanReleaseAfter = value;
+    }
 
     /// <summary>
     /// Per-process release ceiling across ALL running campaigns (R1.4); null = off.
@@ -416,16 +438,26 @@ public sealed class GoldpathCampaignOptions
     /// The retry ladder (R2.3): the wait before attempt N+1 is rung N, the last rung
     /// repeating for any further attempts. Default 30s, 2m, 10m — the R1 pair plus a rung
     /// that lets a target system finish a maintenance window before the item is given up.
+    /// Reloads from <c>Goldpath:Campaign:RetryBackoff</c> when configured (R3.3): a configured
+    /// ladder replaces this one whole, it never appends to it.
     /// </summary>
-    public IReadOnlyList<TimeSpan> RetryBackoff { get; set; }
-        = [TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(10)];
+    public IReadOnlyList<TimeSpan> RetryBackoff
+    {
+        get => _tuning?.RetryBackoff ?? _retryBackoff;
+        set => _retryBackoff = value;
+    }
 
     /// <summary>
     /// Fractional jitter on every rung (R2.3), ±: 0.2 spreads a 30s rung over 24–36s so a
     /// thousand items that failed in the same second do not come back in the same second.
-    /// 0 pins the exact ladder (tests that count seconds use it).
+    /// 0 pins the exact ladder (tests that count seconds use it). Reloads from
+    /// <c>Goldpath:Campaign:RetryJitter</c> when configured (R3.3); this value is the default.
     /// </summary>
-    public double RetryJitter { get; set; } = 0.2;
+    public double RetryJitter
+    {
+        get => _tuning?.RetryJitter ?? _retryJitter;
+        set => _retryJitter = value;
+    }
 
     /// <summary>
     /// How far a signed callback's timestamp may sit from this host's clock, either way
@@ -437,18 +469,21 @@ public sealed class GoldpathCampaignOptions
     /// <summary>The wait before attempt N+1 given N attempts so far, jittered per call.</summary>
     public TimeSpan NextRetryDelay(int attemptsSoFar)
     {
-        if (RetryBackoff.Count == 0)
+        // One read of each: a reload between two reads must not index one ladder by another's length.
+        var ladder = RetryBackoff;
+        var jitter = RetryJitter;
+        if (ladder.Count == 0)
         {
             throw new InvalidOperationException("RetryBackoff needs at least one rung.");
         }
 
-        var rung = RetryBackoff[Math.Clamp(attemptsSoFar - 1, 0, RetryBackoff.Count - 1)];
-        if (RetryJitter <= 0)
+        var rung = ladder[Math.Clamp(attemptsSoFar - 1, 0, ladder.Count - 1)];
+        if (jitter <= 0)
         {
             return rung;
         }
 
-        var factor = 1 + ((Random.Shared.NextDouble() * 2) - 1) * Math.Min(RetryJitter, 1);
+        var factor = 1 + ((Random.Shared.NextDouble() * 2) - 1) * Math.Min(jitter, 1);
         return TimeSpan.FromTicks((long)(rung.Ticks * factor));
     }
 
@@ -467,6 +502,36 @@ public sealed class GoldpathCampaignOptions
         builder.Bake();
         TypeMap[key] = type;
         return this;
+    }
+
+    /// <summary>
+    /// Follows <paramref name="monitor"/> from now on (R3.3): the four tunable properties read the
+    /// last configuration that passed validation, and a reload that fails it is refused — logged
+    /// with its key and counted — so the values in force stay the last valid ones. Called once,
+    /// by the singleton's factory; a second call replaces the first subscription.
+    /// </summary>
+    internal void Track(IOptionsMonitor<GoldpathCampaignTuning> monitor, ILogger logger)
+    {
+        lock (_trackLock)
+        {
+            _subscription?.Dispose();
+            Apply(monitor.CurrentValue, logger);
+            _subscription = monitor.OnChange(tuning => Apply(tuning, logger));
+        }
+    }
+
+    private void Apply(GoldpathCampaignTuning tuning, ILogger logger)
+    {
+        if (tuning.Refusal is { } refusal)
+        {
+            logger.LogWarning(
+                "Campaign tuning reload refused: {Section}:{Key} — {Reason}. The previous values stay in force.",
+                GoldpathCampaignTuning.SectionName, refusal.Key, refusal.Reason);
+            GoldpathCampaignMetrics.TuningReloadRefused();
+            return;
+        }
+
+        _tuning = tuning;
     }
 
     /// <summary>Finds a type or fails with a teaching message.</summary>
