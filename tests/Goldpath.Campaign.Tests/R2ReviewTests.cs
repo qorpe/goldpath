@@ -175,9 +175,9 @@ public class R2ReviewTests
     /// GLOBAL row, and drops it instead when a <c>"*"</c> row already exists, so the primary key never collides.
     /// </summary>
     [Theory]
-    [InlineData("Npgsql.EntityFrameworkCore.PostgreSQL", "\"GoldpathCampaignCeilings\"", "\"Kind\" = 0 AND \"Name\" = ''", "SET \"Name\" = '*'", "\"Name\" = '*')")]
-    [InlineData("Microsoft.EntityFrameworkCore.SqlServer", "[GoldpathCampaignCeilings]", "[Kind] = 0 AND [Name] = N''", "SET [Name] = N'*'", "[Name] = N'*')")]
-    public void TheR3CeilingStep_MovesTheEmptyGlobalName_PerProvider(string provider, string table, string onlyEmptyGlobal, string rename, string collision)
+    [InlineData("Npgsql.EntityFrameworkCore.PostgreSQL", "\"GoldpathCampaignCeilings\"", "\"Kind\" = 0 AND \"Name\" = ''", "SET \"Name\" = '*'", "AND EXISTS (SELECT 1 FROM \"GoldpathCampaignCeilings\" WHERE \"Kind\" = 0 AND \"Name\" = '*');")]
+    [InlineData("Microsoft.EntityFrameworkCore.SqlServer", "[GoldpathCampaignCeilings]", "[Kind] = 0 AND [Name] = N''", "SET [Name] = N'*'", "AND EXISTS (SELECT 1 FROM [GoldpathCampaignCeilings] WHERE [Kind] = 0 AND [Name] = N'*');")]
+    public void TheR3CeilingStep_MovesTheEmptyGlobalName_PerProvider(string provider, string table, string onlyEmptyGlobal, string rename, string collisionGuard)
     {
         var migration = new Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder(provider);
         migration.GoldpathCampaignR2Backfill();
@@ -185,8 +185,11 @@ public class R2ReviewTests
         Assert.Equal(3, CountOf(sql, table));
         Assert.Equal(2, CountOf(sql, onlyEmptyGlobal));   // the delete and the update both match the empty global row only
         Assert.Contains(rename, sql, StringComparison.Ordinal);
-        Assert.Contains("EXISTS", sql, StringComparison.Ordinal);
-        Assert.Contains(collision, sql, StringComparison.Ordinal);
+        // The guard is pinned whole and its negation refused: "NOT EXISTS" contains "EXISTS", and on SQL Server this
+        // theory is the only automated check (no integration lane), so a negated guard would delete the only global row.
+        Assert.Equal(1, CountOf(sql, collisionGuard));
+        Assert.DoesNotContain("NOT EXISTS", sql, StringComparison.Ordinal);
+        Assert.True(sql.IndexOf(collisionGuard, StringComparison.Ordinal) < sql.IndexOf("UPDATE", StringComparison.Ordinal), "the guard belongs to the DELETE");
         Assert.True(sql.IndexOf("DELETE", StringComparison.Ordinal) < sql.IndexOf("UPDATE", StringComparison.Ordinal), "the stale copy goes before the rename");
     }
 
