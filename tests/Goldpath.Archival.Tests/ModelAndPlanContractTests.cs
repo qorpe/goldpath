@@ -9,16 +9,23 @@ namespace Goldpath.Archival.Tests;
 /// index, the chain rides (Definition, ChainIndex), and the jobs' chunk plans are exact —
 /// silently-dropped indexes or off-by-one chunk math die here.
 /// </summary>
+/// <remarks>
+/// The model is built FRESH for every test, straight from <c>AddGoldpathArchiveModel</c> under
+/// the provider's conventions, never read from a <see cref="DbContext"/>. EF builds a context
+/// type's model ONCE per process and caches it, so in Stryker's long-lived test host the mapping
+/// ran for the first test only and never under a mutant: 18 mapping statements in
+/// <c>ArchiveModel.cs</c> survived these very assertions (open thread T33, mutation-heavy run
+/// 39410990059). Bulk's suite had the same blind spot and the same cure.
+/// </remarks>
 public class ModelAndPlanContractTests
 {
-    private static readonly Microsoft.EntityFrameworkCore.Metadata.IModel Model = BuildModel();
+    private Microsoft.EntityFrameworkCore.Metadata.IModel Model { get; } = BuildModel();
 
     private static Microsoft.EntityFrameworkCore.Metadata.IModel BuildModel()
     {
-        using var connection = new Microsoft.Data.Sqlite.SqliteConnection("DataSource=:memory:");
-        using var context = new ArchiveTestContext(
-            new DbContextOptionsBuilder<ArchiveTestContext>().UseSqlite(connection).Options);
-        return context.Model;
+        var builder = new ModelBuilder(Microsoft.EntityFrameworkCore.Metadata.Conventions.SqliteConventionSetBuilder.Build());
+        builder.AddGoldpathArchiveModel();
+        return builder.FinalizeModel();
     }
 
     [Fact]
@@ -56,10 +63,18 @@ public class ModelAndPlanContractTests
             .SequenceEqual([nameof(GoldpathLegalHold.Definition), nameof(GoldpathLegalHold.AggregateKey), nameof(GoldpathLegalHold.LiftedAt)]));
         Assert.Equal(256, hold.FindProperty(nameof(GoldpathLegalHold.CaseReference))!.GetMaxLength());
         Assert.Equal(256, hold.FindProperty(nameof(GoldpathLegalHold.PlacedBy))!.GetMaxLength());
+        Assert.Equal(120, hold.FindProperty(nameof(GoldpathLegalHold.Definition))!.GetMaxLength());
+        Assert.Equal(256, hold.FindProperty(nameof(GoldpathLegalHold.AggregateKey))!.GetMaxLength());
+        Assert.Equal(256, hold.FindProperty(nameof(GoldpathLegalHold.LiftedBy))!.GetMaxLength());
 
         var erasure = Model.FindEntityType(typeof(GoldpathErasureRecord))!;
         Assert.Equal("GoldpathErasureRecords", erasure.GetTableName());
         Assert.Equal(256, erasure.FindProperty(nameof(GoldpathErasureRecord.SubjectKey))!.GetMaxLength());
+        Assert.Equal(256, erasure.FindProperty(nameof(GoldpathErasureRecord.RequestedBy))!.GetMaxLength());
+
+        // The hash the erasure keeps of the content it destroyed: a SHA-256 in hex, 64 characters.
+        Assert.Equal(64, Model.FindEntityType(typeof(GoldpathArchiveEntry))!
+            .FindProperty(nameof(GoldpathArchiveEntry.PreErasureContentHash))!.GetMaxLength());
         Assert.Contains(erasure.GetIndexes(), i => i.Properties.Select(p => p.Name)
             .SequenceEqual([nameof(GoldpathErasureRecord.SubjectKey)]));
     }
@@ -86,11 +101,15 @@ public class ModelAndPlanContractTests
 
         var hold = new GoldpathLegalHold();
         Assert.Equal("", hold.CaseReference);
+        Assert.Equal("", hold.Definition);
+        Assert.Equal("", hold.AggregateKey);
+        Assert.Equal("", hold.PlacedBy);
         Assert.Null(hold.LiftedAt);
         Assert.Null(hold.LiftedBy);
 
         var erasure = new GoldpathErasureRecord();
         Assert.Equal("", erasure.SubjectKey);
+        Assert.Equal("", erasure.RequestedBy);
         Assert.Equal(0, erasure.EntriesAffected);
         Assert.Null(erasure.Detail);
     }
