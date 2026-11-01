@@ -407,6 +407,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **`Goldpath.Bulk`: an upload to an unknown definition answers `404`, not `500` (#377).**
+  `POST /goldpath/admin/bulk/batches/{definition}` with a name nobody registered used to reach
+  `GoldpathBulkOptions.Definition(name)`, which throws, so the host answered a generic `500`. The route now
+  looks the name up first (ordinal, exactly as the engine does) and answers a `404` problem whose `detail`
+  names the registered definitions, before the request body is read. Known definitions are unchanged, and
+  `Definition(name)` keeps its throwing contract for in-process callers; no public API changes. ZAP rules
+  100000 and 90022 leave the INFO list in `scripts/zap-baseline.conf`, so they fail the night again (WARN)
+  if the 500 ever returns. Proof: `Goldpath.Bulk.Tests.AdminEndpointsTests` over TestServer with the host's
+  exception handler, red (`500`) with the lookup removed.
 - **GP1202 no longer flags a literal client name beside a stored API key (#337).** `ApiKeys` maps a client name to its
   key, but `options.ApiKeys.Add("job", keyFromVault)` was reported as a secret in source because ANY string argument
   that was a literal counted. On `Add`, only the value (the key) counts now, as it already did for the indexer form
