@@ -15,6 +15,15 @@ internal sealed class GoldpathCampaignTuning
     /// <summary>The configuration section the four keys live in.</summary>
     internal const string SectionName = "Goldpath:Campaign";
 
+    /// <summary>
+    /// The longest rung or age configuration may set. The engine adds a rung to, and subtracts an
+    /// age from, the current instant; a value near <see cref="TimeSpan.MaxValue"/> (the obvious way to
+    /// "switch the re-release off" mid-incident) would make that instant unrepresentable and throw on
+    /// every tick and every outcome flush. A year is far beyond any real ladder or age, and with the
+    /// largest jitter (1) a doubled rung still stays representable for centuries.
+    /// </summary>
+    internal static readonly TimeSpan MaxSpan = TimeSpan.FromDays(365);
+
     /// <summary>The configured ladder, replacing the code ladder whole; null = unset.</summary>
     public IReadOnlyList<TimeSpan>? RetryBackoff { get; private set; }
 
@@ -56,6 +65,10 @@ internal sealed class GoldpathCampaignTuning
         {
             Refuse(nameof(RetryBackoff), "a rung cannot be negative");
         }
+        else if (RetryBackoff is not null && RetryBackoff.Any(r => r > MaxSpan))
+        {
+            Refuse(nameof(RetryBackoff), string.Create(CultureInfo.InvariantCulture, $"a rung cannot exceed {MaxSpan}"));
+        }
         else if (RetryJitter is { } jitter && !(jitter >= 0 && jitter <= 1))
         {
             Refuse(nameof(RetryJitter), string.Create(CultureInfo.InvariantCulture, $"jitter must be within [0, 1], not {jitter}"));
@@ -64,9 +77,17 @@ internal sealed class GoldpathCampaignTuning
         {
             Refuse(nameof(OrphanReleaseAfter), string.Create(CultureInfo.InvariantCulture, $"the age must be positive, not {orphan}"));
         }
+        else if (OrphanReleaseAfter is { } orphanMax && orphanMax > MaxSpan)
+        {
+            Refuse(nameof(OrphanReleaseAfter), string.Create(CultureInfo.InvariantCulture, $"the age cannot exceed {MaxSpan}, not {orphanMax}"));
+        }
         else if (StaleClaimAfter is { } stale && stale <= TimeSpan.Zero)
         {
             Refuse(nameof(StaleClaimAfter), string.Create(CultureInfo.InvariantCulture, $"the age must be positive, not {stale}"));
+        }
+        else if (StaleClaimAfter is { } staleMax && staleMax > MaxSpan)
+        {
+            Refuse(nameof(StaleClaimAfter), string.Create(CultureInfo.InvariantCulture, $"the age cannot exceed {MaxSpan}, not {staleMax}"));
         }
     }
 
@@ -101,8 +122,10 @@ internal sealed class GoldpathCampaignTuning
         }
 
         // A scalar set to "" is the conventional way to unset an environment variable; it stays
-        // unset. A ladder set to "" (how a JSON [] arrives) is an empty ladder, and is refused.
-        if (!hasChildren && child.Value is { Length: 0 } && typeof(T) != typeof(List<TimeSpan>))
+        // unset, and so does one that is only whitespace (a blank line in a config map), rather than
+        // refusing the whole reload and the valid keys beside it. A ladder set to "" (how a JSON []
+        // arrives) is an empty ladder, and is refused.
+        if (!hasChildren && string.IsNullOrWhiteSpace(child.Value) && typeof(T) != typeof(List<TimeSpan>))
         {
             return default;
         }

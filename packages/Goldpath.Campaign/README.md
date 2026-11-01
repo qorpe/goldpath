@@ -75,10 +75,12 @@ target system is struggling:
 - **A ladder replaces, never appends:** the two rungs above are the whole ladder. Rungs are
   read in index order, and one that does not parse refuses the reload rather than vanishing.
 - **A bad reload is refused whole** — an empty ladder, a negative rung, jitter outside [0, 1], a
-  non-positive age, a value that does not parse (numbers and times are read invariantly: `0.5`,
+  non-positive age, a rung or age longer than 365 days (the engine adds rungs to and subtracts ages
+  from the current instant, so `TimeSpan.MaxValue` as "switch it off" would otherwise throw on every
+  tick; to stop the re-release, set the age to `365.00:00:00`), a value that does not parse (numbers and times are read invariantly: `0.5`,
   never `0,5`). The last valid values stay in force, a warning names `Goldpath:Campaign:<key>`,
   and `goldpath_campaign_tuning_reload_refused_total` counts it. An invalid section at startup is
-  refused the same way and the code values hold. An empty value (`""`) reads as unset.
+  refused the same way and the code values hold. An empty or whitespace-only value reads as unset.
 - **Not reloaded:** `GlobalTps`, `LeaderTick`, `LeadershipSlice` and the batch sizes are startup
   values.
 

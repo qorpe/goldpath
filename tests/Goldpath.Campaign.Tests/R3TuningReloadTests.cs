@@ -112,6 +112,12 @@ public class R3TuningReloadTests
     [InlineData("OrphanReleaseAfter", "-00:01:00", "must be positive")]
     [InlineData("StaleClaimAfter", "00:00:00", "must be positive")]
     [InlineData("StaleClaimAfter", "ten minutes", "the value cannot be read")]
+    [InlineData("RetryBackoff:1", "365.00:00:00.0000001", "a rung cannot exceed 365.00:00:00")]          // one tick above the bound
+    [InlineData("RetryBackoff:0", "3650000.00:00:00", "a rung cannot exceed 365.00:00:00")]
+    [InlineData("OrphanReleaseAfter", "365.00:00:00.0000001", "the age cannot exceed 365.00:00:00")]
+    [InlineData("OrphanReleaseAfter", "10675199.02:48:05.4775807", "the age cannot exceed 365.00:00:00")]  // TimeSpan.MaxValue: "switch it off"
+    [InlineData("StaleClaimAfter", "365.00:00:00.0000001", "the age cannot exceed 365.00:00:00")]
+    [InlineData("StaleClaimAfter", "10675199.02:48:05.4775807", "the age cannot exceed 365.00:00:00")]
     public void An_invalid_reload_is_refused_whole_logged_with_its_key_and_counted(string key, string value, string reason)
     {
         using var rig = new Rig(configuration: new()
@@ -162,6 +168,9 @@ public class R3TuningReloadTests
     [InlineData("RetryBackoff:0", "00:00:00")]                    // a zero rung retries at once; it is not refused
     [InlineData("OrphanReleaseAfter", "00:00:00.0000001")]        // the smallest positive age
     [InlineData("StaleClaimAfter", "00:00:00.0000001")]
+    [InlineData("RetryBackoff:0", "365.00:00:00")]                // the longest rung and ages configuration may set
+    [InlineData("OrphanReleaseAfter", "365.00:00:00")]
+    [InlineData("StaleClaimAfter", "365.00:00:00")]
     public void The_boundaries_of_each_range_are_accepted(string key, string value)
     {
         using var rig = new Rig();
@@ -255,6 +264,92 @@ public class R3TuningReloadTests
         Assert.Equal(0.2, rig.Options.RetryJitter);
         Assert.Equal(TimeSpan.FromMinutes(10), rig.Options.StaleClaimAfter);
         Assert.Empty(rig.Logs.Warnings);
+    }
+
+    [Fact]
+    public void A_whitespace_only_scalar_reads_as_unset_and_does_not_block_the_keys_beside_it()
+    {
+        using var rig = new Rig();
+        using var refusals = new RefusalCounter();
+
+        rig.Config.Set(new() { ["Goldpath:Campaign:RetryJitter"] = "  ", ["Goldpath:Campaign:StaleClaimAfter"] = "00:04:00" });
+
+        Assert.Equal(0.2, rig.Options.RetryJitter);
+        Assert.Equal(TimeSpan.FromMinutes(4), rig.Options.StaleClaimAfter);
+        Assert.Equal(0, refusals.Count);
+        Assert.Empty(rig.Logs.Warnings);
+    }
+
+    /// <summary>
+    /// Verifier probe Q1: an orphan age of <see cref="TimeSpan.MaxValue"/> — the obvious way to switch the
+    /// re-release off mid-incident — is refused, so the orphan release still runs on the last valid age
+    /// instead of throwing on an unrepresentable cutoff every tick.
+    /// </summary>
+    [Fact]
+    public async Task An_unrepresentable_orphan_age_is_refused_and_the_orphan_release_keeps_running()
+    {
+        using var rig = new Rig();
+        using var fixture = new CampaignFixture(sourceSize: 1, options: rig.Options);
+        var campaign = await fixture.CreateAsync(R2Tests.Generous(maxAttempts: 3));
+        using var refusals = new RefusalCounter();
+
+        rig.Config.Set(new() { ["Goldpath:Campaign:OrphanReleaseAfter"] = TimeSpan.MaxValue.ToString("c", CultureInfo.InvariantCulture) });
+
+        Assert.Equal(1, refusals.Count);
+        Assert.Equal(TimeSpan.FromMinutes(5), rig.Options.OrphanReleaseAfter);
+        using var scope = fixture.Services.CreateScope();
+        Assert.Equal(0, await fixture.Engine.ReleaseOrphansAsync(scope.ServiceProvider, campaign, 10, CancellationToken.None));
+    }
+
+    /// <summary>
+    /// Verifier probe Q2: the same for the stale-claim age, which the parked-callback expiry at the end of
+    /// every sweep subtracts from now.
+    /// </summary>
+    [Fact]
+    public async Task An_unrepresentable_stale_claim_age_is_refused_and_the_parked_callback_expiry_keeps_running()
+    {
+        using var rig = new Rig();
+        using var fixture = new CampaignFixture(sourceSize: 1, options: rig.Options);
+        using var refusals = new RefusalCounter();
+
+        rig.Config.Set(new() { ["Goldpath:Campaign:StaleClaimAfter"] = TimeSpan.MaxValue.ToString("c", CultureInfo.InvariantCulture) });
+
+        Assert.Equal(1, refusals.Count);
+        Assert.Equal(TimeSpan.FromMinutes(10), rig.Options.StaleClaimAfter);
+        using var scope = fixture.Services.CreateScope();
+        Assert.Equal(0, await fixture.Engine.ExpireParkedCallbacksAsync(scope.ServiceProvider.GetRequiredService<CampaignTestContext>(), CancellationToken.None));
+    }
+
+    /// <summary>
+    /// Verifier probe Q3: a ten-thousand-year rung is refused, so a failed item's outcome is still made
+    /// durable — on the rung in force before the refused reload — instead of the flush throwing on every
+    /// redelivery.
+    /// </summary>
+    [Fact]
+    public async Task An_unrepresentable_rung_is_refused_and_a_failure_is_still_scheduled_on_the_rung_in_force()
+    {
+        using var rig = new Rig(o => o.RetryJitter = 0, new() { ["Goldpath:Campaign:RetryBackoff:0"] = "02:00:00" });
+        using var fixture = new CampaignFixture(o => o.LeaderTick = TimeSpan.FromMilliseconds(20), sourceSize: 1, options: rig.Options);
+        fixture.FailIds.Add(1);
+        var campaign = await fixture.CreateAsync(R2Tests.Generous(maxAttempts: 3));
+        await fixture.EnumerateAllAsync(campaign);
+        using var refusals = new RefusalCounter();
+
+        rig.Config.Set(new() { ["Goldpath:Campaign:RetryBackoff:0"] = "3650000.00:00:00" });
+        Assert.Equal(1, refusals.Count);
+
+        using (var scope = fixture.Services.CreateScope())
+        {
+            await fixture.Engine.ReleaseBatchAsync(scope.ServiceProvider, campaign, 1, CancellationToken.None);
+        }
+
+        var before = DateTimeOffset.UtcNow;
+        await fixture.ConsumeAllPublishedAsync();
+        var after = DateTimeOffset.UtcNow;
+
+        var item = fixture.Query(db => db.Set<GoldpathCampaignItem>().AsNoTracking().Single());
+        Assert.Equal(GoldpathCampaignItemState.AwaitingRetry, item.State);
+        Assert.InRange(item.NextAttemptAt!.Value, before + TimeSpan.FromHours(2), after + TimeSpan.FromHours(2));
     }
 
     [Fact]

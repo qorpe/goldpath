@@ -74,21 +74,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     binding skips an element it cannot convert, which would have shortened the ladder silently, so a bad
     rung refuses the reload instead.
   - **A bad reload is refused whole:** an empty ladder, a ladder written as one value rather than a list, a negative rung, jitter outside [0, 1] (NaN included),
-    a non-positive age or a value that does not parse (configuration is read invariantly, so `0,5` is
+    a non-positive age, a rung or age longer than 365 days (the engine adds a rung to and subtracts an age from
+    the current instant, so `TimeSpan.MaxValue` would otherwise throw in the pacer, the sweep and the outcome
+    flush on every tick) or a value that does not parse (configuration is read invariantly, so `0,5` is
     refused on any host culture) leaves the last valid values in force. The refusal is logged as a warning
     naming `Goldpath:Campaign:<key>` and counted in the new `goldpath_campaign_tuning_reload_refused_total`.
-    A section invalid at startup is refused the same way, and the code values hold. An empty scalar
-    (`""`) reads as unset.
+    A section invalid at startup is refused the same way, and the code values hold. An empty or
+    whitespace-only scalar reads as unset.
   - **Not reloaded:** `GlobalTps` (a row, R3.2), `LeaderTick`, `LeadershipSlice` and the batch sizes stay
     startup values.
   - **API:** none. The properties keep their names and setters, and no shipped constructor changes.
     Behaviour without a `Goldpath:Campaign` section is unchanged.
-  - **Proof:** `R3TuningReloadTests` (32 cases, every host built through `AddGoldpathCampaign`). 29 of 31 are
-    red on `main` (the 32nd names the new internal type); the two that pass there are the "not reloaded" and
+  - **Proof:** `R3TuningReloadTests` (45 cases, every host built through `AddGoldpathCampaign`). 29 of 31 are
+    red on `main` (of the first 32; the 32nd names the new internal type); the two that pass there are the "not reloaded" and
     "empty value" guards. Three planted faults also turn it red: an ignored refusal, a ladder bound into the
     code ladder, and a getter that skips the reloaded value. One case drives the engine with the host's
     instance and finds a failed item scheduled on the reloaded rung. Stryker scoped to the two changed files:
-    `GoldpathCampaignTuning.cs` 51/51 killed. The `GoldpathCampaignOptions.cs` survivors near the change are
+    `GoldpathCampaignTuning.cs` 51/51 killed (before the 365-day bound). The bound is pinned at both sides:
+    365 days is accepted, one tick more is refused, `>`→`>=` turns 3 boundary cases red, and three engine
+    cases show `TimeSpan.MaxValue` ages and a 10,000-year rung refused while the orphan release, the
+    parked-callback expiry and a failure's outcome flush keep running. The `GoldpathCampaignOptions.cs` survivors near the change are
     pre-existing and equivalent: jitter 0 against `< 0`, and the factor's sign.
 - **Campaign: a scheduled start and the `Ready` state (campaign RFC R3.1, slice R3-S2, #289).**
   - **API (additive, init-only):** `GoldpathCampaignPolicy.StartAt` and `IsBeforeStart(utcNow)`,
