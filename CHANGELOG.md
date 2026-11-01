@@ -282,6 +282,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
 ### Changed
+- **Console: TypeScript 5.9.3 → 7.0.2, the native compiler (#493, replaces Dependabot #243).** A dev dependency, pinned
+  exactly (`"typescript": "7.0.2"`, no range; the newest 7.0.x, published 2026-07-08). The console uses TypeScript only
+  for `pnpm typecheck` (`tsc --noEmit`): Vite and Vitest transpile without loading the TypeScript API, and the console
+  has no ESLint or other in-process TS tool, so no companion bump is needed. `tsconfig.json` is unchanged
+  (`skipLibCheck` was already on), and 7.0.2 still reports a planted type error (TS2322). The lockfile gains the
+  compiler's per-platform binary packages (`@typescript/typescript-<os>-<arch>`, Apache-2.0); pnpm installs only the
+  one for the host. Unit tests, coverage floors (98.05% statements, 91.14% branches) and the build are unchanged.
 - **Console: jsdom 25.0.1 → 30.1.3 (#492, replaces Dependabot #470).** jsdom is the console's unit-test DOM, a dev
   dependency, and it is now pinned exactly (`"jsdom": "30.1.3"`, no range). vitest 5.0.5 and `@qorpe/ui` are unchanged, and the coverage floors hold
   (98.05% statements, 91.14% branches).
