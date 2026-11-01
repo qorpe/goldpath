@@ -8,16 +8,23 @@ namespace Goldpath.Jobs.Tests;
 /// token, resume rides the (RunId, Status) index, admin queries ride the rest. Locked via
 /// EF metadata so a silently-dropped token or index dies here, not in production.
 /// </summary>
+/// <remarks>
+/// The model is built FRESH for every test, straight from <c>AddGoldpathJobs</c> under the
+/// provider's conventions, never read from a <see cref="DbContext"/>. EF builds a context type's
+/// model ONCE per process and caches it, so in Stryker's long-lived test host the mapping ran
+/// for the first test only and never under a mutant: 19 mapping statements in
+/// <c>JobsModel.cs</c> survived these very assertions (open thread T33, mutation-heavy run
+/// 39410990059). Bulk's suite had the same blind spot and the same cure.
+/// </remarks>
 public class ModelContractTests
 {
-    private static readonly Microsoft.EntityFrameworkCore.Metadata.IModel Model = BuildModel();
+    private Microsoft.EntityFrameworkCore.Metadata.IModel Model { get; } = BuildModel();
 
-    private static Microsoft.EntityFrameworkCore.Metadata.IModel BuildModel()
+    private static Microsoft.EntityFrameworkCore.Metadata.IModel BuildModel(bool excludeFromMigrations = false)
     {
-        using var connection = new Microsoft.Data.Sqlite.SqliteConnection("DataSource=:memory:");
-        using var context = new JobsTestContext(
-            new DbContextOptionsBuilder<JobsTestContext>().UseSqlite(connection).Options);
-        return context.Model;
+        var builder = new ModelBuilder(Microsoft.EntityFrameworkCore.Metadata.Conventions.SqliteConventionSetBuilder.Build());
+        builder.AddGoldpathJobs(excludeFromMigrations);
+        return builder.FinalizeModel();
     }
 
     [Fact]
@@ -34,6 +41,7 @@ public class ModelContractTests
         var chunk = Model.FindEntityType(typeof(GoldpathJobRunChunk))!;
         Assert.Equal("GoldpathJobRunChunks", chunk.GetTableName());
         Assert.Equal(16, chunk.FindProperty("Status")!.GetMaxLength());
+        Assert.Equal(256, chunk.FindProperty("LastError")!.GetMaxLength());   // the runner truncates to 200; the column holds it
 
         var failure = Model.FindEntityType(typeof(GoldpathJobItemFailure))!;
         Assert.Equal("GoldpathJobItemFailures", failure.GetTableName());
@@ -119,35 +127,22 @@ public class ModelContractTests
         Assert.Equal("", execution.Outcome);
     }
 
-    private sealed class ExcludingContext(DbContextOptions<ExcludingContext> options) : DbContext(options)
-    {
-        protected override void OnModelCreating(ModelBuilder modelBuilder)
-            => modelBuilder.AddGoldpathJobs(excludeFromMigrations: true);
-    }
-
     [Fact]
     public void A_secondary_head_maps_the_tables_but_never_owns_their_migrations()
     {
         // Migrations RFC D3: one table set, ONE owner — a jobs worker running its own
-        // fleet sees the shared tables without generating DDL for them.
-        using var connection = new Microsoft.Data.Sqlite.SqliteConnection("DataSource=:memory:");
-        using var context = new ExcludingContext(
-            new DbContextOptionsBuilder<ExcludingContext>().UseSqlite(connection).Options);
-
-        // Migration facts live on the DESIGN-TIME model (the one `dotnet ef` reads).
-        var designModel = Microsoft.EntityFrameworkCore.Infrastructure.AccessorExtensions
-            .GetService<Microsoft.EntityFrameworkCore.Metadata.IDesignTimeModel>(context).Model;
-        var entityTypes = designModel.GetEntityTypes().ToList();
-        Assert.NotEmpty(entityTypes);                       // the model is COMPLETE (queries work)
+        // fleet sees the shared tables without generating DDL for them. Both models are built
+        // fresh (see remarks), so the flag is read from the mapping under test, not a cache.
+        var entityTypes = BuildModel(excludeFromMigrations: true).GetEntityTypes().ToList();
+        Assert.Superset(                                    // the model is COMPLETE (queries work)
+            new HashSet<Type>([typeof(GoldpathJobRun), typeof(GoldpathJobRunChunk), typeof(GoldpathJobItemFailure),
+                typeof(GoldpathJobAdminAudit), typeof(GoldpathJobExecution)]),
+            entityTypes.Select(e => e.ClrType).ToHashSet());
         Assert.All(entityTypes, e => Assert.True(e.IsTableExcludedFromMigrations(),
             $"{e.ClrType.Name} would generate DDL from a non-owner context"));
 
-        // The OWNER context keeps full ownership — the default changes nothing.
-        using var owner = new JobsTestContext(
-            new DbContextOptionsBuilder<JobsTestContext>().UseSqlite(connection).Options);
-        var ownerModel = Microsoft.EntityFrameworkCore.Infrastructure.AccessorExtensions
-            .GetService<Microsoft.EntityFrameworkCore.Metadata.IDesignTimeModel>(owner).Model;
-        Assert.All(ownerModel.GetEntityTypes(), e => Assert.False(e.IsTableExcludedFromMigrations()));
+        // The OWNER keeps full ownership — the default changes nothing.
+        Assert.All(Model.GetEntityTypes(), e => Assert.False(e.IsTableExcludedFromMigrations()));
     }
 
     [Fact]
