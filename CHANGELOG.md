@@ -99,7 +99,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     flip that ignores a ratio cleared since the load, an interrupted claim not counted, a resume or a
     switched-on ratio that keeps the old window, a `pause` that does not refuse `Suspended`, a restart
     without its guard against a second restart on the same read (counters went negative), and a refused
-    throttle that still restarted the window.
+    throttle that still restarted the window. `CampaignSuspendProof` runs the suspension and the resume on
+    real PostgreSQL 17 and, in the Oracle lane, on Oracle Free (the RFC's 19c SQL form): the counters on
+    the sink's update, the flip guarded on a `double precision`/`BINARY_DOUBLE` ratio, the bounded sample
+    and a UTC `WindowStartedAt`.
   - **Not in this slice:** S-OPS-03 on a real broker, the console's suspended view, the runbook item and
     the export-test row for the new counter (R3-S11, #319, and #294's export test once both land).
 - **Campaign: the four options an operator tunes reload without a restart (campaign RFC R3.3, slice R3-S7, #317).**
