@@ -84,10 +84,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     used to be refused with "changed state while the verb ran"; it is now re-read and applied, because a state
     change is not a policy change. A race into a terminal state is still refused, in the terminal state's words.
     The audit detail, `LastVerb` and the success message are byte-identical to before.
-  - **Proof:** `R3PolicyVersionTests` (10 facts). Three of them race a competing verb into the instant between
-    the throttle's read and its conditional update, through a command interceptor. Three planted faults turn
-    them red: no `PolicyVersion + 1` (7 red), a single attempt with no re-read (4 red), and no version check
-    (3 red). `CampaignPolicyVersionPostgresTests` and an `OracleDataTests` fact (`Category=Oracle`, 19c form) run
+  - **Proof:** `R3PolicyVersionTests` (14 test methods, 17 cases). Three of them race a competing verb into the
+    instant between the throttle's read and its conditional update, through a command interceptor. Four planted
+    faults turn them red: no `PolicyVersion + 1` (8 of 17 red), a single attempt with no re-read (5 red), no
+    version check (4 red), and no `State` guard in the conditional `WHERE` (1 red). `CampaignPolicyVersionPostgresTests` and an `OracleDataTests` fact (`Category=Oracle`, 19c form) run
     the conditional update on real PostgreSQL 17 and Oracle Free, every policy column included.
 - **Campaign: the four options an operator tunes reload without a restart (campaign RFC R3.3, slice R3-S7, #317).**
   - **What reloads:** `AddGoldpathCampaign` now reads the section `Goldpath:Campaign` through

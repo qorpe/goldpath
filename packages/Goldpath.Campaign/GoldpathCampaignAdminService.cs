@@ -100,6 +100,9 @@ public sealed record GoldpathCampaignThrottle(
 public sealed class GoldpathCampaignAdminService<TContext>
     where TContext : DbContext
 {
+    /// <summary>How many conditional updates one throttle attempts before it reports the races it lost.</summary>
+    private const int ThrottleAttempts = 8;
+
     private readonly GoldpathCampaignOptions _options;
     private readonly GoldpathCampaignEngine<TContext> _engine;
     private readonly IServiceScopeFactory _scopeFactory;
@@ -390,9 +393,6 @@ public sealed class GoldpathCampaignAdminService<TContext>
                 $"The throttle lost {ThrottleAttempts} races in a row to concurrent changes on campaign {id:N} — nothing was applied; re-read and retry."),
             lastVersion, Stale: false);
     }
-
-    /// <summary>How many conditional updates one throttle attempts before it reports the races it lost.</summary>
-    private const int ThrottleAttempts = 8;
 
     /// <summary>Why a patch is nonsense on any campaign, or null (checked before the row matters).</summary>
     private static string? ThrottleRefusal(GoldpathCampaignThrottle patch)
