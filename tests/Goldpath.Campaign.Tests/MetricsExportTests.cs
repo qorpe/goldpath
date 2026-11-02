@@ -13,6 +13,7 @@ namespace Goldpath.Campaign.Tests;
 /// pacer slice, item handler and sink run (#294). A renamed, silenced or re-tagged metric dies
 /// here, not on a blind dashboard.
 /// </summary>
+[Collection(TuningReloadCounterCollection.Name)]
 public class MetricsExportTests
 {
     /// <summary>Every instrument the meter exports: unit (null = none) and tag keys, as RFC §7 lists them.</summary>
@@ -26,6 +27,7 @@ public class MetricsExportTests
         ["goldpath_campaign_orphans_rereleased_total"] = (null, ["type"]),
         ["goldpath_campaign_callbacks_parked_total"] = (null, ["type"]),
         ["goldpath_campaign_callbacks_rejected_total"] = (null, ["type"]),
+        ["goldpath_campaign_tuning_reload_refused_total"] = (null, []),
         ["goldpath_campaign_outcomes_total"] = (null, ["type", "outcome", "error_code"]),
         ["goldpath_campaign_handler_duration"] = ("s", ["type"]),
         ["goldpath_campaign_sink_flush_lag"] = ("s", ["type"]),
@@ -79,6 +81,7 @@ public class MetricsExportTests
         GoldpathCampaignMetrics.CallbacksParked(ProbeType, 1);
         GoldpathCampaignMetrics.CallbacksRejected(ProbeType);
         GoldpathCampaignMetrics.WindowClosed(ProbeType);
+        GoldpathCampaignMetrics.TuningReloadRefused();   // wired by R3TuningReloadTests (R3.3)
 
         // Exactly the contract: nothing exported that RFC §7 does not list, nothing listed that is not exported.
         Assert.Equal(Contract.Keys.Order(StringComparer.Ordinal), probe.Units.Keys.Order(StringComparer.Ordinal));

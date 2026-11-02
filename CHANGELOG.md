@@ -88,6 +88,37 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   - **Runbook:** §9 covers `QRTZ_LOCKS` row-lock contention.
   - **Still open:** `GoldpathJobExecutions` loses the history row of a fire with no error on Oracle.
     The `Error` document column refuses a NULL in ODP.NET (#475).
+- **Campaign: the four options an operator tunes reload without a restart (campaign RFC R3.3, slice R3-S7, #317).**
+  - **What reloads:** `AddGoldpathCampaign` now reads the section `Goldpath:Campaign` through
+    `IOptionsMonitor`. Exactly four keys reload: `RetryBackoff`, `RetryJitter`, `OrphanReleaseAfter` and
+    `StaleClaimAfter`. A key present in configuration wins, and the value set in code is the default; a key
+    that leaves configuration falls back to it. The change reaches the next tick and the next outcome flush.
+  - **A ladder replaces, never appends:** each key binds into a fresh value, so two configured rungs are two
+    rungs, not the code's three plus two. Each rung binds on its own, in index order: the binder's list
+    binding skips an element it cannot convert, which would have shortened the ladder silently, so a bad
+    rung refuses the reload instead.
+  - **A bad reload is refused whole:** an empty ladder, a ladder written as one value rather than a list, a negative rung, jitter outside [0, 1] (NaN included),
+    a non-positive age, a rung or age longer than 365 days (the engine adds a rung to and subtracts an age from
+    the current instant, so `TimeSpan.MaxValue` would otherwise throw in the pacer, the sweep and the outcome
+    flush on every tick) or a value that does not parse (configuration is read invariantly, so `0,5` is
+    refused on any host culture) leaves the last valid values in force. The refusal is logged as a warning
+    naming `Goldpath:Campaign:<key>` and counted in the new `goldpath_campaign_tuning_reload_refused_total`.
+    A section invalid at startup is refused the same way, and the code values hold. An empty or
+    whitespace-only scalar reads as unset.
+  - **Not reloaded:** `GlobalTps` (a row, R3.2), `LeaderTick`, `LeadershipSlice` and the batch sizes stay
+    startup values.
+  - **API:** none. The properties keep their names and setters, and no shipped constructor changes.
+    Behaviour without a `Goldpath:Campaign` section is unchanged.
+  - **Proof:** `R3TuningReloadTests` (45 cases, every host built through `AddGoldpathCampaign`). 29 of 31 are
+    red on `main` (of the first 32; the 32nd names the new internal type); the two that pass there are the "not reloaded" and
+    "empty value" guards. Three planted faults also turn it red: an ignored refusal, a ladder bound into the
+    code ladder, and a getter that skips the reloaded value. One case drives the engine with the host's
+    instance and finds a failed item scheduled on the reloaded rung. Stryker scoped to the two changed files:
+    `GoldpathCampaignTuning.cs` 51/51 killed (before the 365-day bound). The bound is pinned at both sides:
+    365 days is accepted, one tick more is refused, `>`→`>=` turns 3 boundary cases red, and three engine
+    cases show `TimeSpan.MaxValue` ages and a 10,000-year rung refused while the orphan release, the
+    parked-callback expiry and a failure's outcome flush keep running. The `GoldpathCampaignOptions.cs` survivors near the change are
+    pre-existing and equivalent: jitter 0 against `< 0`, and the factor's sign.
 - **Campaign: a scheduled start and the `Ready` state (campaign RFC R3.1, slice R3-S2, #289).**
   - **API (additive, init-only):** `GoldpathCampaignPolicy.StartAt` and `IsBeforeStart(utcNow)`,
     `GoldpathCampaignThrottle.StartAt` and `ClearStartAt`, `GoldpathCampaignInfo.StartAt`. No
@@ -306,6 +337,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
 ### Changed
+- **Console: TypeScript 5.9.3 → 7.0.2, the native compiler (#493, replaces Dependabot #243).** A dev dependency, pinned
+  exactly (`"typescript": "7.0.2"`, no range; the newest 7.0.x, published 2026-07-08). The console uses TypeScript only
+  for `pnpm typecheck` (`tsc --noEmit`): Vite and Vitest transpile without loading the TypeScript API, and the console
+  has no ESLint or other in-process TS tool, so no companion bump is needed. `tsconfig.json` is unchanged
+  (`skipLibCheck` was already on), and 7.0.2 still reports a planted type error (TS2322). The lockfile gains the
+  compiler's per-platform binary packages (`@typescript/typescript-<os>-<arch>`, Apache-2.0); pnpm installs only the
+  one for the host. Unit tests, coverage floors (98.05% statements, 91.14% branches) and the build are unchanged.
+- **Console: jsdom 25.0.1 → 30.1.3 (#492, replaces Dependabot #470).** jsdom is the console's unit-test DOM, a dev
+  dependency, and it is now pinned exactly (`"jsdom": "30.1.3"`, no range). vitest 5.0.5 and `@qorpe/ui` are unchanged, and the coverage floors hold
+  (98.05% statements, 91.14% branches).
+  - **What changed in jsdom:** `getComputedStyle` now reports an unstyled `<span>` as `inline`. jsdom 25 returned an
+    empty `display`, which the accessible-name computation treats as a block (measured on both versions).
+  - **What it exposed:** a product console tile's accessible name (`Coexist /coexist/console/`) took its separator
+    only from Tailwind's `block` class, which jsdom does not load.
+  - **The fix:** the tile now carries the space itself. A browser renders nothing for it between two block lines, and
+    the name no longer depends on the stylesheet.
 - **Dependencies: `Microsoft.CodeAnalysis.PublicApiAnalyzers` 3.3.4 → 5.6.0 (GA gate G2, #335/#491; supersedes
   #246).** The analyzer guarding every package's `PublicAPI.Shipped.txt` / `PublicAPI.Unshipped.txt` is two majors
   newer. It loads on the SDK floor (10.0.101, measured), so `global.json` does not move. Its one new demand: it
@@ -384,6 +431,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **GP1202 no longer flags a literal client name beside a stored API key (#337).** `ApiKeys` maps a client name to its
+  key, but `options.ApiKeys.Add("job", keyFromVault)` was reported as a secret in source because ANY string argument
+  that was a literal counted. On `Add`, only the value (the key) counts now, as it already did for the indexer form
+  `ApiKeys["job"] = …`; a literal key is still flagged either way. Found while adding the tests that lift Analyzers,
+  Jobs and Archival above GA gate G9's 75 % (77.37 / 79.39 / 79.55 % on full local runs; `stryker/README.md`). The
+  Jobs and Archival model-contract suites build their model fresh instead of reading a cached one (open thread T33).
 - **Campaign: no second of pacer ticks releases more than its ceiling, even after an idle stretch (#292,
   S-FLEET-03).** Every hard-ceiling bucket (a campaign's `Tps`, a type's `MaxTps`, the `GlobalTps`)
   banked up to a whole second of tokens. What it saved while nothing released (a closed window, a full

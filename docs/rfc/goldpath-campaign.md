@@ -162,6 +162,7 @@ added, renamed or re-tagged without this table changing fails that test.
 | `goldpath_campaign_sink_flush_lag` | histogram, s | `type` | from an attempt's claim to the flush that made its outcome durable, once per item answered straight from `Processing`. It is the handler's time plus the sink's lag: the seam carries no send instant, so the sink's share alone is this minus `goldpath_campaign_handler_duration` (T57) |
 | `goldpath_campaign_window_closed_ticks_total` | counter | `type` | leader ticks that released nothing because the window or the day was closed |
 | `goldpath_campaign_ack_timeouts_total`, `…_orphans_rereleased_total`, `…_callbacks_parked_total`, `…_callbacks_rejected_total` | counter | `type` | R2.1, R2.6 and R2.8 (runbook §8) |
+| `goldpath_campaign_tuning_reload_refused_total` | counter | — | reloads of `Goldpath:Campaign` refused for an invalid value; the previous values stayed in force (R3.3) |
 | `goldpath_campaign_in_flight`, `…_remaining` | gauge | `campaign`, `type` | released and not terminal; enumerated and not released |
 | `goldpath_campaign_tps_ceiling` | gauge | `campaign`, `type` | the running campaign's `Tps` — the ceiling `rate(goldpath_campaign_released_total)` is read against |
 | `goldpath_campaign_type_max_tps` | gauge | `type` | a type's `MaxTps` (R2.4); absent for a type without one |
