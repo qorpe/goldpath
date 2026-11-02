@@ -313,7 +313,10 @@ public class R3SuspendTests
         await rig.ClaimAndOutcomeAsync(id, 3, fail: false);
         var accepted = new GoldpathCampaignOutcomeMessage(id, 3, false, null)
         {
-            Accepted = true, CorrelationId = "dev-3", AckDeadline = T0.AddHours(1), Attempt = 1,
+            Accepted = true,
+            CorrelationId = "dev-3",
+            AckDeadline = T0.AddHours(1),
+            Attempt = 1,
         };
 
         await rig.FlushAsync(id, [retry, success, accepted]);
