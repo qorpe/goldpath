@@ -418,6 +418,53 @@ public class R3SuspendTests
     }
 
     [Fact]
+    public async Task ARefusedThrottle_LeavesTheWindowAsItWas()
+    {
+        using var rig = new Rig(sourceSize: 10);
+        var id = await rig.CreateAsync(Suspending(ratio: null));
+        await rig.SliceAsync();
+        await rig.ConsumeAsync(id, Seqs(1, 10), failSeqs: [1, 2]);
+
+        // A sample larger than the window would never suspend: refused, and nothing is written.
+        var refused = await rig.Admin.ThrottleAsync(id,
+            new GoldpathCampaignThrottle { SuspendOnFailureRatio = 0.3, SuspendWindow = 50, SuspendMinSample = 60 }, "op", CancellationToken.None);
+
+        Assert.False(refused.Ok);
+        var row = rig.Reload(id);
+        Assert.Null(row.SuspendOnFailureRatio);
+        Assert.Equal(10, row.WindowOutcomes);
+        Assert.Equal(2, row.WindowFailures);
+        Assert.Null(row.WindowStartedAt);
+
+        // A finished campaign is refused too, and its counters stay its record.
+        await rig.SliceAsync();
+        Assert.Equal(GoldpathCampaignState.CompletedWithFailures, rig.Reload(id).State);
+        var terminal = await rig.Admin.ThrottleAsync(id, new GoldpathCampaignThrottle { SuspendOnFailureRatio = 0.3 }, "op", CancellationToken.None);
+        Assert.False(terminal.Ok);
+        Assert.Equal(10, rig.Reload(id).WindowOutcomes);
+        Assert.Null(rig.Reload(id).WindowStartedAt);
+    }
+
+    [Fact]
+    public async Task TwoRestartsOnOneRead_NeverDriveACounterNegative()
+    {
+        using var rig = new Rig(sourceSize: 10);
+        var id = await rig.CreateAsync(Suspending(ratio: null));
+        await rig.SliceAsync();
+        await rig.ConsumeAsync(id, Seqs(1, 10), failSeqs: [1, 2]);
+        var at = rig.Clock.GetUtcNow();
+
+        using var scope = rig.Fixture.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<CampaignTestContext>();
+        Assert.Equal(1, await GoldpathCampaignEngine<CampaignTestContext>.RestartWindowAsync(db, id, 10, 2, at, CancellationToken.None));
+        Assert.Equal(0, await GoldpathCampaignEngine<CampaignTestContext>.RestartWindowAsync(db, id, 10, 2, at, CancellationToken.None));
+
+        var row = rig.Reload(id);
+        Assert.Equal(0, row.WindowOutcomes);
+        Assert.Equal(0, row.WindowFailures);
+    }
+
+    [Fact]
     public async Task AThrottleThatClearsTheRatioBetweenTheLoadAndTheFlip_Wins()
     {
         GoldpathCampaignAdminService<CampaignTestContext>? admin = null;

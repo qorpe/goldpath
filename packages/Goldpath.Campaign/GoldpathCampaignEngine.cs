@@ -689,11 +689,14 @@ public sealed class GoldpathCampaignEngine<TContext>
     /// <summary>
     /// Restarts a campaign's failure-ratio window (R3.6) by SUBTRACTING the counters the caller
     /// read, never by zeroing them: an outcome the sink flushed after the read stays in the new
-    /// window instead of vanishing. Stamps <see cref="GoldpathCampaign.WindowStartedAt"/>.
+    /// window instead of vanishing. Stamps <see cref="GoldpathCampaign.WindowStartedAt"/>. A window
+    /// that another restart already emptied below what was read is left alone, so two restarts racing
+    /// on one read can never drive a counter negative.
     /// </summary>
     internal static Task<int> RestartWindowAsync(
         TContext db, Guid campaignId, long outcomesRead, long failuresRead, DateTimeOffset now, CancellationToken cancellationToken)
-        => db.Set<GoldpathCampaign>().Where(c => c.Id == campaignId)
+        => db.Set<GoldpathCampaign>()
+            .Where(c => c.Id == campaignId && c.WindowOutcomes >= outcomesRead && c.WindowFailures >= failuresRead)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(c => c.WindowOutcomes, c => c.WindowOutcomes - outcomesRead)
                 .SetProperty(c => c.WindowFailures, c => c.WindowFailures - failuresRead)

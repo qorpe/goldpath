@@ -249,7 +249,7 @@ public sealed class GoldpathCampaignAdminService<TContext>
     /// </summary>
     public async Task<GoldpathAdminResult> ResumeAsync(Guid id, string actor, CancellationToken ct)
     {
-        await RestartWindowAsync(id, onlyIn: GoldpathCampaignState.Suspended, onlyWithoutRatio: false, ct);
+        await RestartWindowAsync(id, row => row.State == GoldpathCampaignState.Suspended, ct);
         var result = await MutateAsync(id, "resume", actor, detail: null, campaign =>
         {
             if (campaign.State is not (GoldpathCampaignState.Paused or GoldpathCampaignState.Suspended))
@@ -379,8 +379,11 @@ public sealed class GoldpathCampaignAdminService<TContext>
         {
             // R3.6: a ratio switched on judges outcomes from now on. The window restarts BEFORE the
             // policy is written, so no tick can read the new ratio against the old counters; a
-            // throttle refused below leaves a restarted window and no ratio, which changes nothing.
-            await RestartWindowAsync(id, onlyIn: null, onlyWithoutRatio: true, ct);
+            // throttle refused below leaves a restarted window and no ratio, which changes nothing. Only a
+            // live campaign with no ratio yet, whose new suspend policy will stand, is touched at all.
+            var now = _time.GetUtcNow();
+            await RestartWindowAsync(id, row => row.SuspendOnFailureRatio is null && !IsTerminal(row.State)
+                && SuspendRefusal(Apply(GoldpathCampaignEngine<TContext>.PolicyOf(row), patch, now)) is null, ct);
         }
 
         string? verb = null;
@@ -431,24 +434,26 @@ public sealed class GoldpathCampaignAdminService<TContext>
         }, ct, detailFactory: _ => Bound(verb!, 1024));
     }
 
+    /// <summary>True for the four states no verb but replay moves a campaign out of.</summary>
+    private static bool IsTerminal(GoldpathCampaignState state)
+        => state is GoldpathCampaignState.Completed or GoldpathCampaignState.CompletedWithFailures
+            or GoldpathCampaignState.Aborted or GoldpathCampaignState.ExpiredIncomplete;
+
     /// <summary>Cuts a text to a column's length.</summary>
     internal static string Bound(string text, int length) => text.Length > length ? text[..length] : text;
 
     /// <summary>
     /// Restarts a campaign's failure-ratio window (R3.6): subtracts the counters it read and stamps
-    /// the start, never zeroes them, so an outcome the sink flushes in between is kept. Conditional on
-    /// the state (<paramref name="onlyIn"/>) or on no ratio being set yet (<paramref name="onlyWithoutRatio"/>),
-    /// so it touches only the campaign the verb is about to change.
+    /// the start, never zeroes them, so an outcome the sink flushes in between is kept. Only when the
+    /// row it read satisfies <paramref name="applies"/>, so it touches only the campaign the verb is
+    /// about to change.
     /// </summary>
-    private async Task RestartWindowAsync(Guid id, GoldpathCampaignState? onlyIn, bool onlyWithoutRatio, CancellationToken ct)
+    private async Task RestartWindowAsync(Guid id, Func<GoldpathCampaign, bool> applies, CancellationToken ct)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TContext>();
-        var read = await db.Set<GoldpathCampaign>().AsNoTracking()
-            .Where(c => c.Id == id)
-            .Select(c => new { c.State, c.SuspendOnFailureRatio, c.WindowOutcomes, c.WindowFailures })
-            .SingleOrDefaultAsync(ct);
-        if (read is null || (onlyIn is { } state && read.State != state) || (onlyWithoutRatio && read.SuspendOnFailureRatio is not null))
+        var read = await db.Set<GoldpathCampaign>().AsNoTracking().SingleOrDefaultAsync(c => c.Id == id, ct);
+        if (read is null || !applies(read))
         {
             return;
         }

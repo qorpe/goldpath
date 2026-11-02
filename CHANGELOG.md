@@ -93,11 +93,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     (NaN included), a non-positive window or sample, or a sample larger than the window is refused on
     create and on throttle. A throttle's `LastVerb` is now cut to its 512-character column (the audit
     row keeps up to 1,024): the two sides of a wide policy could outgrow it.
-  - **Proof:** `R3SuspendTests` (25 cases through the real pacer job on a tick clock, the admin service
-    and the admin HTTP routes). Nine planted faults each turn it red: a pacer that never judges (11
+  - **Proof:** `R3SuspendTests` (27 cases through the real pacer job on a tick clock, the admin service
+    and the admin HTTP routes). Eleven planted faults each turn it red: a pacer that never judges (11
     red), a restart that zeroes, `Suspended` dropped from the ladder, retryable failures not counted, a
     flip that ignores a ratio cleared since the load, an interrupted claim not counted, a resume or a
-    switched-on ratio that keeps the old window, and a `pause` that does not refuse `Suspended`.
+    switched-on ratio that keeps the old window, a `pause` that does not refuse `Suspended`, a restart
+    without its guard against a second restart on the same read (counters went negative), and a refused
+    throttle that still restarted the window.
   - **Not in this slice:** S-OPS-03 on a real broker, the console's suspended view, the runbook item and
     the export-test row for the new counter (R3-S11, #319, and #294's export test once both land).
 - **Campaign: the four options an operator tunes reload without a restart (campaign RFC R3.3, slice R3-S7, #317).**
