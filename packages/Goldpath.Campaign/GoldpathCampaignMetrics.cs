@@ -38,6 +38,9 @@ public static class GoldpathCampaignMetrics
     private static readonly Counter<long> TuningReloadRefusedTotal = Meter.CreateCounter<long>(
         "goldpath_campaign_tuning_reload_refused_total", description: "Reloads of Goldpath:Campaign refused for an invalid value; the previous values stayed in force (R3.3).");
 
+    private static readonly Counter<long> SuspendedTotal = Meter.CreateCounter<long>(
+        "goldpath_campaign_suspended_total", description: "Campaigns the pacer suspended because their failure ratio crossed the policy's threshold (R3.6).");
+
     private static readonly object SnapshotLock = new();
     private static readonly Dictionary<Guid, (string Type, long Remaining, long InFlight)> Snapshots = [];
 
@@ -77,6 +80,9 @@ public static class GoldpathCampaignMetrics
             FailedTotal.Add(failed, tag);
         }
     }
+
+    internal static void Suspended(string type)
+        => SuspendedTotal.Add(1, new KeyValuePair<string, object?>("type", type));
 
     internal static void TuningReloadRefused() => TuningReloadRefusedTotal.Add(1);
 

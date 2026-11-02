@@ -159,6 +159,42 @@ past means now, and a start after the end date's local day is refused. `pause` a
 `Ready` campaign, and `resume` returns it to `Ready` while its start is still ahead. A `Ready`
 campaign past its end date expires, like a running one.
 
+## Auto-suspend on a failure ratio (R3.6)
+
+A campaign may stop itself when its target system starts failing, before the operator notices:
+
+```csharp
+new GoldpathCampaignThrottle(Tps: 200)
+{
+    SuspendOnFailureRatio = 0.3,   // in (0, 1]; null (the default) = never
+    SuspendWindow = 1_000,         // outcomes per window (the default)
+    SuspendMinSample = 100,        // outcomes before the ratio may judge (the default)
+}
+```
+
+Every completed attempt is an outcome and every failed one a failure, **retryable failures
+included** (a melting target system shows up as timeouts first), as are an `ACK_TIMEOUT` and an
+interrupted claim; an acceptance is not an outcome until it settles. The two counters ride the
+sink's campaign update, so they cost no write. Each leader tick the pacer reads them off the row it
+loaded: at least `SuspendMinSample` outcomes at or above the ratio moves the campaign to
+**`Suspended`**; otherwise, once the window holds `SuspendWindow` outcomes, the window restarts (by
+subtracting what was read, so an outcome flushed in between is kept). Detection lands one tick after
+the flush that crosses the threshold, and the ratio covers the outcomes since the window last
+restarted: a tumbling window evaluated early, not an exact "last N".
+
+`Suspended` is not `Paused`: the system stopped it, and the detail says why in
+`suspendedReason` — *failure ratio 0.52 ≥ 0.3 over 400 outcomes since 2026-11-02T07:42:05Z
+(minimum sample 100); most frequent code TIMEOUT (61%)*, the code read from a sample of at most 500 of
+the window's failures. The flip is audited `suspend` with the actor `system` and counted in
+`goldpath_campaign_suspended_total{type}`. A suspended campaign claims nothing and releases nothing; what
+is in flight drains, and its retries wait on the ladder for the resume. `resume` clears the reason and
+restarts the window, so the failures that suspended it cannot suspend it again; `abort` and `throttle`
+accept it (lower the rate, then resume); `pause` refuses it. There is no automatic resume.
+`failureRatioNow` on the detail shows the current window's ratio whether or not a ratio is set, and
+switching a ratio on through `throttle` restarts the window, so outcomes from before it existed do not
+judge the campaign. A ratio outside (0, 1], a non-positive window or sample, or a sample larger than
+the window (which could never suspend) is refused on create and on throttle.
+
 ## The guarantees
 
 - **The ceiling is mandatory:** a type without `MaxTargets` refuses to bake (GP1701);

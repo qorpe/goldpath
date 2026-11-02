@@ -259,3 +259,27 @@ virtual Goldpath.GoldpathCampaignActionResult.Equals(Goldpath.GoldpathCampaignAc
 virtual Goldpath.GoldpathCampaignActionResult.PrintMembers(System.Text.StringBuilder! builder) -> bool
 ~override Goldpath.GoldpathCampaignFairShareClaim.Equals(object obj) -> bool
 ~override Goldpath.GoldpathCampaignFairShareClaim.ToString() -> string
+Goldpath.GoldpathCampaignPolicy.SuspendOnFailureRatio.get -> double?
+Goldpath.GoldpathCampaignPolicy.SuspendOnFailureRatio.init -> void
+Goldpath.GoldpathCampaignPolicy.SuspendWindow.get -> int
+Goldpath.GoldpathCampaignPolicy.SuspendWindow.init -> void
+Goldpath.GoldpathCampaignPolicy.SuspendMinSample.get -> int
+Goldpath.GoldpathCampaignPolicy.SuspendMinSample.init -> void
+Goldpath.GoldpathCampaignThrottle.SuspendOnFailureRatio.get -> double?
+Goldpath.GoldpathCampaignThrottle.SuspendOnFailureRatio.init -> void
+Goldpath.GoldpathCampaignThrottle.ClearSuspendOnFailureRatio.get -> bool
+Goldpath.GoldpathCampaignThrottle.ClearSuspendOnFailureRatio.init -> void
+Goldpath.GoldpathCampaignThrottle.SuspendWindow.get -> int?
+Goldpath.GoldpathCampaignThrottle.SuspendWindow.init -> void
+Goldpath.GoldpathCampaignThrottle.SuspendMinSample.get -> int?
+Goldpath.GoldpathCampaignThrottle.SuspendMinSample.init -> void
+Goldpath.GoldpathCampaignInfo.SuspendOnFailureRatio.get -> double?
+Goldpath.GoldpathCampaignInfo.SuspendOnFailureRatio.init -> void
+Goldpath.GoldpathCampaignInfo.SuspendWindow.get -> int
+Goldpath.GoldpathCampaignInfo.SuspendWindow.init -> void
+Goldpath.GoldpathCampaignInfo.SuspendMinSample.get -> int
+Goldpath.GoldpathCampaignInfo.SuspendMinSample.init -> void
+Goldpath.GoldpathCampaignInfo.SuspendedReason.get -> string?
+Goldpath.GoldpathCampaignInfo.SuspendedReason.init -> void
+Goldpath.GoldpathCampaignInfo.FailureRatioNow.get -> double?
+Goldpath.GoldpathCampaignInfo.FailureRatioNow.init -> void
