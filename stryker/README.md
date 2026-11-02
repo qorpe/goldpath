@@ -247,8 +247,10 @@ On the lines R3-S10 changed: 153 killed, 37 survived, 4 without coverage (78.9 %
   throttle, so a boundary that falls through to the other refusal still passes.
 - **Audit text:** `ShowsSuspend`'s terms and `Bound`'s `>` against `>=`. The second is equivalent: a text of
   exactly the column's length is unchanged either way.
-- **No coverage:** the sample's `CompletedAt >= WindowStartedAt` filter. No fact suspends a campaign after
-  its window has restarted.
+- **No coverage at the run above; covered since:** the sample's `CompletedAt >= WindowStartedAt` filter.
+  `TheReasonsCode_IsReadFromTheCurrentWindowOnly_NotFromTheFailuresBeforeItRestarted` (added after the run)
+  suspends a campaign after its window restarted; replacing the filter with `true` turns it red ("B (71%)"
+  instead of "B (100%)"). The score above was not re-run for it.
 
 These are the next facts to add for this package (T39's proof for R3-S10).
 

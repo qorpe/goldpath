@@ -300,6 +300,34 @@ public class R3SuspendTests
         Assert.Equal(13, row.SucceededCount + row.FailedCount);
     }
 
+    [Fact]
+    public async Task TheReasonsCode_IsReadFromTheCurrentWindowOnly_NotFromTheFailuresBeforeItRestarted()
+    {
+        using var rig = new Rig(sourceSize: 20);
+        var id = await rig.CreateAsync(Suspending(ratio: 0.5, window: 10, minSample: 10));
+        await rig.SliceAsync();
+        Assert.Equal(20, rig.Published);
+
+        // A full window below the ratio, failing with A: it restarts, a second after those failures completed.
+        await rig.ConsumeAsync(id, Seqs(1, 10), failSeqs: [1, 2, 3, 4], code: "A");
+        rig.Clock.Advance(TimeSpan.FromSeconds(1));
+        await rig.SliceAsync();
+        var restarted = rig.Reload(id);
+        Assert.Equal(GoldpathCampaignState.Running, restarted.State);
+        Assert.Equal(0, restarted.WindowOutcomes);
+
+        // The next window crosses the ratio, failing with B only.
+        rig.Clock.Advance(TimeSpan.FromSeconds(1));
+        await rig.ConsumeAsync(id, Seqs(11, 20), failSeqs: [.. Seqs(11, 20)], code: "B");
+        await rig.SliceAsync();
+
+        var suspended = rig.Reload(id);
+        Assert.Equal(GoldpathCampaignState.Suspended, suspended.State);
+        // The four A failures still sit on the ladder (AwaitingRetry); read without the window's filter
+        // the reason would say "B (71%)" — the code of an older window bleeding into this one.
+        Assert.EndsWith("most frequent code B (100%)", suspended.SuspendedReason);
+    }
+
     // ---- counting ----
 
     [Fact]
