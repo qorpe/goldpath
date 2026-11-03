@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **The served console's asset route is pinned against path traversal (threat model T-CON-03, GA gate G15, #454).**
+  `Goldpath.Console.Tests.ConsoleTraversalTests` asserts `404` for `../`, `..\`, `..%5c`, `%2e%2e%2f`, `..%2f`,
+  absolute and drive-letter paths, through `Serve` and over the mapped route. Every payload aims at a file that exists,
+  so swapping the embedded provider for a disk-backed one turns the test red instead of turning the route into a file
+  read. No behaviour change: the provider moved into an internal `ConsoleFiles()` so the tests resolve against the one
+  the route serves from. Writing it measured why the provider is the only holder: routing decodes `%5C`, and the
+  console's `\`-to-`/` rewrite then rebuilds `..%5c` into `../` after the server has normalised dot segments.
 - **Notification, Approvals, FileExchange and the audit log, proven on Oracle (GA gate G7, slice O-5b, #410).** Tests
   only: no package changes.
   - **Goldens.** The O-2 composed model now adds the four modules' contributions, so the Oracle golden pins their columns,
