@@ -33,6 +33,8 @@ jobs:
         run: |
           ./scripts/engine-gate.sh
           ./scripts/engine-gate.sh --selftest
+      - name: corpay feed self-test (#378 — the nightly packs this repository only while the train is unpublished)
+        run: ./scripts/corpay-feed.sh --selftest
       - name: docs freshness (no link to a missing file)
         run: bash scripts/docs-freshness.sh
       - name: merge tiers self-test (ADR-0014 — the rules this PR proposes still put every fixture where it belongs)
