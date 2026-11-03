@@ -20,6 +20,7 @@ GoldpathApprovals.Status: NVARCHAR2(16) not null
 GoldpathApprovals.Subject: NVARCHAR2(256) not null
 GoldpathApprovals.SupersedesId: RAW(16) null
 GoldpathApprovals.Trail: NVARCHAR2(2000) not null
+GoldpathApprovals.Version: NUMBER(19) not null
 GoldpathArchiveChainState.Definition: NVARCHAR2(120) not null
 GoldpathArchiveChainState.LastHash: NVARCHAR2(64) not null
 GoldpathArchiveChainState.LastIndex: NUMBER(19) not null
