@@ -23,6 +23,18 @@ public static class GoldpathArchiveEnvelope
     public static string ContentHash(int schemaVersion, string definition, string key, string? tenant, DateTimeOffset dueAt, string document)
         => Sha256($"{schemaVersion}|{definition}|{key}|{tenant}|{dueAt.UtcTicks}|{document}");
 
+    /// <summary>
+    /// The <c>DueAt</c> an entry is written with: truncated to whole microseconds (#383). The
+    /// value is hashed at write and re-hashed at verify from what the store returns, so it must
+    /// be one every supported store holds exactly. PostgreSQL's <c>timestamptz</c> keeps
+    /// microseconds and drops the 100 ns tick a <see cref="DateTimeOffset"/> can carry, so an
+    /// entry hashed at full ticks there could never verify. Truncating here, and not inside
+    /// <see cref="ContentHash"/>, keeps every entry already written verifying exactly as before:
+    /// one stored with full ticks (SQL Server, Oracle) is still re-hashed at the ticks it holds.
+    /// </summary>
+    internal static DateTimeOffset StoredPrecision(DateTimeOffset dueAt)
+        => dueAt.AddTicks(-(dueAt.UtcTicks % TimeSpan.TicksPerMicrosecond));
+
     /// <summary>Chain hash sealed at append: contentHashAtAppend|previousChainHash|index.</summary>
     public static string ChainHash(string contentHashAtAppend, string previousChainHash, long chainIndex)
         => Sha256($"{contentHashAtAppend}|{previousChainHash}|{chainIndex}");
@@ -114,8 +126,10 @@ public sealed class GoldpathArchiveEngine<TContext>
             }
 
             var document = JsonSerializer.Serialize(candidate.Root, definition.RootType, GoldpathArchiveEnvelope.Json);
+            // Hashed and stored as ONE value, at a precision every store keeps (#383).
+            var dueAt = GoldpathArchiveEnvelope.StoredPrecision(candidate.DueAt);
             var contentHash = GoldpathArchiveEnvelope.ContentHash(
-                GoldpathArchiveEnvelope.SchemaVersion, definition.Name, key, candidate.Tenant, candidate.DueAt, document);
+                GoldpathArchiveEnvelope.SchemaVersion, definition.Name, key, candidate.Tenant, dueAt, document);
             var index = state.LastIndex + 1;
             var chainHash = GoldpathArchiveEnvelope.ChainHash(contentHash, state.LastHash, index);   // genesis: LastHash is ""
 
@@ -126,7 +140,7 @@ public sealed class GoldpathArchiveEngine<TContext>
                 Tenant = candidate.Tenant,
                 Document = document,
                 SchemaVersion = GoldpathArchiveEnvelope.SchemaVersion,
-                DueAt = candidate.DueAt,
+                DueAt = dueAt,
                 ArchivedAt = now,
                 ChainIndex = index,
                 ContentHash = contentHash,

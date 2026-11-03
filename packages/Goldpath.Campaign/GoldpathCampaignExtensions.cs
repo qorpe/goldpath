@@ -3,6 +3,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Goldpath;
 
@@ -22,7 +25,20 @@ public static class GoldpathCampaignExtensions
     {
         var options = new GoldpathCampaignOptions();
         configure(options);
-        builder.Services.AddSingleton(options);
+
+        // R3.3: the four keys an operator turns during an incident reload from Goldpath:Campaign
+        // through IOptionsMonitor; the code values above stay the defaults.
+        var section = builder.Configuration.GetSection(GoldpathCampaignTuning.SectionName);
+        builder.Services.AddOptions<GoldpathCampaignTuning>().Configure(tuning => tuning.ReadFrom(section));
+        builder.Services.AddSingleton<IOptionsChangeTokenSource<GoldpathCampaignTuning>>(
+            new ConfigurationChangeTokenSource<GoldpathCampaignTuning>(section));
+        builder.Services.AddSingleton(services =>
+        {
+            options.Track(
+                services.GetRequiredService<IOptionsMonitor<GoldpathCampaignTuning>>(),
+                services.GetService<ILoggerFactory>()?.CreateLogger("Goldpath.Campaign") ?? NullLogger.Instance);
+            return options;
+        });
         builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.TryAddSingleton<GoldpathCampaignEngine<TContext>>();
         builder.Services.TryAddSingleton<GoldpathCampaignAdminService<TContext>>();
