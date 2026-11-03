@@ -98,6 +98,12 @@ the dynamic-assembly filter, the scan's catch branches, the kebab formatter on t
 builder names every endpoint), the test host's dispose branches, and its body guard, which the engine's
 own guard now makes equivalent.
 
+**Archival was re-measured 2026-11-02**, a full run of `mutation-gate.sh Goldpath.Archival` on the
+#383 branch (an entry's `DueAt` is hashed and stored at the same microsecond), on the local sandbox:
+79.55 % → 79.90 % (382 mutants tested, 7.9 minutes, the sandbox's, not the CI profile's). Every
+mutant on the new lines is killed: the sign and the `%` of the truncation, and the entry's
+initializer. No threshold moved and nothing was excluded.
+
 **Bulk was re-measured 2026-10-24**, a full run of `mutation-gate.sh Goldpath.Bulk` at 6b97bc3 on
 the #300 branch (the duplicate check keeps hashes, not keys), at concurrency 1 on the local
 sandbox: 88.38 % → 88.37 % (577 mutants tested). The new `GoldpathBulkDuplicateKeys` leaves one
@@ -133,7 +139,7 @@ at f459fe2, so its row carries it (minutes not recorded).
 | Approvals | 77.78 % (74.84) | 7.78 | 3.4 | 74.84 %, 217.7 |
 | Data | 77.38 % | 7.38 | 2.3 | 77.38 %, 38.0 |
 | FileExchange | 76.92 % | 6.92 | 3.6 | 76.92 %, 31.8 |
-| Archival | 79.55 % (74.49) | 9.55 | 5.1 | never finished (OOM) |
+| Archival | 79.90 % (74.49) | 9.90 | 7.9 | never finished (OOM) |
 | Analyzers | 77.37 % (72.55) | 7.37 | 3.4 | 72.55 %, 5.4 |
 | Jobs | 79.39 % (72.52) | 9.39 | 4.2 | never finished (OOM) |
 

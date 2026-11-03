@@ -21,6 +21,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     both directions, the retry ladder and error queue on a limited endpoint, and exactly-once on a limited
     endpoint (the same message id delivered concurrently is handled once; the Wolverine adapter's inbox now
     claims its row before locking it, which a parallel listener needs). S2.13 (delayed redelivery) is reserved: see Known issues.
+- **The served console's asset route is pinned against path traversal (threat model T-CON-03, GA gate G15, #454).**
+  `Goldpath.Console.Tests.ConsoleTraversalTests` asserts `404` for `../`, `..\`, `..%5c`, `%2e%2e%2f`, `..%2f`,
+  absolute and drive-letter paths, through `Serve` and over the mapped route. Every payload aims at a file that exists,
+  so swapping the embedded provider for a disk-backed one turns the test red instead of turning the route into a file
+  read. No behaviour change: the provider moved into an internal `ConsoleFiles()` so the tests resolve against the one
+  the route serves from. Writing it measured why the provider is the only holder: routing decodes `%5C`, and the
+  console's `\`-to-`/` rewrite then rebuilds `..%5c` into `../` after the server has normalised dot segments.
 - **Notification, Approvals, FileExchange and the audit log, proven on Oracle (GA gate G7, slice O-5b, #410).** Tests
   only: no package changes.
   - **Goldens.** The O-2 composed model now adds the four modules' contributions, so the Oracle golden pins their columns,
@@ -80,6 +87,37 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   - **Runbook:** §9 covers `QRTZ_LOCKS` row-lock contention.
   - **Still open:** `GoldpathJobExecutions` loses the history row of a fire with no error on Oracle.
     The `Error` document column refuses a NULL in ODP.NET (#475).
+- **Campaign: the four options an operator tunes reload without a restart (campaign RFC R3.3, slice R3-S7, #317).**
+  - **What reloads:** `AddGoldpathCampaign` now reads the section `Goldpath:Campaign` through
+    `IOptionsMonitor`. Exactly four keys reload: `RetryBackoff`, `RetryJitter`, `OrphanReleaseAfter` and
+    `StaleClaimAfter`. A key present in configuration wins, and the value set in code is the default; a key
+    that leaves configuration falls back to it. The change reaches the next tick and the next outcome flush.
+  - **A ladder replaces, never appends:** each key binds into a fresh value, so two configured rungs are two
+    rungs, not the code's three plus two. Each rung binds on its own, in index order: the binder's list
+    binding skips an element it cannot convert, which would have shortened the ladder silently, so a bad
+    rung refuses the reload instead.
+  - **A bad reload is refused whole:** an empty ladder, a ladder written as one value rather than a list, a negative rung, jitter outside [0, 1] (NaN included),
+    a non-positive age, a rung or age longer than 365 days (the engine adds a rung to and subtracts an age from
+    the current instant, so `TimeSpan.MaxValue` would otherwise throw in the pacer, the sweep and the outcome
+    flush on every tick) or a value that does not parse (configuration is read invariantly, so `0,5` is
+    refused on any host culture) leaves the last valid values in force. The refusal is logged as a warning
+    naming `Goldpath:Campaign:<key>` and counted in the new `goldpath_campaign_tuning_reload_refused_total`.
+    A section invalid at startup is refused the same way, and the code values hold. An empty or
+    whitespace-only scalar reads as unset.
+  - **Not reloaded:** `GlobalTps` (a row, R3.2), `LeaderTick`, `LeadershipSlice` and the batch sizes stay
+    startup values.
+  - **API:** none. The properties keep their names and setters, and no shipped constructor changes.
+    Behaviour without a `Goldpath:Campaign` section is unchanged.
+  - **Proof:** `R3TuningReloadTests` (45 cases, every host built through `AddGoldpathCampaign`). 29 of 31 are
+    red on `main` (of the first 32; the 32nd names the new internal type); the two that pass there are the "not reloaded" and
+    "empty value" guards. Three planted faults also turn it red: an ignored refusal, a ladder bound into the
+    code ladder, and a getter that skips the reloaded value. One case drives the engine with the host's
+    instance and finds a failed item scheduled on the reloaded rung. Stryker scoped to the two changed files:
+    `GoldpathCampaignTuning.cs` 51/51 killed (before the 365-day bound). The bound is pinned at both sides:
+    365 days is accepted, one tick more is refused, `>`→`>=` turns 3 boundary cases red, and three engine
+    cases show `TimeSpan.MaxValue` ages and a 10,000-year rung refused while the orphan release, the
+    parked-callback expiry and a failure's outcome flush keep running. The `GoldpathCampaignOptions.cs` survivors near the change are
+    pre-existing and equivalent: jitter 0 against `< 0`, and the factor's sign.
 - **Campaign: a scheduled start and the `Ready` state (campaign RFC R3.1, slice R3-S2, #289).**
   - **API (additive, init-only):** `GoldpathCampaignPolicy.StartAt` and `IsBeforeStart(utcNow)`,
     `GoldpathCampaignThrottle.StartAt` and `ClearStartAt`, `GoldpathCampaignInfo.StartAt`. No
@@ -395,6 +433,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 - **The Wolverine adapter continues the publisher's trace (#331).** Its consume span started a new trace from
   the 8.x envelope; it now opens the consume span under the `MT-Activity-Id` the delivery carries (ActivitySource
   `Goldpath.Messaging.Wolverine`), and writes that header when it publishes. The adapter is not published.
+- **Archival: an entry whose `DueAt` carries sub-microsecond ticks now verifies on PostgreSQL (#383).** The engine
+  hashed `DueAt` at 100 ns, but `timestamptz` stores microseconds, so verification re-hashed a different value and
+  reported "document does not match its content hash" with nothing tampered. It happened whenever the candidate's
+  `DueAt` carried sub-microsecond ticks: a `DueWhen` date selector that reads the clock or does fractional arithmetic,
+  or archiving in the scope that saved the rows (the tracked value still has its 100 ns ticks). The archival job
+  reading a stored PostgreSQL column was not affected. The engine now truncates `DueAt` to
+  whole microseconds once, and hashes and stores that one value. The content-hash format is unchanged, so entries
+  already written keep verifying exactly as before, including full-tick entries on SQL Server and Oracle (pinned by
+  `ArchiveDueAtPrecisionTests` against a hash computed outside .NET). Entries already written on PostgreSQL with
+  sub-microsecond `DueAt` stay unverifiable; open-threads T58 holds their remedy.
 - **GP1202 no longer flags a literal client name beside a stored API key (#337).** `ApiKeys` maps a client name to its
   key, but `options.ApiKeys.Add("job", keyFromVault)` was reported as a secret in source because ANY string argument
   that was a literal counted. On `Add`, only the value (the key) counts now, as it already did for the indexer form
