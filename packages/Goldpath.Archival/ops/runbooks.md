@@ -10,6 +10,11 @@ ARE the audit: every verb leaves durable who/when/what.
    the document plus its hashes; the p95 budget is 5s at 1M entries (measured: 0.5ms).
 2. `POST /definitions/{definition}/verify` — a clean result is the integrity statement:
    link continuity, content hashes, and lawful-erasure divergences all checked.
+   - **Before you call a finding tamper on PostgreSQL:** an entry archived before #383's fix
+     from a `DueAt` with sub-microsecond ticks fails "document does not match its content hash"
+     with nothing changed, because it was hashed at 100 ns and stored at µs. Check whether the
+     definition's `DueWhen` date selector reads the clock or does fractional arithmetic, rather
+     than reading a column, and whether the entry predates the fix. Remedy: open-threads T58.
 3. For a RANGE, hand the auditor the verify output plus the entries — the chain hash makes
    the set self-proving; nothing needs to be trusted about the database operator.
 

@@ -98,6 +98,12 @@ the dynamic-assembly filter, the scan's catch branches, the kebab formatter on t
 builder names every endpoint), the test host's dispose branches, and its body guard, which the engine's
 own guard now makes equivalent.
 
+**Archival was re-measured 2026-11-02**, a full run of `mutation-gate.sh Goldpath.Archival` on the
+#383 branch (an entry's `DueAt` is hashed and stored at the same microsecond), on the local sandbox:
+79.55 % → 79.90 % (382 mutants tested, 7.9 minutes, the sandbox's, not the CI profile's). Every
+mutant on the new lines is killed: the sign and the `%` of the truncation, and the entry's
+initializer. No threshold moved and nothing was excluded.
+
 **Bulk was re-measured 2026-10-24**, a full run of `mutation-gate.sh Goldpath.Bulk` at 6b97bc3 on
 the #300 branch (the duplicate check keeps hashes, not keys), at concurrency 1 on the local
 sandbox: 88.38 % → 88.37 % (577 mutants tested). The new `GoldpathBulkDuplicateKeys` leaves one
@@ -133,9 +139,29 @@ at f459fe2, so its row carries it (minutes not recorded).
 | Approvals | 77.78 % (74.84) | 7.78 | 3.4 | 74.84 %, 217.7 |
 | Data | 77.38 % | 7.38 | 2.3 | 77.38 %, 38.0 |
 | FileExchange | 76.92 % | 6.92 | 3.6 | 76.92 %, 31.8 |
-| Archival | 74.49 % | 4.49 | 10.6 | never finished (OOM) |
-| Analyzers | 72.55 % | 2.55 | 3.9 | 72.55 %, 5.4 |
-| Jobs | 72.52 % | 2.52 | 9.1 | never finished (OOM) |
+| Archival | 79.90 % (74.49) | 9.90 | 7.9 | never finished (OOM) |
+| Analyzers | 77.37 % (72.55) | 7.37 | 3.4 | 72.55 %, 5.4 |
+| Jobs | 79.39 % (72.52) | 9.39 | 4.2 | never finished (OOM) |
+
+**Analyzers, Jobs and Archival were re-measured 2026-10-31** (#337, GA gate G9 part 2): full local
+runs of `scripts/mutation-gate.sh` at concurrency 4 on the agent sandbox (minutes are the sandbox's,
+not the CI profile's), before and after this PR's tests on the #337 branch. No threshold
+moved and nothing was excluded.
+- **Analyzers 72.71 → 77.37 %.** The invocation branch of `AuthSurfaceAnalyzer` (the fluent
+  `AllowAnonymous()`, `UseHmacRedaction("…")`, `ApiKeys.Add(…)`) had no test at all, nor did GP0701's
+  Mediant `[SensitiveData]` path, GP0301's `ISoftDeletable`/`IMultiTenant` markers and GP0302's three
+  other method names. Writing the `ApiKeys.Add` fact found a false positive, fixed in the same PR:
+  a literal client NAME beside a key read from a store was flagged; only the value is a secret now,
+  as on the indexer form.
+- **Jobs 72.90 → 79.39 %** and **Archival 75.25 → 79.55 %** (the "before" is the same sandbox on
+  `main`'s tests; the nightly had 72.52 and 74.49). T33's cure: both model-contract suites build their
+  model FRESH from `ModelBuilder`, as Bulk's does, instead of reading a context's cached model. Mapping
+  survivors fell from 18 to 1 in `JobsModel.cs` and from 20 to 2 in `ArchiveModel.cs`. Of those left,
+  `ToTable("GoldpathJobAdminAudit")` and `ToTable("GoldpathArchiveChainState")` are equivalent under a
+  fresh `ModelBuilder`: without them EF names the table after the class, which is the same string. The
+  legal hold's `Definition` default was pinned by a fact added after the run.
+
+The hosted confirmation is G9's own proof, two consecutive nightlies at or above 75 %.
 
 **MultiTenancy, Idempotency, ServiceDefaults and Approvals were re-measured 2026-10-21** (#322,
 GA gate G9 part 1): full local runs of `scripts/mutation-gate.sh` (a container, not the hosted

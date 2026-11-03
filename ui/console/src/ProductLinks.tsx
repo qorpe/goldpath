@@ -46,6 +46,9 @@ export function ProductLinks({ links, origin = globalThis.location?.origin ?? ""
             >
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-semibold">{link.name}</span>
+                {/* The space is the accessible name's separator ("Coexist /coexist/console/"): two
+                    block lines get one from their CSS display, so without it the name would depend on
+                    the stylesheet having loaded. Between block boxes it renders nothing. */}{" "}
                 <span className="block truncate text-xs text-muted-foreground">{destinationOf(link.url, origin)}</span>
               </span>
               <ExternalLink aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />

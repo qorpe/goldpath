@@ -69,13 +69,21 @@ public sealed class CampaignFixture : IDisposable
 
     private readonly SqliteConnection _connection;
 
-    public CampaignFixture(Action<GoldpathCampaignOptions>? configure = null, int sourceSize = 10, Action<IServiceCollection>? extraServices = null)
+    /// <param name="configure">Code options, applied after the winback type is added.</param>
+    /// <param name="sourceSize">How many targets the winback type enumerates.</param>
+    /// <param name="extraServices">Registrations added after the fixture's own.</param>
+    /// <param name="options">
+    /// An options instance to use instead of a fresh one — the one a host built by
+    /// <c>AddGoldpathCampaign</c> hands out, so a test drives the engine with the instance the module wired.
+    /// </param>
+    public CampaignFixture(Action<GoldpathCampaignOptions>? configure = null, int sourceSize = 10, Action<IServiceCollection>? extraServices = null,
+        GoldpathCampaignOptions? options = null)
     {
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
 
         Source = [.. Enumerable.Range(1, sourceSize).Select(i => new TestTarget(i, $"user{i}@example.test"))];
-        Options = new GoldpathCampaignOptions();
+        Options = options ?? new GoldpathCampaignOptions();
         Options.AddCampaign<TestTarget>("winback", c => c
             .MaxTargets(1_000)
             .SignedCallbacks(CallbackSecret)
