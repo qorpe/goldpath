@@ -175,10 +175,7 @@ public static class GoldpathConsoleEndpoints
         ConsoleLinkRules.Validate(options.Links);
         var links = options.Links.ToArray();
 
-        var assembly = typeof(GoldpathConsoleEndpoints).Assembly;
-        // The resource prefix follows the ROOT NAMESPACE (Goldpath), not the assembly name —
-        // `Goldpath.Console.wwwroot` would find nothing and every request would 404.
-        var files = new EmbeddedFileProvider(assembly, "Goldpath.wwwroot");
+        var files = ConsoleFiles();
         var group = endpoints.MapGroup(prefix);
         AdminSurfaceGuard.Apply(endpoints, group, prefix, exposeUnsecured);
 
@@ -232,6 +229,18 @@ public static class GoldpathConsoleEndpoints
 
         return endpoints;
     }
+
+    /// <summary>
+    /// The ONE place the console's assets come from. An embedded provider can only return
+    /// resources compiled into this assembly, which is why an asset path cannot walk out of
+    /// the bundle (threat model T-CON-03). It is a method rather than a line inside
+    /// <see cref="MapGoldpathConsole"/> so the traversal tests resolve against the very
+    /// provider the route serves from: swap it for a disk-backed one and they go red.
+    /// </summary>
+    internal static IFileProvider ConsoleFiles()
+        // The resource prefix follows the ROOT NAMESPACE (Goldpath), not the assembly name —
+        // `Goldpath.Console.wwwroot` would find nothing and every request would 404.
+        => new EmbeddedFileProvider(typeof(GoldpathConsoleEndpoints).Assembly, "Goldpath.wwwroot");
 
     /// <summary>
     /// Resolves one request against the embedded console. Internal rather than private so

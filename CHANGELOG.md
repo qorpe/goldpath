@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **The served console's asset route is pinned against path traversal (threat model T-CON-03, GA gate G15, #454).**
+  `Goldpath.Console.Tests.ConsoleTraversalTests` asserts `404` for `../`, `..\`, `..%5c`, `%2e%2e%2f`, `..%2f`,
+  absolute and drive-letter paths, through `Serve` and over the mapped route. Every payload aims at a file that exists,
+  so swapping the embedded provider for a disk-backed one turns the test red instead of turning the route into a file
+  read. No behaviour change: the provider moved into an internal `ConsoleFiles()` so the tests resolve against the one
+  the route serves from. Writing it measured why the provider is the only holder: routing decodes `%5C`, and the
+  console's `\`-to-`/` rewrite then rebuilds `..%5c` into `../` after the server has normalised dot segments.
 - **Notification, Approvals, FileExchange and the audit log, proven on Oracle (GA gate G7, slice O-5b, #410).** Tests
   only: no package changes.
   - **Goldens.** The O-2 composed model now adds the four modules' contributions, so the Oracle golden pins their columns,
@@ -416,6 +423,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   100000 and 90022 leave the INFO list in `scripts/zap-baseline.conf`, so they fail the night again (WARN)
   if the 500 ever returns. Proof: `Goldpath.Bulk.Tests.AdminEndpointsTests` over TestServer with the host's
   exception handler, red (`500`) with the lookup removed.
+- **Archival: an entry whose `DueAt` carries sub-microsecond ticks now verifies on PostgreSQL (#383).** The engine
+  hashed `DueAt` at 100 ns, but `timestamptz` stores microseconds, so verification re-hashed a different value and
+  reported "document does not match its content hash" with nothing tampered. It happened whenever the candidate's
+  `DueAt` carried sub-microsecond ticks: a `DueWhen` date selector that reads the clock or does fractional arithmetic,
+  or archiving in the scope that saved the rows (the tracked value still has its 100 ns ticks). The archival job
+  reading a stored PostgreSQL column was not affected. The engine now truncates `DueAt` to
+  whole microseconds once, and hashes and stores that one value. The content-hash format is unchanged, so entries
+  already written keep verifying exactly as before, including full-tick entries on SQL Server and Oracle (pinned by
+  `ArchiveDueAtPrecisionTests` against a hash computed outside .NET). Entries already written on PostgreSQL with
+  sub-microsecond `DueAt` stay unverifiable; open-threads T58 holds their remedy.
 - **GP1202 no longer flags a literal client name beside a stored API key (#337).** `ApiKeys` maps a client name to its
   key, but `options.ApiKeys.Add("job", keyFromVault)` was reported as a secret in source because ANY string argument
   that was a literal counted. On `Add`, only the value (the key) counts now, as it already did for the indexer form
