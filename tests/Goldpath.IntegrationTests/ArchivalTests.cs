@@ -92,6 +92,48 @@ public sealed class ArchivalTests : IAsyncLifetime
         return options;
     }
 
+    /// <summary>
+    /// #383: PostgreSQL's <c>timestamptz</c> keeps microseconds, a <see cref="DateTimeOffset"/>
+    /// carries 100 ns ticks. An entry whose <c>DueAt</c> was hashed at full ticks and stored at
+    /// microseconds can never verify again — "document does not match its content hash" with
+    /// nothing tampered. The candidate here is archived in the SAME scope that saved it, so its
+    /// tracked <c>CancelledAt</c> still carries the sub-microsecond ticks a column read would
+    /// have dropped: the shape a <c>DueWhen</c> date selector that reads the clock produces.
+    /// </summary>
+    [Fact]
+    public async Task An_entry_whose_DueAt_carries_sub_microsecond_ticks_verifies_on_postgres()
+    {
+        var engine = new GoldpathArchiveEngine<ArchDb>(TimeProvider.System, NullLogger<GoldpathArchiveEngine<ArchDb>>.Instance);
+        var options = PolicyArchival();
+        var definition = options.Archives[0];
+        // 0.1234567 s past the minute: the trailing 7 is the tick PostgreSQL cannot hold.
+        var cancelledAt = new DateTimeOffset(2026, 1, 15, 10, 30, 0, TimeSpan.Zero).AddTicks(1_234_567);
+        Assert.NotEqual(0, cancelledAt.UtcTicks % 10);
+
+        using (var scope = _services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ArchDb>();
+            db.Policies.Add(new Policy { Id = Guid.NewGuid(), Holder = "holder", CancelledAt = cancelledAt });
+            await db.SaveChangesAsync();
+            Assert.Equal(1, await engine.ArchiveNextBatchAsync(scope.ServiceProvider, definition, 10, CancellationToken.None));
+        }
+
+        using (var scope = _services.CreateScope())
+        {
+            var findings = await engine.VerifySliceAsync(scope.ServiceProvider, definition, 1, 1, CancellationToken.None);
+            Assert.True(findings.Count == 0, string.Join("; ", findings.Select(f => f.Problem)));
+
+            // What was stored is what was hashed: the microsecond the store can hold.
+            var stored = await scope.ServiceProvider.GetRequiredService<ArchDb>().Set<GoldpathArchiveEntry>().AsNoTracking().SingleAsync();
+            Assert.Equal(cancelledAt.AddTicks(-7), stored.DueAt);
+
+            // And the admin surface's own verification agrees.
+            var admin = new GoldpathArchiveAdminService<ArchDb>(
+                engine, options, _services.GetRequiredService<IServiceScopeFactory>(), TimeProvider.System);
+            Assert.Empty(await admin.VerifyAsync("Policy", CancellationToken.None));
+        }
+    }
+
     [Fact]
     public async Task The_full_lifecycle_holds_on_postgres()
     {

@@ -414,6 +414,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **Archival: an entry whose `DueAt` carries sub-microsecond ticks now verifies on PostgreSQL (#383).** The engine
+  hashed `DueAt` at 100 ns, but `timestamptz` stores microseconds, so verification re-hashed a different value and
+  reported "document does not match its content hash" with nothing tampered. It happened whenever the candidate's
+  `DueAt` carried sub-microsecond ticks: a `DueWhen` date selector that reads the clock or does fractional arithmetic,
+  or archiving in the scope that saved the rows (the tracked value still has its 100 ns ticks). The archival job
+  reading a stored PostgreSQL column was not affected. The engine now truncates `DueAt` to
+  whole microseconds once, and hashes and stores that one value. The content-hash format is unchanged, so entries
+  already written keep verifying exactly as before, including full-tick entries on SQL Server and Oracle (pinned by
+  `ArchiveDueAtPrecisionTests` against a hash computed outside .NET). Entries already written on PostgreSQL with
+  sub-microsecond `DueAt` stay unverifiable; open-threads T58 holds their remedy.
 - **GP1202 no longer flags a literal client name beside a stored API key (#337).** `ApiKeys` maps a client name to its
   key, but `options.ApiKeys.Add("job", keyFromVault)` was reported as a secret in source because ANY string argument
   that was a literal counted. On `Add`, only the value (the key) counts now, as it already did for the indexer form
