@@ -35,6 +35,9 @@ public static class GoldpathCampaignMetrics
     private static readonly Counter<long> CallbacksRejectedTotal = Meter.CreateCounter<long>(
         "goldpath_campaign_callbacks_rejected_total", description: "Callbacks refused for a missing, stale or wrong signature (R2.8).");
 
+    private static readonly Counter<long> TuningReloadRefusedTotal = Meter.CreateCounter<long>(
+        "goldpath_campaign_tuning_reload_refused_total", description: "Reloads of Goldpath:Campaign refused for an invalid value; the previous values stayed in force (R3.3).");
+
     private static readonly object SnapshotLock = new();
     private static readonly Dictionary<Guid, (string Type, long Remaining, long InFlight)> Snapshots = [];
 
@@ -74,6 +77,8 @@ public static class GoldpathCampaignMetrics
             FailedTotal.Add(failed, tag);
         }
     }
+
+    internal static void TuningReloadRefused() => TuningReloadRefusedTotal.Add(1);
 
     internal static void WindowClosed(string type)
         => WindowClosedTicks.Add(1, new KeyValuePair<string, object?>("type", type));

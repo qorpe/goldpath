@@ -415,9 +415,7 @@ public sealed class AuthSurfaceAnalyzer : DiagnosticAnalyzer
                     Descriptors.AllowAnonymousInventory, invocation.Syntax.GetLocation(), "this endpoint"));
             }
             else if (invocation.TargetMethod.Name is "UseHmacRedaction" or "Add"
-                && invocation.Arguments.Any(a =>
-                    a.Parameter?.Type.SpecialType == SpecialType.System_String
-                    && Batch3Matching.IsRawStringArgument(a.Value))
+                && invocation.Arguments.Any(a => IsSecretArgument(invocation.TargetMethod.Name, a))
                 && (invocation.TargetMethod.Name == "UseHmacRedaction"
                     || IsApiKeysMember(invocation.Instance)))
             {
@@ -451,6 +449,13 @@ public sealed class AuthSurfaceAnalyzer : DiagnosticAnalyzer
 
     private static bool IsApiKeysMember(IOperation? instance)
         => instance is IPropertyReferenceOperation { Property.Name: "ApiKeys" };
+
+    // ApiKeys maps a client name to its key: on Add only the value (the key) is a secret, as on
+    // the indexer form; a literal client name beside a key read from a store is not a finding.
+    private static bool IsSecretArgument(string method, IArgumentOperation argument)
+        => argument.Parameter is { Type.SpecialType: SpecialType.System_String } parameter
+            && (method != "Add" || parameter.Ordinal == 1)
+            && Batch3Matching.IsRawStringArgument(argument.Value);
 }
 
 /// <summary>
