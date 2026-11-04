@@ -25,6 +25,9 @@ public sealed class GoldpathCampaignEngine<TContext>
         _logger = logger;
     }
 
+    /// <summary>The engine's clock — the item handler times its calls on it (RFC §7).</summary>
+    internal TimeProvider Time => _time;
+
     /// <summary>Creates a campaign INSTANCE over a registered type (operators launch, developers ship types — D1).</summary>
     public async Task<GoldpathCampaign> CreateAsync(
         IServiceProvider services, string typeKey, string name,
@@ -53,6 +56,10 @@ public sealed class GoldpathCampaignEngine<TContext>
             Priority = effective.Priority,
             // R3.1: Npgsql refuses a non-zero offset on timestamptz, so the instant is stored in UTC.
             StartAt = effective.StartAt?.ToUniversalTime(),
+            SuspendOnFailureRatio = effective.SuspendOnFailureRatio,
+            SuspendWindow = effective.SuspendWindow,
+            SuspendMinSample = effective.SuspendMinSample,
+            MaxAwaitingAck = effective.MaxAwaitingAck,
             QuotaDay = effective.LocalDay(_time.GetUtcNow()),
             CreatedAt = _time.GetUtcNow(),
             CreatedBy = actor,
@@ -87,6 +94,10 @@ public sealed class GoldpathCampaignEngine<TContext>
             MaxAttempts = campaign.MaxAttempts,
             Priority = campaign.Priority,
             StartAt = campaign.StartAt,
+            SuspendOnFailureRatio = campaign.SuspendOnFailureRatio,
+            SuspendWindow = campaign.SuspendWindow ?? GoldpathCampaignPolicy.DefaultSuspendWindow,
+            SuspendMinSample = campaign.SuspendMinSample ?? GoldpathCampaignPolicy.DefaultSuspendMinSample,
+            MaxAwaitingAck = campaign.MaxAwaitingAck,
         };
 
     /// <summary>
@@ -543,6 +554,22 @@ public sealed class GoldpathCampaignEngine<TContext>
             };
     }
 
+    /// <summary>The states a success settles (R2.1), each updated on its own so the flush knows which rows left <c>AwaitingAck</c> (R3.4).</summary>
+    private static readonly GoldpathCampaignItemState[] SettleableStates =
+        [GoldpathCampaignItemState.Processing, GoldpathCampaignItemState.AwaitingAck];
+
+    /// <summary>
+    /// Re-counts <see cref="GoldpathCampaign.AwaitingAckCount"/> from the items (R3.4): the sink's
+    /// running count is a cache (D3), and the leader corrects any drift once per leadership slice.
+    /// One set-based update over the campaigns that hold work in flight or a non-zero count; R2's
+    /// <c>(CampaignId, State, …)</c> indexes serve the count. Returns how many rows it rewrote.
+    /// </summary>
+    internal async Task<int> RecountAwaitingAckAsync(TContext db, CancellationToken cancellationToken)
+        => await db.Set<GoldpathCampaign>()
+            .Where(c => c.ReleasedThrough > c.SucceededCount + c.FailedCount || c.AwaitingAckCount != 0)
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.AwaitingAckCount, c => db.Set<GoldpathCampaignItem>()
+                .LongCount(i => i.CampaignId == c.Id && i.State == GoldpathCampaignItemState.AwaitingAck)), cancellationToken);
+
     /// <summary>
     /// Applies one BATCH of outcomes (the sink's flush, constraint 4): set-based item
     /// updates + relative campaign counters — never a write per item. R2.1 adds the
@@ -550,7 +577,9 @@ public sealed class GoldpathCampaignEngine<TContext>
     /// R2.3 stamps the jittered ripe instant on every retry. Every update is bound to the
     /// ATTEMPT its outcome describes (R2 review #2): the row must still be on that attempt
     /// (<c>Attempts == Attempt - 1</c>), so a redelivered outcome of an earlier attempt is
-    /// a no-op instead of a verdict on the attempt now in flight.
+    /// a no-op instead of a verdict on the attempt now in flight. R3.4: the same flush keeps
+    /// <see cref="GoldpathCampaign.AwaitingAckCount"/>, by the rows it moved into and out of
+    /// <c>AwaitingAck</c>; the ack sweep comes through here too.
     /// </summary>
     public async Task ApplyOutcomesAsync(
         TContext db, Guid campaignId, IReadOnlyList<GoldpathCampaignOutcomeMessage> outcomes, CancellationToken cancellationToken)
@@ -558,36 +587,56 @@ public sealed class GoldpathCampaignEngine<TContext>
         var now = _time.GetUtcNow();
         var accepted = outcomes.Where(o => !o.Succeeded && o.Accepted).ToArray();
         var failed = outcomes.Where(o => !o.Succeeded && !o.Accepted).ToArray();
-        var policy = failed.Length == 0
-            ? null
-            : await db.Set<GoldpathCampaign>().AsNoTracking()
-                .Where(c => c.Id == campaignId).Select(c => new { c.MaxAttempts, c.State }).SingleAsync(cancellationToken);
+        // One read per flush: the type tags every outcome this flush counts (RFC §7), and the
+        // ladder below needs the attempts and the state.
+        var policy = await db.Set<GoldpathCampaign>().AsNoTracking()
+            .Where(c => c.Id == campaignId).Select(c => new { c.Type, c.MaxAttempts, c.State }).SingleOrDefaultAsync(cancellationToken);
+        if (policy is null)
+        {
+            return;   // an outcome naming no campaign has no row to move — a no-op, as every guard below would make it
+        }
+
+        var claims = await ClaimsOfAsync(db, campaignId, outcomes, cancellationToken);
         // The ladder runs only while the pacer still releases this campaign (or will after a
         // resume). On a finished, aborted or expired campaign a retryable failure — an ack
         // timeout, a replay that failed again — is terminal: AwaitingRetry there would wait
         // for a release that never comes (R2 review #8).
-        var maxAttempts = policy is null
+        var maxAttempts = failed.Length == 0
             ? 1
             : policy.State is GoldpathCampaignState.Created or GoldpathCampaignState.Enumerating
                 or GoldpathCampaignState.Running or GoldpathCampaignState.Paused or GoldpathCampaignState.Ready
+                or GoldpathCampaignState.Suspended   // R3.6: a resume finds its retries waiting, as after a pause
                 ? policy.MaxAttempts
                 : 0;
 
+        // R3.4: AwaitingAckCount moves by the ROWS this flush moved into and out of AwaitingAck,
+        // never by the outcomes it was handed — a duplicate or stale outcome whose guard matches
+        // nothing moves no row, so it moves no count either.
+        var enteredAck = 0;
+        var leftAck = 0;
         var settled = 0;
         foreach (var attempt in outcomes.Where(o => o.Succeeded).GroupBy(o => o.Attempt))
         {
             // A success settles a claimed item OR an accepted one (the callback said yes) —
-            // set-based per attempt number, and there are only ever a handful of those.
+            // set-based per attempt number and prior state, and there are only ever a handful of those.
             var seqs = attempt.Select(o => o.Seq).ToArray();
             var anyAttempt = attempt.Key == 0;
             var prior = attempt.Key - 1;
-            settled += await db.Set<GoldpathCampaignItem>()
-                .Where(i => i.CampaignId == campaignId && seqs.Contains(i.Seq)
-                    && (i.State == GoldpathCampaignItemState.Processing || i.State == GoldpathCampaignItemState.AwaitingAck)
-                    && (anyAttempt || i.Attempts == prior))
-                .ExecuteUpdateAsync(s => s
-                    .SetProperty(i => i.State, GoldpathCampaignItemState.Succeeded)
-                    .SetProperty(i => i.CompletedAt, now), cancellationToken);
+            var moved = 0;
+            foreach (var from in SettleableStates)
+            {
+                var movedFrom = await db.Set<GoldpathCampaignItem>()
+                    .Where(i => i.CampaignId == campaignId && seqs.Contains(i.Seq) && i.State == from
+                        && (anyAttempt || i.Attempts == prior))
+                    .ExecuteUpdateAsync(s => s
+                        .SetProperty(i => i.State, GoldpathCampaignItemState.Succeeded)
+                        .SetProperty(i => i.CompletedAt, now), cancellationToken);
+                moved += movedFrom;
+                leftAck += from == GoldpathCampaignItemState.AwaitingAck ? movedFrom : 0;
+            }
+
+            settled += moved;
+            GoldpathCampaignMetrics.Applied(policy.Type, "succeeded", null, moved);
         }
 
         foreach (var acceptance in accepted)
@@ -596,16 +645,19 @@ public sealed class GoldpathCampaignEngine<TContext>
             // names the correlation id or the deadline passes. Still in flight.
             var anyAttempt = acceptance.Attempt == 0;
             var prior = acceptance.Attempt - 1;
-            await db.Set<GoldpathCampaignItem>()
+            var moved = await db.Set<GoldpathCampaignItem>()
                 .Where(i => i.CampaignId == campaignId && i.Seq == acceptance.Seq && i.State == GoldpathCampaignItemState.Processing
                     && (anyAttempt || i.Attempts == prior))
                 .ExecuteUpdateAsync(s => s
                     .SetProperty(i => i.State, GoldpathCampaignItemState.AwaitingAck)
                     .SetProperty(i => i.CorrelationId, acceptance.CorrelationId)
                     .SetProperty(i => i.AckDeadline, acceptance.AckDeadline ?? now + _options.NextRetryDelay(1)), cancellationToken);
+            enteredAck += moved;
+            GoldpathCampaignMetrics.Applied(policy.Type, "accepted", null, moved);
         }
 
         var exhausted = 0;
+        var retrying = 0;
         foreach (var failure in failed)
         {
             // Failures are the RARE path by design, so the per-item read that the jittered
@@ -626,11 +678,12 @@ public sealed class GoldpathCampaignEngine<TContext>
             }
 
             var attemptsAfter = current.Attempts + 1;
+            int moved;
             if (failure.Retryable && attemptsAfter < maxAttempts)
             {
                 // R1.3/R2.3: attempts LEFT → wait out the (jittered) rung, then the pacer re-releases.
                 var nextAttemptAt = now + _options.NextRetryDelay(attemptsAfter);
-                await db.Set<GoldpathCampaignItem>()
+                moved = await db.Set<GoldpathCampaignItem>()
                     .Where(i => i.CampaignId == campaignId && i.Seq == failure.Seq && i.State == current.State && i.Attempts == current.Attempts)
                     .ExecuteUpdateAsync(s => s
                         .SetProperty(i => i.State, GoldpathCampaignItemState.AwaitingRetry)
@@ -643,11 +696,13 @@ public sealed class GoldpathCampaignEngine<TContext>
                         .SetProperty(i => i.AckDeadline, (DateTimeOffset?)null)
                         .SetProperty(i => i.Error, failure.Error)
                         .SetProperty(i => i.ErrorCode, failure.ErrorCode), cancellationToken);
+                retrying += moved;
+                GoldpathCampaignMetrics.Applied(policy.Type, "retry", failure.ErrorCode, moved);
             }
             else
             {
                 // Exhausted, or the provider said a retry cannot help (R2.1): durable failure, once.
-                exhausted += await db.Set<GoldpathCampaignItem>()
+                moved = await db.Set<GoldpathCampaignItem>()
                     .Where(i => i.CampaignId == campaignId && i.Seq == failure.Seq && i.State == current.State && i.Attempts == current.Attempts)
                     .ExecuteUpdateAsync(s => s
                         .SetProperty(i => i.State, GoldpathCampaignItemState.Failed)
@@ -656,19 +711,83 @@ public sealed class GoldpathCampaignEngine<TContext>
                         .SetProperty(i => i.NextAttemptAt, (DateTimeOffset?)null)
                         .SetProperty(i => i.Error, failure.Error)
                         .SetProperty(i => i.ErrorCode, failure.ErrorCode), cancellationToken);
+                exhausted += moved;
+                GoldpathCampaignMetrics.Applied(policy.Type, "failed", failure.ErrorCode, moved);
+            }
+
+            leftAck += current.State == GoldpathCampaignItemState.AwaitingAck ? moved : 0;
+        }
+
+        foreach (var outcome in outcomes)
+        {
+            // The lag of what this flush made durable, for each outcome that answered the claim it
+            // read, once per item (an acceptance's later callback answers a wait, not a claim, and is not timed).
+            if (claims.Remove(outcome.Seq, out var claim)
+                && (outcome.Attempt == 0 || claim.Attempts == outcome.Attempt - 1) && claim.ClaimedAt is { } claimedAt)
+            {
+                GoldpathCampaignMetrics.Flushed(policy.Type, now - claimedAt);
             }
         }
 
+        // R3.6: the failure-ratio window rides the same UPDATE — every completed attempt is an
+        // outcome, a retryable failure a failure; an acceptance is neither until it settles.
+        // Counted by rows touched, like the rest, so a duplicate outcome moves no window.
+        var windowFailures = exhausted + retrying;
+        var windowOutcomes = settled + windowFailures;
+        var ackDelta = enteredAck - leftAck;
         await db.Set<GoldpathCampaign>().Where(c => c.Id == campaignId)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(c => c.SucceededCount, c => c.SucceededCount + settled)
-                .SetProperty(c => c.FailedCount, c => c.FailedCount + exhausted), cancellationToken);
+                .SetProperty(c => c.FailedCount, c => c.FailedCount + exhausted)
+                .SetProperty(c => c.WindowOutcomes, c => c.WindowOutcomes + windowOutcomes)
+                .SetProperty(c => c.WindowFailures, c => c.WindowFailures + windowFailures)
+                .SetProperty(c => c.AwaitingAckCount, c => c.AwaitingAckCount + ackDelta), cancellationToken);
         GoldpathCampaignMetrics.Outcomes(campaignId, settled, exhausted);
 
         if (accepted.Length > 0)
         {
             await SettleParkedCallbacksAsync(db, campaignId, accepted, cancellationToken);
         }
+    }
+
+    /// <summary>
+    /// Restarts a campaign's failure-ratio window (R3.6) by SUBTRACTING the counters the caller
+    /// read, never by zeroing them: an outcome the sink flushed after the read stays in the new
+    /// window instead of vanishing. Stamps <see cref="GoldpathCampaign.WindowStartedAt"/>. A window
+    /// that another restart already emptied below what was read is left alone, so two restarts racing
+    /// on one read can never drive a counter negative.
+    /// </summary>
+    internal static Task<int> RestartWindowAsync(
+        TContext db, Guid campaignId, long outcomesRead, long failuresRead, DateTimeOffset now, CancellationToken cancellationToken)
+        => db.Set<GoldpathCampaign>()
+            .Where(c => c.Id == campaignId && c.WindowOutcomes >= outcomesRead && c.WindowFailures >= failuresRead)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(c => c.WindowOutcomes, c => c.WindowOutcomes - outcomesRead)
+                .SetProperty(c => c.WindowFailures, c => c.WindowFailures - failuresRead)
+                .SetProperty(c => c.WindowStartedAt, now), cancellationToken);
+
+    /// <summary>
+    /// The claim instant and attempt of every item this flush may answer straight from
+    /// <c>Processing</c>, read before the flush moves them (the sink-lag histogram, RFC §7).
+    /// Read in slices of 500 so a long batch never meets a provider's IN-list limit.
+    /// </summary>
+    private static async Task<Dictionary<long, (int Attempts, DateTimeOffset? ClaimedAt)>> ClaimsOfAsync(
+        TContext db, Guid campaignId, IReadOnlyList<GoldpathCampaignOutcomeMessage> outcomes, CancellationToken cancellationToken)
+    {
+        var claims = new Dictionary<long, (int Attempts, DateTimeOffset? ClaimedAt)>();
+        foreach (var slice in outcomes.Select(o => o.Seq).Distinct().Chunk(500))
+        {
+            var rows = await db.Set<GoldpathCampaignItem>().AsNoTracking()
+                .Where(i => i.CampaignId == campaignId && slice.Contains(i.Seq) && i.State == GoldpathCampaignItemState.Processing)
+                .Select(i => new { i.Seq, i.Attempts, i.ClaimedAt })
+                .ToListAsync(cancellationToken);
+            foreach (var row in rows)
+            {
+                claims[row.Seq] = (row.Attempts, row.ClaimedAt);
+            }
+        }
+
+        return claims;
     }
 
     /// <summary>

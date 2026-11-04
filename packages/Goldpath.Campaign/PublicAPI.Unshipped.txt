@@ -149,6 +149,7 @@ Goldpath.GoldpathCampaign.StartAt.get -> System.DateTimeOffset?
 Goldpath.GoldpathCampaign.StartAt.set -> void
 Goldpath.GoldpathCampaignCeiling
 Goldpath.GoldpathCampaignCeiling.GoldpathCampaignCeiling() -> void
+const Goldpath.GoldpathCampaignCeiling.GlobalName = "*" -> string!
 Goldpath.GoldpathCampaignCeiling.Kind.get -> Goldpath.GoldpathCampaignCeilingKind
 Goldpath.GoldpathCampaignCeiling.Kind.set -> void
 Goldpath.GoldpathCampaignCeiling.Name.get -> string!
@@ -259,3 +260,58 @@ virtual Goldpath.GoldpathCampaignActionResult.Equals(Goldpath.GoldpathCampaignAc
 virtual Goldpath.GoldpathCampaignActionResult.PrintMembers(System.Text.StringBuilder! builder) -> bool
 ~override Goldpath.GoldpathCampaignFairShareClaim.Equals(object obj) -> bool
 ~override Goldpath.GoldpathCampaignFairShareClaim.ToString() -> string
+Goldpath.GoldpathCampaignInfo.PolicyVersion.get -> long
+Goldpath.GoldpathCampaignInfo.PolicyVersion.init -> void
+Goldpath.GoldpathCampaignThrottleResult
+Goldpath.GoldpathCampaignThrottleResult.GoldpathCampaignThrottleResult(bool Ok, string! Message, long PolicyVersion, bool Stale) -> void
+Goldpath.GoldpathCampaignThrottleResult.Ok.get -> bool
+Goldpath.GoldpathCampaignThrottleResult.Ok.init -> void
+Goldpath.GoldpathCampaignThrottleResult.Message.get -> string!
+Goldpath.GoldpathCampaignThrottleResult.Message.init -> void
+Goldpath.GoldpathCampaignThrottleResult.PolicyVersion.get -> long
+Goldpath.GoldpathCampaignThrottleResult.PolicyVersion.init -> void
+Goldpath.GoldpathCampaignThrottleResult.Stale.get -> bool
+Goldpath.GoldpathCampaignThrottleResult.Stale.init -> void
+Goldpath.GoldpathCampaignAdminService<TContext>.ThrottleAsync(System.Guid id, Goldpath.GoldpathCampaignThrottle! patch, long? expectedPolicyVersion, string! actor, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathCampaignThrottleResult!>!
+Goldpath.GoldpathCampaignThrottleResult.<Clone>$() -> Goldpath.GoldpathCampaignThrottleResult!
+Goldpath.GoldpathCampaignThrottleResult.Deconstruct(out bool Ok, out string! Message, out long PolicyVersion, out bool Stale) -> void
+Goldpath.GoldpathCampaignThrottleResult.Equals(Goldpath.GoldpathCampaignThrottleResult? other) -> bool
+override Goldpath.GoldpathCampaignThrottleResult.Equals(object? obj) -> bool
+override Goldpath.GoldpathCampaignThrottleResult.GetHashCode() -> int
+override Goldpath.GoldpathCampaignThrottleResult.ToString() -> string!
+static Goldpath.GoldpathCampaignThrottleResult.operator !=(Goldpath.GoldpathCampaignThrottleResult? left, Goldpath.GoldpathCampaignThrottleResult? right) -> bool
+static Goldpath.GoldpathCampaignThrottleResult.operator ==(Goldpath.GoldpathCampaignThrottleResult? left, Goldpath.GoldpathCampaignThrottleResult? right) -> bool
+Goldpath.GoldpathCampaignPolicy.SuspendOnFailureRatio.get -> double?
+Goldpath.GoldpathCampaignPolicy.SuspendOnFailureRatio.init -> void
+Goldpath.GoldpathCampaignPolicy.SuspendWindow.get -> int
+Goldpath.GoldpathCampaignPolicy.SuspendWindow.init -> void
+Goldpath.GoldpathCampaignPolicy.SuspendMinSample.get -> int
+Goldpath.GoldpathCampaignPolicy.SuspendMinSample.init -> void
+Goldpath.GoldpathCampaignThrottle.SuspendOnFailureRatio.get -> double?
+Goldpath.GoldpathCampaignThrottle.SuspendOnFailureRatio.init -> void
+Goldpath.GoldpathCampaignThrottle.ClearSuspendOnFailureRatio.get -> bool
+Goldpath.GoldpathCampaignThrottle.ClearSuspendOnFailureRatio.init -> void
+Goldpath.GoldpathCampaignThrottle.SuspendWindow.get -> int?
+Goldpath.GoldpathCampaignThrottle.SuspendWindow.init -> void
+Goldpath.GoldpathCampaignThrottle.SuspendMinSample.get -> int?
+Goldpath.GoldpathCampaignThrottle.SuspendMinSample.init -> void
+Goldpath.GoldpathCampaignInfo.SuspendOnFailureRatio.get -> double?
+Goldpath.GoldpathCampaignInfo.SuspendOnFailureRatio.init -> void
+Goldpath.GoldpathCampaignInfo.SuspendWindow.get -> int
+Goldpath.GoldpathCampaignInfo.SuspendWindow.init -> void
+Goldpath.GoldpathCampaignInfo.SuspendMinSample.get -> int
+Goldpath.GoldpathCampaignInfo.SuspendMinSample.init -> void
+Goldpath.GoldpathCampaignInfo.SuspendedReason.get -> string?
+Goldpath.GoldpathCampaignInfo.SuspendedReason.init -> void
+Goldpath.GoldpathCampaignInfo.FailureRatioNow.get -> double?
+Goldpath.GoldpathCampaignInfo.FailureRatioNow.init -> void
+Goldpath.GoldpathCampaignInfo.AwaitingAck.get -> long
+Goldpath.GoldpathCampaignInfo.AwaitingAck.init -> void
+Goldpath.GoldpathCampaignInfo.MaxAwaitingAck.get -> int?
+Goldpath.GoldpathCampaignInfo.MaxAwaitingAck.init -> void
+Goldpath.GoldpathCampaignPolicy.MaxAwaitingAck.get -> int?
+Goldpath.GoldpathCampaignPolicy.MaxAwaitingAck.init -> void
+Goldpath.GoldpathCampaignThrottle.ClearMaxAwaitingAck.get -> bool
+Goldpath.GoldpathCampaignThrottle.ClearMaxAwaitingAck.init -> void
+Goldpath.GoldpathCampaignThrottle.MaxAwaitingAck.get -> int?
+Goldpath.GoldpathCampaignThrottle.MaxAwaitingAck.init -> void

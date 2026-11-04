@@ -97,6 +97,15 @@ Line numbers are those of `PublicAPI.Shipped.txt` on 2026-10-20, and they match
 | 12 | `GoldpathCampaignOutcomeSink<TContext>.Consume(MassTransit.ConsumeContext<MassTransit.Batch<GoldpathCampaignOutcomeMessage>>)` (Campaign:233) | A new seam contract, **`IIntegrationEventBatchHandler<TEvent>`** with `HandleAsync(IReadOnlyList<IntegrationEvent<TEvent>> batch, CancellationToken)`, where `IntegrationEvent<TEvent>` pairs each message with its `IntegrationEventContext`. It is registered with `AddBatchHandler<TEvent, THandler>(new GoldpathBatchOptions { MessageLimit = 200, TimeLimit = 500 ms, ConcurrencyLimit = 1 })`, today's numbers. Semantics both engines must meet: delivery in batches bounded by size **or** time, one batch in flight per endpoint when `ConcurrencyLimit = 1`, and a throw fails the whole batch into retry. Conformance gains a fact for each. `GoldpathCampaignOutcomeSinkDefinition<TContext>` (Campaign:235–236), a `ConsumerDefinition` subclass whose PublicAPI line does not show its MassTransit base type, is **removed** with it (§4.2) | `Goldpath.Messaging` (contract), `Goldpath.Campaign` (handler) |
 | 13 | `AddGoldpathCampaignConsumers<TContext>(this MassTransit.IBusRegistrationConfigurator)` (Campaign:296) | `AddGoldpathCampaign<TContext>(this GoldpathMessagingBuilder)`, which registers the item handler and the outcome batch handler | `Goldpath.Campaign` |
 
+**Two additive rows (owner decision 2026-10-27, G5 Part 2/5, [#331](https://github.com/qorpe/goldpath/issues/331)).**
+They replace no shipped line, so `engine-gate.sh` and its baseline are unaffected. Each is implemented on both
+engines and proven by a conformance fact on both (messaging-exit §7.1).
+
+| # | Shipped line today | Becomes | Where |
+|---|---|---|---|
+| 14 | none (new) | `GoldpathMessagingBuilder.AddHandler<TEvent, THandler>(GoldpathHandlerOptions options, string? endpointName = null)`, with `GoldpathHandlerOptions.ConcurrencyLimit` (`int?`, 1 to 65,535, null for the engine's default). The limit belongs to the **endpoint**: it bounds both the deliveries handled at once and the broker prefetch, every handler on the endpoint runs under it, and two handlers naming different limits for one endpoint are refused. The engine contract carries it as `GoldpathHandlerRegistration.ConcurrencyLimit`. MassTransit sets the endpoint's `ConcurrentMessageLimit` and `PrefetchCount`; Wolverine runs the listener in parallel with native acknowledgements, at `MaximumParallelMessages` and `PreFetchCount` of the limit (without a limit, it handles inline as before). Proven by S2.14 (order at a limit of 1), S2.15 (a limit of N reached, never exceeded) and S2.18 (the retry ladder and error queue on a limited endpoint) | `Goldpath.Messaging` (options), adapter (composition) |
+| 15 | none (new) | `[GoldpathMessageName("Namespace:Type")]` on an integration event class fixes its wire identity: the message-type exchange's name and the `urn:message:` URN its envelope carries. A renamed or moved CLR type keeps its messages flowing with producers and consumers still on the old name, so the name is **part of the wire S4 keeps compatible** (§4.4). The attribute refuses a name an exchange or a URN cannot carry (blank, a `urn:` prefix, whitespace or a control character, `/`, `?`, `#`, more than 255 UTF-8 bytes); an engine names the type when it refuses one. Not inherited. MassTransit names the exchange through an entity-name formatter and maps the envelope's URNs in its serializer; Wolverine's wire derives both from the attribute. Proven by S2.17 on RabbitMQ. The in-memory test transport and the MassTransit-typed overloads do not honour it (open-threads T53) | `Goldpath.Messaging` (attribute), adapter (wire) |
+
 After Parts 2–4 the gate's baseline is empty and its ceiling is zero. That is G1's exit
 (GA readiness §8.1: "G1 check at zero outside the adapter packages").
 
@@ -156,7 +165,12 @@ other engine cannot see.
 
 **Headers.** Tenant travels as `X-Goldpath-Tenant` and correlation as `X-Correlation-Id`
 (`GoldpathHeaders`). Both are plain envelope `headers` entries, never an engine-specific
-property. The retry attempt is **not** a wire header that adapters exchange: each engine counts
+property. The publisher's span travels as `MT-Activity-Id` (a W3C `traceparent`): 8.x writes it into both the
+envelope's `headers` and the AMQP headers, and reads its parent from the AMQP one. Each engine continues the
+publisher's trace on consume and tags the consume span with `goldpath.tenant_id` and
+`goldpath.correlation_id` (messaging-exit §7.1 S2.16, measured per engine). The Wolverine adapter writes and
+reads the envelope entry only, so a trace across engines in a mixed fleet is not yet continuous (open-threads
+T51). The retry attempt is **not** a wire header that adapters exchange: each engine counts
 its own attempts for a delivery. The 8.x redelivery header (`MT-Redelivery-Count`) is read by
 every adapter, so a message redelivered across engines does not reset its ladder. The message
 id is the envelope's `messageId`, the inbox's dedup key on both sides.

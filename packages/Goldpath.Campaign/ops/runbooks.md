@@ -98,9 +98,21 @@ the pacer's run health lives on the goldpath-jobs dashboard. This board owns the
   queue — never in a silent success. On a campaign the pacer no longer releases (aborted,
   expired, finished — a replay) the timeout is terminal at once and filed for repair. A
   second attempt is a new acceptance with a new correlation id.
-- A campaign that stalls with `AwaitingAck` at `MaxInFlight`: every acceptance holds an
-  in-flight slot until its answer or its deadline. Raise `MaxInFlight` toward Tps × the ack
-  timeout the handler declares, or shorten the timeout.
+- A campaign that stalls with `AwaitingAck` at `MaxInFlight`: without `MaxAwaitingAck`, every
+  acceptance holds an in-flight slot until its answer or its deadline. Set `MaxAwaitingAck`
+  (`POST /{id}/throttle {"maxAwaitingAck": <n>}`, audited), so `MaxInFlight` keeps limiting the
+  live calls into the target system while the acceptances wait under their own ceiling; or
+  shorten the timeout the handler declares.
+- `goldpath_campaign_awaiting_ack` flat at `MaxAwaitingAck` and nothing releasing: the
+  acknowledgement ceiling is holding, by design (`goldpath_campaign_binding_constraint` reads
+  `awaiting_ack`). The target system is answering more slowly than
+  it accepts. Raise the ceiling only if it can carry that many open requests; otherwise wait for
+  the callbacks or their deadlines. The gauge is the row's running count, re-counted from the items
+  at each leadership slice, and held inside [0, in flight].
+- Nothing releasing while `goldpath_campaign_awaiting_ack` sits **below** `MaxAwaitingAck`: read
+  `goldpath_campaign_in_flight` too. The acknowledgement room is `MaxAwaitingAck − in flight`, so
+  retries waiting and live calls count against it as well; with `in_flight` at the ceiling the
+  pacer is holding by design.
 
 ## 9. Orphaned releases being published again (R2.6)
 
@@ -141,3 +153,16 @@ settle on a forged word.
 - Refused "after the end date": the start would fall after `endDate`'s local day, so the
   campaign would expire before it started. Move the end date in the same or an earlier call.
 - A start in the past means now. The start itself is audited `start` with the actor `system`.
+
+## 12. A throttle refused as stale (R3.5)
+
+- The refusal reads "The policy of '…' changed since you read it (version *n*, by *actor* at
+  *time*; you read version *m*) — re-read and retry". Somebody else's throttle landed between
+  your read and your write; yours was NOT applied, and the refusal is in the audit trail as
+  `throttle-refused` with both versions.
+- `GET /{id}` again, look at what the other operator set (`lastVerb`, or the audit's newest
+  `throttle`), decide whether your change still applies on top of theirs, and send it with the
+  version you just read.
+- A throttle sent without a version is never refused this way: the last writer wins, and the
+  version still moves once per applied throttle. A race with the pacer or a pause is not a policy
+  change, so it is re-read and applied; only a race into a terminal state is refused.

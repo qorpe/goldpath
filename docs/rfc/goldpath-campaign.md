@@ -148,11 +148,47 @@ Reference profile, `scripts/bench-campaign.sh` → `ops/campaign-benchmarks.md`:
 
 ## 7. Observability (shipped)
 
-`Goldpath.Campaign` meter: released/succeeded/failed totals per campaign, CURRENT TPS vs
-ceiling (the governor panel), in-flight gauge, remaining + ETA-at-current-policy, window
-state, quota consumption, sink flush lag, counter-reconcile events. Grafana board: the
-operator's single screen per campaign (progress, rate governor, failure rate, ETA) —
-"screen-trackable by construction" is the case's own bar. Runs ride the jobs dashboard.
+The `Goldpath.Campaign` meter exports exactly the instruments below — rewritten on 2026-10-31
+([#294](https://github.com/qorpe/goldpath/issues/294)) to say what is exported rather than what
+was meant to be. `MetricsExportTests` holds every row's name, unit and tags: an instrument
+added, renamed or re-tagged without this table changing fails that test.
+
+| Instrument | Kind, unit | Tags | What it says |
+|---|---|---|---|
+| `goldpath_campaign_released_total` | counter | `type` | items published to the broker |
+| `goldpath_campaign_succeeded_total`, `…_failed_total` | counter | `campaign` | items the sink settled, and items terminally failed (sink or stale-claim sweep) |
+| `goldpath_campaign_outcomes_total` | counter | `type`, `outcome`, `error_code` | rows the sink MOVED, by `outcome` (`succeeded`, `accepted`, `retry`, `failed`) and the provider's code (R2.1). `error_code` is `none` without one; a type's first 32 distinct codes are themselves; every later one, any code over 64 characters, any with a character other than a letter, a digit, `_`, `-` or `.` (free text: an address, a phrase), and any with a run of more than six digits or more than ten digits in all (an identifier echoed back as the code: a phone or account number, printed in groups or not) reads `other`; a numeric provider code such as `503` or `30007` is itself |
+| `goldpath_campaign_handler_duration` | histogram, s | `type` | one item handler call — the adapter's latency; a throw is timed too |
+| `goldpath_campaign_sink_flush_lag` | histogram, s | `type` | from an attempt's claim to the flush that made its outcome durable, once per item answered straight from `Processing`. It is the handler's time plus the sink's lag: the seam carries no send instant, so the sink's share alone is this minus `goldpath_campaign_handler_duration` (T57) |
+| `goldpath_campaign_window_closed_ticks_total` | counter | `type` | leader ticks that released nothing because the window or the day was closed |
+| `goldpath_campaign_ack_timeouts_total`, `…_orphans_rereleased_total`, `…_callbacks_parked_total`, `…_callbacks_rejected_total` | counter | `type` | R2.1, R2.6 and R2.8 (runbook §8) |
+| `goldpath_campaign_tuning_reload_refused_total` | counter | — | reloads of `Goldpath:Campaign` refused for an invalid value; the previous values stayed in force (R3.3) |
+| `goldpath_campaign_in_flight`, `…_remaining` | gauge | `campaign`, `type` | released and not terminal; enumerated and not released |
+| `goldpath_campaign_awaiting_ack` | gauge | `campaign`, `type` | items awaiting a callback (R3.4): the row's `AwaitingAckCount`, held inside [0, in flight] as the detail reads it |
+| `goldpath_campaign_tps_ceiling` | gauge | `campaign`, `type` | the running campaign's `Tps` — the ceiling `rate(goldpath_campaign_released_total)` is read against |
+| `goldpath_campaign_type_max_tps` | gauge | `type` | a type's `MaxTps` (R2.4); absent for a type without one |
+| `goldpath_campaign_global_tps` | gauge | — | `GlobalTps` (R1.4); absent when not configured |
+| `goldpath_campaign_binding_constraint` | gauge (1) | `campaign`, `type`, `constraint` | the limit that bound the running campaign's last tick: `tps`, `in_flight`, `awaiting_ack` (R3.4: the acknowledgement room is strictly smaller than the live-work room; a tie reads `in_flight`), `quota`, `window`, `type`, `global`, or `none` (it released less than it was granted — nothing more was ready). A shared ceiling that cut the allowance wins over the campaign's own limits; among those, a tie names `quota`, then `in_flight`, then `tps`, the one that will not lift by itself. A tick granted nothing names the limit that zeroed it |
+| `goldpath_campaign_released_today`, `…_daily_quota` | gauge | `campaign`, `type` | quota consumption: what the quota day released, against `DailyQuota` (absent without one) |
+| `goldpath_campaign_leader_last_tick` | gauge, s | — | when this process's pacer last ticked, in Unix seconds. Every process that ever led keeps its last value, so liveness is `time() - max(goldpath_campaign_leader_last_tick)` |
+
+The per-campaign gauges (`tps_ceiling`, `binding_constraint`, `released_today`, `daily_quota`) and
+the shared ceilings (`type_max_tps`, `global_tps`) come from the last tick of a leadership slice that
+is still running: a campaign that stops running (paused, finished, expired) leaves them with the
+next tick, and when a slice ends they all leave with it, because leadership may move. A process
+that no longer leads therefore exports none of them, and only the leader's live view is scraped;
+between two slices of the same leader they are absent until the next slice's first tick.
+`leader_last_tick` is the exception: it stays, per process, as the liveness signal.
+
+**Not built**, and therefore not listed: *counter-reconcile events*. The D3 reconcile is reading the
+row at takeover; it has no event to count. R3-S5's slice re-count of `AwaitingAckCount` is the
+same kind of reconcile (one set-based update at the slice start) and adds none either; R3's own
+instrument list asks only for the `goldpath_campaign_awaiting_ack` gauge. *ETA at current policy* is not an instrument: it is
+`goldpath_campaign_remaining / goldpath_campaign_tps_ceiling`, which the dashboard computes.
+
+Grafana board: the operator's single screen per campaign (progress, rate governor, failure
+rate, ETA) — "screen-trackable by construction" is the case's own bar. Runs ride the jobs
+dashboard. Its panels and alert rules for the instruments above are Part 2 (#295).
 
 ## 8. Operational (runbook or it didn't happen)
 
@@ -462,7 +498,7 @@ Proofs: the signed path settles and a signed repeat is 200; seven unauthentic va
 each have a red-then-green test; the recipe is pinned by a vector; the integration suite
 signs every callback on real infrastructure and refuses unsigned, forged and stale ones.
 
-## Revision R3 — scheduled start, ceilings as data, an acknowledgement ceiling, a policy version, auto-suspend (ACCEPTED 2026-10-21 — owner decision in chat, the seven questions Q1–Q7 answered as recommended; the merge of PR #313 records it. Implementation: the eleven slices below; R3-S1, the schema, landed 2026-10-23 (#314); R3-S2, the scheduled start and `Ready` in the engine, pacer and admin service (#289); the other nine not yet)
+## Revision R3 — scheduled start, ceilings as data, an acknowledgement ceiling, a policy version, auto-suspend (ACCEPTED 2026-10-21 — owner decision in chat, the seven questions Q1–Q7 answered as recommended; the merge of PR #313 records it. Implementation: the eleven slices below; R3-S1, the schema, landed 2026-10-23 (#314); R3-S2, the scheduled start and `Ready` in the engine, pacer and admin service (#289); R3-S3, the start on a real broker and in the console (#315); R3-S7, the options reload (#317); R3-S4, the policy version on the throttle, campaign half (#298); R3-S5, `MaxAwaitingAck` with its count, re-count, pacer rule, throttle field and gauge (#293); the other five not yet)
 
 **Finding.** A coverage analysis on 2026-10-20 compared R2 with a device-fleet adopter's
 bulk-operations design (controlled actions against tens of millions of devices, several target
@@ -620,7 +656,8 @@ keeps R2.4's per-type `MaxTps` from code, exactly as R2 adopters have it today; 
 rate live, name a target system.
 
 **Persistence.** One small table, `GoldpathCampaignCeilings`: `Kind` (`Global = 0`,
-`TargetSystem = 1`), `Name` (128; empty for the global row), `MaxTps` (`int?`, the live value;
+`TargetSystem = 1`), `Name` (128; `"*"` for the global row, `GoldpathCampaignCeiling.GlobalName`, on every provider — not empty,
+because Oracle stores `''` as NULL and the key cannot hold it; #384, owner decision 2026-10-24), `MaxTps` (`int?`, the live value;
 null on the global row = off), `SeedMaxTps` (`int?`, the code value last seeded), `UpdatedAt`,
 `UpdatedBy`; primary key `(Kind, Name)`. The leader reconciles the seed rows at the start of
 every slice: it inserts a missing row from code and, by owner decision Q4,
@@ -754,6 +791,8 @@ With `MaxAwaitingAck` null that stays exactly the rule, line for line. With it s
   `Released + Processing` only).
 - `MaxAwaitingAck` caps `AwaitingAckCount`. An acceptance moves an item from the first ceiling
   to the second, and the pacer releases only while both have room.
+
+Owner decision 2026-11-04: `MaxAwaitingAck` bounds everything in flight (room = `MaxAwaitingAck − inFlight`), the stricter reading, because it is the only one under which acceptances never pass the ceiling.
 
 **Counting without a scan.** A per-tick `COUNT(*)` over a campaign's `AwaitingAck` rows would
 read a million index entries every 250 ms on exactly the campaigns this item exists for. The
@@ -987,7 +1026,8 @@ What the table means for each provider:
   - `goldpath_campaign_awaiting_ack`, a gauge tagged like `goldpath_campaign_in_flight` (R3.4);
   - `goldpath_campaign_tuning_reload_refused_total` (R3.3).
   - The configured-ceiling gauges #294 adds gain a `target_system` scope (R3.2).
-  - #294's binding-constraint values gain `target_system` and `awaiting_ack`.
+  - #294's binding-constraint values gain `target_system` and `awaiting_ack` (`awaiting_ack` landed
+    with R3-S5, #293).
   - Whichever of #294 and the R3 slice lands second adds the overlap. `goldpath_campaign_in_flight`
     keeps its meaning (everything released and not terminal).
 - **Alert candidates for [#295](https://github.com/qorpe/goldpath/issues/295)'s rule file**:

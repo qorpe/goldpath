@@ -13,6 +13,7 @@ public sealed class GoldpathMessagingBuilder
 {
     private readonly List<(Type Event, Type Handler)> _handlers = [];
     private readonly Dictionary<(Type Event, Type Handler), string> _endpointNames = [];
+    private readonly Dictionary<(Type Event, Type Handler), int> _concurrencyLimits = [];
     private readonly List<(Type Event, Type Handler, GoldpathBatchOptions Options, string EndpointName)> _batchHandlers = [];
 
     internal GoldpathMessagingBuilder(GoldpathMessagingOptions options) => Options = options;
@@ -77,6 +78,87 @@ public sealed class GoldpathMessagingBuilder
 
         _endpointNames[pair] = endpointName;
         return AddHandler<TEvent, THandler>();
+    }
+
+    /// <summary>
+    /// Registers <typeparamref name="THandler"/> for <typeparamref name="TEvent"/> run as <paramref name="options"/>
+    /// says (RFC goldpath-messaging-engines §4.1 row 14), on the endpoint named <paramref name="endpointName"/> or,
+    /// when null, the one <see cref="GoldpathHandlerEndpoints.NameOf"/> derives. A concurrency limit belongs to the
+    /// endpoint: every handler draining it runs under the one limit, so two handlers naming different limits for
+    /// one endpoint are refused.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException"><see cref="GoldpathHandlerOptions.ConcurrencyLimit"/> is outside 1 to 65,535.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The pair is already registered on another endpoint or with another limit, or another handler on the endpoint
+    /// names another limit.
+    /// </exception>
+    public GoldpathMessagingBuilder AddHandler<TEvent, THandler>(GoldpathHandlerOptions options, string? endpointName = null)
+        where TEvent : class, IIntegrationEvent
+        where THandler : class, IIntegrationEventHandler<TEvent>
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        if (endpointName is not null)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(endpointName);
+        }
+
+        // The limit is also the broker's prefetch window, which is 16-bit (AMQP basic.qos).
+        if (options.ConcurrencyLimit is { } requested && requested is < 1 or > GoldpathBatchOptions.MaxInFlight)
+        {
+            throw new ArgumentOutOfRangeException(nameof(GoldpathHandlerOptions.ConcurrencyLimit), requested,
+                $"The handler '{typeof(THandler).Name}' needs a ConcurrencyLimit from 1 to {GoldpathBatchOptions.MaxInFlight}, or null for the engine's default.");
+        }
+
+        var pair = (typeof(TEvent), typeof(THandler));
+        var endpoint = endpointName ?? (_endpointNames.TryGetValue(pair, out var named) ? named : GoldpathHandlerEndpoints.NameOf(typeof(THandler)));
+        if (options.ConcurrencyLimit is { } limit)
+        {
+            if (_concurrencyLimits.TryGetValue(pair, out var existing) && existing != limit)
+            {
+                throw new InvalidOperationException(
+                    $"'{typeof(THandler).Name}' already handles '{typeof(TEvent).Name}' with a ConcurrencyLimit of {existing}, not {limit}.");
+            }
+
+            if (ConcurrencyLimitOf(endpoint) is { } shared && shared != limit)
+            {
+                throw new InvalidOperationException(
+                    $"The endpoint '{endpoint}' already runs at a ConcurrencyLimit of {shared}; a limit belongs to the endpoint, so '{typeof(THandler).Name}' cannot drain it at {limit}.");
+            }
+        }
+
+        // The endpoint first: a pair already registered elsewhere is refused before its limit is recorded.
+        if (endpointName is not null)
+        {
+            AddHandler<TEvent, THandler>(endpointName);
+        }
+        else
+        {
+            AddHandler<TEvent, THandler>();
+        }
+
+        if (options.ConcurrencyLimit is { } accepted)
+        {
+            _concurrencyLimits[pair] = accepted;
+        }
+
+        return this;
+    }
+
+    /// <summary>
+    /// The concurrency limit of the endpoint named <paramref name="endpointName"/>: the one its single-message
+    /// handlers named, or null when none did and the engine's default applies.
+    /// </summary>
+    internal int? ConcurrencyLimitOf(string endpointName)
+    {
+        foreach (var (pair, limit) in _concurrencyLimits)
+        {
+            if (string.Equals(EndpointOf(pair.Event, pair.Handler), endpointName, StringComparison.Ordinal))
+            {
+                return limit;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -222,4 +304,19 @@ public sealed class GoldpathOutboxOptions
     /// own default, which is what an application composed before this option existed runs on.
     /// </summary>
     public TimeSpan? DeliveryPollInterval { get; set; }
+}
+
+/// <summary>
+/// How a single-message handler's endpoint is run (RFC goldpath-messaging-engines §4.1 row 14). Every option
+/// left unset keeps the engine's own default, which is what a handler registered without options runs on.
+/// </summary>
+public sealed class GoldpathHandlerOptions
+{
+    /// <summary>
+    /// The most deliveries the endpoint hands its handlers at once, and the most it holds unacknowledged from
+    /// the broker: 1 serialises the endpoint, so one process handles its queue in the order the broker delivers
+    /// it. From 1 to 65,535 (a broker's prefetch window is 16-bit), or null (the default) for the engine's own window,
+    /// which may grow with the machine.
+    /// </summary>
+    public int? ConcurrencyLimit { get; set; }
 }

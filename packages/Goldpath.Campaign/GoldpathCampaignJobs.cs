@@ -54,6 +54,13 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
         var streams = new Dictionary<Guid, LeaderStream>();
         var tick = 0;
         var nextDrainSweep = DateTimeOffset.MinValue;
+        // R3.4: the acknowledgement count is a cache (D3) — the slice is the takeover boundary,
+        // so the new leader corrects whatever a crashed flush left behind before it paces on it.
+        using (var recountScope = context.Services.CreateScope())
+        {
+            await _engine.RecountAwaitingAckAsync(recountScope.ServiceProvider.GetRequiredService<TContext>(), cancellationToken);
+        }
+
         try
         {
             while (_time.GetUtcNow() < sliceEnd)
@@ -82,26 +89,37 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
                     }
                 }
 
-                // Phase 1 — each campaign's OWN allowance this tick (policy, window, quota, in-flight).
+                // Phase 1 — each campaign's OWN allowance this tick (policy, window, quota, in-flight),
+                // and which of its own limits set it (RFC §7's binding constraint).
                 var demands = new int[campaigns.Count];
+                var ownLimits = new Dictionary<Guid, string>();
                 for (var i = 0; i < campaigns.Count; i++)
                 {
-                    demands[i] = await PrepareTickAsync(tickScope.ServiceProvider, campaigns[i], tpsBudgets, streams, cancellationToken);
+                    demands[i] = await PrepareTickAsync(tickScope.ServiceProvider, campaigns[i], tpsBudgets, streams, ownLimits, cancellationToken);
                 }
 
                 // Phase 2 — the shared ceilings, split by weighted fair share (R2.4 + R2.5).
-                var grants = Allocate(campaigns, demands, typeBudgets, _options.GlobalTps is null ? null : globalBudget, tick, fairCredit);
+                var grants = Allocate(campaigns, demands, typeBudgets, _options.GlobalTps is null ? null : globalBudget, tick, fairCredit,
+                    out var afterType);
 
                 // Phase 3 — release under the grant, then the sweeps and the completion math.
                 var swept = new HashSet<Guid>();
+                var facts = new Dictionary<Guid, GoldpathCampaignTickFacts>();
                 for (var i = 0; i < campaigns.Count; i++)
                 {
                     if (demands[i] < 0)
                     {
+                        if (ownLimits.TryGetValue(campaigns[i].Id, out var closed))
+                        {
+                            facts[campaigns[i].Id] = FactsOf(campaigns[i], closed);   // running, its window or day closed
+                        }
+
                         continue;   // not releasing this tick (paused, enumerating, closed window, expired)
                     }
 
                     var spent = await ReleaseTickAsync(tickScope.ServiceProvider, campaigns[i], grants[i], tpsBudgets, chunk, cancellationToken);
+                    facts[campaigns[i].Id] = FactsOf(campaigns[i],
+                        BindingConstraint(ownLimits[campaigns[i].Id], demands[i], afterType[i], grants[i], spent));
                     swept.Add(campaigns[i].Id);
                     globalBudget -= spent;
                     if (typeBudgets.ContainsKey(campaigns[i].Type))
@@ -121,6 +139,8 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
                 // so a snapshot no longer waits one batch per tick, and no release waits on it.
                 await EnumerateAheadAsync(tickScope.ServiceProvider, campaigns, streams, tickStart,
                     releasing: demands.Any(d => d >= 0), cancellationToken);
+                GoldpathCampaignMetrics.Tick(_options,
+                    new GoldpathCampaignTickState(facts, TypeCeilings(), _options.GlobalTps, _time.GetUtcNow()));
 
                 var elapsed = _time.GetElapsedTime(tickStart);
                 if (elapsed < _options.LeaderTick)
@@ -131,6 +151,9 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
         }
         finally
         {
+            // The slice is over and leadership may move: the per-campaign gauges leave with it,
+            // so a former leader never exports a frozen view beside the new leader's (RFC §7).
+            GoldpathCampaignMetrics.EndSlice(_options);
             foreach (var stream in streams.Values)
             {
                 await stream.DisposeAsync();
@@ -147,7 +170,7 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
     /// </summary>
     private static int[] Allocate(
         List<GoldpathCampaign> campaigns, int[] demands, Dictionary<string, double> typeBudgets, double? globalBudget, int tick,
-        Dictionary<string, Dictionary<Guid, double>> fairCredit)
+        Dictionary<string, Dictionary<Guid, double>> fairCredit, out int[] afterType)
     {
         var capped = new int[campaigns.Count];
         for (var i = 0; i < campaigns.Count; i++)
@@ -173,6 +196,7 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
             }
         }
 
+        afterType = (int[])capped.Clone();
         if (globalBudget is { } shared)
         {
             var claims = campaigns
@@ -227,7 +251,8 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
     /// </summary>
     private async Task<int> PrepareTickAsync(
         IServiceProvider services, GoldpathCampaign campaign,
-        Dictionary<Guid, double> tpsBudgets, Dictionary<Guid, LeaderStream> streams, CancellationToken cancellationToken)
+        Dictionary<Guid, double> tpsBudgets, Dictionary<Guid, LeaderStream> streams, Dictionary<Guid, string> ownLimits,
+        CancellationToken cancellationToken)
     {
         var db = services.GetRequiredService<TContext>();
 
@@ -287,6 +312,13 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
             return -1;   // paused / ceiling-paused / still enumerating first batch / ready before its start
         }
 
+        // R3.6: the failure ratio is judged before anything releases, on the row this tick loaded,
+        // and whatever the window or the day: a closed window still drains outcomes.
+        if (await EvaluateFailureRatioAsync(db, campaign, cancellationToken))
+        {
+            return -1;   // suspended this tick: it releases nothing more
+        }
+
         // 2) Policy math on the LIVE row values (throttle takes effect within one tick).
         var policy = GoldpathCampaignEngine<TContext>.PolicyOf(campaign);
         var now = _time.GetUtcNow();
@@ -297,21 +329,141 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
             // R1.1: an excluded day releases nothing — and the day AFTER resumes
             // without a human. In-flight items still drain; the sink still applies.
             GoldpathCampaignMetrics.WindowClosed(campaign.Type);
+            ownLimits[campaign.Id] = BindingWindow;
             return -1;
         }
 
         if (!policy.IsWindowOpen(now))
         {
             GoldpathCampaignMetrics.WindowClosed(campaign.Type);
+            ownLimits[campaign.Id] = BindingWindow;
             return -1;
         }
 
         var budget = Refill(tpsBudgets.GetValueOrDefault(campaign.Id), policy.Tps, _options.LeaderTick);
         tpsBudgets[campaign.Id] = budget;
-        var inFlight = campaign.ReleasedThrough - campaign.SucceededCount - campaign.FailedCount;
+        // R3.4: with MaxAwaitingAck set, both in-flight ceilings bound the release; the binding
+        // constraint names awaiting_ack when the acknowledgement ceiling is the tighter of the two.
+        var inFlightRoom = InFlightRoom(policy, campaign);
+        long? quotaRoom = policy.DailyQuota is { } quota ? quota - campaign.ReleasedToday : null;
+        var ownLimit = OwnLimit(budget, inFlightRoom, quotaRoom);
+        ownLimits[campaign.Id] = ownLimit == BindingInFlight && AckCeilingBinds(policy, campaign) ? BindingAwaitingAck : ownLimit;
         return (int)Math.Floor(Math.Min(budget, Math.Max(0,
-            Math.Min(policy.MaxInFlight - inFlight,
-                policy.DailyQuota is { } quota ? quota - campaign.ReleasedToday : long.MaxValue))));
+            Math.Min(inFlightRoom, quotaRoom ?? long.MaxValue))));
+    }
+
+    /// <summary>
+    /// How many more items the in-flight ceilings let this campaign release (R3.4). With
+    /// <see cref="GoldpathCampaignPolicy.MaxAwaitingAck"/> null it is R2's rule, line for line:
+    /// <c>MaxInFlight − (ReleasedThrough − SucceededCount − FailedCount)</c>, where an acceptance
+    /// keeps its slot. Set, <c>MaxInFlight</c> caps live work — everything in flight but the
+    /// acceptances, so a waiting retry keeps its slot (owner decision Q2) — and
+    /// <c>MaxAwaitingAck</c> caps the acceptances, and the campaign releases only while both have
+    /// room. A release holds a slot under BOTH ceilings until its outcome says which one it stays
+    /// under — any live call may come back accepted — so the acknowledgement room is
+    /// <c>MaxAwaitingAck − in flight</c>, and <c>AwaitingAckCount</c> can never pass the ceiling
+    /// (counting only the acceptances already landed would let it overshoot by up to
+    /// <c>MaxInFlight</c>). That room is read from the watermarks, so it is exact; the live room
+    /// rides the cached count, which a re-count landing between a flush's item updates and its
+    /// counter update can leave off by that flush's rows until the next slice. The count is held
+    /// inside [0, in flight], so a drifted cache can never make live work look negative.
+    /// </summary>
+    internal static long InFlightRoom(GoldpathCampaignPolicy policy, GoldpathCampaign campaign)
+    {
+        var inFlight = campaign.ReleasedThrough - campaign.SucceededCount - campaign.FailedCount;
+        if (policy.MaxAwaitingAck is not { } maxAwaitingAck)
+        {
+            return policy.MaxInFlight - inFlight;
+        }
+
+        var awaitingAck = Math.Clamp(campaign.AwaitingAckCount, 0, Math.Max(0, inFlight));
+        return Math.Min(policy.MaxInFlight - (inFlight - awaitingAck), maxAwaitingAck - inFlight);
+    }
+
+    /// <summary>The binding constraint of a running campaign whose send window or day is closed.</summary>
+    internal const string BindingWindow = "window";
+
+    /// <summary>The binding constraint of a campaign held by an in-flight ceiling.</summary>
+    internal const string BindingInFlight = "in_flight";
+
+    /// <summary>The binding constraint of a campaign held by its acknowledgement ceiling (R3.4).</summary>
+    internal const string BindingAwaitingAck = "awaiting_ack";
+
+    /// <summary>
+    /// True when <see cref="GoldpathCampaignPolicy.MaxAwaitingAck"/> is set and its room
+    /// (<c>MaxAwaitingAck − in flight</c>) is strictly smaller than the live-work room under
+    /// <c>MaxInFlight</c> (R3.4) — the one an operator raises is then the acknowledgement ceiling.
+    /// A tie names <c>in_flight</c>, the ceiling on live calls into the target system.
+    /// </summary>
+    internal static bool AckCeilingBinds(GoldpathCampaignPolicy policy, GoldpathCampaign campaign)
+    {
+        if (policy.MaxAwaitingAck is not { } maxAwaitingAck)
+        {
+            return false;
+        }
+
+        var inFlight = campaign.ReleasedThrough - campaign.SucceededCount - campaign.FailedCount;
+        var awaitingAck = Math.Clamp(campaign.AwaitingAckCount, 0, Math.Max(0, inFlight));
+        return maxAwaitingAck - inFlight < policy.MaxInFlight - (inFlight - awaitingAck);
+    }
+
+    /// <summary>
+    /// Which of a campaign's OWN limits set its allowance this tick (RFC §7): the smallest room
+    /// among the TPS budget, the in-flight cap and the day's quota. A tie names the limit that
+    /// will not lift by itself on the next tick first — <c>quota</c>, then <c>in_flight</c>,
+    /// then <c>tps</c> — because that is the one an operator acts on.
+    /// </summary>
+    internal static string OwnLimit(double tpsRoom, long inFlightRoom, long? quotaRoom)
+    {
+        var inFlight = (double)Math.Max(0, inFlightRoom);
+        var quota = quotaRoom is { } room ? Math.Max(0, room) : double.PositiveInfinity;
+        if (quota <= inFlight && quota <= tpsRoom)
+        {
+            return "quota";
+        }
+
+        return inFlight <= tpsRoom ? BindingInFlight : "tps";
+    }
+
+    /// <summary>
+    /// The limit that bound a released tick (RFC §7): <c>none</c> when the campaign released less
+    /// than it was granted (nothing more was ready, so no limit held it back); otherwise the
+    /// shared ceiling that cut the allowance last — <c>global</c>, then <c>type</c> — and when
+    /// neither cut it, its own limit. A tick granted nothing names the limit that zeroed it.
+    /// </summary>
+    internal static string BindingConstraint(string ownLimit, int demand, int afterType, int grant, int spent)
+    {
+        if (spent < grant)
+        {
+            return "none";
+        }
+
+        if (grant < afterType)
+        {
+            return "global";
+        }
+
+        return afterType < demand ? "type" : ownLimit;
+    }
+
+    private static GoldpathCampaignTickFacts FactsOf(GoldpathCampaign campaign, string binding)
+    {
+        var policy = GoldpathCampaignEngine<TContext>.PolicyOf(campaign);
+        return new GoldpathCampaignTickFacts(campaign.Type, policy.Tps, policy.DailyQuota, campaign.ReleasedToday, binding);
+    }
+
+    private Dictionary<string, int> TypeCeilings()
+    {
+        var ceilings = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var type in _options.Types)
+        {
+            if (type.MaxTps is { } maxTps)
+            {
+                ceilings[type.Key] = maxTps;
+            }
+        }
+
+        return ceilings;
     }
 
     /// <summary>
@@ -559,7 +711,8 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
         {
             var timedOut = await _engine.SweepAckTimeoutsAsync(db, campaign, cancellationToken);
             if (timedOut.Count > 0 && campaign.State is not (GoldpathCampaignState.Created or GoldpathCampaignState.Enumerating
-                or GoldpathCampaignState.Running or GoldpathCampaignState.Paused or GoldpathCampaignState.Ready))
+                or GoldpathCampaignState.Running or GoldpathCampaignState.Paused or GoldpathCampaignState.Ready
+                or GoldpathCampaignState.Suspended))
             {
                 foreach (var seq in timedOut)
                 {
@@ -597,8 +750,12 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
                 .SetProperty(i => i.State, GoldpathCampaignItemState.Failed)
                 .SetProperty(i => i.CompletedAt, now)
                 .SetProperty(i => i.Error, "interrupted mid-flight — confirm the provider, then replay"), cancellationToken);
+        // R3.6: an interrupted claim is a failed outcome in the failure-ratio window too, on the same update.
         await db.Set<GoldpathCampaign>().Where(c => c.Id == campaignId)
-            .ExecuteUpdateAsync(s => s.SetProperty(c => c.FailedCount, c => c.FailedCount + swept), cancellationToken);
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(c => c.FailedCount, c => c.FailedCount + swept)
+                .SetProperty(c => c.WindowOutcomes, c => c.WindowOutcomes + swept)
+                .SetProperty(c => c.WindowFailures, c => c.WindowFailures + swept), cancellationToken);
         foreach (var seq in stale)
         {
             chunk.ReportItemFailure(
@@ -657,6 +814,121 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
         await db.SaveChangesAsync(cancellationToken);
         db.ChangeTracker.Clear();
         _logger.LogInformation("Campaign {CampaignId} started at its scheduled start.", campaign.Id);
+    }
+
+    /// <summary>How many of the window's failures the suspension reads to name the most frequent error code (R3.6).</summary>
+    internal const int SuspendReasonSample = 500;
+
+    /// <summary>
+    /// The failure-ratio check (R3.6) on a Running campaign with a ratio set, from the counters on
+    /// the row this tick loaded. At least <c>SuspendMinSample</c> outcomes at or above the ratio →
+    /// suspend; otherwise, once the window holds <c>SuspendWindow</c> outcomes, restart it by
+    /// subtracting what was read. Returns true when this call suspended the campaign.
+    /// </summary>
+    private async Task<bool> EvaluateFailureRatioAsync(TContext db, GoldpathCampaign campaign, CancellationToken cancellationToken)
+    {
+        var policy = GoldpathCampaignEngine<TContext>.PolicyOf(campaign);
+        if (policy.SuspendOnFailureRatio is not { } threshold)
+        {
+            return false;
+        }
+
+        var outcomes = campaign.WindowOutcomes;
+        var failures = campaign.WindowFailures;
+        if (outcomes > 0 && outcomes >= policy.SuspendMinSample && failures / (double)outcomes >= threshold)
+        {
+            return await TrySuspendAsync(db, campaign, policy, threshold, outcomes, failures, cancellationToken);
+        }
+
+        if (outcomes >= policy.SuspendWindow)
+        {
+            var now = _time.GetUtcNow();
+            await GoldpathCampaignEngine<TContext>.RestartWindowAsync(db, campaign.Id, outcomes, failures, now, cancellationToken);
+            campaign.WindowOutcomes -= outcomes;
+            campaign.WindowFailures -= failures;
+            campaign.WindowStartedAt = now;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Suspends a Running campaign whose failure ratio crossed its threshold (R3.6). The flip is one
+    /// conditional update on the state AND the ratio this tick loaded: a racing verb wins — a pause or
+    /// an abort moves the state, a throttle that cleared or moved the ratio moves the ratio — and the
+    /// next tick re-evaluates. The reason names the ratio, the window and the most frequent error code
+    /// in a sample of at most <see cref="SuspendReasonSample"/> of the window's failures. Audited
+    /// <c>suspend</c> with the actor <c>system</c>, after the flip, and counted.
+    /// </summary>
+    private async Task<bool> TrySuspendAsync(
+        TContext db, GoldpathCampaign campaign, GoldpathCampaignPolicy policy, double threshold, long outcomes, long failures,
+        CancellationToken cancellationToken)
+    {
+        var now = _time.GetUtcNow();
+        var since = campaign.WindowStartedAt;
+        var codes = await db.Set<GoldpathCampaignItem>().AsNoTracking()
+            .Where(i => i.CampaignId == campaign.Id
+                && (i.State == GoldpathCampaignItemState.Failed || i.State == GoldpathCampaignItemState.AwaitingRetry)
+                && (since == null || i.CompletedAt >= since))
+            .Select(i => i.ErrorCode)
+            .Take(SuspendReasonSample)
+            .ToListAsync(cancellationToken);
+        var reason = GoldpathCampaignAdminService<TContext>.Bound(
+            SuspendReason(threshold, outcomes, failures, since, policy.SuspendMinSample, codes), 512);
+        var ratio = campaign.SuspendOnFailureRatio;
+        var verb = GoldpathCampaignAdminService<TContext>.Bound("goldpath: suspended — " + reason, 512);
+        var suspended = await db.Set<GoldpathCampaign>()
+            .Where(c => c.Id == campaign.Id && c.State == GoldpathCampaignState.Running && c.SuspendOnFailureRatio == ratio)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(c => c.State, GoldpathCampaignState.Suspended)
+                .SetProperty(c => c.SuspendedReason, reason)
+                .SetProperty(c => c.LastVerb, verb), cancellationToken);
+        if (suspended == 0)
+        {
+            return false;
+        }
+
+        campaign.State = GoldpathCampaignState.Suspended;
+        campaign.SuspendedReason = reason;
+        campaign.LastVerb = verb;
+        db.Set<GoldpathCampaignAudit>().Add(new GoldpathCampaignAudit
+        {
+            At = now,
+            Actor = "system",
+            Action = "suspend",
+            CampaignId = campaign.Id,
+            Detail = reason,
+        });
+        await db.SaveChangesAsync(cancellationToken);
+        db.ChangeTracker.Clear();
+        GoldpathCampaignMetrics.Suspended(campaign.Type);
+        _logger.LogWarning("Campaign {CampaignId} suspended: {Reason}", campaign.Id, reason);
+        return true;
+    }
+
+    /// <summary>
+    /// The suspension's words (R3.6), culture-invariant: <c>failure ratio 0.52 ≥ 0.3 over 400 outcomes
+    /// since 2026-11-02T10:42:05Z (minimum sample 100); most frequent code TIMEOUT (61%)</c>. A failure
+    /// without a code (a thrown handler, an interrupted claim) is counted as <c>(none)</c>.
+    /// </summary>
+    internal static string SuspendReason(
+        double threshold, long outcomes, long failures, DateTimeOffset? since, int minSample, IReadOnlyList<string?> sampledCodes)
+    {
+        var ratio = failures / (double)outcomes;
+        var window = since is { } start
+            ? start.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture) + "Z"
+            : "the campaign began";
+        var code = sampledCodes.Count == 0
+            ? "no failure sampled"
+            : sampledCodes
+                .GroupBy(c => string.IsNullOrEmpty(c) ? "(none)" : c, StringComparer.Ordinal)
+                .OrderByDescending(g => g.Count())
+                .ThenBy(g => g.Key, StringComparer.Ordinal)
+                .Select(g => string.Create(CultureInfo.InvariantCulture,
+                    $"most frequent code {g.Key} ({Math.Round(100.0 * g.Count() / sampledCodes.Count, MidpointRounding.AwayFromZero)}%)"))
+                .First();
+        return string.Create(CultureInfo.InvariantCulture,
+            $"failure ratio {ratio:0.##} ≥ {threshold:0.###} over {outcomes} outcomes since {window} (minimum sample {minSample}); {code}");
     }
 
     /// <summary>

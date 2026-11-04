@@ -16,6 +16,12 @@ public static class GoldpathCampaignMigrations
     /// later one, measured from <c>CompletedAt</c> (R1's "last failure instant"). Call it at the
     /// end of <c>Up</c> in the migration <c>goldpath db add CampaignR2R3</c> generated. It touches
     /// only rows still waiting, so it is cheap and safe to run twice.
+    /// <para>
+    /// It also carries revision R3's one data step (#384): a global ceiling row that an earlier
+    /// build wrote with the empty name moves to <see cref="GoldpathCampaignCeiling.GlobalName"/>;
+    /// when a <c>"*"</c> row already exists, the empty-named one is the stale copy and is deleted
+    /// instead. It matches only an empty-named global row, so a second run changes nothing.
+    /// </para>
     /// </summary>
     /// <param name="migrationBuilder">The generated migration's builder.</param>
     /// <param name="schema">The schema the campaign tables live in, when the model sets one.</param>
@@ -23,11 +29,21 @@ public static class GoldpathCampaignMigrations
     {
         ArgumentNullException.ThrowIfNull(migrationBuilder);
         const int awaitingRetry = (int)GoldpathCampaignItemState.AwaitingRetry;
+        const int global = (int)GoldpathCampaignCeilingKind.Global;
+        const string globalName = GoldpathCampaignCeiling.GlobalName;
         var provider = migrationBuilder.ActiveProvider ?? "";
         string sql;
+        string ceilingSql;
         if (provider.Contains("Npgsql", StringComparison.Ordinal) || provider.Contains("PostgreSQL", StringComparison.Ordinal))
         {
             var table = schema is null ? "\"GoldpathCampaignItems\"" : $"\"{schema}\".\"GoldpathCampaignItems\"";
+            var ceilings = schema is null ? "\"GoldpathCampaignCeilings\"" : $"\"{schema}\".\"GoldpathCampaignCeilings\"";
+            ceilingSql = $"""
+                DELETE FROM {ceilings}
+                WHERE "Kind" = {global} AND "Name" = ''
+                  AND EXISTS (SELECT 1 FROM {ceilings} WHERE "Kind" = {global} AND "Name" = '{globalName}');
+                UPDATE {ceilings} SET "Name" = '{globalName}' WHERE "Kind" = {global} AND "Name" = '';
+                """;
             sql = $"""
                 UPDATE {table}
                 SET "NextAttemptAt" = COALESCE("CompletedAt", now())
@@ -38,6 +54,13 @@ public static class GoldpathCampaignMigrations
         else if (provider.Contains("SqlServer", StringComparison.Ordinal))
         {
             var table = schema is null ? "[GoldpathCampaignItems]" : $"[{schema}].[GoldpathCampaignItems]";
+            var ceilings = schema is null ? "[GoldpathCampaignCeilings]" : $"[{schema}].[GoldpathCampaignCeilings]";
+            ceilingSql = $"""
+                DELETE FROM {ceilings}
+                WHERE [Kind] = {global} AND [Name] = N''
+                  AND EXISTS (SELECT 1 FROM {ceilings} WHERE [Kind] = {global} AND [Name] = N'{globalName}');
+                UPDATE {ceilings} SET [Name] = N'{globalName}' WHERE [Kind] = {global} AND [Name] = N'';
+                """;
             sql = $"""
                 UPDATE {table}
                 SET [NextAttemptAt] = DATEADD(second, CASE WHEN [Attempts] <= 1 THEN 30 ELSE 120 END, COALESCE([CompletedAt], SYSDATETIMEOFFSET()))
@@ -52,6 +75,7 @@ public static class GoldpathCampaignMigrations
         }
 
         migrationBuilder.Sql(sql);
+        migrationBuilder.Sql(ceilingSql);
         return migrationBuilder;
     }
 }

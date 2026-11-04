@@ -127,7 +127,8 @@ and nothing else — no ops credential. Unsigned, stale (more than five minutes 
 is `401`; mapping the surface with no signing type refuses to start (GP1704 at build time).
 A callback that arrives before its acceptance is visible is parked (`202`) and settles when
 the acceptance lands. An accepted item holds an in-flight slot until its answer or its
-deadline, so size `MaxInFlight` for the acceptances a campaign keeps outstanding.
+deadline, so size `MaxInFlight` for the acceptances a campaign keeps outstanding — or give the
+acceptances a ceiling of their own with `MaxAwaitingAck` (R3, below).
 
 An operator sets `Priority` (High · Normal · Low) on the policy — live, through the throttle
 verb — and a contended ceiling (`GlobalTps`, a type's `MaxTps`) splits 3 : 2 : 1 by weighted
@@ -158,6 +159,95 @@ has started (`Running`, or anything released); after that the move is refused. A
 past means now, and a start after the end date's local day is refused. `pause` accepts a
 `Ready` campaign, and `resume` returns it to `Ready` while its start is still ahead. A `Ready`
 campaign past its end date expires, like a running one.
+
+### Two operators, one policy (R3.5)
+
+Every applied throttle moves the campaign's `PolicyVersion` by one; nothing else moves it.
+The detail and the list return it. A caller that read version *n* can pass it to
+`ThrottleAsync(id, patch, expectedPolicyVersion: n, actor, ct)`: when somebody else's throttle
+landed in between, the call is refused (`Stale = true`) in words that name the current version
+and who changed it, and the refusal is audited as `throttle-refused`. A throttle without a
+version (scripts, R2 clients, today's HTTP route) keeps last-writer-wins. The HTTP shape — the
+version as the `ETag`, an optional `If-Match`, `412` — is admin-contract revision R4's.
+
+## R3: a ceiling for outstanding acknowledgements
+
+With acknowledgement deadlines in hours, `MaxInFlight` sized for the acceptances a campaign
+keeps outstanding (about `Tps × ackTimeout`) no longer limits the live calls hitting the target
+system. `MaxAwaitingAck` splits the two:
+
+```csharp
+// Ten calls at a time into the adapter, and up to fifty thousand devices allowed to answer later.
+new GoldpathCampaignThrottle(Tps: 200, MaxInFlight: 10) { MaxAwaitingAck = 50_000 }
+```
+
+- **Null (the default) is R2's rule, line for line:** an acceptance keeps its `MaxInFlight` slot.
+- **Set, `MaxInFlight` caps live work:** everything in flight except the acceptances. A retry
+  waiting on its rung keeps its slot, as in R2.
+- **`MaxAwaitingAck` caps the acceptances.** A release holds room under both ceilings until its
+  outcome says which one it stays under, since any live call may come back accepted. So the
+  pacer releases only while `MaxAwaitingAck − in flight` is positive too, and the number of
+  acceptances never passes the ceiling.
+- **How it is counted:** the campaign row's `AwaitingAckCount` is kept by the outcome flush,
+  which counts the rows it moved into and out of `AwaitingAck`; the ack sweep goes through the
+  same flush. Like every counter here it is a cache: the leader re-counts it from the items at
+  the start of every leadership slice.
+- **What is exact and what is not:** the acceptance ceiling is read from the watermarks
+  (`ReleasedThrough − SucceededCount − FailedCount`), so it holds whatever the count says. The
+  split of live work from acceptances rides the cached count. A flush's item updates and its
+  counter update are separate statements, so a re-count that lands between them can be off by
+  that flush's rows until the next slice, and `MaxInFlight` by as much. The pacer clamps the
+  count to what is in flight, so a wrong count can never make live work look negative, and the
+  detail's `AwaitingAck` and the gauge read it through the same clamp, so an operator never sees a
+  negative number of outstanding acknowledgements (an upgraded row settled before the first slice's
+  re-count would otherwise read `-1`).
+- **Where it shows:** the detail returns `MaxAwaitingAck` and `AwaitingAck`, and the
+  `goldpath_campaign_awaiting_ack` gauge is tagged like `goldpath_campaign_in_flight`.
+  `goldpath_campaign_binding_constraint` reads `awaiting_ack` when the acknowledgement room is the
+  tighter of the two (a tie reads `in_flight`).
+- **Refused when not positive:** a type's `DefaultPolicy(...)` with a non-positive
+  `MaxAwaitingAck` throws at registration, and `create` checks the policy the campaign would run
+  under — the type's default with the patch applied — so neither path can make a campaign that
+  never releases.
+- **Changing it:** `throttle` sets it (`maxAwaitingAck`, positive; omitted keeps it) or clears it
+  (`clearMaxAwaitingAck`, back to R2's rule), audited old → new. The console does not show or edit
+  it yet (R3-S6, #316).
+
+## Auto-suspend on a failure ratio (R3.6)
+
+A campaign may stop itself when its target system starts failing, before the operator notices:
+
+```csharp
+new GoldpathCampaignThrottle(Tps: 200)
+{
+    SuspendOnFailureRatio = 0.3,   // in (0, 1]; null (the default) = never
+    SuspendWindow = 1_000,         // outcomes per window (the default)
+    SuspendMinSample = 100,        // outcomes before the ratio may judge (the default)
+}
+```
+
+Every completed attempt is an outcome and every failed one a failure, **retryable failures
+included** (a melting target system shows up as timeouts first), as are an `ACK_TIMEOUT` and an
+interrupted claim; an acceptance is not an outcome until it settles. The two counters ride the
+sink's campaign update, so they cost no write. Each leader tick the pacer reads them off the row it
+loaded: at least `SuspendMinSample` outcomes at or above the ratio moves the campaign to
+**`Suspended`**; otherwise, once the window holds `SuspendWindow` outcomes, the window restarts (by
+subtracting what was read, so an outcome flushed in between is kept). Detection lands one tick after
+the flush that crosses the threshold, and the ratio covers the outcomes since the window last
+restarted: a tumbling window evaluated early, not an exact "last N".
+
+`Suspended` is not `Paused`: the system stopped it, and the detail says why in
+`suspendedReason` — *failure ratio 0.52 ≥ 0.3 over 400 outcomes since 2026-11-02T07:42:05Z
+(minimum sample 100); most frequent code TIMEOUT (61%)*, the code read from a sample of at most 500 of
+the window's failures. The flip is audited `suspend` with the actor `system` and counted in
+`goldpath_campaign_suspended_total{type}`. A suspended campaign claims nothing and releases nothing; what
+is in flight drains, and its retries wait on the ladder for the resume. `resume` clears the reason and
+restarts the window, so the failures that suspended it cannot suspend it again; `abort` and `throttle`
+accept it (lower the rate, then resume); `pause` refuses it. There is no automatic resume.
+`failureRatioNow` on the detail shows the current window's ratio whether or not a ratio is set, and
+switching a ratio on through `throttle` restarts the window, so outcomes from before it existed do not
+judge the campaign. A ratio outside (0, 1], a non-positive window or sample, or a sample larger than
+the window (which could never suspend) is refused on create and on throttle.
 
 ## The guarantees
 
