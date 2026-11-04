@@ -274,6 +274,45 @@ been attempted twice, `poison_error` was empty, and the message was still on its
 So no fact can prove the ladder on a current broker, and `Goldpath:Messaging:Retry:RedeliveryIntervals`
 defaults to 5, 15 and 30 minutes. What the ladder rides on is the owner's decision (T52).
 
+**2026-11-04 — S3 in the suite (G5 Part 3/5, [#332](https://github.com/qorpe/goldpath/issues/332)).** `BusDifferentialTests`
+runs every fact of the conformance class and the batch class (found by reflection, so a new fact joins unasked) on
+MassTransit 8.5.12 and then on the Wolverine adapter. Each run starts with the error queues and the outbox and inbox tables
+emptied. Every harness handler reports each delivery to a recorder, and what a run leaves behind is flattened to a
+record, `path → value`:
+
+- deliveries per endpoint, per business key and per message id;
+- the retry attempts each message was given;
+- the headers the handler was handed, with the values of `X-Goldpath-Tenant` and `X-Correlation-Id`;
+- the order, only where this section promises one (S2.14);
+- every `*_error` queue's messages and their header names, read from the broker;
+- the `InboxState`, `OutboxMessage` and `OutboxState` rows.
+
+A generated id is never compared, only how often it occurred. The candidate's record must equal the oracle's line for
+line. Each difference the seam does not promise is excused by an entry of the reviewed allow-list
+`tests/Goldpath.Messaging.Conformance/differential-allowlist.json`, and every entry carries its reason. A container-free
+fact holds every entry narrow: none may excuse the attempts, a duplicate, the tenant, the correlation or an order. The
+comparison report is a CI artifact (`s3-differential-report`).
+
+A planted Wolverine fault, the correlation header withheld from the handler, turns the differential red on S2.2 and
+S2.16 while every plain Wolverine fact stays green. A planted extra immediate retry is red on both the plain S2.3 and
+S2.18 and the differential. The run measured three behaviours the facts never asserted:
+
+- **The oracle parks duplicates.** When two deliveries of one message id are in flight at once (S2.1 at the default
+  window, S2.19 at a limit of 4), the oracle sometimes parks the late ones in `<queue>_error`, though the handler ran
+  exactly once. An operator of the oracle can therefore find, after a burst of redeliveries, an error queue holding
+  copies of messages that were already handled. The candidate parks none.
+- **Fault diagnostics are the engine's own.** A parked message carries `MT-Fault-*`, `MT-Host-*` and `MT-Reason` under
+  the oracle, and `exception-*`, `failed-at`, `attempts` and `original-destination` under the candidate. The error-queue
+  promise above (the envelope, the message id and the two Goldpath headers) holds on both. Tooling that reads the
+  oracle's fault headers reads engine-specific names (T51).
+- **The candidate's parked envelope lists fewer types.** It lists the event's own type and not the
+  `urn:message:Goldpath:IIntegrationEvent` the oracle's adds. S4.5 shovels such a message back and the oracle handles
+  it (T51).
+
+The rest of the allow-list is engine bookkeeping (`ReceiveCount`, the RabbitMQ client's `x-dotnet-pub-seq-no`, the
+W3C `traceparent` beside `MT-Activity-Id`), the batch endpoint's missing inbox (T51), and S2.8's backlog, which the
+fact sizes to each engine's measured window.
+
 ## 8. DoD — closed 2026-08-10
 
 - [x] Owner decides A–E → **A** (stay pinned on 8.x), fallback **D**. Decided 2026-08-10.
@@ -315,7 +354,9 @@ lines, open until each proof runs:
       delayed redelivery is the stage a mixed fleet does not share (above, T51). **2026-10-27 (G5 Part 2/5, #331):**
       S2.14 ordering, S2.15 concurrency, S2.16 spans, S2.17 a renamed type, S2.18 the ladder on a limited
       endpoint and S2.19 exactly-once on a limited endpoint join it, green on both. Delayed redelivery is the
-      open finding T52. S1, S3 and S6 are open; what the adapter refuses is open-threads T51.
+      open finding T52. **2026-11-04 (G5 Part 3/5, #332):** S3, the differential run, is in the suite and the CI
+      integration job, green on `main` with its reviewed allow-list (above). S1 and S6 are open; what the adapter
+      refuses is open-threads T51.
 - [ ] The family bus has its own RFC and repository (qorpe organisation, open source,
       clean-room per ADR-0013) in **December 2026**; its first adapter enters the suite in
       January–February 2027 (T40, milestone `family-bus`).
