@@ -5,6 +5,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **The S-FLEET-02 rig: 30M targets, an hour at 2,000 TPS, headroom every 10 seconds (GA gate G10c, #349).** Tests,
+  scripts and a dispatch-only workflow; no package changes. Nothing is measured yet: the run is the owner's overnight
+  slot, tracked in open-threads T59.
+  - `scripts/bench-campaign.sh fleet02` runs the new `CampaignFleet02BenchTests`. The fact seeds the full dataset
+    through the pacer while a scheduled start holds the campaign at `Ready`, so nothing is released early. It then
+    clears the start, measures the hour from the first release, and writes `release-per-second.csv` and `verdict.txt`.
+    The fact is opt-in (`GOLDPATH_BENCH_FLEET02=1`) and shows as skipped otherwise, so `bench.yml`'s monthly
+    `Category=Bench` run never picks it up.
+  - The dataset knob `GOLDPATH_BENCH_CAMPAIGN_TARGETS` is new and independent of the window, because the spec says
+    30M, never shrunk. `_FLOOR_TPS` and `_SEED_MINUTES` are new too.
+  - `CampaignFleet02Verdict` computes the verdict from the thresholds signed on #326 and nothing else, and has its own
+    container-free facts (`CampaignFleet02VerdictTests`): the band's edges, the p95 at 95 and 94 of 100 windows, one
+    second above the ceiling, and each way an item can be lost or doubled.
+  - `scripts/bench-headroom.sh` samples the host (CPU, iowait, memory, disk), both containers, RabbitMQ's queue depth
+    and PostgreSQL's activity every 10 seconds, reading `/proc` rather than needing `vmstat` or `iostat`.
+  - `.github/workflows/bench-fleet02.yml` is the runner lane: `workflow_dispatch` only, 360 minutes, the full dataset
+    by default, with the raw series uploaded for 90 days.
+  - `CampaignBrokerBenchTests` (S-FLEET-02a) now runs on the same `CampaignReleaseRig` host, so the two benches cannot
+    measure different hosts. Its output gains the peak concurrent handler calls, the number open-threads T48 says the
+    consumer knob does not prove.
 - **Campaign: a ceiling for outstanding acknowledgements, `MaxAwaitingAck` (campaign RFC R3.4,
   slice R3-S5, #293).**
   - **API (additive, init-only):** `GoldpathCampaignPolicy.MaxAwaitingAck`,
