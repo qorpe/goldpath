@@ -374,9 +374,11 @@ public sealed class GoldpathCampaignAdminService<TContext>
             // R3.6: a ratio switched on judges outcomes from now on. The window restarts BEFORE the
             // policy is written, so no tick can read the new ratio against the old counters; a
             // throttle refused below leaves a restarted window and no ratio, which changes nothing. Only a
-            // live campaign with no ratio yet, whose new suspend policy will stand, is touched at all.
+            // live campaign with no ratio yet, whose new suspend policy will stand, is touched at all;
+            // a versioned throttle whose expected version is already stale touches nothing (R3.5).
             var now = _time.GetUtcNow();
             await RestartWindowAsync(id, row => row.SuspendOnFailureRatio is null && !IsTerminal(row.State)
+                && (expectedPolicyVersion is null || row.PolicyVersion == expectedPolicyVersion)
                 && SuspendRefusal(Apply(GoldpathCampaignEngine<TContext>.PolicyOf(row), patch, now)) is null, ct);
         }
 
