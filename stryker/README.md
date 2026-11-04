@@ -98,6 +98,22 @@ the dynamic-assembly filter, the scan's catch branches, the kebab formatter on t
 builder names every endpoint), the test host's dispose branches, and its body guard, which the engine's
 own guard now makes equivalent.
 
+**Approvals was re-measured 2026-11-03**, a full run of `mutation-gate.sh Goldpath.Approvals` on the #480 branch
+(concurrent decisions: a version on the request row, a signature written with the request in one transaction, a
+unique signature key), on the local sandbox: 77.78 % → 77.87 % (2.8 minutes, the sandbox's, not the CI profile's).
+- **The first run scored 76.75 %.** The new code's survivors were the custom-store two-call path and the in-memory
+  store's stale check on that path, both without coverage, and the EF store's conflict branch, reached only by the
+  PostgreSQL proof, which is outside the mutated test project. A clock that lands a reject between a grant's read and
+  its write now reaches all three in the unit suite.
+- **Survivors left on the new lines:**
+  - The version moving by −1 instead of +1, in either store. Equivalent: any change of the token refuses the stale
+    write, and the value never returns to one already read.
+  - The in-memory atomic path's duplicate-signature check. Through the engine it is unreachable: every signature
+    write also moves the version, which refuses first. It mirrors the database's unique key in the same write.
+  - The EF store's duplicate-signature probe, `&&` → `||`, and its unique-violation branch. Only a provider error
+    other than the unique key tells them apart, and the proof for that branch is the PostgreSQL concurrency fact.
+- No threshold moved and nothing was excluded.
+
 **Archival was re-measured 2026-11-02**, a full run of `mutation-gate.sh Goldpath.Archival` on the
 #383 branch (an entry's `DueAt` is hashed and stored at the same microsecond), on the local sandbox:
 79.55 % → 79.90 % (382 mutants tested, 7.9 minutes, the sandbox's, not the CI profile's). Every
@@ -136,7 +152,7 @@ at f459fe2, so its row carries it (minutes not recorded).
 | Notification | 81.23 % | 11.23 | 5.9 | never finished (OOM) |
 | DataProtection | 78.95 % | 8.95 | 1.5 | 78.95 %, 33.0 |
 | ServiceDefaults | 78.48 % (72.15) | 8.48 | 1.4 | 72.15 %, 4.3 |
-| Approvals | 77.78 % (74.84) | 7.78 | 3.4 | 74.84 %, 217.7 |
+| Approvals | 77.87 % (74.84) | 7.87 | 2.8 | 74.84 %, 217.7 |
 | Data | 77.38 % | 7.38 | 2.3 | 77.38 %, 38.0 |
 | FileExchange | 76.92 % | 6.92 | 3.6 | 76.92 %, 31.8 |
 | Archival | 79.90 % (74.49) | 9.90 | 7.9 | never finished (OOM) |

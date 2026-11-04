@@ -439,6 +439,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **[schema]** **Approvals: concurrent decisions no longer both apply (#480, threat model T-APR-06).** A decision read the
+  request and its signatures, then wrote them in separate calls with nothing guarding the gap.
+  - **What went wrong:**
+    - The same identity granting twice at once (a double click, two tabs) stored two signatures.
+    - A grant and a reject at once both applied and both published their event, and the last write decided `Status`.
+  - **Measured on PostgreSQL with every save held back 300 ms:** both double-grants answered `Applied`; grant + reject
+    answered `Applied, Applied`; two distinct signers on a two-signature rung left it `Pending`, one signature lost.
+  - **Now:**
+    - The request row carries a version, checked on every write: `GoldpathApprovals.Version`, a concurrency token.
+    - A quorum signature and the request's new state are written in one transaction.
+    - `(RequestId, SignedBy)` is unique on `GoldpathApprovalSignatures`, replacing the `RequestId` index.
+    - A decision that loses the race reads again and decides on what the request is now. The same identity again
+      answers `AlreadySigned`. A request another decision closed answers `NotPending`, with no event. A distinct
+      signer signs on top of the winner.
+    - The escalation sweep leaves a request decided under it to that decision.
+    - A call that loses eight times in a row throws `InvalidOperationException`.
+  - **Store behaviour:**
+    - The in-memory store keeps the same two rules and now hands out copies.
+    - On both built-in stores, a write from a stale read and a second signature by the same identity throw
+      `InvalidOperationException`.
+    - A custom `IGoldpathApprovalStore` keeps its own guarantees. Its signature and request writes stay two calls.
+  - **No public API changed:** the version is an internal member.
+  - **Migration:** one, with a query to run first for existing duplicate signatures (upgrade guide).
 - **Archival: an entry whose `DueAt` carries sub-microsecond ticks now verifies on PostgreSQL (#383).** The engine
   hashed `DueAt` at 100 ns, but `timestamptz` stores microseconds, so verification re-hashed a different value and
   reported "document does not match its content hash" with nothing tampered. It happened whenever the candidate's
