@@ -251,3 +251,43 @@ static Goldpath.GoldpathBulkAdminEndpoints.MapGoldpathBulkAdmin<TContext>(this M
 static Goldpath.GoldpathBulkMetrics.SetIntakeSnapshot(string! definition, System.Collections.Generic.IReadOnlyDictionary<string!, int>! batchesByState, double oldestAwaitingSeconds) -> void
 Goldpath.GoldpathBulkAdminService<TContext>.GetErrorsAsync(System.Guid batchId, string? tenant, int afterRowNumber, int take, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathBulkRowError!>!>!
 Goldpath.GoldpathBulkAdminService<TContext>.GetBatchesAsync(string![]? state, string![]? definition, string? tenant, int take, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathBulkBatchInfo!>!>!
+Goldpath.GoldpathBulkBatchInfo.<Clone>$() -> Goldpath.GoldpathBulkBatchInfo!
+Goldpath.GoldpathBulkBatchInfo.Deconstruct(out System.Guid Id, out string! Definition, out string! State, out string? Tenant, out int TotalRows, out int ValidRows, out int InvalidRows, out int ExecutedRows, out int FailedRows, out System.Guid? RunId, out System.DateTimeOffset ReceivedAt, out System.DateTimeOffset? ValidatedAt, out System.DateTimeOffset? DecidedAt, out string? DecidedBy, out string? DecisionNote, out System.DateTimeOffset? CompletedAt) -> void
+Goldpath.GoldpathBulkBatchInfo.Equals(Goldpath.GoldpathBulkBatchInfo? other) -> bool
+Goldpath.GoldpathBulkDecisionRequest.<Clone>$() -> Goldpath.GoldpathBulkDecisionRequest!
+Goldpath.GoldpathBulkDecisionRequest.Deconstruct(out string? Note) -> void
+Goldpath.GoldpathBulkDecisionRequest.Equals(Goldpath.GoldpathBulkDecisionRequest? other) -> bool
+Goldpath.GoldpathBulkDefinitionStatus.<Clone>$() -> Goldpath.GoldpathBulkDefinitionStatus!
+Goldpath.GoldpathBulkDefinitionStatus.Deconstruct(out string! Name, out System.Collections.Generic.IReadOnlyDictionary<string!, int>! BatchesByState, out int AwaitingApproval, out double? OldestAwaitingApprovalSeconds) -> void
+Goldpath.GoldpathBulkDefinitionStatus.Equals(Goldpath.GoldpathBulkDefinitionStatus? other) -> bool
+Goldpath.GoldpathBulkRawError.<Clone>$() -> Goldpath.GoldpathBulkRawError!
+Goldpath.GoldpathBulkRawError.Deconstruct(out int RowNumber, out string! Message) -> void
+Goldpath.GoldpathBulkRawError.Equals(Goldpath.GoldpathBulkRawError? other) -> bool
+Goldpath.GoldpathBulkRawRow.<Clone>$() -> Goldpath.GoldpathBulkRawRow!
+Goldpath.GoldpathBulkRawRow.Deconstruct(out int RowNumber, out System.Collections.Generic.IReadOnlyDictionary<string!, string!>! Fields) -> void
+Goldpath.GoldpathBulkRawRow.Equals(Goldpath.GoldpathBulkRawRow? other) -> bool
+override Goldpath.GoldpathBulkBatchInfo.Equals(object? obj) -> bool
+override Goldpath.GoldpathBulkBatchInfo.GetHashCode() -> int
+override Goldpath.GoldpathBulkBatchInfo.ToString() -> string!
+override Goldpath.GoldpathBulkDecisionRequest.Equals(object? obj) -> bool
+override Goldpath.GoldpathBulkDecisionRequest.GetHashCode() -> int
+override Goldpath.GoldpathBulkDecisionRequest.ToString() -> string!
+override Goldpath.GoldpathBulkDefinitionStatus.Equals(object? obj) -> bool
+override Goldpath.GoldpathBulkDefinitionStatus.GetHashCode() -> int
+override Goldpath.GoldpathBulkDefinitionStatus.ToString() -> string!
+override Goldpath.GoldpathBulkRawError.Equals(object? obj) -> bool
+override Goldpath.GoldpathBulkRawError.GetHashCode() -> int
+override Goldpath.GoldpathBulkRawError.ToString() -> string!
+override Goldpath.GoldpathBulkRawRow.Equals(object? obj) -> bool
+override Goldpath.GoldpathBulkRawRow.GetHashCode() -> int
+override Goldpath.GoldpathBulkRawRow.ToString() -> string!
+static Goldpath.GoldpathBulkBatchInfo.operator !=(Goldpath.GoldpathBulkBatchInfo? left, Goldpath.GoldpathBulkBatchInfo? right) -> bool
+static Goldpath.GoldpathBulkBatchInfo.operator ==(Goldpath.GoldpathBulkBatchInfo? left, Goldpath.GoldpathBulkBatchInfo? right) -> bool
+static Goldpath.GoldpathBulkDecisionRequest.operator !=(Goldpath.GoldpathBulkDecisionRequest? left, Goldpath.GoldpathBulkDecisionRequest? right) -> bool
+static Goldpath.GoldpathBulkDecisionRequest.operator ==(Goldpath.GoldpathBulkDecisionRequest? left, Goldpath.GoldpathBulkDecisionRequest? right) -> bool
+static Goldpath.GoldpathBulkDefinitionStatus.operator !=(Goldpath.GoldpathBulkDefinitionStatus? left, Goldpath.GoldpathBulkDefinitionStatus? right) -> bool
+static Goldpath.GoldpathBulkDefinitionStatus.operator ==(Goldpath.GoldpathBulkDefinitionStatus? left, Goldpath.GoldpathBulkDefinitionStatus? right) -> bool
+static Goldpath.GoldpathBulkRawError.operator !=(Goldpath.GoldpathBulkRawError? left, Goldpath.GoldpathBulkRawError? right) -> bool
+static Goldpath.GoldpathBulkRawError.operator ==(Goldpath.GoldpathBulkRawError? left, Goldpath.GoldpathBulkRawError? right) -> bool
+static Goldpath.GoldpathBulkRawRow.operator !=(Goldpath.GoldpathBulkRawRow? left, Goldpath.GoldpathBulkRawRow? right) -> bool
+static Goldpath.GoldpathBulkRawRow.operator ==(Goldpath.GoldpathBulkRawRow? left, Goldpath.GoldpathBulkRawRow? right) -> bool

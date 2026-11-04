@@ -338,3 +338,67 @@ Goldpath.GoldpathCampaignThrottle.ClearExcludedDays.get -> bool
 Goldpath.GoldpathCampaignThrottle.ClearExcludedDays.init -> void
 Goldpath.GoldpathCampaignThrottle.ClearEndDate.get -> bool
 Goldpath.GoldpathCampaignThrottle.ClearEndDate.init -> void
+Goldpath.GoldpathCampaignAbortRequest.<Clone>$() -> Goldpath.GoldpathCampaignAbortRequest!
+Goldpath.GoldpathCampaignAbortRequest.Deconstruct(out string! Reason) -> void
+Goldpath.GoldpathCampaignAbortRequest.Equals(Goldpath.GoldpathCampaignAbortRequest? other) -> bool
+Goldpath.GoldpathCampaignCreateRequest.<Clone>$() -> Goldpath.GoldpathCampaignCreateRequest!
+Goldpath.GoldpathCampaignCreateRequest.Deconstruct(out string! Type, out string! Name, out System.Collections.Generic.Dictionary<string!, string!>? Parameters, out Goldpath.GoldpathCampaignThrottle? Policy, out string? Tenant) -> void
+Goldpath.GoldpathCampaignCreateRequest.Equals(Goldpath.GoldpathCampaignCreateRequest? other) -> bool
+Goldpath.GoldpathCampaignFailedItem.<Clone>$() -> Goldpath.GoldpathCampaignFailedItem!
+Goldpath.GoldpathCampaignFailedItem.Deconstruct(out long Seq, out string? Error, out System.DateTimeOffset? CompletedAt) -> void
+Goldpath.GoldpathCampaignFailedItem.Equals(Goldpath.GoldpathCampaignFailedItem? other) -> bool
+Goldpath.GoldpathCampaignInfo.<Clone>$() -> Goldpath.GoldpathCampaignInfo!
+Goldpath.GoldpathCampaignInfo.Deconstruct(out System.Guid Id, out string! Type, out string! Name, out string! State, out long EnumeratedThrough, out bool EnumerationComplete, out long ReleasedThrough, out long SucceededCount, out long FailedCount, out long InFlight, out long Remaining, out int Tps, out int? DailyQuota, out long ReleasedToday, out int MaxInFlight, out System.TimeOnly? WindowStart, out System.TimeOnly? WindowEnd, out string! TimeZoneId, out System.Collections.Generic.IReadOnlyList<string!>! ExcludedDays, out System.DateOnly? EndDate, out int MaxAttempts, out Goldpath.GoldpathCampaignPriority Priority, out bool WindowOpenNow, out double? EtaSecondsAtCurrentTps, out System.DateTimeOffset CreatedAt, out string! CreatedBy, out System.DateTimeOffset? CompletedAt, out string? LastVerb, out string? Tenant) -> void
+Goldpath.GoldpathCampaignInfo.Equals(Goldpath.GoldpathCampaignInfo? other) -> bool
+Goldpath.GoldpathCampaignItemMessage.<Clone>$() -> Goldpath.GoldpathCampaignItemMessage!
+Goldpath.GoldpathCampaignItemMessage.Deconstruct(out System.Guid CampaignId, out long Seq, out string! Type) -> void
+Goldpath.GoldpathCampaignItemMessage.Equals(Goldpath.GoldpathCampaignItemMessage? other) -> bool
+Goldpath.GoldpathCampaignOutcomeMessage.<Clone>$() -> Goldpath.GoldpathCampaignOutcomeMessage!
+Goldpath.GoldpathCampaignOutcomeMessage.Deconstruct(out System.Guid CampaignId, out long Seq, out bool Succeeded, out string? Error) -> void
+Goldpath.GoldpathCampaignOutcomeMessage.Equals(Goldpath.GoldpathCampaignOutcomeMessage? other) -> bool
+Goldpath.GoldpathCampaignPolicy.<Clone>$() -> Goldpath.GoldpathCampaignPolicy!
+Goldpath.GoldpathCampaignPolicy.Deconstruct(out int Tps, out int? DailyQuota, out int MaxInFlight, out System.TimeOnly? WindowStart, out System.TimeOnly? WindowEnd, out string! TimeZoneId) -> void
+Goldpath.GoldpathCampaignPolicy.Equals(Goldpath.GoldpathCampaignPolicy? other) -> bool
+Goldpath.GoldpathCampaignThrottle.<Clone>$() -> Goldpath.GoldpathCampaignThrottle!
+Goldpath.GoldpathCampaignThrottle.Deconstruct(out int? Tps, out int? DailyQuota, out int? MaxInFlight, out System.TimeOnly? WindowStart, out System.TimeOnly? WindowEnd, out string? TimeZoneId, out bool ClearDailyQuota, out bool ClearWindow, out System.Collections.Generic.IReadOnlyList<string!>? ExcludedDays, out System.DateOnly? EndDate, out int? MaxAttempts, out bool ClearExcludedDays, out bool ClearEndDate, out Goldpath.GoldpathCampaignPriority? Priority) -> void
+Goldpath.GoldpathCampaignThrottle.Equals(Goldpath.GoldpathCampaignThrottle? other) -> bool
+override Goldpath.GoldpathCampaignAbortRequest.Equals(object? obj) -> bool
+override Goldpath.GoldpathCampaignAbortRequest.GetHashCode() -> int
+override Goldpath.GoldpathCampaignAbortRequest.ToString() -> string!
+override Goldpath.GoldpathCampaignCreateRequest.Equals(object? obj) -> bool
+override Goldpath.GoldpathCampaignCreateRequest.GetHashCode() -> int
+override Goldpath.GoldpathCampaignCreateRequest.ToString() -> string!
+override Goldpath.GoldpathCampaignFailedItem.Equals(object? obj) -> bool
+override Goldpath.GoldpathCampaignFailedItem.GetHashCode() -> int
+override Goldpath.GoldpathCampaignFailedItem.ToString() -> string!
+override Goldpath.GoldpathCampaignInfo.Equals(object? obj) -> bool
+override Goldpath.GoldpathCampaignInfo.GetHashCode() -> int
+override Goldpath.GoldpathCampaignInfo.ToString() -> string!
+override Goldpath.GoldpathCampaignItemMessage.Equals(object? obj) -> bool
+override Goldpath.GoldpathCampaignItemMessage.GetHashCode() -> int
+override Goldpath.GoldpathCampaignItemMessage.ToString() -> string!
+override Goldpath.GoldpathCampaignOutcomeMessage.Equals(object? obj) -> bool
+override Goldpath.GoldpathCampaignOutcomeMessage.GetHashCode() -> int
+override Goldpath.GoldpathCampaignOutcomeMessage.ToString() -> string!
+override Goldpath.GoldpathCampaignPolicy.Equals(object? obj) -> bool
+override Goldpath.GoldpathCampaignPolicy.GetHashCode() -> int
+override Goldpath.GoldpathCampaignPolicy.ToString() -> string!
+override Goldpath.GoldpathCampaignThrottle.Equals(object? obj) -> bool
+override Goldpath.GoldpathCampaignThrottle.GetHashCode() -> int
+override Goldpath.GoldpathCampaignThrottle.ToString() -> string!
+static Goldpath.GoldpathCampaignAbortRequest.operator !=(Goldpath.GoldpathCampaignAbortRequest? left, Goldpath.GoldpathCampaignAbortRequest? right) -> bool
+static Goldpath.GoldpathCampaignAbortRequest.operator ==(Goldpath.GoldpathCampaignAbortRequest? left, Goldpath.GoldpathCampaignAbortRequest? right) -> bool
+static Goldpath.GoldpathCampaignCreateRequest.operator !=(Goldpath.GoldpathCampaignCreateRequest? left, Goldpath.GoldpathCampaignCreateRequest? right) -> bool
+static Goldpath.GoldpathCampaignCreateRequest.operator ==(Goldpath.GoldpathCampaignCreateRequest? left, Goldpath.GoldpathCampaignCreateRequest? right) -> bool
+static Goldpath.GoldpathCampaignFailedItem.operator !=(Goldpath.GoldpathCampaignFailedItem? left, Goldpath.GoldpathCampaignFailedItem? right) -> bool
+static Goldpath.GoldpathCampaignFailedItem.operator ==(Goldpath.GoldpathCampaignFailedItem? left, Goldpath.GoldpathCampaignFailedItem? right) -> bool
+static Goldpath.GoldpathCampaignInfo.operator !=(Goldpath.GoldpathCampaignInfo? left, Goldpath.GoldpathCampaignInfo? right) -> bool
+static Goldpath.GoldpathCampaignInfo.operator ==(Goldpath.GoldpathCampaignInfo? left, Goldpath.GoldpathCampaignInfo? right) -> bool
+static Goldpath.GoldpathCampaignItemMessage.operator !=(Goldpath.GoldpathCampaignItemMessage? left, Goldpath.GoldpathCampaignItemMessage? right) -> bool
+static Goldpath.GoldpathCampaignItemMessage.operator ==(Goldpath.GoldpathCampaignItemMessage? left, Goldpath.GoldpathCampaignItemMessage? right) -> bool
+static Goldpath.GoldpathCampaignOutcomeMessage.operator !=(Goldpath.GoldpathCampaignOutcomeMessage? left, Goldpath.GoldpathCampaignOutcomeMessage? right) -> bool
+static Goldpath.GoldpathCampaignOutcomeMessage.operator ==(Goldpath.GoldpathCampaignOutcomeMessage? left, Goldpath.GoldpathCampaignOutcomeMessage? right) -> bool
+static Goldpath.GoldpathCampaignPolicy.operator !=(Goldpath.GoldpathCampaignPolicy? left, Goldpath.GoldpathCampaignPolicy? right) -> bool
+static Goldpath.GoldpathCampaignPolicy.operator ==(Goldpath.GoldpathCampaignPolicy? left, Goldpath.GoldpathCampaignPolicy? right) -> bool
+static Goldpath.GoldpathCampaignThrottle.operator !=(Goldpath.GoldpathCampaignThrottle? left, Goldpath.GoldpathCampaignThrottle? right) -> bool
+static Goldpath.GoldpathCampaignThrottle.operator ==(Goldpath.GoldpathCampaignThrottle? left, Goldpath.GoldpathCampaignThrottle? right) -> bool

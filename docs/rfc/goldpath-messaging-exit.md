@@ -189,7 +189,8 @@ broker into the context (S2.2), the poison ladder then the fault (S2.3), a 1 MiB
 (S2.4), a wider producer tolerated and a narrower one defaulted (S2.5), a commit before
 the bus exists delivered once it starts — the crash between commit and publish (S2.6), a
 paused broker delaying but losing nothing (S2.7), a graceful stop mid-stream draining
-across two processes without duplicates (S2.8). Not yet in the suite, said plainly:
+across two processes without duplicates (S2.8). Not yet in the suite on that date, said plainly (four of them
+joined on 2026-10-27, below):
 delayed redelivery (needs the scheduler plugin the in-memory ladder skips), per-queue
 ordering (the seam promises none; a second engine may), OTel spans (needs an exporter
 in the harness), consumer concurrency/prefetch limits. Every fact is written against the
@@ -232,6 +233,47 @@ engine, and the error queue by S4.5 across them:
   the remaining delayed stages are skipped and nothing is lost. This is T51's to close, and it
   stays open until delayed redelivery is durable on Wolverine.
 
+**2026-10-27 — the named gaps (G5 Part 2/5, [#331](https://github.com/qorpe/goldpath/issues/331)).** Six
+facts join the class, each green on MassTransit 8.5.11 and on the Wolverine adapter in the same CI job, and each
+shown red against a planted fault (S2.14–S2.17 on each engine; S2.18 and S2.19 on Wolverine, the engine whose mode
+they guard):
+
+- **S2.14, per-queue ordering.** The seam's promise is written down here, and it is the weakest one both engines
+  hold: one publisher's messages, on one endpoint run at `ConcurrencyLimit = 1` in one process, are handled in
+  publish order. At any other limit, across processes, or once a retry puts a message back, the seam promises no
+  order.
+- **S2.15, consumer concurrency and prefetch.** A `ConcurrencyLimit` of N is reached and never exceeded
+  (messaging-engines §4.1 row 14). The default engine's own window is larger (16 or more), so an engine that
+  ignored the limit fails it.
+- **S2.16, OTel spans.** Read through the SDK's in-memory exporter: the delivery's span continues the
+  publisher's trace, and the consume span carries `goldpath.tenant_id` and `goldpath.correlation_id`. Finding:
+  both engines failed it first. The default engine tagged no tenant, so the consume filter now tags it.
+  Wolverine's own span started a new trace from the 8.x envelope, so the adapter now opens the consume span under
+  the publisher's (ActivitySource `Goldpath.Messaging.Wolverine`). Across engines the trace is not continuous
+  yet (open-threads T51).
+- **S2.17, message versioning with a renamed type.** `[GoldpathMessageName]` (messaging-engines §4.1 row 15)
+  keeps a renamed and moved type's exchange and URN. An old producer's message reaches the renamed handler, the
+  renamed type published through the outbox reaches an old consumer, and no exchange appears under the new CLR
+  name.
+- **S2.18, the retry ladder on a limited endpoint.** A limit changes how the Wolverine adapter runs an endpoint
+  (in parallel, with native acknowledgements), so S2.3 is asked again there: every attempt, then `<queue>_error`.
+- **S2.19, exactly-once on a limited endpoint.** S2.1 asked again where deliveries of one message id can be in
+  flight at once: the same id delivered five times at `ConcurrencyLimit = 4` is handled once. Finding: the
+  Wolverine adapter handled it four times, because its inbox locked a row that a first delivery has not written
+  yet. It now claims the row (an insert that does nothing on the existing key) before it locks it, so a concurrent
+  duplicate waits for the first delivery's transaction and then sees it consumed.
+
+**Delayed redelivery is not in the suite, and that is a finding, not a skip** (open-threads T52; S2.13 is
+reserved for it). The Wolverine
+adapter refuses a redelivery ladder at registration (T51). The default engine schedules a redelivery through
+RabbitMQ's delayed-message exchange plugin, which the suite's broker (stock RabbitMQ 4.x) does not carry. Measured
+on the suite's broker with a ladder of 1 s and 2 s and no immediate retries: the redelivery's exchange declare is
+refused (`406 PRECONDITION_FAILED - unknown exchange type 'x-delayed-message'`). After 12 s the poison message had
+been attempted twice, `poison_error` was empty, and the message was still on its queue. The plugin's own README
+(fetched 2026-10-27) says it is no longer maintained and cannot run from RabbitMQ 4.3, where Mnesia was removed.
+So no fact can prove the ladder on a current broker, and `Goldpath:Messaging:Retry:RedeliveryIntervals`
+defaults to 5, 15 and 30 minutes. What the ladder rides on is the owner's decision (T52).
+
 ## 8. DoD — closed 2026-08-10
 
 - [x] Owner decides A–E → **A** (stay pinned on 8.x), fallback **D**. Decided 2026-08-10.
@@ -268,11 +310,12 @@ lines, open until each proof runs:
 - [ ] The Wolverine adapter passes §7.1 S1, S2, S3, S4 and S6 by **2026-12-31** (GA gate G5,
       owner decision 2026-10-21, ADR-0015); SECURITY.md states the engine posture.
       **2026-10-25 (G5 Part 1/5, #330):** `Goldpath.Messaging.Wolverine` runs the suite's current
-      class, S2.1–S2.12, green beside 8.5.11 in the same CI job. S2 is not yet widened with the four
-      gaps above (Part 2/5), and S1, S3, S4 and S6 are open; what the adapter refuses is open-threads T51.
-      **2026-10-26 (G5 Part 4/5, #333):** S4's facts, S4.1–S4.5, run in the CI integration job in both
-      directions, on the 8.x envelope, topology and tables; delayed redelivery is the stage a mixed
-      fleet does not share (above, T51).
+      class, S2.1–S2.12, green beside 8.5.11 in the same CI job. **2026-10-26 (G5 Part 4/5, #333):** S4's facts,
+      S4.1–S4.5, run in the CI integration job in both directions, on the 8.x envelope, topology and tables;
+      delayed redelivery is the stage a mixed fleet does not share (above, T51). **2026-10-27 (G5 Part 2/5, #331):**
+      S2.14 ordering, S2.15 concurrency, S2.16 spans, S2.17 a renamed type, S2.18 the ladder on a limited
+      endpoint and S2.19 exactly-once on a limited endpoint join it, green on both. Delayed redelivery is the
+      open finding T52. S1, S3 and S6 are open; what the adapter refuses is open-threads T51.
 - [ ] The family bus has its own RFC and repository (qorpe organisation, open source,
       clean-room per ADR-0013) in **December 2026**; its first adapter enters the suite in
       January–February 2027 (T40, milestone `family-bus`).

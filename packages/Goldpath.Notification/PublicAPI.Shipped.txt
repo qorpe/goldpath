@@ -245,3 +245,35 @@ Goldpath.GoldpathNotificationAdminService<TContext>.GetFailuresAsync(string? ten
 Goldpath.GoldpathEmailOptions.AllowInsecureTransport.get -> bool
 Goldpath.GoldpathEmailOptions.AllowInsecureTransport.set -> void
 Goldpath.GoldpathNotificationAdminService<TContext>.GetNotificationsAsync(string![]? state, string![]? template, string? tenant, int take, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathNotificationInfo!>!>!
+Goldpath.GoldpathNotificationAttachmentContent.<Clone>$() -> Goldpath.GoldpathNotificationAttachmentContent!
+Goldpath.GoldpathNotificationAttachmentContent.Deconstruct(out string! Name, out string! ContentType, out byte[]! Content) -> void
+Goldpath.GoldpathNotificationAttachmentContent.Equals(Goldpath.GoldpathNotificationAttachmentContent? other) -> bool
+Goldpath.GoldpathNotificationInfo.<Clone>$() -> Goldpath.GoldpathNotificationInfo!
+Goldpath.GoldpathNotificationInfo.Deconstruct(out System.Guid Id, out string! DedupKey, out string! Template, out string! TemplateHash, out string! Channel, out string! MaskedRecipient, out string! Culture, out string! State, out int Attempts, out string? Detail, out System.DateTimeOffset RequestedAt, out System.DateTimeOffset? NotBefore, out System.DateTimeOffset? ClaimedAt, out System.DateTimeOffset? SentAt, out System.DateTimeOffset? FailedAt, out System.DateTimeOffset? BodyDeletedAt, out string? Tenant, out string? CorrelationId) -> void
+Goldpath.GoldpathNotificationInfo.Equals(Goldpath.GoldpathNotificationInfo? other) -> bool
+Goldpath.GoldpathNotificationMessage.<Clone>$() -> Goldpath.GoldpathNotificationMessage!
+Goldpath.GoldpathNotificationMessage.Deconstruct(out System.Guid NotificationId, out string! Recipient, out string? Subject, out string! Body, out System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathNotificationAttachmentContent!>! Attachments, out string! Template, out string? Tenant, out string? CorrelationId) -> void
+Goldpath.GoldpathNotificationMessage.Equals(Goldpath.GoldpathNotificationMessage? other) -> bool
+Goldpath.GoldpathNotificationTemplateStatus.<Clone>$() -> Goldpath.GoldpathNotificationTemplateStatus!
+Goldpath.GoldpathNotificationTemplateStatus.Deconstruct(out string! Key, out string! Hash, out System.TimeSpan? DeleteBodyAfter, out System.Collections.Generic.IReadOnlyDictionary<string!, int>! ByState, out double? OldestRequestedSeconds) -> void
+Goldpath.GoldpathNotificationTemplateStatus.Equals(Goldpath.GoldpathNotificationTemplateStatus? other) -> bool
+override Goldpath.GoldpathNotificationAttachmentContent.Equals(object? obj) -> bool
+override Goldpath.GoldpathNotificationAttachmentContent.GetHashCode() -> int
+override Goldpath.GoldpathNotificationAttachmentContent.ToString() -> string!
+override Goldpath.GoldpathNotificationInfo.Equals(object? obj) -> bool
+override Goldpath.GoldpathNotificationInfo.GetHashCode() -> int
+override Goldpath.GoldpathNotificationInfo.ToString() -> string!
+override Goldpath.GoldpathNotificationMessage.Equals(object? obj) -> bool
+override Goldpath.GoldpathNotificationMessage.GetHashCode() -> int
+override Goldpath.GoldpathNotificationMessage.ToString() -> string!
+override Goldpath.GoldpathNotificationTemplateStatus.Equals(object? obj) -> bool
+override Goldpath.GoldpathNotificationTemplateStatus.GetHashCode() -> int
+override Goldpath.GoldpathNotificationTemplateStatus.ToString() -> string!
+static Goldpath.GoldpathNotificationAttachmentContent.operator !=(Goldpath.GoldpathNotificationAttachmentContent? left, Goldpath.GoldpathNotificationAttachmentContent? right) -> bool
+static Goldpath.GoldpathNotificationAttachmentContent.operator ==(Goldpath.GoldpathNotificationAttachmentContent? left, Goldpath.GoldpathNotificationAttachmentContent? right) -> bool
+static Goldpath.GoldpathNotificationInfo.operator !=(Goldpath.GoldpathNotificationInfo? left, Goldpath.GoldpathNotificationInfo? right) -> bool
+static Goldpath.GoldpathNotificationInfo.operator ==(Goldpath.GoldpathNotificationInfo? left, Goldpath.GoldpathNotificationInfo? right) -> bool
+static Goldpath.GoldpathNotificationMessage.operator !=(Goldpath.GoldpathNotificationMessage? left, Goldpath.GoldpathNotificationMessage? right) -> bool
+static Goldpath.GoldpathNotificationMessage.operator ==(Goldpath.GoldpathNotificationMessage? left, Goldpath.GoldpathNotificationMessage? right) -> bool
+static Goldpath.GoldpathNotificationTemplateStatus.operator !=(Goldpath.GoldpathNotificationTemplateStatus? left, Goldpath.GoldpathNotificationTemplateStatus? right) -> bool
+static Goldpath.GoldpathNotificationTemplateStatus.operator ==(Goldpath.GoldpathNotificationTemplateStatus? left, Goldpath.GoldpathNotificationTemplateStatus? right) -> bool

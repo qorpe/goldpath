@@ -34,6 +34,7 @@ internal sealed class WolverineIntegrationEventPublisher(IServiceProvider servic
             headers[GoldpathHeaders.CorrelationId] = correlationId;
         }
 
+        GoldpathWire.StampTrace(headers);
         var messageId = Guid.NewGuid();
         var now = DateTimeOffset.UtcNow;
         var envelope = wire.Envelope(typeof(TEvent), integrationEvent, messageId, headers, now);

@@ -173,6 +173,26 @@ jobs:
           dotnet-version: |
             8.0.x
             10.0.x
+      # pnpm + node only for the packed feed below: CorPay references Goldpath.Console, and a
+      # console packed without its built assets answers 500 on its page.
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: ui/console/pnpm-lock.yaml
+      - name: which feed (nuget.org on a published train; this repository packed beside it while a release is in flight)
+        # #378. CorPay proves the PUBLISHED train (ADR-0007), so a published train restores from
+        # nuget.org only. A release head (and main between merge and publish) pins CorPay to a
+        # train nuget.org does not have yet — train-freshness.sh requires it — so only then is
+        # this repository packed into a local feed and added beside nuget.org. The log and the
+        # step summary name the feed used; anything the script cannot decide fails the job.
+        id: feed
+        run: bash scripts/corpay-feed.sh
+        env:
+          GOLDPATH_CORPAY_FEED: ${{ runner.temp }}/goldpath-feed
       - name: build + unit contracts
         working-directory: samples/corpay
         run: |
@@ -184,10 +204,19 @@ jobs:
         # one — the preview.4 export-completeness fix changed four responses and nothing
         # noticed until a release review read the diff. The reference app runs the same
         # verb it tells adopters to run.
+        # While a release is in flight the CLI is the packed one, at the train CorPay pins.
         run: |
-          dotnet tool install -g Goldpath.Cli --prerelease
+          if [ "$CORPAY_SOURCE" = "packed" ]; then
+            dotnet tool install -g Goldpath.Cli --version "$CORPAY_TRAIN" --add-source "$CORPAY_FEED"
+          else
+            dotnet tool install -g Goldpath.Cli --prerelease
+          fi
           dotnet tool install -g specdrift
           goldpath check
+        env:
+          CORPAY_SOURCE: ${{ steps.feed.outputs.source }}
+          CORPAY_TRAIN: ${{ steps.feed.outputs.train }}
+          CORPAY_FEED: ${{ steps.feed.outputs.feed }}
       - name: smoke (real AppHost + containers)
         working-directory: samples/corpay
         run: dotnet test tests/CorPay.SmokeTests/CorPay.SmokeTests.csproj --no-build --nologo

@@ -59,3 +59,8 @@ const Goldpath.GoldpathPolicies.OpsAllTenants = "goldpath-ops-all-tenants" -> st
 Goldpath.GoldpathMultiTenancyMarker
 Goldpath.GoldpathMultiTenancyMarker.GoldpathMultiTenancyMarker() -> void
 Goldpath.IAuditLogged
+Goldpath.TenantId.Equals(Goldpath.TenantId other) -> bool
+override Goldpath.TenantId.GetHashCode() -> int
+static Goldpath.TenantId.operator !=(Goldpath.TenantId left, Goldpath.TenantId right) -> bool
+static Goldpath.TenantId.operator ==(Goldpath.TenantId left, Goldpath.TenantId right) -> bool
+~override Goldpath.TenantId.Equals(object obj) -> bool

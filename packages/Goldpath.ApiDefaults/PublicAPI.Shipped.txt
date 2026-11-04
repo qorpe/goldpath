@@ -24,3 +24,19 @@ static Goldpath.GoldpathCursor.Encode<T>(T key) -> string!
 static Goldpath.GoldpathCursor.Encode<T1, T2>(T1 first, T2 second) -> string!
 static Goldpath.GoldpathCursor.TryDecode<T>(string? cursor, out T? key) -> bool
 static Goldpath.GoldpathCursor.TryDecode<T1, T2>(string? cursor, out T1? first, out T2? second) -> bool
+Goldpath.Page<T>.<Clone>$() -> Goldpath.Page<T>!
+Goldpath.Page<T>.Deconstruct(out System.Collections.Generic.IReadOnlyList<T>! Items, out string? NextCursor, out int Size) -> void
+Goldpath.Page<T>.Equals(Goldpath.Page<T>? other) -> bool
+Goldpath.PageRequest.<Clone>$() -> Goldpath.PageRequest!
+Goldpath.PageRequest.Deconstruct(out string? Cursor, out int Size) -> void
+Goldpath.PageRequest.Equals(Goldpath.PageRequest? other) -> bool
+override Goldpath.Page<T>.Equals(object? obj) -> bool
+override Goldpath.Page<T>.GetHashCode() -> int
+override Goldpath.Page<T>.ToString() -> string!
+override Goldpath.PageRequest.Equals(object? obj) -> bool
+override Goldpath.PageRequest.GetHashCode() -> int
+override Goldpath.PageRequest.ToString() -> string!
+static Goldpath.Page<T>.operator !=(Goldpath.Page<T>? left, Goldpath.Page<T>? right) -> bool
+static Goldpath.Page<T>.operator ==(Goldpath.Page<T>? left, Goldpath.Page<T>? right) -> bool
+static Goldpath.PageRequest.operator !=(Goldpath.PageRequest? left, Goldpath.PageRequest? right) -> bool
+static Goldpath.PageRequest.operator ==(Goldpath.PageRequest? left, Goldpath.PageRequest? right) -> bool

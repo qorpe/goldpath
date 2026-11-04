@@ -14,10 +14,11 @@ namespace Goldpath.Tests.Integration;
 /// server (smtp4dev): request (rendered, hash-stamped, dedup-guarded) → the send run
 /// claims and the mail ACTUALLY LANDS → evidence stamped; a poisoned webhook exhausts its
 /// attempts into the repair queue and the admin replay-items verb re-sends it once the
-/// world is fixed. Claim-before-send proven against the wire.
+/// world is fixed. Claim-before-send proven against the wire. The facts are provider-neutral:
+/// PostgreSQL runs them (<see cref="NotificationTests"/>), and Oracle runs them in the Oracle lane
+/// (<see cref="NotificationOracleTests"/>, G7 O-5b, #410), the Quartz store included.
 /// </summary>
-[Collection("quartz-process-globals")]
-public sealed class NotificationTests : IAsyncLifetime
+public abstract class NotificationFacts : IAsyncLifetime
 {
     public sealed class NotifyDb(DbContextOptions<NotifyDb> options) : DbContext(options)
     {
@@ -28,7 +29,6 @@ public sealed class NotificationTests : IAsyncLifetime
         }
     }
 
-    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17-alpine").Build();
     private readonly IContainer _smtp = new ContainerBuilder("rnwood/smtp4dev:3.8.6")
         .WithPortBinding(25, assignRandomHostPort: true)
         .WithPortBinding(80, assignRandomHostPort: true)
@@ -38,17 +38,39 @@ public sealed class NotificationTests : IAsyncLifetime
     private IHost _host = null!;
     private readonly string _fleet = $"notify-{Guid.NewGuid():N}"[..16];   // unique per test: Quartz's SchedulerRepository is process-global
 
+    /// <summary>Starts an empty database and returns its connection string.</summary>
+    protected abstract Task<string> StartDatabaseAsync();
+
+    /// <summary>Releases what <see cref="StartDatabaseAsync"/> started.</summary>
+    protected abstract Task StopDatabaseAsync();
+
+    /// <summary>Points a context at the database.</summary>
+    protected abstract void Use(DbContextOptionsBuilder options, string connection);
+
+    /// <summary>The Quartz store's provider for this database.</summary>
+    protected abstract GoldpathJobStoreProvider JobStore { get; }
+
+    /// <summary>
+    /// The open issue under which this provider refuses a notification rendered from the invariant fallback (its
+    /// culture is the empty name), or <see langword="null"/> where it is stored. While it is set, the fact that
+    /// requests one asserts that refusal and stops: the day the issue lands, the assertion goes red.
+    /// </summary>
+    protected virtual string? InvariantCultureRefusedUnder => null;
+
     public async Task InitializeAsync()
     {
-        await Task.WhenAll(_postgres.StartAsync(), _smtp.StartAsync());
-        await using (var db = new NotifyDb(new DbContextOptionsBuilder<NotifyDb>().UseNpgsql(_postgres.GetConnectionString()).Options))
+        var connection = await StartDatabaseAsync();
+        await _smtp.StartAsync();
+        var options = new DbContextOptionsBuilder<NotifyDb>();
+        Use(options, connection);
+        await using (var db = new NotifyDb(options.Options))
         {
             await db.Database.EnsureCreatedAsync();
         }
 
         var builder = Host.CreateApplicationBuilder();
-        builder.Configuration["ConnectionStrings:notifydb"] = _postgres.GetConnectionString();
-        builder.Services.AddDbContext<NotifyDb>(o => o.UseNpgsql(_postgres.GetConnectionString()));
+        builder.Configuration["ConnectionStrings:notifydb"] = connection;
+        builder.Services.AddDbContext<NotifyDb>(o => Use(o, connection));
         builder.AddGoldpathNotification<HostApplicationBuilder, NotifyDb>(notification =>
         {
             notification.RetryDelay = TimeSpan.FromMilliseconds(50);
@@ -77,6 +99,7 @@ public sealed class NotificationTests : IAsyncLifetime
         {
             jobs.ConnectionName = "notifydb";
             jobs.SchedulerName = _fleet;
+            jobs.Provider = JobStore;
             // Far-future crons: the test drives every run through the ADMIN verb.
             jobs.AddGoldpathNotificationJobs<NotifyDb>(sendCron: "0 0 0 1 1 ? 2099", retentionCron: "0 0 0 1 1 ? 2099");
         });
@@ -89,7 +112,7 @@ public sealed class NotificationTests : IAsyncLifetime
         await _host.StopAsync();
         _host.Dispose();
         QuartzProcessGlobals.Pin();
-        await Task.WhenAll(_postgres.DisposeAsync().AsTask(), _smtp.DisposeAsync().AsTask());
+        await Task.WhenAll(StopDatabaseAsync(), _smtp.DisposeAsync().AsTask());
     }
 
     private GoldpathJobsAdminService<NotifyDb> Admin => _host.Services.GetRequiredService<GoldpathJobsAdminService<NotifyDb>>();
@@ -176,11 +199,18 @@ public sealed class NotificationTests : IAsyncLifetime
         Guid id;
         using (var scope = _host.Services.CreateScope())
         {
-            var notification = await scope.ServiceProvider.GetRequiredService<IGoldpathNotifier>().RequestAsync(
-                new GoldpathNotificationRequest("ops-alert", "webhook", "ops-room", "",
-                    new Dictionary<string, string> { ["Text"] = "disk full" }, dedupKey: "alert:disk:2026-07-08"),
-                timeout.Token);
-            id = notification.Id;
+            var request = new GoldpathNotificationRequest("ops-alert", "webhook", "ops-room", "",
+                new Dictionary<string, string> { ["Text"] = "disk full" }, dedupKey: "alert:disk:2026-07-08");
+            var notifier = scope.ServiceProvider.GetRequiredService<IGoldpathNotifier>();
+            if (InvariantCultureRefusedUnder is not null)
+            {
+                // The template exists only in the invariant culture, so the stored culture is "" — NULL on this provider.
+                var refused = await Assert.ThrowsAsync<DbUpdateException>(() => notifier.RequestAsync(request, timeout.Token));
+                Assert.Contains("ORA-01400", refused.InnerException?.Message, StringComparison.Ordinal);
+                return;
+            }
+
+            id = (await notifier.RequestAsync(request, timeout.Token)).Id;
         }
 
         await WaitForFleetAsync(timeout.Token);
@@ -230,4 +260,23 @@ public sealed class NotificationTests : IAsyncLifetime
     private sealed record Smtp4DevPage(List<Smtp4DevMessage> Results);
 
     private sealed record Smtp4DevMessage(string Subject, List<string> To);
+}
+
+/// <summary><see cref="NotificationFacts"/> on PostgreSQL: a container per test.</summary>
+[Collection("quartz-process-globals")]
+public sealed class NotificationTests : NotificationFacts
+{
+    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17-alpine").Build();
+
+    protected override GoldpathJobStoreProvider JobStore => GoldpathJobStoreProvider.Postgres;
+
+    protected override async Task<string> StartDatabaseAsync()
+    {
+        await _postgres.StartAsync();
+        return _postgres.GetConnectionString();
+    }
+
+    protected override Task StopDatabaseAsync() => _postgres.DisposeAsync().AsTask();
+
+    protected override void Use(DbContextOptionsBuilder options, string connection) => options.UseNpgsql(connection);
 }

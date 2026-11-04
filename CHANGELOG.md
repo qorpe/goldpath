@@ -25,8 +25,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     `DefaultPolicy(...)` with a non-positive one throws at registration; omitted keeps it, `clearMaxAwaitingAck` clears it), audited old → new;
     the policy text adds `maxAwaitingAck=…` only when either side has one, so existing audit
     text is unchanged. New gauge `goldpath_campaign_awaiting_ack`, tagged `campaign` and
-    `type`, with a panel on the campaign dashboard and runbook §8 rewritten around it.
-  - **Proof:** `R3AwaitingAckTests` (31 cases), and fifteen planted faults that each turn them
+    `type` (a row in RFC §7's instrument table, held by `MetricsExportTests`), with a panel on the
+    campaign dashboard and runbook §8 rewritten around it. `goldpath_campaign_binding_constraint`
+    gains `awaiting_ack`: named when the acknowledgement room is strictly smaller than the live-work
+    room (a tie names `in_flight`).
+  - **Proof:** `R3AwaitingAckTests` (31 cases), `MetricsExportTests`' `awaiting_ack` binding facts and
+    `AckCeilingBinds` theory (ten cases), and fifteen planted faults that each turn them
     red: the pacer ignoring the field, counting only landed acceptances (one release past the
     ceiling), no clamp, no flush count (on either the success or the failure half), no slice
     re-count, every failure counted out of `AwaitingAck`, the clear ignored, a non-positive
@@ -36,6 +40,49 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     (red without the re-count). Mutation gate: 82.31 % (`stryker/README.md`).
   - **Not yet:** the real-broker proof with a slow-acknowledging target and the console's view
     and edit of the ceiling (R3-S6, #316).
+- **Campaign: the metrics RFC §7 promised, and the ones an impact dashboard needs (#294).** Ten new instruments
+  on the `Goldpath.Campaign` meter; no `PublicAPI` change. RFC campaign §7 is rewritten as the table of every
+  exported instrument, and `MetricsExportTests` holds each one's name, unit and tags against it.
+  - `goldpath_campaign_handler_duration` (s, by type): the adapter's latency, a throw timed too.
+  - `goldpath_campaign_outcomes_total` (by type, outcome and `error_code`): rows the sink moved, not messages it
+    received. The code's cardinality is bounded: a type's first 32 distinct codes, then `other`; over 64
+    characters, free text (anything but letters, digits, `_`, `-`, `.`), a run of more than six digits, or more
+    than ten digits in all (a phone or account number echoed back as the code, grouped or not) is `other`; none is `none`.
+  - Ceilings: `goldpath_campaign_tps_ceiling` per running campaign, `goldpath_campaign_type_max_tps` per type,
+    `goldpath_campaign_global_tps`.
+  - `goldpath_campaign_binding_constraint`: the limit that bound each running campaign's last tick —
+    `tps | in_flight | quota | window | type | global | none`.
+  - `goldpath_campaign_leader_last_tick` (Unix seconds): the pacer's liveness.
+  - **Only the leader exports the per-campaign and ceiling gauges:** they leave when a leadership slice ends, so a
+    process that stopped leading never scrapes a frozen view beside the new leader's live one. Its
+    `leader_last_tick` stays.
+  - Quota consumption: `goldpath_campaign_released_today` against `goldpath_campaign_daily_quota`.
+  - `goldpath_campaign_sink_flush_lag` (s): from an attempt's claim to the flush that made its outcome durable —
+    the handler's time plus the sink's, because nothing on the seam carries a send instant (T57).
+  - **Behaviour:** the sink now reads the campaign's type and the claimed items once per flush (sliced at 500
+    for a provider's IN-list limit). An outcome naming a campaign that does not exist is a no-op; before, a
+    failure for one threw and the batch went to the retry ladder.
+  - **RFC §7 no longer claims** counter-reconcile events (there is no event: the D3 reconcile reads the row) or
+    an ETA instrument (it is `remaining / tps_ceiling`, computed by the board).
+- **The served console's asset route is pinned against path traversal (threat model T-CON-03, GA gate G15, #454).**
+  `Goldpath.Console.Tests.ConsoleTraversalTests` asserts `404` for `../`, `..\`, `..%5c`, `%2e%2e%2f`, `..%2f`,
+  absolute and drive-letter paths, through `Serve` and over the mapped route. Every payload aims at a file that exists,
+  so swapping the embedded provider for a disk-backed one turns the test red instead of turning the route into a file
+  read. No behaviour change: the provider moved into an internal `ConsoleFiles()` so the tests resolve against the one
+  the route serves from. Writing it measured why the provider is the only holder: routing decodes `%5C`, and the
+  console's `\`-to-`/` rewrite then rebuilds `..%5c` into `../` after the server has normalised dot segments.
+- **Notification, Approvals, FileExchange and the audit log, proven on Oracle (GA gate G7, slice O-5b, #410).** Tests
+  only: no package changes.
+  - **Goldens.** The O-2 composed model now adds the four modules' contributions, so the Oracle golden pins their columns,
+    the 128-byte identifier check covers their names, and the `''` probe covers their NOT NULL strings. Seven columns
+    the modules may write empty are listed against two new issues: the invariant-fallback culture (#502), and blank
+    Approvals identities and file-rail quarantine reasons (#503).
+  - **Twins.** `EfApprovalStoreTests`, `EfFileLedgerTests` and `AuditTrailTests` became provider-neutral facts files
+    (`*Facts.cs`) with a SQLite subclass in their unit projects. The integration project links the same files and runs
+    them on Oracle (`Category=Oracle`). `NotificationTests` became `NotificationFacts` with PostgreSQL and Oracle
+    subclasses, the Oracle one using the Quartz Oracle store.
+  - **Known refusals.** Where a known issue refuses a write on Oracle, the twin asserts that refusal instead of skipping:
+    #475 for an audit row's NULL document, and #502 for the `""` culture. Each assertion flips when its issue lands.
 - **The Data module, proven on Oracle (GA gate G7, slice O-2, #405).** Tests only: no package changes.
   `OracleDataTests` (`Category=Oracle`) runs on the O-1 lane's container, one schema per fact, against a model that
   composes Jobs, Campaign, Bulk and Archival in the 19c SQL form:
@@ -49,7 +96,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   It found three things, filed as issues:
   - the document columns are `NVARCHAR2(2000)` and refuse a NULL in the client (#475);
   - three admin verbs can write `''` into a NOT NULL column (#476);
-  - the global ceiling row's empty name (#384, already open).
+  - the global ceiling row's empty name (#384, already open; fixed, see Fixed).
 
   It also found that under a `tr-TR` culture ODP.NET opens the session with `NLS_SORT=TURKISH`, so a keyset walk
   over a string key silently skips rows. A fact pins it, #496 holds the fix (pin the session's sort in the Oracle
@@ -83,6 +130,103 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   - **Runbook:** §9 covers `QRTZ_LOCKS` row-lock contention.
   - **Still open:** `GoldpathJobExecutions` loses the history row of a fire with no error on Oracle.
     The `Error` document column refuses a NULL in ODP.NET (#475).
+- **Campaign: a policy version on the throttle — a stale throttle is refused, not silently applied (campaign RFC
+  R3.5, slice R3-S4, #298).** The campaign half of optimistic concurrency; the HTTP half (`ETag`, `If-Match`, `412`)
+  is admin-contract R4's route slice (#304), so the HTTP `throttle` route behaves as before.
+  - **API (additive):** `GoldpathCampaignInfo.PolicyVersion` (the detail and the list return it), the record
+    `GoldpathCampaignThrottleResult(Ok, Message, PolicyVersion, Stale)`, and the overload
+    `ThrottleAsync(id, patch, long? expectedPolicyVersion, actor, ct)`. The shipped four-argument `ThrottleAsync`
+    calls it with no expected version and returns the same messages as before.
+  - **The rule:** `PolicyVersion` (the R3-S1 column, 0 on every existing row) moves by one on every APPLIED
+    throttle and on nothing else — the pacer, the sink, pause, resume and abort leave it alone, and a refused
+    throttle does not move it. It is not an EF concurrency token.
+  - **The write:** a throttle is now one conditional `ExecuteUpdate` per attempt (`WHERE Id`, `State` and
+    `PolicyVersion` as read) that sets the policy columns, `LastVerb` and `PolicyVersion + 1`; it no longer goes
+    through `SaveChanges` and the `State` token. With an expected version, a policy that moved since is refused
+    ("…changed since you read it (version 4, by *actor* at *time*; you read version 3) — re-read and retry"), and
+    the refusal is audited as `throttle-refused` with both versions. Without one, a lost race is re-read and
+    re-applied (up to eight attempts), so the last writer still wins and the version moves once per applied throttle.
+  - **Behaviour change:** a throttle that raced a state change (the pacer starting a campaign, an operator's pause)
+    used to be refused with "changed state while the verb ran"; it is now re-read and applied, because a state
+    change is not a policy change. A race into a terminal state is still refused, in the terminal state's words.
+    The audit detail, `LastVerb` and the success message are byte-identical to before.
+  - **Proof:** `R3PolicyVersionTests` (14 test methods, 17 cases). Three of them race a competing verb into the
+    instant between the throttle's read and its conditional update, through a command interceptor. Four planted
+    faults turn them red: no `PolicyVersion + 1` (8 of 17 red), a single attempt with no re-read (5 red), no
+    version check (4 red), and no `State` guard in the conditional `WHERE` (1 red). `CampaignPolicyVersionPostgresTests` and an `OracleDataTests` fact (`Category=Oracle`, 19c form) run
+    the conditional update on real PostgreSQL 17 and Oracle Free, every policy column included.
+- **Campaign: auto-suspend on a failure ratio, and the `Suspended` state (campaign RFC R3.6, slice R3-S10, #299).**
+  - **What it adds:** `SuspendOnFailureRatio` (in (0, 1]; null, the default, = never), `SuspendWindow`
+    (1,000) and `SuspendMinSample` (100) on the policy and the throttle (with `ClearSuspendOnFailureRatio`);
+    `SuspendedReason` and `FailureRatioNow` beside them on the detail. Additions only; the columns came
+    with R3-S1's schema, and a row without a window or sample reads the defaults.
+  - **Counting:** `WindowOutcomes` and `WindowFailures` ride the campaign `UPDATE` the sink's flush
+    already runs, and the stale-claim sweep's update: no extra write. Every completed attempt is an
+    outcome; a retryable failure, an `ACK_TIMEOUT` and an interrupted claim are failures; an
+    acceptance is not an outcome until it settles. Counted by rows touched, so a duplicate outcome
+    moves nothing.
+  - **The pacer's evaluation:** each tick, for a `Running` campaign with a ratio set, from the row it
+    loaded and before anything releases: at least `SuspendMinSample` outcomes at or above the ratio →
+    `Suspended`, through one conditional update on the state AND the ratio it read (a pause, an abort or
+    a throttle that cleared the ratio wins the race). Otherwise, at `SuspendWindow` outcomes, the window
+    restarts by subtracting what was read, never by zeroing, so an outcome flushed in between is kept.
+  - **The reason:** culture-invariant, e.g. *failure ratio 0.52 ≥ 0.3 over 400 outcomes since
+    2026-11-02T07:42:05Z (minimum sample 100); most frequent code TIMEOUT (61%)*, the code from one
+    read of at most 500 of the window's `Failed`/`AwaitingRetry` rows. Audited `suspend` with the actor
+    `system`, and counted in the new `goldpath_campaign_suspended_total{type}`.
+  - **The verbs:** `resume` accepts `Suspended`; it restarts the window before the state flips (so no
+    tick can judge the resumed campaign on the failures that stopped it), clears the reason and marks
+    `Released` rows due (R2.6). `abort` and `throttle` accept it; `pause` refuses it with teaching
+    text. The ladder keeps running on a suspended campaign, as on a paused one, so a resume finds its
+    retries waiting; `LoadWorkableAsync` does not load it, the drain sweep still visits it, and the
+    claim guard is unchanged (`Running` only). Switching a ratio on through `throttle` also restarts the
+    window, so outcomes from before the ratio existed do not judge the campaign. A ratio outside (0, 1]
+    (NaN included), a non-positive window or sample, or a sample larger than the window is refused on
+    create and on throttle. A throttle's `LastVerb` is now cut to its 512-character column (the audit
+    row keeps up to 1,024): the two sides of a wide policy could outgrow it.
+  - **Proof:** `R3SuspendTests` (28 cases through the real pacer job on a tick clock, the admin service
+    and the admin HTTP routes). Twelve planted faults each turn it red: a pacer that never judges (12
+    of 28 red), a reason whose code is read from failures before the window restarted, a restart that zeroes, `Suspended` dropped from the ladder, retryable failures not counted, a
+    flip that ignores a ratio cleared since the load, an interrupted claim not counted, a resume or a
+    switched-on ratio that keeps the old window, a `pause` that does not refuse `Suspended`, a restart
+    without its guard against a second restart on the same read (counters went negative), and a refused
+    throttle that still restarted the window. `CampaignSuspendProof` runs the suspension and the resume on
+    real PostgreSQL 17 and, in the Oracle lane, on Oracle Free (the RFC's 19c SQL form): the counters on
+    the sink's update, the flip guarded on a `double precision`/`BINARY_DOUBLE` ratio, the bounded sample
+    and a UTC `WindowStartedAt`.
+  - **Not in this slice:** S-OPS-03 on a real broker, the console's suspended view and the runbook item
+    (R3-S11, #319). The new counter is a row in #294's export test (`MetricsExportTests`).
+- **Campaign: the four options an operator tunes reload without a restart (campaign RFC R3.3, slice R3-S7, #317).**
+  - **What reloads:** `AddGoldpathCampaign` now reads the section `Goldpath:Campaign` through
+    `IOptionsMonitor`. Exactly four keys reload: `RetryBackoff`, `RetryJitter`, `OrphanReleaseAfter` and
+    `StaleClaimAfter`. A key present in configuration wins, and the value set in code is the default; a key
+    that leaves configuration falls back to it. The change reaches the next tick and the next outcome flush.
+  - **A ladder replaces, never appends:** each key binds into a fresh value, so two configured rungs are two
+    rungs, not the code's three plus two. Each rung binds on its own, in index order: the binder's list
+    binding skips an element it cannot convert, which would have shortened the ladder silently, so a bad
+    rung refuses the reload instead.
+  - **A bad reload is refused whole:** an empty ladder, a ladder written as one value rather than a list, a negative rung, jitter outside [0, 1] (NaN included),
+    a non-positive age, a rung or age longer than 365 days (the engine adds a rung to and subtracts an age from
+    the current instant, so `TimeSpan.MaxValue` would otherwise throw in the pacer, the sweep and the outcome
+    flush on every tick) or a value that does not parse (configuration is read invariantly, so `0,5` is
+    refused on any host culture) leaves the last valid values in force. The refusal is logged as a warning
+    naming `Goldpath:Campaign:<key>` and counted in the new `goldpath_campaign_tuning_reload_refused_total`.
+    A section invalid at startup is refused the same way, and the code values hold. An empty or
+    whitespace-only scalar reads as unset.
+  - **Not reloaded:** `GlobalTps` (a row, R3.2), `LeaderTick`, `LeadershipSlice` and the batch sizes stay
+    startup values.
+  - **API:** none. The properties keep their names and setters, and no shipped constructor changes.
+    Behaviour without a `Goldpath:Campaign` section is unchanged.
+  - **Proof:** `R3TuningReloadTests` (45 cases, every host built through `AddGoldpathCampaign`). 29 of 31 are
+    red on `main` (of the first 32; the 32nd names the new internal type); the two that pass there are the "not reloaded" and
+    "empty value" guards. Three planted faults also turn it red: an ignored refusal, a ladder bound into the
+    code ladder, and a getter that skips the reloaded value. One case drives the engine with the host's
+    instance and finds a failed item scheduled on the reloaded rung. Stryker scoped to the two changed files:
+    `GoldpathCampaignTuning.cs` 51/51 killed (before the 365-day bound). The bound is pinned at both sides:
+    365 days is accepted, one tick more is refused, `>`→`>=` turns 3 boundary cases red, and three engine
+    cases show `TimeSpan.MaxValue` ages and a 10,000-year rung refused while the orphan release, the
+    parked-callback expiry and a failure's outcome flush keep running. The `GoldpathCampaignOptions.cs` survivors near the change are
+    pre-existing and equivalent: jitter 0 against `< 0`, and the factor's sign.
 - **Campaign: a scheduled start and the `Ready` state (campaign RFC R3.1, slice R3-S2, #289).**
   - **API (additive, init-only):** `GoldpathCampaignPolicy.StartAt` and `IsBeforeStart(utcNow)`,
     `GoldpathCampaignThrottle.StartAt` and `ClearStartAt`, `GoldpathCampaignInfo.StartAt`. No
@@ -146,6 +290,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     `integration` job excludes `Category=Oracle`. `nightly.yml` runs the same filter.
   - **Advisories:** of ODP.NET's six transitive packages only `System.Security.Cryptography.Pkcs`
     8.0.1 carries advisories. It resolves to the existing central lift, 10.0.13.
+- **The air-gapped install, proven by a golden-manifest shape (GA gate G14, #338).** CI only: no package
+  or template change.
+  - **The shape:** `GmOffline` (`.github/gm-shapes.yml`, nightly) runs through the new `scripts/validate-gm-offline.sh`.
+  - **Connected run:** `validate-gm.sh` runs the shape with its global-packages folder emptied after the repository's pack, so
+    the folder ends holding exactly the closure the app, its pinned `dotnet-ef` and the CLI restore. Every image a container ran is pushed to a
+    registry on 127.0.0.1 and removed from the daemon.
+  - **Denied run:** the denial is scoped to the run, not the host: the script and the Docker daemon move into their own
+    cgroup-v2 group, and iptables rejects all non-loopback, non-bridge egress from that group, including a local proxy's
+    port, so a CI runner keeps its own connection to GitHub. The rules and the group are removed on exit and on
+    INT/TERM/HUP (a CI cancel or timeout). The script refuses to go on unless nuget.org and Docker Hub are unreachable. The shape then runs again into an empty packages
+    folder, its `nuget.config` naming the flattened feed alone, through `goldpath db bundle`, the bundle applied twice to
+    a real PostgreSQL (the second must apply nothing), and the smoke.
+  - **Planted fault:** `GOLDPATH_GM_OFFLINE_DROP=<package id>` removes one package from the feed, and the restore must fail with
+    NU1101.
+  - **`validate-gm.sh`:** gains four knobs that only this shape sets: `GOLDPATH_GM_APP_PACKAGES`, `GOLDPATH_GM_FEED_ONLY`,
+    `GOLDPATH_GM_CLI_NO_BUILD` and `GOLDPATH_GM_BEFORE_SMOKE`. Every other shape runs exactly as before.
+  - **Docs:** the steps, by hand, are `docs/ops/air-gapped-install.md`. What one shape leaves uncovered is open-threads T56.
 - **The second messaging engine runs the conformance suite: a Wolverine adapter, and the engine contract
   it plugs into (GA gate G5 Part 1/5, #330).**
   - **`Goldpath.Messaging`:** the engine contract of RFC goldpath-messaging-engines §4.1 row 5, built
@@ -199,6 +360,34 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     failed request.
   - **The smoke host** files a second approval request at startup, so this spec never races
     the approvals journey for one quorum.
+- **The 1.0 API review's record and its counter (GA gate G4, API-1, #390).** Repository only: no
+  package changes.
+  - `docs/rfc/goldpath-1.0-api-review.md` is DRAFT, in the eight RFC sections. It holds the scope,
+    the verdict vocabulary (`keep` · `rename` with its target line · `remove` with its reason ·
+    `experimental` with its diagnostic id), the review method, cross-cutting policies P1–P3, the
+    gates, and the sign-off left for API-13 (#402).
+  - Diagnostic ids `GPEXP001` (Approvals) and `GPEXP002` (FileExchange) are proposed; they collide
+    with none of the 50 `GP…` ids.
+  - `docs/strategy/api-review-1.0/` has a README and one header-only TSV per package with a ledger
+    (23). Owner decision (a): these are Tier A data.
+  - `scripts/api-review-gate.sh` (run in `gates`) has these modes:
+    - report: covered/total per package; it fails on a stale row, an unknown verdict, a missing
+      reason or target, a duplicate, `keep` in an experimental package, a missing or extra TSV, or
+      a bad header;
+    - `--require-complete [--package …]`;
+    - `--require-applied`;
+    - `--list-non-keep`;
+    - `--selftest` (26 planted faults red; green unplanted, across one `[ID]` prefix, on an
+      experimental package under its own diagnostic id, and on an applied review in every mode
+      `gates` runs after API-14).
+
+    The modes compose on an applied review: an applied source is not stale and a rename's target is
+    covered by its row. A `keep` line that disappears, or a rename applied as a plain deletion, is
+    red in every mode.
+  - At `main` b1afb82: **0 of 2,658 live lines** reviewed.
+  - An `experimental` row in Approvals or FileExchange must name that package's diagnostic id
+    (`GPEXP001`/`GPEXP002`, compared exactly), and no other package's `experimental` row may name
+    either. A mode that takes no arguments refuses any.
 - **Security scans in CI (GA gate G15 Part 1/2, #339).** Repository CI, no package changes.
   `.github/workflows/codeql.yml` runs CodeQL (`security-extended`) on the C# and the console's
   TypeScript on every pull request, on `main` and weekly, with its actions pinned to commits.
@@ -245,6 +434,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   THandler>(endpointName)` and `AddBatchHandler`'s optional `endpointName` register a handler
   on a queue that must keep the name a running fleet already drains; handlers given one name
   share one queue, and moving a handler to a second name is refused.
+- **The threat model's surfaces 5 and 6: Approvals decisions and FileExchange ingress (GA gate G15
+  Part 2/2, 2/4, part of #340).** Documents only; no package change. `docs/security/threat-model.md`
+  now models 6 of 10 surfaces. Every threat names a test (by class and method, all 36 checked to
+  exist and pass), an issue, or an accepted risk.
+  - Six threats had no holder and are now issues:
+    - #478: the Approvals admin route takes the decider's role from the request body, so any ops
+      holder can decide any rung;
+    - #479: an active delegation admits its delegate to every rung;
+    - #480: concurrent decisions are last-writer-wins, and one identity can sign a quorum rung twice;
+    - #481: the approvals and fileexchange surfaces skip admin-contract R1 rule 5 on a multi-tenant app;
+    - #482: FileExchange dedups by file name, so new content under a processed name is silently
+      skipped.
+    - #487: the Approvals admin route takes the decider from `Identity.Name`, which is null for most
+      OIDC tokens and is not the identifier `ICurrentUser.UserId` returns, so a requester can approve
+      their own request there (T-APR-12; T-APR-02 and T-APR-08 are narrowed to what holds today).
+  - Three accepted risks (A7–A9), signed by the owner 2026-11-04: counterparty authenticity is the
+    transport's job, quarantine reasons are shown as written, and a rail has no size ceiling of its
+    own.
 - **`goldpath check` warns a manifest that selects a roadmap-only value (GA gate G3, #336).**
   After `specdrift validate` passes, every value the schema accepts but no code runs
   (`broker: kafka|inmemory`, `exporters: prometheus`, `auditTrail.store: eventstream`, and
@@ -275,6 +482,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   runs it for 15 minutes, `smoke` for 2. Today's baseline is in
   `packages/Goldpath.Campaign/ops/campaign-benchmarks.md`; it is below the threshold, as
   expected before Parts 2 and 3.
+- **The conformance suite's named gaps, on both engines (GA gate G5 Part 2/5, #331).** Two additive seam rows,
+  by owner decision (2026-10-27), RFC goldpath-messaging-engines §4.1 rows 14 and 15. No shipped line changes.
+  - **`GoldpathHandlerOptions.ConcurrencyLimit`**, through `AddHandler<TEvent, THandler>(GoldpathHandlerOptions,
+    string? endpointName = null)`: the most deliveries an endpoint handles at once and holds unacknowledged
+    (1 to 65,535, null for the engine's default). It belongs to the endpoint, and two limits for one endpoint
+    are refused. The engine contract carries it as `GoldpathHandlerRegistration.ConcurrencyLimit`.
+  - **`[GoldpathMessageName("Namespace:Type")]`** fixes an integration event's exchange name and message URN,
+    so a renamed or moved type keeps its wire identity. It is honoured on RabbitMQ through the builder, not
+    on the in-memory test transport or the MassTransit-typed overloads (open-threads T53).
+  - **Consume spans carry `goldpath.tenant_id`** beside `goldpath.correlation_id`, on the default engine's
+    consume filter and the Wolverine adapter.
+  - **Conformance facts S2.14–S2.19:** ordering at a limit of 1, a limit of N reached and never exceeded,
+    publish and consume as one trace read through the OpenTelemetry in-memory exporter, a renamed type in
+    both directions, the retry ladder and error queue on a limited endpoint, and exactly-once on a limited
+    endpoint (the same message id delivered concurrently is handled once; the Wolverine adapter's inbox now
+    claims its row before locking it, which a parallel listener needs). S2.13 (delayed redelivery) is reserved: see Known issues.
 - **The engine gate (GA gate G1, #321).** `scripts/engine-gate.sh` fails CI when a
   `PublicAPI.*.txt` outside a bus-engine adapter package names an engine type (`MassTransit.`,
   `Wolverine.`) that is not in its committed baseline, `scripts/engine-gate.baseline.txt`. The
@@ -301,6 +524,30 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
 ### Changed
+- **Console: TypeScript 5.9.3 → 7.0.2, the native compiler (#493, replaces Dependabot #243).** A dev dependency, pinned
+  exactly (`"typescript": "7.0.2"`, no range; the newest 7.0.x, published 2026-07-08). The console uses TypeScript only
+  for `pnpm typecheck` (`tsc --noEmit`): Vite and Vitest transpile without loading the TypeScript API, and the console
+  has no ESLint or other in-process TS tool, so no companion bump is needed. `tsconfig.json` is unchanged
+  (`skipLibCheck` was already on), and 7.0.2 still reports a planted type error (TS2322). The lockfile gains the
+  compiler's per-platform binary packages (`@typescript/typescript-<os>-<arch>`, Apache-2.0); pnpm installs only the
+  one for the host. Unit tests, coverage floors (98.05% statements, 91.14% branches) and the build are unchanged.
+- **Console: jsdom 25.0.1 → 30.1.3 (#492, replaces Dependabot #470).** jsdom is the console's unit-test DOM, a dev
+  dependency, and it is now pinned exactly (`"jsdom": "30.1.3"`, no range). vitest 5.0.5 and `@qorpe/ui` are unchanged, and the coverage floors hold
+  (98.05% statements, 91.14% branches).
+  - **What changed in jsdom:** `getComputedStyle` now reports an unstyled `<span>` as `inline`. jsdom 25 returned an
+    empty `display`, which the accessible-name computation treats as a block (measured on both versions).
+  - **What it exposed:** a product console tile's accessible name (`Coexist /coexist/console/`) took its separator
+    only from Tailwind's `block` class, which jsdom does not load.
+  - **The fix:** the tile now carries the space itself. A browser renders nothing for it between two block lines, and
+    the name no longer depends on the stylesheet.
+- **Dependencies: `Microsoft.CodeAnalysis.PublicApiAnalyzers` 3.3.4 → 5.6.0 (GA gate G2, #335/#491; supersedes
+  #246).** The analyzer guarding every package's `PublicAPI.Shipped.txt` / `PublicAPI.Unshipped.txt` is two majors
+  newer. It loads on the SDK floor (10.0.101, measured), so `global.json` does not move. Its one new demand: it
+  counts the members a `record` synthesizes (`Equals`, `GetHashCode`, `ToString`, `PrintMembers`,
+  `EqualityContract`, `<Clone>$`, `==`, `!=`) as public API. 606 such lines are added across fourteen packages,
+  each to the ledger that already declares its record (516 Shipped, 90 Unshipped). The surface did not change, only
+  the ledger now describes all of it: no line is removed or reworded, and nothing is suppressed. An adopter sees
+  no difference; a package author adding a record now lists those members too.
 - **Dependencies: the nuget minor/patch group of 2026-10-27.** MassTransit (and its RabbitMQ and EF Core
   packages) 8.5.11 → 8.5.12, so the conformance suite's oracle is 8.5.12. The templates, CorPay and the CLI's
   outbox recipe pin the same version, and the templates and CorPay move `System.Security.Cryptography.Pkcs` to
@@ -371,6 +618,55 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **[schema]** **Approvals: concurrent decisions no longer both apply (#480, threat model T-APR-06).** A decision read the
+  request and its signatures, then wrote them in separate calls with nothing guarding the gap.
+  - **What went wrong:**
+    - The same identity granting twice at once (a double click, two tabs) stored two signatures.
+    - A grant and a reject at once both applied and both published their event, and the last write decided `Status`.
+  - **Measured on PostgreSQL with every save held back 300 ms:** both double-grants answered `Applied`; grant + reject
+    answered `Applied, Applied`; two distinct signers on a two-signature rung left it `Pending`, one signature lost.
+  - **Now:**
+    - The request row carries a version, checked on every write: `GoldpathApprovals.Version`, a concurrency token.
+    - A quorum signature and the request's new state are written in one transaction.
+    - `(RequestId, SignedBy)` is unique on `GoldpathApprovalSignatures`, replacing the `RequestId` index.
+    - A decision that loses the race reads again and decides on what the request is now. The same identity again
+      answers `AlreadySigned`. A request another decision closed answers `NotPending`, with no event. A distinct
+      signer signs on top of the winner.
+    - The escalation sweep leaves a request decided under it to that decision.
+    - A call that loses eight times in a row throws `InvalidOperationException`.
+  - **Store behaviour:**
+    - The in-memory store keeps the same two rules and now hands out copies.
+    - On both built-in stores, a write from a stale read and a second signature by the same identity throw
+      `InvalidOperationException`.
+    - A custom `IGoldpathApprovalStore` keeps its own guarantees. Its signature and request writes stay two calls.
+  - **No public API changed:** the version is an internal member.
+  - **Migration:** one, with a query to run first for existing duplicate signatures (upgrade guide).
+- **The nightly's `sample-corpay` job is no longer red on every release night (#378).** Since #312 the release PR pins
+  CorPay to a train nuget.org does not have yet, and the job restored from nuget.org only. The new
+  `scripts/corpay-feed.sh` decides the feed from the same condition `train-freshness.sh` calls "release in flight":
+  - this repository's train is published → nothing changes, and CorPay restores from nuget.org only (ADR-0007);
+  - it is not published yet → the repository is packed (console assets first) into a local feed, added to CorPay's
+    `nuget.config` beside nuget.org, and `goldpath check` runs the packed CLI at that train;
+  - nuget.org unreachable, or an empty or malformed version index → the job fails rather than guess.
+
+  The log line and the step summary name the feed used. `corpay-feed.sh --selftest` (ten planted cases) runs in CI's
+  `gates` job. No package changes.
+- **Archival: an entry whose `DueAt` carries sub-microsecond ticks now verifies on PostgreSQL (#383).** The engine
+  hashed `DueAt` at 100 ns, but `timestamptz` stores microseconds, so verification re-hashed a different value and
+  reported "document does not match its content hash" with nothing tampered. It happened whenever the candidate's
+  `DueAt` carried sub-microsecond ticks: a `DueWhen` date selector that reads the clock or does fractional arithmetic,
+  or archiving in the scope that saved the rows (the tracked value still has its 100 ns ticks). The archival job
+  reading a stored PostgreSQL column was not affected. The engine now truncates `DueAt` to
+  whole microseconds once, and hashes and stores that one value. The content-hash format is unchanged, so entries
+  already written keep verifying exactly as before, including full-tick entries on SQL Server and Oracle (pinned by
+  `ArchiveDueAtPrecisionTests` against a hash computed outside .NET). Entries already written on PostgreSQL with
+  sub-microsecond `DueAt` stay unverifiable; open-threads T58 holds their remedy.
+- **GP1202 no longer flags a literal client name beside a stored API key (#337).** `ApiKeys` maps a client name to its
+  key, but `options.ApiKeys.Add("job", keyFromVault)` was reported as a secret in source because ANY string argument
+  that was a literal counted. On `Add`, only the value (the key) counts now, as it already did for the indexer form
+  `ApiKeys["job"] = …`; a literal key is still flagged either way. Found while adding the tests that lift Analyzers,
+  Jobs and Archival above GA gate G9's 75 % (77.37 / 79.39 / 79.55 % on full local runs; `stryker/README.md`). The
+  Jobs and Archival model-contract suites build their model fresh instead of reading a cached one (open thread T33).
 - **Campaign: no second of pacer ticks releases more than its ceiling, even after an idle stretch (#292,
   S-FLEET-03).** Every hard-ceiling bucket (a campaign's `Tps`, a type's `MaxTps`, the `GlobalTps`)
   banked up to a whole second of tokens. What it saved while nothing released (a closed window, a full
@@ -390,6 +686,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     ceiling of 100; now 5 a tick. S-FLEET-03 at its own numbers (GlobalTps 1000, two campaigns at 800):
     1950 in one second before, at most 1000 now. `CampaignR1Tests` on RabbitMQ and PostgreSQL drops its
     +50% tolerance and holds every second of ticks of the run to `GlobalTps` itself.
+- **`Goldpath.Bulk`: an upload to an unknown definition answers `404`, not `500` (#377).**
+  `POST /goldpath/admin/bulk/batches/{definition}` with a name nobody registered used to reach
+  `GoldpathBulkOptions.Definition(name)`, which throws, so the host answered a generic `500`. The route now
+  looks the name up first (ordinal, exactly as the engine does) and answers a `404` problem whose `detail`
+  names the registered definitions, before the request body is read. Known definitions are unchanged, and
+  `Definition(name)` keeps its throwing contract for in-process callers; no public API changes. ZAP rules
+  100000 and 90022 leave the INFO list in `scripts/zap-baseline.conf`, so they fail the night again (WARN)
+  if the 500 ever returns. Proof: `Goldpath.Bulk.Tests.AdminEndpointsTests` over TestServer with the host's
+  exception handler, red (`500`) with the lookup removed.
 - **`Goldpath.Messaging.Wolverine` (not published) is wire-compatible with a MassTransit fleet:
   S4, mixed-fleet compatibility, in the conformance suite (GA gate G5 Part 4/5, #333).**
   `MixedFleetTests` runs a MassTransit 8.5.11 process and a Wolverine process on one RabbitMQ and one
@@ -446,6 +751,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   the 10M run with 99,951 such repeats validated at 12,079 rows/s against 14,773 (open-threads
   T49). No public API, schema or dependency change. `scripts/bench-bulk.sh intake` runs the
   10M bench; the numbers are in `packages/Goldpath.Bulk/ops/bulk-benchmarks.md`.
+- **Campaign: the global ceiling row is named `"*"`, not `""`, on every provider (#384, GA gate G7).** Oracle stores
+  `''` as NULL, so the R3.2 global row keyed `(Global, "")` could not be written there (`ORA-01400` on the primary key).
+  Owner decision (2026-10-24): one sentinel on every provider rather than an Oracle-only converter.
+  - `GoldpathCampaignCeiling.GlobalName` (`"*"`, new public constant) is the global row's name and the entity's
+    default `Name`. Nothing reads or writes ceiling rows yet; the slices that do (#290, #318) use the constant.
+  - **Data step:** `GoldpathCampaignR2Backfill()`, the line the preview.10 guide already asks for at the end of the
+    `CampaignR2R3` migration's `Up`, now also moves an empty-named global row to `"*"` on PostgreSQL and SQL Server.
+    If a `"*"` row already exists, the empty-named one is deleted as the stale copy. A second run changes nothing.
+    No new line in the migration.
+  - Proof: `OracleDataTests.The_global_ceiling_row_is_written_and_read_back` (red on the old default), the step on
+    real PostgreSQL run twice (`CampaignR2Tests`), and `GoldpathCampaignCeilings.Name` off the Oracle `''` allow-list.
 - **`Goldpath.Campaign`: a snapshot is no longer bound to the leader tick (#288).** The pacer
   materialized one `EnumerationBatchSize` batch per campaign per tick, so at the defaults (2,000
   rows, 250 ms) a snapshot ran at about 8,000 rows/s. 35M targets took over 70 minutes before
@@ -552,6 +868,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   them; the rest were an engine never observed mid-batch, where the terminal recount hides a
   wrong counter. The same cached-model blind spot sits in the Jobs and Archival model suites
   (open thread T33). Measured in the nightly and on the heavy lane alike, same scores.
+- **The Wolverine adapter continues the publisher's trace (#331).** Its consume span started a new trace from
+  the 8.x envelope; it now opens the consume span under the `MT-Activity-Id` the delivery carries (ActivitySource
+  `Goldpath.Messaging.Wolverine`), and writes that header when it publishes. The adapter is not published.
 - **Six packages were mutation-tested only when somebody remembered to dispatch them.** Jobs,
   Archival, Bulk, Notification, Campaign and Caching ran in the dispatch-only
   `mutation-heavy.yml`, which is how Caching stayed red for seven weeks unseen. With their
@@ -699,6 +1018,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 - A consumer that died mid-call on a paused, closed-window, aborted, expired or finished
   campaign stayed `Processing` forever — the stale-claim sweep visited only campaigns
   releasing that tick. It now reaches every campaign with work in flight.
+
+### Security
+- **Approvals and FileExchange admin surfaces demand the all-tenants privilege on a multi-tenant app (admin
+  contract R1 rule 5, #481).** Neither store carries a tenant column, but neither group applied the rule campaign and
+  archival apply. So an operator scoped to tenant A could read every tenant's approval requests and trails and
+  **decide** them, and read every rail's files and quarantined rows with their reasons. Both groups now call
+  `AdminTenantScope.RequireAllTenantsAsync`, and a tenant-scoped operator gets `403` naming
+  `goldpath-ops-all-tenants`. Single-tenant apps are unchanged. Proven over HTTP behind the real ops floor by
+  `ApprovalAdminTenantScopeTests` and `FileExchangeAdminTenantScopeTests`. Upgrade note: `docs/upgrades/0.1.0-preview.10.md`.
+
+### Known issues
+- **Delayed redelivery has no broker to ride on (#331, open-threads T52).** `Goldpath:Messaging:Retry:RedeliveryIntervals`
+  defaults to 5, 15 and 30 minutes, and the default engine schedules each redelivery through RabbitMQ's
+  delayed-message exchange plugin. The stock RabbitMQ the AppHost starts does not carry it. Measured on such a
+  broker: the redelivery's exchange declare is refused, and the poison message stays on its queue and never
+  reaches `<queue>_error`. The plugin is unmaintained and cannot run from RabbitMQ 4.3. Until the owner decides
+  what the ladder rides on, an application on a broker without the plugin should clear the ladder
+  (`Goldpath:Messaging:Retry:RedeliveryIntervals` empty), so a poison message reaches `_error` after its
+  immediate retries.
+
 
 ## [0.1.0-preview.9] - 2026-10-19
 

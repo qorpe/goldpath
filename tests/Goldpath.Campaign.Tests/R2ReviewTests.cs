@@ -144,7 +144,8 @@ public class R2ReviewTests
     {
         var migration = new Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder(provider);
         migration.GoldpathCampaignR2Backfill();
-        var sql = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(Assert.Single(migration.Operations)).Sql;
+        Assert.Equal(2, migration.Operations.Count);   // the R2 rung stamp, then R3's ceiling-name step
+        var sql = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.Operations[0]).Sql;
         Assert.Contains(table, sql, StringComparison.Ordinal);
         Assert.Contains(rung, sql, StringComparison.Ordinal);
         Assert.Contains(onlyUnstamped, sql, StringComparison.Ordinal);
@@ -158,11 +159,57 @@ public class R2ReviewTests
         var migration = new Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
         migration.GoldpathCampaignR2Backfill(schema: "ops");
         Assert.Contains("\"ops\".\"GoldpathCampaignItems\"",
-            ((Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation)migration.Operations.Single()).Sql, StringComparison.Ordinal);
+            ((Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation)migration.Operations[0]).Sql, StringComparison.Ordinal);
+        var ceilingStep = ((Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation)migration.Operations[1]).Sql;
+        Assert.Equal(3, CountOf(ceilingStep, "\"ops\".\"GoldpathCampaignCeilings\""));
+        Assert.DoesNotContain(" \"GoldpathCampaignCeilings\"", ceilingStep, StringComparison.Ordinal);
 
         var error = Assert.Throws<NotSupportedException>(() =>
             new Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder("Some.Other.Provider").GoldpathCampaignR2Backfill());
         Assert.Contains("NextAttemptAt", error.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// #384: the global ceiling row is named <c>"*"</c> on every provider (Oracle stores <c>''</c> as NULL), and the
+    /// migration's data step moves a row an earlier build wrote with the empty name. It matches only an empty-named
+    /// GLOBAL row, and drops it instead when a <c>"*"</c> row already exists, so the primary key never collides.
+    /// </summary>
+    [Theory]
+    [InlineData("Npgsql.EntityFrameworkCore.PostgreSQL", "\"GoldpathCampaignCeilings\"", "\"Kind\" = 0 AND \"Name\" = ''", "SET \"Name\" = '*'", "AND EXISTS (SELECT 1 FROM \"GoldpathCampaignCeilings\" WHERE \"Kind\" = 0 AND \"Name\" = '*');")]
+    [InlineData("Microsoft.EntityFrameworkCore.SqlServer", "[GoldpathCampaignCeilings]", "[Kind] = 0 AND [Name] = N''", "SET [Name] = N'*'", "AND EXISTS (SELECT 1 FROM [GoldpathCampaignCeilings] WHERE [Kind] = 0 AND [Name] = N'*');")]
+    public void TheR3CeilingStep_MovesTheEmptyGlobalName_PerProvider(string provider, string table, string onlyEmptyGlobal, string rename, string collisionGuard)
+    {
+        var migration = new Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder(provider);
+        migration.GoldpathCampaignR2Backfill();
+        var sql = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.Operations[1]).Sql;
+        Assert.Equal(3, CountOf(sql, table));
+        Assert.Equal(2, CountOf(sql, onlyEmptyGlobal));   // the delete and the update both match the empty global row only
+        Assert.Contains(rename, sql, StringComparison.Ordinal);
+        // The guard is pinned whole and its negation refused: "NOT EXISTS" contains "EXISTS", and on SQL Server this
+        // theory is the only automated check (no integration lane), so a negated guard would delete the only global row.
+        Assert.Equal(1, CountOf(sql, collisionGuard));
+        Assert.DoesNotContain("NOT EXISTS", sql, StringComparison.Ordinal);
+        Assert.True(sql.IndexOf(collisionGuard, StringComparison.Ordinal) < sql.IndexOf("UPDATE", StringComparison.Ordinal), "the guard belongs to the DELETE");
+        Assert.True(sql.IndexOf("DELETE", StringComparison.Ordinal) < sql.IndexOf("UPDATE", StringComparison.Ordinal), "the stale copy goes before the rename");
+    }
+
+    [Fact]
+    public void TheGlobalCeilingRow_IsNamedStar_ByDefault()
+    {
+        Assert.Equal("*", GoldpathCampaignCeiling.GlobalName);
+        Assert.Equal(GoldpathCampaignCeiling.GlobalName, new GoldpathCampaignCeiling().Name);
+    }
+
+    private static int CountOf(string text, string part)
+    {
+        int count = 0, at = 0;
+        while ((at = text.IndexOf(part, at, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            at += part.Length;
+        }
+
+        return count;
     }
 
     // ---- finding 3: a keyset takeover of a row with no key re-sends nothing (R2.7, constraint 3) ----

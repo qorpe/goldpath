@@ -30,10 +30,25 @@ public static class GoldpathBulkAdminEndpoints
         group.MapGet("/definitions", ([FromServices] GoldpathBulkAdminService<TContext> admin, CancellationToken ct)
             => admin.GetDefinitionsAsync(ct));
 
-        group.MapPost("/batches/{definition}", async (string definition, string? fileName, string? tenant, HttpContext http, [FromServices] GoldpathBulkAdminService<TContext> admin, CancellationToken ct) =>
+        group.MapPost("/batches/{definition}", async (string definition, string? fileName, string? tenant, HttpContext http, [FromServices] GoldpathBulkAdminService<TContext> admin, [FromServices] GoldpathBulkOptions options, CancellationToken ct) =>
         {
             var scope = await AdminTenantScope.ResolveAsync(http, tenant);
-            return scope.Refusal ?? Results.Ok(await admin.UploadAsync(definition, http.Request.Body, fileName ?? "upload.csv", scope.Tenant, Actor(http), ct));
+            if (scope.Refusal is not null)
+            {
+                return scope.Refusal;
+            }
+
+            // A name nobody registered is the caller's mistake, not the server's (#377): answer 404 with
+            // the registered names, before the body is read, instead of letting Definition(name) throw a 500.
+            if (options.Batches.All(b => b.Name != definition))
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status404NotFound,
+                    title: "Unknown bulk definition",
+                    detail: $"No bulk definition named '{definition}' — registered: {string.Join(", ", options.Batches.Select(b => b.Name))}.");
+            }
+
+            return Results.Ok(await admin.UploadAsync(definition, http.Request.Body, fileName ?? "upload.csv", scope.Tenant, Actor(http), ct));
         });
 
         // R3: ?state= and ?definition= repeat — values OR within a filter, filters AND together.

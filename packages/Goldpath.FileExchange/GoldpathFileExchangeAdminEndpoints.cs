@@ -29,6 +29,13 @@ public static class GoldpathFileExchangeAdminEndpoints
         var group = endpoints.MapGroup(prefix);
         AdminSurfaceGuard.Apply(endpoints, group, prefix, exposeUnsecured);
 
+        // R1 rule 5: the ledger carries no tenant column, so on a multi-tenant app this
+        // surface is cross-tenant by nature — every read demands the all-tenants privilege,
+        // as campaign's does. Without it a tenant-A operator would read every rail's files
+        // and every quarantined row's reason. Single-tenant apps are unchanged.
+        group.AddEndpointFilter(async (context, next) =>
+            await AdminTenantScope.RequireAllTenantsAsync(context.HttpContext) is { } refusal ? refusal : await next(context));
+
         // The probe root: every declared rail with its counts (an app with rails and no files still answers 200 []).
         group.MapGet("/rails", ([FromServices] GoldpathFileExchangeAdminService admin, CancellationToken ct)
             => admin.GetRailsAsync(ct));

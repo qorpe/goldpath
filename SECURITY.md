@@ -75,9 +75,9 @@ G15): a paid test happens when a paying customer funds one. In its place, two fr
 in CI. Neither one is a substitute for a threat model, which G15's second part adds:
 [docs/security/threat-model.md](docs/security/threat-model.md). It is STRIDE per surface with an
 auth boundary, and every threat names the test that holds it, the issue that will, or an
-accepted risk for the owner to sign. Four surfaces are modelled so far (the admin routes, the
-served console, Campaign's signed callbacks, Bulk upload and its gate). The other six are its
-checklist.
+accepted risk for the owner to sign. Six surfaces are modelled so far (the admin routes, the
+served console, Campaign's signed callbacks, Bulk upload and its gate, Approvals decisions,
+FileExchange ingress). The other four are its checklist.
 
 - **CodeQL** (static analysis, [`.github/workflows/codeql.yml`](.github/workflows/codeql.yml)):
   - Covers the C# and the console's TypeScript with the `security-extended` query suite.
@@ -106,4 +106,6 @@ scanner. CodeQL's actions are pinned to a commit and the ZAP image to a digest.
 - Classified fields are masked at the boundary, and the console masks them again on render —
   defence in depth, deliberately duplicated.
 - Air-gapped installation is a first-class scenario: nothing in a generated app phones home,
-  and every dependency is pinned. There is no runtime licence check anywhere in Goldpath.
+  and every dependency is pinned. There is no runtime licence check anywhere in Goldpath. The
+  nightly GmOffline shape installs, migrates and smokes a generated app with outbound network
+  denied ([docs/ops/air-gapped-install.md](docs/ops/air-gapped-install.md)).

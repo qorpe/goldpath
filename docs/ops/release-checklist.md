@@ -39,13 +39,14 @@ only after that PR merges green.
       - A release PR that leaves CorPay behind fails here, before the tag rather than after.
       - Adopters' runs of the script are unaffected.
 
-      Before the publish, nuget.org cannot restore the new pins. To build CorPay on the
-      release PR, restore it from a locally packed feed, the way `validate-gm.sh` builds a
-      generated app:
-      `dotnet pack Goldpath.sln -c Release -o /tmp/feed && dotnet build samples/corpay/CorPay.sln --source /tmp/feed --source https://api.nuget.org/v3/index.json`.
-      The nightly's `sample-corpay` job restores from nuget.org only, so it stays red on the
-      release head until the publish. Teaching it the packed feed is
-      [#378](https://github.com/qorpe/goldpath/issues/378), triggered by the next release PR.
+      Before the publish, nuget.org cannot restore the new pins, so CorPay is restored from
+      this repository packed into a local feed beside nuget.org. `scripts/corpay-feed.sh`
+      does that only while the train is unpublished (#378), so the nightly's `sample-corpay`
+      job stays green on the release head and on `main` until the publish, and returns to
+      nuget.org only once the train is out. Its log line and step summary name the feed it
+      used. To build CorPay locally on the release PR, run
+      `bash scripts/corpay-feed.sh && dotnet build samples/corpay/CorPay.sln`. The script adds
+      the feed to `samples/corpay/nuget.config`, so revert that file before you commit.
 - [ ] PublicAPI roll: each package's `PublicAPI.Unshipped.txt` content moves to
       `PublicAPI.Shipped.txt` (empty Unshipped after the roll).
 - [ ] `CHANGELOG.md`: the train's entry, newest on top.

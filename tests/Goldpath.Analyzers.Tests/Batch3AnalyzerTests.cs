@@ -102,6 +102,30 @@ public class Batch3AnalyzerTests
             namespace Goldpath { public static class GoldpathDataProtectionExtensions { } }
             """);
 
+    /// <summary>
+    /// Mediant's [SensitiveData] classifies a property too, through a derived attribute as well
+    /// (the base chain is walked); a same-named attribute outside Mediant does not.
+    /// </summary>
+    [Fact]
+    public Task GOLDPATH0701_honours_Mediants_SensitiveData_and_its_subclasses_only()
+        => Verify<ClassificationBoundaryAnalyzer>("""
+            public record CardIssued : Goldpath.IIntegrationEvent
+            {
+                [Mediant.Abstractions.SensitiveData]
+                public string? {|#0:Pan|} { get; init; }
+                [TaxId]
+                public string? {|#1:TaxNumber|} { get; init; }
+                [Other.SensitiveData]
+                public string? Brand { get; init; }   // quiet: not Mediant's attribute
+            }
+            public sealed class TaxIdAttribute : Mediant.Abstractions.SensitiveDataAttribute { }
+            namespace Mediant.Abstractions { public class SensitiveDataAttribute : System.Attribute { } }
+            namespace Other { public sealed class SensitiveDataAttribute : System.Attribute { } }
+            namespace Goldpath { public static class GoldpathDataProtectionExtensions { } }
+            """,
+            new DiagnosticResult(Descriptors.ClassifiedOnIntegrationEvent).WithLocation(0).WithArguments("CardIssued", "Pan"),
+            new DiagnosticResult(Descriptors.ClassifiedOnIntegrationEvent).WithLocation(1).WithArguments("CardIssued", "TaxNumber"));
+
     // ── GP0801 / GP0802 ────────────────────────────────────────────────────
 
     [Fact]
@@ -239,6 +263,77 @@ public class Batch3AnalyzerTests
             """,
             new DiagnosticResult(Descriptors.SecretInSource).WithLocation(0).WithArguments("HmacKey"),
             new DiagnosticResult(Descriptors.SecretInSource).WithLocation(1).WithArguments("ApiKeys"));
+
+    [Fact]
+    public Task GOLDPATH1201_inventories_the_fluent_AllowAnonymous_too()
+        => Verify<AuthSurfaceAnalyzer>("""
+            public sealed class Route
+            {
+                public Route AllowAnonymous() => this;
+                public Route RequireAuthorization() => this;
+            }
+            public static class Endpoints
+            {
+                public static void Map(Route route)
+                {
+                    {|#0:route.AllowAnonymous()|};
+                    route.RequireAuthorization();   // quiet
+                }
+            }
+            """,
+            new DiagnosticResult(Descriptors.AllowAnonymousInventory).WithLocation(0).WithArguments("this endpoint"));
+
+    [Fact]
+    public Task GOLDPATH1202_flags_literal_secrets_passed_to_UseHmacRedaction_and_ApiKeys_Add()
+        => Verify<AuthSurfaceAnalyzer>("""
+            public class DataProtectionOptions
+            {
+                public DataProtectionOptions UseHmacRedaction(string base64Key, int keyId = 1) => this;
+            }
+            public class AuthOptions
+            {
+                public System.Collections.Generic.Dictionary<string, string> ApiKeys { get; } = new();
+                public System.Collections.Generic.Dictionary<string, string> Labels { get; } = new();
+            }
+            public class Setup
+            {
+                public void M(DataProtectionOptions dp, AuthOptions o, string fromSecretStore, string client)
+                {
+                    {|#0:dp.UseHmacRedaction("aGFyZGNvZGVk")|};
+                    {|#1:dp.UseHmacRedaction($"{client}-key", 2)|};
+                    {|#2:o.ApiKeys.Add(client, "hardcoded-key")|};
+                    {|#3:o.ApiKeys.Add("job", "hardcoded-key")|};
+                    dp.UseHmacRedaction(fromSecretStore);          // quiet
+                    o.ApiKeys.Add(client, fromSecretStore);        // quiet
+                    o.Labels.Add("job", "not-a-secret");           // quiet: not ApiKeys
+                }
+            }
+            """,
+            new DiagnosticResult(Descriptors.SecretInSource).WithLocation(0).WithArguments("UseHmacRedaction"),
+            new DiagnosticResult(Descriptors.SecretInSource).WithLocation(1).WithArguments("UseHmacRedaction"),
+            new DiagnosticResult(Descriptors.SecretInSource).WithLocation(2).WithArguments("ApiKeys"),
+            new DiagnosticResult(Descriptors.SecretInSource).WithLocation(3).WithArguments("ApiKeys"));
+
+    /// <summary>
+    /// ApiKeys maps a client NAME to its key, so a literal client name beside a key read from a
+    /// store is not a secret in source; the indexer form already reads it that way.
+    /// </summary>
+    [Fact]
+    public Task GOLDPATH1202_quiet_for_a_literal_client_name_beside_a_stored_key()
+        => Verify<AuthSurfaceAnalyzer>("""
+            public class AuthOptions
+            {
+                public System.Collections.Generic.Dictionary<string, string> ApiKeys { get; } = new();
+            }
+            public class Setup
+            {
+                public void M(AuthOptions o, string fromSecretStore)
+                {
+                    o.ApiKeys.Add("job", fromSecretStore);
+                    o.ApiKeys["job"] = fromSecretStore;
+                }
+            }
+            """);
     // ── GP0904 ─────────────────────────────────────────────────────────────
 
     [Fact]
