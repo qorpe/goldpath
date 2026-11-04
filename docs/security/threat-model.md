@@ -15,7 +15,7 @@ Each surface is a STRIDE table. Every threat names what holds it, and that holde
 three things:
 
 - **a test** (the class and method, runnable as named) or **an analyzer** rule;
-- **an accepted risk**: listed again in [the signed list](#accepted-risks-signed-by-the-owner-2026-10-26) or [the list awaiting signature](#accepted-risks-awaiting-the-owners-signature),
+- **an accepted risk**: listed again in [the signed list](#accepted-risks-signed-by-the-owner-2026-10-26) or [the list signed 2026-11-04](#accepted-risks-signed-by-the-owner-2026-11-04),
   which the owner signs on the pull request. That signature is the gate's last step;
 - **an issue**: a threat with no holder today. The issue says what would hold it.
 
@@ -153,17 +153,17 @@ decided under which rung.
 
 | # | STRIDE | Threat | Defence | Held by |
 |---|---|---|---|---|
-| T-FXI-01 | S | A forged file, dropped into the pick-up location, is ingested as the counterparty's | Authenticating the counterparty is the transport's job (SSH keys, bucket policy), composed and never rewritten (ADR-0003). The rail's `ValidateFile` can check a trailer, a count or a signature the counterparty supplies | **accepted risk A7** (awaiting signature) |
+| T-FXI-01 | S | A forged file, dropped into the pick-up location, is ingested as the counterparty's | Authenticating the counterparty is the transport's job (SSH keys, bucket policy), composed and never rewritten (ADR-0003). The rail's `ValidateFile` can check a trailer, a count or a signature the counterparty supplies | **accepted risk A7** |
 | T-FXI-02 | T | A file on an undeclared rail is ingested | Only declared rails ingest; an undeclared name throws | `Goldpath.FileExchange.Tests.FileRailEngineTests.An_undeclared_rail_is_refused` |
 | T-FXI-03 | T | A truncated or malformed file is applied in part | `ValidateFile` rejects the whole file: nothing ingests, and `GoldpathFileRejected` says why | `Goldpath.FileExchange.Tests.FileRailEngineTests.Truncated_file_is_rejected_whole_and_ingests_nothing`; `Goldpath.FileExchange.Tests.FileRailContractTests.A_rejected_file_announces_the_rejection_and_nothing_else` |
 | T-FXI-04 | T | A re-delivered file applies twice, or a different file under a reused name is silently skipped | The `(rail, file, line)` key dedups a re-delivery, across a restart too. **The key is the file's name, not its content**, so new content under a processed name is skipped as "duplicates", with nothing but a `skipped` count. The name is compared exactly, so on a case-insensitive transport (SMB) `ABC.csv` and `abc.csv` are two files | dedup: `Goldpath.FileExchange.Tests.FileRailEngineTests.Replaying_the_same_file_applies_zero_duplicates`; `Goldpath.FileExchange.Tests.EfFileLedgerTests.Zero_duplicates_survive_a_restart`; name reuse: **issue [#482](https://github.com/qorpe/goldpath/issues/482)** |
 | T-FXI-05 | T | A bad row reaches the handler, or stops the batch | Row validation runs before the handler, and a parse failure, contract failure or handler throw quarantines that row with its reason while the batch continues. Reprocessing retries only the quarantined rows | `Goldpath.FileExchange.Tests.FileRailContractTests.Row_validation_wins_over_the_handler_the_handler_never_sees_a_bad_row`, `…A_throwing_handler_quarantines_the_row_with_its_words`; `Goldpath.FileExchange.Tests.FileRailEngineTests.Bad_rows_quarantine_and_the_batch_continues`, `…Reprocess_after_fix_retries_only_the_quarantined_row` |
 | T-FXI-06 | T | A path in a file name escapes a directory | Not applicable to the module: it receives the name as a key and the lines as strings, opens nothing, and the admin surface carries file names in the query, never the path. A transport adapter that maps names to paths owns that check | by construction (no `System.IO` file access in `packages/Goldpath.FileExchange`) |
 | T-FXI-07 | R | A counterparty disputes what was applied, and when | The ledger keeps every processed `(rail, file, line)`, every quarantined row with its reason and first time, and one archive mark per run. The lifecycle events carry the rail and the file | `Goldpath.FileExchange.Tests.EfFileLedgerTests.The_archive_mark_is_idempotent_one_run_one_row`; `Goldpath.FileExchange.Tests.FileRailEngineTests.Clean_file_ingests_every_row_once` |
-| T-FXI-08 | I | The quarantine shows a row's classified values to operators | The surface is behind the ops floor (T-ADM-01..02); since R4.1 a viewer reads it. The reason is the app's own words, from its parser, validator or handler, and is stored and shown as written. Goldpath does not mask free text | `Goldpath.FileExchange.Tests.FileExchangeAdminTests.The_routes_answer_over_real_HTTP_with_the_R3_query_shape`; the content is **accepted risk A8** (awaiting signature) |
+| T-FXI-08 | I | The quarantine shows a row's classified values to operators | The surface is behind the ops floor (T-ADM-01..02); since R4.1 a viewer reads it. The reason is the app's own words, from its parser, validator or handler, and is stored and shown as written. Goldpath does not mask free text | `Goldpath.FileExchange.Tests.FileExchangeAdminTests.The_routes_answer_over_real_HTTP_with_the_R3_query_shape`; the content is **accepted risk A8** |
 | T-FXI-09 | E / I | On a multi-tenant app, an operator of tenant A reads every rail's files and quarantine | The ledger carries no tenant column, so R1 rule 5 applies. **The surface does not demand `goldpath-ops-all-tenants`** | **Issue [#481](https://github.com/qorpe/goldpath/issues/481)** |
 | T-FXI-10 | E / T | An operator changes ingestion state from the console | There are no verbs: re-delivering the file is the reprocess, and a `POST` anywhere under the surface is never a `200` | `Goldpath.FileExchange.Tests.FileExchangeAdminTests.The_routes_answer_over_real_HTTP_with_the_R3_query_shape` |
-| T-FXI-11 | D | A huge file exhausts memory, or the ledger with one round trip per line | Lines arrive as a list the pick-up job built. The module sets no line or byte ceiling, and makes up to three ledger calls per line (processed?, mark, release the quarantine). Lists on the admin surface clamp `take` | lists: `Goldpath.FileExchange.Tests.FileExchangeAdminTests.Take_is_clamped_and_files_filter_by_rail`; the size: **accepted risk A9** (awaiting signature) |
+| T-FXI-11 | D | A huge file exhausts memory, or the ledger with one round trip per line | Lines arrive as a list the pick-up job built. The module sets no line or byte ceiling, and makes up to three ledger calls per line (processed?, mark, release the quarantine). Lists on the admin surface clamp `take` | lists: `Goldpath.FileExchange.Tests.FileExchangeAdminTests.Take_is_clamped_and_files_filter_by_rail`; the size: **accepted risk A9** |
 
 ## Accepted risks (signed by the owner 2026-10-26)
 
@@ -181,12 +181,13 @@ accepted risk needs its own signature.
 | A5 | Bulk upload size is bounded by the host's request-body limit, not by the module (T-BLK-07) | Kestrel's default (30 MB) applies unless an adopter raises it deliberately. `MaxRows` bounds the work. A module-level byte ceiling would duplicate a host setting | an adopter needs larger files (then the module should take its own ceiling) |
 | A6 | Archival retrieval returns the archived document's classified fields unmasked to any `goldpath-ops` holder in scope, and, under admin-contract R4.1 (owner decision 2026-10-25), to any `goldpath-ops-read` holder in scope (T-ADM-13) | The archive is the regulatory record: an operator retrieving it for a case needs it as stored, and erasure is the path that masks it (archival RFC D4). The read already demands the ops role and the tenant scope | an adopter needs a masked viewer of archived content (open-threads T50 once R4 merges), or the archive read is opened to a principal outside the two ops roles |
 
-## Accepted risks awaiting the owner's signature
+## Accepted risks (signed by the owner 2026-11-04)
 
-Added 2026-10-29 with §5 and §6. They are not accepted until the owner signs them on the pull
-request that adds them.
+Added 2026-10-29 with §5 and §6. The owner signed A7–A9 on 2026-11-04 on
+[#483](https://github.com/qorpe/goldpath/pull/483), the pull request that added them, as written
+below. Each stays accepted until its "Revisit when" trigger fires.
 
-| # | Risk | Why it would be accepted | Revisit when |
+| # | Risk | Why it is accepted | Revisit when |
 |---|---|---|---|
 | A7 | A forged file in the pick-up location is ingested as the counterparty's (T-FXI-01) | Authenticating the sender is the transport's job: SSH keys, bucket policy, a share's ACL. The module composes transports and never rewrites them (ADR-0003). A rail that needs content authenticity can verify a signature or trailer in `ValidateFile` | an adopter's counterparty signs its files and asks for a declared verifier, or a transport adapter ships inside Goldpath |
 | A8 | A quarantine reason can carry a row's classified values to anyone who may read the surface (T-FXI-08) | The reason is the app's own words, from its parser, validator or handler, and it is what an operator needs to fix the row. Masking free text would guess at it | an adopter's validator is found echoing classified values, or the quarantine is opened beyond the two ops roles |
