@@ -23,6 +23,13 @@ public static class GoldpathApprovalsAdminEndpoints
         var group = endpoints.MapGroup(prefix);
         AdminSurfaceGuard.Apply(endpoints, group, prefix, exposeUnsecured);
 
+        // R1 rule 5: approval requests carry no tenant column, so on a multi-tenant app this
+        // surface is cross-tenant by nature — every read AND both decisions demand the
+        // all-tenants privilege, as campaign's do. Without it a tenant-A operator would read
+        // and DECIDE every tenant's requests. Single-tenant apps are unchanged.
+        group.AddEndpointFilter(async (context, next) =>
+            await AdminTenantScope.RequireAllTenantsAsync(context.HttpContext) is { } refusal ? refusal : await next(context));
+
         // R3: ?status= and ?ladder= repeat — values OR within a filter, filters AND together.
         group.MapGet("/requests", async ([FromQuery] string[]? status, [FromQuery] string[]? ladder, int? take,
             [FromServices] GoldpathApprovalsAdminService admin, CancellationToken ct)

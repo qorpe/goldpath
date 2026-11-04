@@ -5,34 +5,30 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
-- **The 1.0 API review's record and its counter (GA gate G4, API-1, #390).** Repository only: no
-  package changes.
-  - `docs/rfc/goldpath-1.0-api-review.md` is DRAFT, in the eight RFC sections. It holds the scope,
-    the verdict vocabulary (`keep` · `rename` with its target line · `remove` with its reason ·
-    `experimental` with its diagnostic id), the review method, cross-cutting policies P1–P3, the
-    gates, and the sign-off left for API-13 (#402).
-  - Diagnostic ids `GPEXP001` (Approvals) and `GPEXP002` (FileExchange) are proposed; they collide
-    with none of the 50 `GP…` ids.
-  - `docs/strategy/api-review-1.0/` has a README and one header-only TSV per package with a ledger
-    (23). Owner decision (a): these are Tier A data.
-  - `scripts/api-review-gate.sh` (run in `gates`) has these modes:
-    - report: covered/total per package; it fails on a stale row, an unknown verdict, a missing
-      reason or target, a duplicate, `keep` in an experimental package, a missing or extra TSV, or
-      a bad header;
-    - `--require-complete [--package …]`;
-    - `--require-applied`;
-    - `--list-non-keep`;
-    - `--selftest` (26 planted faults red; green unplanted, across one `[ID]` prefix, on an
-      experimental package under its own diagnostic id, and on an applied review in every mode
-      `gates` runs after API-14).
-
-    The modes compose on an applied review: an applied source is not stale and a rename's target is
-    covered by its row. A `keep` line that disappears, or a rename applied as a plain deletion, is
-    red in every mode.
-  - At `main` b1afb82: **0 of 2,658 live lines** reviewed.
-  - An `experimental` row in Approvals or FileExchange must name that package's diagnostic id
-    (`GPEXP001`/`GPEXP002`, compared exactly), and no other package's `experimental` row may name
-    either. A mode that takes no arguments refuses any.
+- **Campaign: the metrics RFC §7 promised, and the ones an impact dashboard needs (#294).** Ten new instruments
+  on the `Goldpath.Campaign` meter; no `PublicAPI` change. RFC campaign §7 is rewritten as the table of every
+  exported instrument, and `MetricsExportTests` holds each one's name, unit and tags against it.
+  - `goldpath_campaign_handler_duration` (s, by type): the adapter's latency, a throw timed too.
+  - `goldpath_campaign_outcomes_total` (by type, outcome and `error_code`): rows the sink moved, not messages it
+    received. The code's cardinality is bounded: a type's first 32 distinct codes, then `other`; over 64
+    characters, free text (anything but letters, digits, `_`, `-`, `.`), a run of more than six digits, or more
+    than ten digits in all (a phone or account number echoed back as the code, grouped or not) is `other`; none is `none`.
+  - Ceilings: `goldpath_campaign_tps_ceiling` per running campaign, `goldpath_campaign_type_max_tps` per type,
+    `goldpath_campaign_global_tps`.
+  - `goldpath_campaign_binding_constraint`: the limit that bound each running campaign's last tick —
+    `tps | in_flight | quota | window | type | global | none`.
+  - `goldpath_campaign_leader_last_tick` (Unix seconds): the pacer's liveness.
+  - **Only the leader exports the per-campaign and ceiling gauges:** they leave when a leadership slice ends, so a
+    process that stopped leading never scrapes a frozen view beside the new leader's live one. Its
+    `leader_last_tick` stays.
+  - Quota consumption: `goldpath_campaign_released_today` against `goldpath_campaign_daily_quota`.
+  - `goldpath_campaign_sink_flush_lag` (s): from an attempt's claim to the flush that made its outcome durable —
+    the handler's time plus the sink's, because nothing on the seam carries a send instant (T57).
+  - **Behaviour:** the sink now reads the campaign's type and the claimed items once per flush (sliced at 500
+    for a provider's IN-list limit). An outcome naming a campaign that does not exist is a no-op; before, a
+    failure for one threw and the batch went to the retry ladder.
+  - **RFC §7 no longer claims** counter-reconcile events (there is no event: the D3 reconcile reads the row) or
+    an ETA instrument (it is `remaining / tps_ceiling`, computed by the board).
 - **The served console's asset route is pinned against path traversal (threat model T-CON-03, GA gate G15, #454).**
   `Goldpath.Console.Tests.ConsoleTraversalTests` asserts `404` for `../`, `..\`, `..%5c`, `%2e%2e%2f`, `..%2f`,
   absolute and drive-letter paths, through `Serve` and over the mapped route. Every payload aims at a file that exists,
@@ -99,6 +95,31 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   - **Runbook:** §9 covers `QRTZ_LOCKS` row-lock contention.
   - **Still open:** `GoldpathJobExecutions` loses the history row of a fire with no error on Oracle.
     The `Error` document column refuses a NULL in ODP.NET (#475).
+- **Campaign: a policy version on the throttle — a stale throttle is refused, not silently applied (campaign RFC
+  R3.5, slice R3-S4, #298).** The campaign half of optimistic concurrency; the HTTP half (`ETag`, `If-Match`, `412`)
+  is admin-contract R4's route slice (#304), so the HTTP `throttle` route behaves as before.
+  - **API (additive):** `GoldpathCampaignInfo.PolicyVersion` (the detail and the list return it), the record
+    `GoldpathCampaignThrottleResult(Ok, Message, PolicyVersion, Stale)`, and the overload
+    `ThrottleAsync(id, patch, long? expectedPolicyVersion, actor, ct)`. The shipped four-argument `ThrottleAsync`
+    calls it with no expected version and returns the same messages as before.
+  - **The rule:** `PolicyVersion` (the R3-S1 column, 0 on every existing row) moves by one on every APPLIED
+    throttle and on nothing else — the pacer, the sink, pause, resume and abort leave it alone, and a refused
+    throttle does not move it. It is not an EF concurrency token.
+  - **The write:** a throttle is now one conditional `ExecuteUpdate` per attempt (`WHERE Id`, `State` and
+    `PolicyVersion` as read) that sets the policy columns, `LastVerb` and `PolicyVersion + 1`; it no longer goes
+    through `SaveChanges` and the `State` token. With an expected version, a policy that moved since is refused
+    ("…changed since you read it (version 4, by *actor* at *time*; you read version 3) — re-read and retry"), and
+    the refusal is audited as `throttle-refused` with both versions. Without one, a lost race is re-read and
+    re-applied (up to eight attempts), so the last writer still wins and the version moves once per applied throttle.
+  - **Behaviour change:** a throttle that raced a state change (the pacer starting a campaign, an operator's pause)
+    used to be refused with "changed state while the verb ran"; it is now re-read and applied, because a state
+    change is not a policy change. A race into a terminal state is still refused, in the terminal state's words.
+    The audit detail, `LastVerb` and the success message are byte-identical to before.
+  - **Proof:** `R3PolicyVersionTests` (14 test methods, 17 cases). Three of them race a competing verb into the
+    instant between the throttle's read and its conditional update, through a command interceptor. Four planted
+    faults turn them red: no `PolicyVersion + 1` (8 of 17 red), a single attempt with no re-read (5 red), no
+    version check (4 red), and no `State` guard in the conditional `WHERE` (1 red). `CampaignPolicyVersionPostgresTests` and an `OracleDataTests` fact (`Category=Oracle`, 19c form) run
+    the conditional update on real PostgreSQL 17 and Oracle Free, every policy column included.
 - **Campaign: the four options an operator tunes reload without a restart (campaign RFC R3.3, slice R3-S7, #317).**
   - **What reloads:** `AddGoldpathCampaign` now reads the section `Goldpath:Campaign` through
     `IOptionsMonitor`. Exactly four keys reload: `RetryBackoff`, `RetryJitter`, `OrphanReleaseAfter` and
@@ -246,6 +267,34 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     failed request.
   - **The smoke host** files a second approval request at startup, so this spec never races
     the approvals journey for one quorum.
+- **The 1.0 API review's record and its counter (GA gate G4, API-1, #390).** Repository only: no
+  package changes.
+  - `docs/rfc/goldpath-1.0-api-review.md` is DRAFT, in the eight RFC sections. It holds the scope,
+    the verdict vocabulary (`keep` · `rename` with its target line · `remove` with its reason ·
+    `experimental` with its diagnostic id), the review method, cross-cutting policies P1–P3, the
+    gates, and the sign-off left for API-13 (#402).
+  - Diagnostic ids `GPEXP001` (Approvals) and `GPEXP002` (FileExchange) are proposed; they collide
+    with none of the 50 `GP…` ids.
+  - `docs/strategy/api-review-1.0/` has a README and one header-only TSV per package with a ledger
+    (23). Owner decision (a): these are Tier A data.
+  - `scripts/api-review-gate.sh` (run in `gates`) has these modes:
+    - report: covered/total per package; it fails on a stale row, an unknown verdict, a missing
+      reason or target, a duplicate, `keep` in an experimental package, a missing or extra TSV, or
+      a bad header;
+    - `--require-complete [--package …]`;
+    - `--require-applied`;
+    - `--list-non-keep`;
+    - `--selftest` (26 planted faults red; green unplanted, across one `[ID]` prefix, on an
+      experimental package under its own diagnostic id, and on an applied review in every mode
+      `gates` runs after API-14).
+
+    The modes compose on an applied review: an applied source is not stale and a rename's target is
+    covered by its row. A `keep` line that disappears, or a rename applied as a plain deletion, is
+    red in every mode.
+  - At `main` b1afb82: **0 of 2,658 live lines** reviewed.
+  - An `experimental` row in Approvals or FileExchange must name that package's diagnostic id
+    (`GPEXP001`/`GPEXP002`, compared exactly), and no other package's `experimental` row may name
+    either. A mode that takes no arguments refuses any.
 - **Security scans in CI (GA gate G15 Part 1/2, #339).** Repository CI, no package changes.
   `.github/workflows/codeql.yml` runs CodeQL (`security-extended`) on the C# and the console's
   TypeScript on every pull request, on `main` and weekly, with its actions pinned to commits.
@@ -442,6 +491,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **[schema]** **Approvals: concurrent decisions no longer both apply (#480, threat model T-APR-06).** A decision read the
+  request and its signatures, then wrote them in separate calls with nothing guarding the gap.
+  - **What went wrong:**
+    - The same identity granting twice at once (a double click, two tabs) stored two signatures.
+    - A grant and a reject at once both applied and both published their event, and the last write decided `Status`.
+  - **Measured on PostgreSQL with every save held back 300 ms:** both double-grants answered `Applied`; grant + reject
+    answered `Applied, Applied`; two distinct signers on a two-signature rung left it `Pending`, one signature lost.
+  - **Now:**
+    - The request row carries a version, checked on every write: `GoldpathApprovals.Version`, a concurrency token.
+    - A quorum signature and the request's new state are written in one transaction.
+    - `(RequestId, SignedBy)` is unique on `GoldpathApprovalSignatures`, replacing the `RequestId` index.
+    - A decision that loses the race reads again and decides on what the request is now. The same identity again
+      answers `AlreadySigned`. A request another decision closed answers `NotPending`, with no event. A distinct
+      signer signs on top of the winner.
+    - The escalation sweep leaves a request decided under it to that decision.
+    - A call that loses eight times in a row throws `InvalidOperationException`.
+  - **Store behaviour:**
+    - The in-memory store keeps the same two rules and now hands out copies.
+    - On both built-in stores, a write from a stale read and a second signature by the same identity throw
+      `InvalidOperationException`.
+    - A custom `IGoldpathApprovalStore` keeps its own guarantees. Its signature and request writes stay two calls.
+  - **No public API changed:** the version is an internal member.
+  - **Migration:** one, with a query to run first for existing duplicate signatures (upgrade guide).
 - **Archival: an entry whose `DueAt` carries sub-microsecond ticks now verifies on PostgreSQL (#383).** The engine
   hashed `DueAt` at 100 ns, but `timestamptz` stores microseconds, so verification re-hashed a different value and
   reported "document does not match its content hash" with nothing tampered. It happened whenever the candidate's
@@ -786,6 +858,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 - A consumer that died mid-call on a paused, closed-window, aborted, expired or finished
   campaign stayed `Processing` forever — the stale-claim sweep visited only campaigns
   releasing that tick. It now reaches every campaign with work in flight.
+
+### Security
+- **Approvals and FileExchange admin surfaces demand the all-tenants privilege on a multi-tenant app (admin
+  contract R1 rule 5, #481).** Neither store carries a tenant column, but neither group applied the rule campaign and
+  archival apply. So an operator scoped to tenant A could read every tenant's approval requests and trails and
+  **decide** them, and read every rail's files and quarantined rows with their reasons. Both groups now call
+  `AdminTenantScope.RequireAllTenantsAsync`, and a tenant-scoped operator gets `403` naming
+  `goldpath-ops-all-tenants`. Single-tenant apps are unchanged. Proven over HTTP behind the real ops floor by
+  `ApprovalAdminTenantScopeTests` and `FileExchangeAdminTenantScopeTests`. Upgrade note: `docs/upgrades/0.1.0-preview.10.md`.
 
 ## [0.1.0-preview.9] - 2026-10-19
 
