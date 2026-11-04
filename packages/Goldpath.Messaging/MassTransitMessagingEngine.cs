@@ -131,8 +131,12 @@ internal sealed class MassTransitMessagingEngine : IGoldpathMessagingEngine
     {
         foreach (var (eventType, handlerType) in messaging.Handlers)
         {
-            s_addHandler.MakeGenericMethod(eventType, handlerType).Invoke(null, [bus, messaging.EndpointOf(eventType, handlerType)]);
+            var endpoint = messaging.EndpointOf(eventType, handlerType);
+            s_addHandler.MakeGenericMethod(eventType, handlerType).Invoke(null, [bus, endpoint, messaging.ConcurrencyLimitOf(endpoint)]);
         }
+
+        // The event types this bus handles: the ones a delivery's envelope must match by wire name (§4.1 row 15).
+        var handled = messaging.Handlers.Select(h => h.Event).Concat(messaging.BatchHandlers.Select(b => b.Event)).ToList();
 
         foreach (var (eventType, handlerType, grouping, endpointName) in messaging.BatchHandlers)
         {
@@ -172,10 +176,13 @@ internal sealed class MassTransitMessagingEngine : IGoldpathMessagingEngine
                         transportHooks.Transport?.Invoke(cfg);
                     }
 
+                    MassTransitMessageNames.Apply(cfg, handled);
                     cfg.ConfigureGoldpathEndpoints(registration);
                 });
                 break;
             case GoldpathMessagingTransport.InMemory:
+                // The in-memory transport routes by the CLR type and is left as it was: a wire name is a broker's
+                // concern (open-threads T53), proven on RabbitMQ by the conformance suite's S2.17.
                 bus.UsingInMemory((registration, cfg) => cfg.ConfigureGoldpathEndpoints(registration));
                 break;
             default:

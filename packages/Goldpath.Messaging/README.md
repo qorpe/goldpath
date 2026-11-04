@@ -107,6 +107,32 @@ batch into the retry ladder, so the sink must be idempotent per message. A queue
 a name a running fleet already drains is named explicitly — `AddHandler<TEvent, THandler>("orders-db")`,
 or `AddBatchHandler`'s `endpointName` — and handlers given one name share one queue.
 
+### Concurrency and order
+
+```csharp
+messaging.AddHandler<LedgerPosted, LedgerProjector>(new GoldpathHandlerOptions { ConcurrencyLimit = 1 });
+```
+
+`ConcurrencyLimit` (1 to 65,535) is the most deliveries the endpoint handles at once and the most it holds
+unacknowledged from the broker; unset, the engine's own window applies, and it may grow with the machine. The
+limit belongs to the endpoint, so every handler on it runs under it, and two limits for one endpoint are
+refused. Order is promised only at a limit of 1, for one publisher's messages in one process: at any other
+limit, across processes, or once a retry puts a message back, there is none (conformance S2.14, S2.15).
+
+### Renaming an event
+
+An event's wire identity is derived from its type (`Namespace:Type` names its exchange and its
+`urn:message:` URN), so renaming the class would move its messages. Keep the old identity on the new type:
+
+```csharp
+[GoldpathMessageName("Contoso.Orders:OrderPlaced")]
+public sealed record OrderSubmitted(Guid OrderId) : IIntegrationEvent;
+```
+
+Producers and consumers still on `OrderPlaced` keep exchanging messages with it, in both directions
+(conformance S2.17). It is honoured on RabbitMQ through `AddGoldpathMessaging(messaging => …)`; the in-memory
+test transport and the MassTransit-typed overloads below do not honour it yet (open-threads T53).
+
 ## Configuration
 
 Bound from `Goldpath:Messaging`:
@@ -115,7 +141,11 @@ Bound from `Goldpath:Messaging`:
 { "Goldpath": { "Messaging": { "Retry": { "ImmediateCount": 3 } } } }
 ```
 
-Redelivery defaults: 5m/15m/30m, then the error queue — messages are never silently dropped.
+Redelivery defaults: 5m/15m/30m, then the error queue. **On RabbitMQ the delayed stage needs the
+delayed-message exchange plugin**, which a stock broker (the AppHost's included) does not carry and which cannot
+run from RabbitMQ 4.3. Without it, a redelivery is refused by the broker and the poison message stays on its
+queue instead of reaching `<queue>_error` (measured, open-threads T52). On such a broker, clear
+`Goldpath:Messaging:Retry:RedeliveryIntervals` until that thread is decided.
 
 ## Advanced
 
@@ -134,7 +164,8 @@ A Mediant notification must never carry `IIntegrationEvent` (GP0402) — one wor
 - **Propagation**: `X-Goldpath-Tenant` and `X-Correlation-Id` flow through publish/consume
   automatically; on consume the tenant is restored into the message-scoped
   `GoldpathMessageTenantContext` (`ITenantContext` in golden-path services).
-- Kebab-case endpoint naming; OTel tracing flows via MassTransit's built-in instrumentation.
+- Kebab-case endpoint naming; OTel tracing flows via MassTransit's built-in instrumentation, and the
+  consume span carries `goldpath.tenant_id` and `goldpath.correlation_id`.
 
 ## Providers
 

@@ -378,6 +378,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   runs it for 15 minutes, `smoke` for 2. Today's baseline is in
   `packages/Goldpath.Campaign/ops/campaign-benchmarks.md`; it is below the threshold, as
   expected before Parts 2 and 3.
+- **The conformance suite's named gaps, on both engines (GA gate G5 Part 2/5, #331).** Two additive seam rows,
+  by owner decision (2026-10-27), RFC goldpath-messaging-engines §4.1 rows 14 and 15. No shipped line changes.
+  - **`GoldpathHandlerOptions.ConcurrencyLimit`**, through `AddHandler<TEvent, THandler>(GoldpathHandlerOptions,
+    string? endpointName = null)`: the most deliveries an endpoint handles at once and holds unacknowledged
+    (1 to 65,535, null for the engine's default). It belongs to the endpoint, and two limits for one endpoint
+    are refused. The engine contract carries it as `GoldpathHandlerRegistration.ConcurrencyLimit`.
+  - **`[GoldpathMessageName("Namespace:Type")]`** fixes an integration event's exchange name and message URN,
+    so a renamed or moved type keeps its wire identity. It is honoured on RabbitMQ through the builder, not
+    on the in-memory test transport or the MassTransit-typed overloads (open-threads T53).
+  - **Consume spans carry `goldpath.tenant_id`** beside `goldpath.correlation_id`, on the default engine's
+    consume filter and the Wolverine adapter.
+  - **Conformance facts S2.14–S2.19:** ordering at a limit of 1, a limit of N reached and never exceeded,
+    publish and consume as one trace read through the OpenTelemetry in-memory exporter, a renamed type in
+    both directions, the retry ladder and error queue on a limited endpoint, and exactly-once on a limited
+    endpoint (the same message id delivered concurrently is handled once; the Wolverine adapter's inbox now
+    claims its row before locking it, which a parallel listener needs). S2.13 (delayed redelivery) is reserved: see Known issues.
 - **The engine gate (GA gate G1, #321).** `scripts/engine-gate.sh` fails CI when a
   `PublicAPI.*.txt` outside a bus-engine adapter package names an engine type (`MassTransit.`,
   `Wolverine.`) that is not in its committed baseline, `scripts/engine-gate.baseline.txt`. The
@@ -728,6 +744,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   them; the rest were an engine never observed mid-batch, where the terminal recount hides a
   wrong counter. The same cached-model blind spot sits in the Jobs and Archival model suites
   (open thread T33). Measured in the nightly and on the heavy lane alike, same scores.
+- **The Wolverine adapter continues the publisher's trace (#331).** Its consume span started a new trace from
+  the 8.x envelope; it now opens the consume span under the `MT-Activity-Id` the delivery carries (ActivitySource
+  `Goldpath.Messaging.Wolverine`), and writes that header when it publishes. The adapter is not published.
 - **Six packages were mutation-tested only when somebody remembered to dispatch them.** Jobs,
   Archival, Bulk, Notification, Campaign and Caching ran in the dispatch-only
   `mutation-heavy.yml`, which is how Caching stayed red for seven weeks unseen. With their
@@ -884,6 +903,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   `AdminTenantScope.RequireAllTenantsAsync`, and a tenant-scoped operator gets `403` naming
   `goldpath-ops-all-tenants`. Single-tenant apps are unchanged. Proven over HTTP behind the real ops floor by
   `ApprovalAdminTenantScopeTests` and `FileExchangeAdminTenantScopeTests`. Upgrade note: `docs/upgrades/0.1.0-preview.10.md`.
+
+### Known issues
+- **Delayed redelivery has no broker to ride on (#331, open-threads T52).** `Goldpath:Messaging:Retry:RedeliveryIntervals`
+  defaults to 5, 15 and 30 minutes, and the default engine schedules each redelivery through RabbitMQ's
+  delayed-message exchange plugin. The stock RabbitMQ the AppHost starts does not carry it. Measured on such a
+  broker: the redelivery's exchange declare is refused, and the poison message stays on its queue and never
+  reaches `<queue>_error`. The plugin is unmaintained and cannot run from RabbitMQ 4.3. Until the owner decides
+  what the ladder rides on, an application on a broker without the plugin should clear the ladder
+  (`Goldpath:Messaging:Retry:RedeliveryIntervals` empty), so a poison message reaches `_error` after its
+  immediate retries.
+
 
 ## [0.1.0-preview.9] - 2026-10-19
 

@@ -148,14 +148,26 @@ public static class GoldpathHandlerRegistrationExtensions
         return configurator;
     }
 
-    /// <summary>Registers the handler on the endpoint named <paramref name="endpointName"/>; endpoints that share a name share a queue.</summary>
-    internal static void AddHandlerAt<TEvent, THandler>(IBusRegistrationConfigurator configurator, string endpointName)
+    /// <summary>
+    /// Registers the handler on the endpoint named <paramref name="endpointName"/>; endpoints that share a name share a
+    /// queue. A <paramref name="concurrencyLimit"/> bounds both the deliveries handled at once and the broker's
+    /// prefetch, so the endpoint never holds more unacknowledged than it may handle (§4.1 row 14).
+    /// </summary>
+    internal static void AddHandlerAt<TEvent, THandler>(IBusRegistrationConfigurator configurator, string endpointName, int? concurrencyLimit = null)
         where TEvent : class, IIntegrationEvent
         where THandler : class, IIntegrationEventHandler<TEvent>
     {
         configurator.TryAddScoped<THandler>();
         configurator.AddConsumer<GoldpathIntegrationEventConsumer<TEvent, THandler>>()
-            .Endpoint(endpoint => endpoint.Name = endpointName);
+            .Endpoint(endpoint =>
+            {
+                endpoint.Name = endpointName;
+                if (concurrencyLimit is { } limit)
+                {
+                    endpoint.ConcurrentMessageLimit = limit;
+                    endpoint.PrefetchCount = limit;
+                }
+            });
     }
 
     /// <summary>

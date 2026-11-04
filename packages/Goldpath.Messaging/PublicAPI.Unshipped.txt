@@ -91,6 +91,16 @@ Goldpath.IGoldpathMessagingEngine
 Goldpath.IGoldpathMessagingEngine.Compose(Goldpath.GoldpathMessagingComposition! composition, Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration) -> void
 Goldpath.IGoldpathMessagingEngine.Name.get -> string!
 Goldpath.IGoldpathMessagingEngine.PublishAsync(System.IServiceProvider! services, System.Type! contract, object! body, Goldpath.GoldpathOutgoingMessage! message, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+Goldpath.GoldpathHandlerOptions
+Goldpath.GoldpathHandlerOptions.ConcurrencyLimit.get -> int?
+Goldpath.GoldpathHandlerOptions.ConcurrencyLimit.set -> void
+Goldpath.GoldpathHandlerOptions.GoldpathHandlerOptions() -> void
+Goldpath.GoldpathMessagingBuilder.AddHandler<TEvent, THandler>(Goldpath.GoldpathHandlerOptions! options, string? endpointName = null) -> Goldpath.GoldpathMessagingBuilder!
+Goldpath.GoldpathHandlerRegistration.ConcurrencyLimit.get -> int?
+Goldpath.GoldpathHandlerRegistration.ConcurrencyLimit.init -> void
+Goldpath.GoldpathMessageNameAttribute
+Goldpath.GoldpathMessageNameAttribute.GoldpathMessageNameAttribute(string! name) -> void
+Goldpath.GoldpathMessageNameAttribute.Name.get -> string!
 Goldpath.GoldpathBatchHandlerRegistration.<Clone>$() -> Goldpath.GoldpathBatchHandlerRegistration!
 Goldpath.GoldpathBatchHandlerRegistration.Deconstruct(out System.Type! Event, out System.Type! Handler, out Goldpath.GoldpathBatchOptions! Options, out string! EndpointName) -> void
 Goldpath.GoldpathBatchHandlerRegistration.Equals(Goldpath.GoldpathBatchHandlerRegistration? other) -> bool

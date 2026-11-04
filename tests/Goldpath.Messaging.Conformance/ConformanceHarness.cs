@@ -43,6 +43,9 @@ public sealed class Observed
     /// <summary>Ping ids the second handler on a shared endpoint saw — both handlers of one event run for each delivery.</summary>
     public ConcurrentBag<Guid> AlsoPinged { get; } = [];
 
+    /// <summary>The activity current inside each Ping handler: where the trace fact (S2.16) starts its walk.</summary>
+    public ConcurrentBag<System.Diagnostics.Activity> Spans { get; } = [];
+
     /// <summary>While set and not completed, every Ping handler waits here — the drain scenario holds its window full.</summary>
     public Task? HandlerGate { get; set; }
 
@@ -110,6 +113,11 @@ public sealed class PingHandler(Observed observed) : IIntegrationEventHandler<Pi
         if (observed.HandlerDelay > TimeSpan.Zero)
         {
             await Task.Delay(observed.HandlerDelay, cancellationToken);
+        }
+
+        if (System.Diagnostics.Activity.Current is { } span)
+        {
+            observed.Spans.Add(span);
         }
 
         observed.Pings.Add((integrationEvent, context));
@@ -222,6 +230,128 @@ public sealed class TickBatchHandler(BatchesObserved observed, IIntegrationEvent
     }
 }
 
+/// <summary>The concurrency and ordering facts' event (S2.14, S2.15): one per delivery, numbered by its publisher.</summary>
+public sealed class Work : IIntegrationEvent
+{
+    public int Number { get; set; }
+}
+
+/// <summary>What <see cref="WorkHandler"/> observed: the order deliveries were handled in, and how many ran at once.</summary>
+public sealed class WorkObserved
+{
+    private int _inFlight;
+    private int _peak;
+
+    public ConcurrentQueue<int> Handled { get; } = new();
+
+    /// <summary>How long each delivery holds the handler, so deliveries an engine runs together overlap.</summary>
+    public TimeSpan Hold { get; set; }
+
+    /// <summary>The most deliveries ever inside the handler at once.</summary>
+    public int Peak => Volatile.Read(ref _peak);
+
+    public void Enter()
+    {
+        var now = Interlocked.Increment(ref _inFlight);
+        int seen;
+        while (now > (seen = Volatile.Read(ref _peak)) && Interlocked.CompareExchange(ref _peak, now, seen) != seen)
+        {
+        }
+    }
+
+    public void Leave() => Interlocked.Decrement(ref _inFlight);
+
+    public async Task WaitForHandledAsync(int count, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (Handled.Count < count && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(50);
+        }
+    }
+}
+
+/// <summary>The seam-side handler of <see cref="Work"/>: names no engine type.</summary>
+public sealed class WorkHandler(WorkObserved observed) : IIntegrationEventHandler<Work>
+{
+    public async Task HandleAsync(Work integrationEvent, IntegrationEventContext context, CancellationToken cancellationToken = default)
+    {
+        observed.Enter();
+        try
+        {
+            // A delivery the engine runs beside another one waits a little longer the lower its number, so an engine
+            // running several at once finishes them out of order rather than by luck in order.
+            await Task.Delay(observed.Hold + TimeSpan.FromMilliseconds(5 * (10 - (integrationEvent.Number % 10))), cancellationToken);
+            observed.Handled.Enqueue(integrationEvent.Number);
+        }
+        finally
+        {
+            observed.Leave();
+        }
+    }
+}
+
+/// <summary>The poison of a limited endpoint (S2.18): its own queue, so its error queue counts only its own faults.</summary>
+public sealed class LimitedPoison : IIntegrationEvent
+{
+    public Guid Id { get; set; }
+}
+
+/// <summary>Throws every time, on an endpoint run at a concurrency limit.</summary>
+public sealed class LimitedPoisonHandler(Observed observed) : IIntegrationEventHandler<LimitedPoison>
+{
+    public Task HandleAsync(LimitedPoison integrationEvent, IntegrationEventContext context, CancellationToken cancellationToken = default)
+    {
+        observed.PoisonAttempts.Add(context.RetryAttempt);
+        throw new InvalidOperationException("poison");
+    }
+}
+
+/// <summary>What the renamed-type fact's handlers observed (S2.17): each delivery's id, by the type that took it.</summary>
+public sealed class RenameObserved
+{
+    public ConcurrentBag<Guid> AsOld { get; } = [];
+
+    public ConcurrentBag<Guid> AsNew { get; } = [];
+
+    public async Task WaitForAsync(int each, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while ((AsOld.Count < each || AsNew.Count < each) && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(100);
+        }
+    }
+}
+
+public sealed class OrderPlacedHandler(RenameObserved observed) : IIntegrationEventHandler<Legacy.OrderPlaced>
+{
+    public Task HandleAsync(Legacy.OrderPlaced integrationEvent, IntegrationEventContext context, CancellationToken cancellationToken = default)
+    {
+        observed.AsOld.Add(integrationEvent.Id);
+        return Task.CompletedTask;
+    }
+}
+
+public sealed class OrderSubmittedHandler(RenameObserved observed) : IIntegrationEventHandler<OrderSubmitted>
+{
+    public Task HandleAsync(OrderSubmitted integrationEvent, IntegrationEventContext context, CancellationToken cancellationToken = default)
+    {
+        observed.AsNew.Add(integrationEvent.Id);
+        return Task.CompletedTask;
+    }
+}
+
+/// <summary>
+/// The renamed type (S2.17): what <see cref="Legacy.OrderPlaced"/> became, in another namespace and under another
+/// name, keeping the old one's wire identity.
+/// </summary>
+[GoldpathMessageName("Goldpath.Messaging.Conformance.Legacy:OrderPlaced")]
+public sealed class OrderSubmitted : IIntegrationEvent
+{
+    public Guid Id { get; set; }
+}
+
 /// <summary>The app's own context with the Goldpath outbox schema (RFC goldpath-messaging-engines §4.2).</summary>
 public sealed class ConformanceDb(DbContextOptions<ConformanceDb> options) : DbContext(options)
 {
@@ -269,6 +399,15 @@ public sealed class ConformanceContainers : IAsyncLifetime
         return document.RootElement.TryGetProperty("messages", out var messages) ? messages.GetInt32() : 0;
     }
 
+    /// <summary>Whether the broker holds an exchange named <paramref name="exchange"/>, by the management API.</summary>
+    public async Task<bool> ExchangeExistsAsync(string exchange)
+    {
+        using var http = new HttpClient { BaseAddress = new Uri($"http://{Rabbit.Hostname}:{Rabbit.GetMappedPublicPort(15672)}/") };
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes("guest:guest")));
+        using var response = await http.GetAsync($"api/exchanges/%2F/{Uri.EscapeDataString(exchange)}");
+        return response.IsSuccessStatusCode;
+    }
+
     /// <summary>
     /// Moves every message in <paramref name="queue"/> to the exchange <paramref name="exchange"/>, body and properties
     /// untouched — what the runbook's "shovel it back" does once the consumer is fixed. Returns how many it moved.
@@ -305,14 +444,14 @@ public sealed class ConformanceContainers : IAsyncLifetime
     /// when (the crash scenario commits BEFORE the bus exists). The test host returns from its start
     /// only once the bus has started (#371), so no fact has to know how an engine says that. Every engine
     /// the suite references is in this process, so <paramref name="engine"/> names the one this host runs on;
-    /// <paramref name="compose"/> adds to the composition after the defaults. A host built with
-    /// <paramref name="consumes"/> false registers no handler: in a mixed fleet it is the process that only
+    /// <paramref name="compose"/> adds to the composition after the defaults, and <paramref name="services"/> to the host's services.
+    /// A host built with <paramref name="consumes"/> false registers no handler: in a mixed fleet it is the process that only
     /// publishes, so what it sends can only be handled by the other engine.
     /// </summary>
     public async Task<GoldpathMessagingTestHost> BuildHostAsync(
         string engine, Observed observed, Action<GoldpathMessagingOptions>? options = null, string? tenant = null,
         (BatchesObserved Observed, GoldpathBatchOptions Grouping)? batches = null, Action<GoldpathMessagingBuilder>? compose = null,
-        bool consumes = true)
+        Action<IServiceCollection>? services = null, bool consumes = true)
     {
         var host = GoldpathMessagingTestHost.Create(
             messaging =>
@@ -349,6 +488,7 @@ public sealed class ConformanceContainers : IAsyncLifetime
                 }
 
                 builder.AddGoldpathData<HostApplicationBuilder, ConformanceDb>(o => o.UseNpgsql(Postgres.GetConnectionString()));
+                services?.Invoke(builder.Services);
             },
             engine);
 

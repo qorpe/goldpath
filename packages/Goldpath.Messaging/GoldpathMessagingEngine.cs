@@ -65,7 +65,15 @@ public enum GoldpathMessagingTransport
 /// <param name="Event">The integration event type.</param>
 /// <param name="Handler">The <see cref="IIntegrationEventHandler{TEvent}"/> implementation.</param>
 /// <param name="EndpointName">The queue it drains.</param>
-public sealed record GoldpathHandlerRegistration(Type Event, Type Handler, string EndpointName);
+public sealed record GoldpathHandlerRegistration(Type Event, Type Handler, string EndpointName)
+{
+    /// <summary>
+    /// The endpoint's concurrency limit (<see cref="GoldpathHandlerOptions.ConcurrencyLimit"/>): the most deliveries
+    /// handled at once and held unacknowledged, or null for the engine's own default. Every registration of one
+    /// endpoint carries the same value.
+    /// </summary>
+    public int? ConcurrencyLimit { get; init; }
+}
 
 /// <summary>A batch handler a builder recorded, with its grouping and the endpoint (queue) it drains.</summary>
 /// <param name="Event">The integration event type.</param>
@@ -86,7 +94,7 @@ public sealed class GoldpathMessagingComposition
     {
         Builder = builder;
         Options = builder.Options;
-        Handlers = [.. builder.Handlers.Select(h => new GoldpathHandlerRegistration(h.Event, h.Handler, builder.EndpointOf(h.Event, h.Handler)))];
+        Handlers = [.. builder.Handlers.Select(h => RegistrationOf(builder, h.Event, h.Handler))];
         BatchHandlers = [.. builder.BatchHandlers.Select(b => new GoldpathBatchHandlerRegistration(b.Event, b.Handler, b.Options, b.EndpointName))];
         OutboxContext = builder.OutboxContext;
         Outbox = builder.Outbox;
@@ -124,6 +132,12 @@ public sealed class GoldpathMessagingComposition
 
     /// <summary>The builder this was read from: the key of the engine's test hooks.</summary>
     internal GoldpathMessagingBuilder Builder { get; }
+
+    private static GoldpathHandlerRegistration RegistrationOf(GoldpathMessagingBuilder builder, Type eventType, Type handlerType)
+    {
+        var endpoint = builder.EndpointOf(eventType, handlerType);
+        return new GoldpathHandlerRegistration(eventType, handlerType, endpoint) { ConcurrencyLimit = builder.ConcurrencyLimitOf(endpoint) };
+    }
 }
 
 /// <summary>
