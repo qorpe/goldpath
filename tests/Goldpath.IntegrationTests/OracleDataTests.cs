@@ -33,7 +33,6 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
     /// </summary>
     private static readonly IReadOnlyDictionary<string, string> MayWriteEmpty = new Dictionary<string, string>(StringComparer.Ordinal)
     {
-        ["GoldpathCampaignCeilings.Name"] = "#384 — the global ceiling row's name is empty",
         ["GoldpathCampaigns.Name"] = "#476 — campaign create takes a blank name",
         ["GoldpathBulkFiles.FileName"] = "#476 — an upload's empty ?fileName= is stored as is",
         ["GoldpathErasureRecords.SubjectKey"] = "#476 — erase takes a blank subject key",
@@ -131,22 +130,32 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
     }
 
     [Fact]
-    public async Task The_global_ceiling_row_as_designed_cannot_be_written()
+    public async Task The_global_ceiling_row_is_written_and_read_back()
     {
-        // #384: R3.2 keys the global ceiling on (Global, ""), and '' is NULL here. This fact flips when #384 lands.
+        // #384: the global row was keyed (Global, ""), and '' is NULL here (ORA-01400 on the key). Its name is now
+        // GoldpathCampaignCeiling.GlobalName, "*", on every provider: the row as the model makes it is written as is.
         var connection = await oracle.CreateSchemaAsync("GP_CEILING");
-        await using var db = OracleComposedDb.Create(connection);
-        await db.Database.EnsureCreatedAsync();
-        db.Set<GoldpathCampaignCeiling>().Add(new GoldpathCampaignCeiling
+        await using (var db = OracleComposedDb.Create(connection))
         {
-            Kind = GoldpathCampaignCeilingKind.Global,
-            Name = "",
-            UpdatedAt = DateTimeOffset.UtcNow,
-            UpdatedBy = "seed",
-        });
-        var refused = await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
-        Assert.Contains("ORA-01400", refused.InnerException?.Message, StringComparison.Ordinal);
-        Assert.Contains("\"GoldpathCampaignCeilings\".\"Name\"", refused.InnerException?.Message, StringComparison.Ordinal);
+            await db.Database.EnsureCreatedAsync();
+            db.Set<GoldpathCampaignCeiling>().Add(new GoldpathCampaignCeiling
+            {
+                Kind = GoldpathCampaignCeilingKind.Global,
+                MaxTps = 1_000,
+                SeedMaxTps = 1_000,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                UpdatedBy = "seed",
+            });
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = OracleComposedDb.Create(connection))
+        {
+            var global = await db.Set<GoldpathCampaignCeiling>().AsNoTracking()
+                .SingleAsync(c => c.Kind == GoldpathCampaignCeilingKind.Global && c.Name == GoldpathCampaignCeiling.GlobalName);
+            Assert.Equal("*", global.Name);
+            Assert.Equal(1_000, global.MaxTps);
+        }
     }
 
     [Fact]

@@ -61,7 +61,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   It found three things, filed as issues:
   - the document columns are `NVARCHAR2(2000)` and refuse a NULL in the client (#475);
   - three admin verbs can write `''` into a NOT NULL column (#476);
-  - the global ceiling row's empty name (#384, already open).
+  - the global ceiling row's empty name (#384, already open; fixed, see Fixed).
 
   It also found that under a `tr-TR` culture ODP.NET opens the session with `NLS_SORT=TURKISH`, so a keyset walk
   over a string key silently skips rows. A fact pins it, #496 holds the fix (pin the session's sort in the Oracle
@@ -675,6 +675,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   the 10M run with 99,951 such repeats validated at 12,079 rows/s against 14,773 (open-threads
   T49). No public API, schema or dependency change. `scripts/bench-bulk.sh intake` runs the
   10M bench; the numbers are in `packages/Goldpath.Bulk/ops/bulk-benchmarks.md`.
+- **Campaign: the global ceiling row is named `"*"`, not `""`, on every provider (#384, GA gate G7).** Oracle stores
+  `''` as NULL, so the R3.2 global row keyed `(Global, "")` could not be written there (`ORA-01400` on the primary key).
+  Owner decision (2026-10-24): one sentinel on every provider rather than an Oracle-only converter.
+  - `GoldpathCampaignCeiling.GlobalName` (`"*"`, new public constant) is the global row's name and the entity's
+    default `Name`. Nothing reads or writes ceiling rows yet; the slices that do (#290, #318) use the constant.
+  - **Data step:** `GoldpathCampaignR2Backfill()`, the line the preview.10 guide already asks for at the end of the
+    `CampaignR2R3` migration's `Up`, now also moves an empty-named global row to `"*"` on PostgreSQL and SQL Server.
+    If a `"*"` row already exists, the empty-named one is deleted as the stale copy. A second run changes nothing.
+    No new line in the migration.
+  - Proof: `OracleDataTests.The_global_ceiling_row_is_written_and_read_back` (red on the old default), the step on
+    real PostgreSQL run twice (`CampaignR2Tests`), and `GoldpathCampaignCeilings.Name` off the Oracle `''` allow-list.
 - **`Goldpath.Campaign`: a snapshot is no longer bound to the leader tick (#288).** The pacer
   materialized one `EnumerationBatchSize` batch per campaign per tick, so at the defaults (2,000
   rows, 250 ms) a snapshot ran at about 8,000 rows/s. 35M targets took over 70 minutes before

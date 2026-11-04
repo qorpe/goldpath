@@ -149,6 +149,7 @@ Goldpath.GoldpathCampaign.StartAt.get -> System.DateTimeOffset?
 Goldpath.GoldpathCampaign.StartAt.set -> void
 Goldpath.GoldpathCampaignCeiling
 Goldpath.GoldpathCampaignCeiling.GoldpathCampaignCeiling() -> void
+const Goldpath.GoldpathCampaignCeiling.GlobalName = "*" -> string!
 Goldpath.GoldpathCampaignCeiling.Kind.get -> Goldpath.GoldpathCampaignCeilingKind
 Goldpath.GoldpathCampaignCeiling.Kind.set -> void
 Goldpath.GoldpathCampaignCeiling.Name.get -> string!

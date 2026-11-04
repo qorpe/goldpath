@@ -79,7 +79,7 @@ public class ModelContractTests
         }
     }
 
-    /// <summary>R3.2: the ceilings table — one row per (kind, name), the global row's name empty.</summary>
+    /// <summary>R3.2: the ceilings table — one row per (kind, name), the global row's name <c>"*"</c> (#384).</summary>
     [Fact]
     public void CeilingTableContract()
     {
@@ -112,7 +112,7 @@ public class ModelContractTests
     {
         var ceiling = new GoldpathCampaignCeiling();
         Assert.Equal(GoldpathCampaignCeilingKind.Global, ceiling.Kind);
-        Assert.Equal("", ceiling.Name);
+        Assert.Equal("*", ceiling.Name);   // #384: never '' — Oracle stores that as NULL in a key column
         Assert.Null(ceiling.MaxTps);
         Assert.Null(ceiling.SeedMaxTps);
         Assert.Equal("", ceiling.UpdatedBy);

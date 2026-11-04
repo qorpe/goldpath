@@ -654,7 +654,8 @@ keeps R2.4's per-type `MaxTps` from code, exactly as R2 adopters have it today; 
 rate live, name a target system.
 
 **Persistence.** One small table, `GoldpathCampaignCeilings`: `Kind` (`Global = 0`,
-`TargetSystem = 1`), `Name` (128; empty for the global row), `MaxTps` (`int?`, the live value;
+`TargetSystem = 1`), `Name` (128; `"*"` for the global row, `GoldpathCampaignCeiling.GlobalName`, on every provider — not empty,
+because Oracle stores `''` as NULL and the key cannot hold it; #384, owner decision 2026-10-24), `MaxTps` (`int?`, the live value;
 null on the global row = off), `SeedMaxTps` (`int?`, the code value last seeded), `UpdatedAt`,
 `UpdatedBy`; primary key `(Kind, Name)`. The leader reconciles the seed rows at the start of
 every slice: it inserts a missing row from code and, by owner decision Q4,
