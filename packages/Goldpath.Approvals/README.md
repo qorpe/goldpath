@@ -22,6 +22,11 @@ builder.AddGoldpathApprovals(approvals => approvals
 - **Quorum** — a rung may demand N DISTINCT grants (`requiredApprovals`); each grant is a
   signature toward the rung, and distinct-eyes holds across the WHOLE chain: one identity
   signs at most once per request, even after escalation (`AlreadySigned`).
+- **Concurrent decisions** — two decisions at once never both apply (#480). On the built-in
+  stores the request row is version-checked, and a signature is written with the request in
+  one transaction under a unique `(RequestId, SignedBy)` key. The decision that loses reads
+  again: the same identity answers `AlreadySigned`, and a request the other decision closed
+  answers `NotPending`, with no event. A custom store keeps its own guarantees.
 - **Rejection** — terminal at any point, and its reason is MANDATORY: a blank reason is
   refused (`ReasonRequired`) — a bare "no" teaches the requester nothing.
 - **Withdraw** — `WithdrawAsync(id, requestedBy)` takes back a pending request; only its
