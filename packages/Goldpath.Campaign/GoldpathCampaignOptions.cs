@@ -90,6 +90,13 @@ public sealed record GoldpathCampaignPolicy(
     public DateTimeOffset? StartAt { get; init; }
 
     /// <summary>
+    /// The ceiling on items awaiting a callback (R3.4); null = R2's single ceiling, where an
+    /// acceptance keeps its <see cref="MaxInFlight"/> slot. Set, <see cref="MaxInFlight"/> caps live
+    /// work only (a waiting retry keeps its slot) and this caps the acceptances.
+    /// </summary>
+    public int? MaxAwaitingAck { get; init; }
+
+    /// <summary>
     /// The failure ratio at or above which the pacer suspends the campaign (R3.6), in (0, 1];
     /// null = never (the default). Every completed attempt counts, retryable failures included.
     /// </summary>
@@ -318,7 +325,13 @@ public sealed class GoldpathCampaignTypeBuilder<TTarget>
     /// <summary>Sets the default policy new instances start from.</summary>
     public GoldpathCampaignTypeBuilder<TTarget> DefaultPolicy(Func<GoldpathCampaignPolicy, GoldpathCampaignPolicy> configure)
     {
-        _type.DefaultPolicy = configure(_type.DefaultPolicy);
+        var policy = configure(_type.DefaultPolicy);
+        if (policy.MaxAwaitingAck is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(configure), "MaxAwaitingAck must be positive (R3.4) — leave it null to keep acceptances under MaxInFlight.");
+        }
+
+        _type.DefaultPolicy = policy;
         return this;
     }
 

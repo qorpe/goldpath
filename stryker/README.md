@@ -252,6 +252,16 @@ coverage.
 - **Not R3-S2's:** the rest sit on the rewritten audit-text line (`Describe`), on its pre-existing
   `excludedDays` and `endDate` terms.
 
+**Campaign after R3-S5, `MaxAwaitingAck` (#293), 2026-10-30.** A full local run of
+`mutation-gate.sh Goldpath.Campaign` at 4831cbb on the #293 branch: 83.95 % → **82.31 %**
+(1,191 mutants tested, 261 tests; 48 minutes, the agent sandbox's, not the CI profile's), still
+green against the break at 70. The run is honest about the drop: the per-state settle split and the
+re-count added mutants, and the package's older survivors (callback prose, `ChangeTracker.Clear()`
+hygiene, the pre-existing throttle positivity checks for the other fields) still stand. On the
+lines R3-S5 changed, one survivor was a real gap: a failure straight from `Processing` counted as
+leaving `AwaitingAck` (`leftAck += moved` survived). `AFailureStraightFromProcessing_MovesNoAcknowledgement`
+was added after the run and kills it (planted, red); the score above predates that test. This run predates the merge of R3-S3, R3-S4, R3-S7 and R3-S10 into the branch, so the table above keeps R3-S4's measured row; the merged code has not been re-measured.
+
 **Campaign after R3-S4, the policy version (#298), 2026-11-01.** A full local run of
 `mutation-gate.sh Goldpath.Campaign` at d84a0d2 on the #298 branch: **79.22 %** — 1,277 mutants
 tested (1,030 killed, 11 timeouts, 236 survived, 37 without coverage), 326 tests. The run took

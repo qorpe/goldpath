@@ -43,6 +43,15 @@ public sealed record GoldpathCampaignInfo(
     /// </summary>
     public DateTimeOffset? StartAt { get; init; }
 
+    /// <summary>The ceiling on items awaiting a callback (R3.4); null = they count against <see cref="MaxInFlight"/>.</summary>
+    public int? MaxAwaitingAck { get; init; }
+
+    /// <summary>
+    /// Items awaiting a callback (R3.4): the sink's running count, re-counted from the items at
+    /// each leadership slice, so it can lag a flush that has not landed yet.
+    /// </summary>
+    public long AwaitingAck { get; init; }
+
     /// <summary>The failure ratio at or above which the pacer suspends the campaign (R3.6); null = never.</summary>
     public double? SuspendOnFailureRatio { get; init; }
 
@@ -109,6 +118,12 @@ public sealed record GoldpathCampaignThrottle(
     /// <summary>Clears the scheduled start (R3.1): the campaign starts as soon as its snapshot is ready.</summary>
     public bool ClearStartAt { get; init; }
 
+    /// <summary>Sets the ceiling on items awaiting a callback (R3.4); null keeps it. Must be positive.</summary>
+    public int? MaxAwaitingAck { get; init; }
+
+    /// <summary>Clears that ceiling (R3.4): acceptances count against <c>MaxInFlight</c> again, as in R2.</summary>
+    public bool ClearMaxAwaitingAck { get; init; }
+
     /// <summary>
     /// Sets the failure ratio that suspends the campaign (R3.6), in (0, 1]; null keeps it. Turning
     /// it on restarts the window, so outcomes from before the ratio existed do not judge the campaign.
@@ -170,6 +185,13 @@ public sealed class GoldpathCampaignAdminService<TContext>
         var now = _time.GetUtcNow();
         var defaults = _options.Type(type).DefaultPolicy;
         var effective = policy is null ? defaults : Apply(defaults, policy, now);
+        if (effective.MaxAwaitingAck is <= 0)
+        {
+            // R3.4: a ceiling of zero would create a campaign that never releases, and say nothing. Checked on the
+            // policy the campaign would run under, so a type default cannot carry one past it either.
+            return new GoldpathAdminResult(false, "MaxAwaitingAck must be positive — omit it to keep acceptances under MaxInFlight.");
+        }
+
         if ((StartRefusal(effective, now) ?? SuspendRefusal(effective)) is { } refusal)
         {
             return new GoldpathAdminResult(false, refusal);
@@ -179,7 +201,7 @@ public sealed class GoldpathCampaignAdminService<TContext>
         var campaign = await _engine.CreateAsync(scope.ServiceProvider, type, name, parameters, effective, tenant, actor, ct);
         var db = scope.ServiceProvider.GetRequiredService<TContext>();
         await AuditAsync(db, campaign.Id, "create", actor,
-            $"type={type} policy=({Describe(effective, effective.StartAt is not null, ShowsSuspend(effective, effective))})", ct);
+            $"type={type} policy=({Describe(effective, effective.StartAt is not null, ShowsSuspend(effective, effective), effective.MaxAwaitingAck is not null)})", ct);
         return new GoldpathAdminResult(true, $"Campaign '{name}' created as {campaign.Id:N} ({type}).");
     }
 
@@ -428,6 +450,7 @@ public sealed class GoldpathCampaignAdminService<TContext>
                     .SetProperty(c => c.MaxAttempts, campaign.MaxAttempts)
                     .SetProperty(c => c.Priority, campaign.Priority)
                     .SetProperty(c => c.StartAt, campaign.StartAt)
+                    .SetProperty(c => c.MaxAwaitingAck, campaign.MaxAwaitingAck)
                     .SetProperty(c => c.SuspendOnFailureRatio, campaign.SuspendOnFailureRatio)
                     .SetProperty(c => c.SuspendWindow, campaign.SuspendWindow)
                     .SetProperty(c => c.SuspendMinSample, campaign.SuspendMinSample)
@@ -459,7 +482,7 @@ public sealed class GoldpathCampaignAdminService<TContext>
     private static string? ThrottleRefusal(GoldpathCampaignThrottle patch)
     {
         if (patch.Tps is <= 0 || patch.MaxInFlight is <= 0 || patch.DailyQuota is <= 0 || patch.MaxAttempts is <= 0
-            || patch.SuspendWindow is <= 0 || patch.SuspendMinSample is <= 0)
+            || patch.SuspendWindow is <= 0 || patch.SuspendMinSample is <= 0 || patch.MaxAwaitingAck is <= 0)
         {
             return "Throttle values must be positive.";
         }
@@ -531,7 +554,8 @@ public sealed class GoldpathCampaignAdminService<TContext>
 
         var showStart = current.StartAt is not null || effective.StartAt is not null;
         var showSuspend = ShowsSuspend(current, effective);
-        var before = Describe(current, showStart, showSuspend);
+        var showAck = current.MaxAwaitingAck is not null || effective.MaxAwaitingAck is not null;
+        var before = Describe(current, showStart, showSuspend, showAck);
         campaign.Tps = effective.Tps;
         campaign.DailyQuota = effective.DailyQuota;
         campaign.MaxInFlight = effective.MaxInFlight;
@@ -546,7 +570,8 @@ public sealed class GoldpathCampaignAdminService<TContext>
         campaign.SuspendOnFailureRatio = effective.SuspendOnFailureRatio;
         campaign.SuspendWindow = effective.SuspendWindow;
         campaign.SuspendMinSample = effective.SuspendMinSample;
-        verb = $"throttled by {actor}: {before} -> {Describe(effective, showStart, showSuspend)}";
+        campaign.MaxAwaitingAck = effective.MaxAwaitingAck;
+        verb = $"throttled by {actor}: {before} -> {Describe(effective, showStart, showSuspend, showAck)}";
         // Both sides of a wide policy can outgrow the row's 512; the audit row keeps up to 1024.
         campaign.LastVerb = Bound(verb, 512);
         return null;
@@ -671,6 +696,10 @@ public sealed class GoldpathCampaignAdminService<TContext>
             eta, c.CreatedAt, c.CreatedBy, c.CompletedAt, c.LastVerb, c.Tenant)
         {
             StartAt = c.StartAt,
+            MaxAwaitingAck = c.MaxAwaitingAck,
+            // The stored count can briefly read below zero or above in flight (an upgraded row settled before the first
+            // slice's re-count, or a re-count racing a flush); what an operator reads is held inside [0, in flight].
+            AwaitingAck = Math.Clamp(c.AwaitingAckCount, 0, Math.Max(0, inFlight)),
             SuspendOnFailureRatio = policy.SuspendOnFailureRatio,
             SuspendWindow = policy.SuspendWindow,
             SuspendMinSample = policy.SuspendMinSample,
@@ -706,6 +735,7 @@ public sealed class GoldpathCampaignAdminService<TContext>
             SuspendOnFailureRatio = patch.ClearSuspendOnFailureRatio ? null : patch.SuspendOnFailureRatio ?? current.SuspendOnFailureRatio,
             SuspendWindow = patch.SuspendWindow ?? current.SuspendWindow,
             SuspendMinSample = patch.SuspendMinSample ?? current.SuspendMinSample,
+            MaxAwaitingAck = patch.ClearMaxAwaitingAck ? null : patch.MaxAwaitingAck ?? current.MaxAwaitingAck,
         };
 
     /// <summary>
@@ -760,12 +790,15 @@ public sealed class GoldpathCampaignAdminService<TContext>
     /// <summary>
     /// The audit's policy text. <paramref name="showStart"/> adds the scheduled start (R3.1) when
     /// either side of the change has one, so a policy without a start reads exactly as before;
-    /// <paramref name="showSuspend"/> does the same for auto-suspend (R3.6).
+    /// <paramref name="showSuspend"/> does the same for auto-suspend (R3.6) and
+    /// <paramref name="showAck"/> for the acknowledgement ceiling (R3.4).
     /// </summary>
-    private static string Describe(GoldpathCampaignPolicy p, bool showStart = false, bool showSuspend = false)
+    private static string Describe(GoldpathCampaignPolicy p, bool showStart = false, bool showSuspend = false, bool showAck = false)
         => DescribeCore(p, showStart) + (showSuspend
             ? string.Create(CultureInfo.InvariantCulture,
                 $" suspendOn={p.SuspendOnFailureRatio?.ToString("0.###", CultureInfo.InvariantCulture) ?? "off"} suspendWindow={p.SuspendWindow} suspendMinSample={p.SuspendMinSample}")
+            : "") + (showAck
+            ? string.Create(CultureInfo.InvariantCulture, $" maxAwaitingAck={p.MaxAwaitingAck?.ToString(CultureInfo.InvariantCulture) ?? "none"}")
             : "");
 
     private static string DescribeCore(GoldpathCampaignPolicy p, bool showStart)

@@ -164,10 +164,11 @@ added, renamed or re-tagged without this table changing fails that test.
 | `goldpath_campaign_ack_timeouts_total`, `…_orphans_rereleased_total`, `…_callbacks_parked_total`, `…_callbacks_rejected_total` | counter | `type` | R2.1, R2.6 and R2.8 (runbook §8) |
 | `goldpath_campaign_tuning_reload_refused_total` | counter | — | reloads of `Goldpath:Campaign` refused for an invalid value; the previous values stayed in force (R3.3) |
 | `goldpath_campaign_in_flight`, `…_remaining` | gauge | `campaign`, `type` | released and not terminal; enumerated and not released |
+| `goldpath_campaign_awaiting_ack` | gauge | `campaign`, `type` | items awaiting a callback (R3.4): the row's `AwaitingAckCount`, held inside [0, in flight] as the detail reads it |
 | `goldpath_campaign_tps_ceiling` | gauge | `campaign`, `type` | the running campaign's `Tps` — the ceiling `rate(goldpath_campaign_released_total)` is read against |
 | `goldpath_campaign_type_max_tps` | gauge | `type` | a type's `MaxTps` (R2.4); absent for a type without one |
 | `goldpath_campaign_global_tps` | gauge | — | `GlobalTps` (R1.4); absent when not configured |
-| `goldpath_campaign_binding_constraint` | gauge (1) | `campaign`, `type`, `constraint` | the limit that bound the running campaign's last tick: `tps`, `in_flight`, `quota`, `window`, `type`, `global`, or `none` (it released less than it was granted — nothing more was ready). A shared ceiling that cut the allowance wins over the campaign's own limits; among those, a tie names `quota`, then `in_flight`, then `tps`, the one that will not lift by itself. A tick granted nothing names the limit that zeroed it |
+| `goldpath_campaign_binding_constraint` | gauge (1) | `campaign`, `type`, `constraint` | the limit that bound the running campaign's last tick: `tps`, `in_flight`, `awaiting_ack` (R3.4: the acknowledgement room is strictly smaller than the live-work room; a tie reads `in_flight`), `quota`, `window`, `type`, `global`, or `none` (it released less than it was granted — nothing more was ready). A shared ceiling that cut the allowance wins over the campaign's own limits; among those, a tie names `quota`, then `in_flight`, then `tps`, the one that will not lift by itself. A tick granted nothing names the limit that zeroed it |
 | `goldpath_campaign_released_today`, `…_daily_quota` | gauge | `campaign`, `type` | quota consumption: what the quota day released, against `DailyQuota` (absent without one) |
 | `goldpath_campaign_leader_last_tick` | gauge, s | — | when this process's pacer last ticked, in Unix seconds. Every process that ever led keeps its last value, so liveness is `time() - max(goldpath_campaign_leader_last_tick)` |
 
@@ -180,8 +181,9 @@ between two slices of the same leader they are absent until the next slice's fir
 `leader_last_tick` is the exception: it stays, per process, as the liveness signal.
 
 **Not built**, and therefore not listed: *counter-reconcile events*. The D3 reconcile is reading the
-row at takeover; it has no event to count. R3-S5's slice re-count of `AwaitingAckCount` will add
-its own instrument with that slice. *ETA at current policy* is not an instrument: it is
+row at takeover; it has no event to count. R3-S5's slice re-count of `AwaitingAckCount` is the
+same kind of reconcile (one set-based update at the slice start) and adds none either; R3's own
+instrument list asks only for the `goldpath_campaign_awaiting_ack` gauge. *ETA at current policy* is not an instrument: it is
 `goldpath_campaign_remaining / goldpath_campaign_tps_ceiling`, which the dashboard computes.
 
 Grafana board: the operator's single screen per campaign (progress, rate governor, failure
@@ -496,7 +498,7 @@ Proofs: the signed path settles and a signed repeat is 200; seven unauthentic va
 each have a red-then-green test; the recipe is pinned by a vector; the integration suite
 signs every callback on real infrastructure and refuses unsigned, forged and stale ones.
 
-## Revision R3 — scheduled start, ceilings as data, an acknowledgement ceiling, a policy version, auto-suspend (ACCEPTED 2026-10-21 — owner decision in chat, the seven questions Q1–Q7 answered as recommended; the merge of PR #313 records it. Implementation: the eleven slices below; R3-S1, the schema, landed 2026-10-23 (#314); R3-S2, the scheduled start and `Ready` in the engine, pacer and admin service (#289); R3-S3, the start on a real broker and in the console (#315); R3-S7, the options reload (#317); R3-S4, the policy version on the throttle, campaign half (#298); the other six not yet)
+## Revision R3 — scheduled start, ceilings as data, an acknowledgement ceiling, a policy version, auto-suspend (ACCEPTED 2026-10-21 — owner decision in chat, the seven questions Q1–Q7 answered as recommended; the merge of PR #313 records it. Implementation: the eleven slices below; R3-S1, the schema, landed 2026-10-23 (#314); R3-S2, the scheduled start and `Ready` in the engine, pacer and admin service (#289); R3-S3, the start on a real broker and in the console (#315); R3-S7, the options reload (#317); R3-S4, the policy version on the throttle, campaign half (#298); R3-S5, `MaxAwaitingAck` with its count, re-count, pacer rule, throttle field and gauge (#293); the other five not yet)
 
 **Finding.** A coverage analysis on 2026-10-20 compared R2 with a device-fleet adopter's
 bulk-operations design (controlled actions against tens of millions of devices, several target
@@ -790,6 +792,8 @@ With `MaxAwaitingAck` null that stays exactly the rule, line for line. With it s
 - `MaxAwaitingAck` caps `AwaitingAckCount`. An acceptance moves an item from the first ceiling
   to the second, and the pacer releases only while both have room.
 
+Owner decision 2026-11-04: `MaxAwaitingAck` bounds everything in flight (room = `MaxAwaitingAck − inFlight`), the stricter reading, because it is the only one under which acceptances never pass the ceiling.
+
 **Counting without a scan.** A per-tick `COUNT(*)` over a campaign's `AwaitingAck` rows would
 read a million index entries every 250 ms on exactly the campaigns this item exists for. The
 campaign row gains `AwaitingAckCount`, maintained in the flush that moves rows in or out of
@@ -1022,7 +1026,8 @@ What the table means for each provider:
   - `goldpath_campaign_awaiting_ack`, a gauge tagged like `goldpath_campaign_in_flight` (R3.4);
   - `goldpath_campaign_tuning_reload_refused_total` (R3.3).
   - The configured-ceiling gauges #294 adds gain a `target_system` scope (R3.2).
-  - #294's binding-constraint values gain `target_system` and `awaiting_ack`.
+  - #294's binding-constraint values gain `target_system` and `awaiting_ack` (`awaiting_ack` landed
+    with R3-S5, #293).
   - Whichever of #294 and the R3 slice lands second adds the overlap. `goldpath_campaign_in_flight`
     keeps its meaning (everything released and not terminal).
 - **Alert candidates for [#295](https://github.com/qorpe/goldpath/issues/295)'s rule file**:

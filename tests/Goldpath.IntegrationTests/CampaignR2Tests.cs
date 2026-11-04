@@ -233,6 +233,9 @@ public sealed class CampaignR2Tests : IAsyncLifetime
 
         Assert.Equal(40, done.SucceededCount);
         Assert.Equal(0, done.FailedCount);
+        // R3.4 on PostgreSQL: every acceptance the flush counted in left again — through a callback, the
+        // parking lot or the ack sweep — and each slice's re-count ran against the real store.
+        Assert.Equal(0, done.AwaitingAckCount);
         Assert.Equal(40, AckHandler.Executions.Count);
         Assert.All(AckHandler.Executions.Where(e => e.Key is not (7 or 21)), e => Assert.Equal(1, e.Value));
         Assert.Equal(2, AckHandler.Executions[7]);    // ACK_TIMEOUT → rung one → second attempt succeeded
@@ -267,6 +270,17 @@ public sealed class CampaignR2Tests : IAsyncLifetime
             timestamp: DateTimeOffset.UtcNow.AddMinutes(-10).ToUnixTimeSeconds());
         Assert.Equal(HttpStatusCode.Unauthorized, stale.StatusCode);
         Assert.Equal(40, Query(db => db.Set<GoldpathCampaign>().AsNoTracking().Single(c => c.Id == campaignId)).SucceededCount);
+
+        // R3.4: the count is a cache the leader re-counts once per slice, also on a finished campaign it
+        // left non-zero. Drift it, and the next slice (3 s, every 5 s) puts the rows' answer back.
+        Assert.Equal(1, Query(db => db.Set<GoldpathCampaign>().Where(c => c.Id == campaignId)
+            .ExecuteUpdate(u => u.SetProperty(c => c.AwaitingAckCount, 5))));
+        var recounted = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(30);
+        while (Query(db => db.Set<GoldpathCampaign>().AsNoTracking().Single(c => c.Id == campaignId)).AwaitingAckCount != 0)
+        {
+            Assert.True(DateTimeOffset.UtcNow < recounted, "no slice re-counted AwaitingAckCount within 30 s");
+            await Task.Delay(500, CancellationToken.None);
+        }
     }
 
     /// <summary>

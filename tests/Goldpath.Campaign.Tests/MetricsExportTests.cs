@@ -34,6 +34,7 @@ public class MetricsExportTests
         ["goldpath_campaign_sink_flush_lag"] = ("s", ["type"]),
         ["goldpath_campaign_in_flight"] = (null, ["campaign", "type"]),
         ["goldpath_campaign_remaining"] = (null, ["campaign", "type"]),
+        ["goldpath_campaign_awaiting_ack"] = (null, ["campaign", "type"]),   // R3.4
         ["goldpath_campaign_tps_ceiling"] = (null, ["campaign", "type"]),
         ["goldpath_campaign_type_max_tps"] = (null, ["type"]),
         ["goldpath_campaign_global_tps"] = (null, []),
@@ -175,6 +176,32 @@ public class MetricsExportTests
     [Fact]
     public async Task Binding_InFlight_WhenTheCapIsFull()
         => Assert.Equal("in_flight", await BindingAfterOneSliceAsync(new GoldpathCampaignPolicy(10_000, null, 2, null, null, "UTC")));
+
+    [Fact]
+    public async Task Binding_AwaitingAck_WhenTheAcknowledgementCeilingIsTheTighter()
+        => Assert.Equal("awaiting_ack", await BindingAfterOneSliceAsync(
+            new GoldpathCampaignPolicy(10_000, null, 100, null, null, "UTC") { MaxAwaitingAck = 2 }));
+
+    [Fact]
+    public async Task Binding_InFlight_WhenMaxInFlightIsTheTighter_WithAnAcknowledgementCeilingSet()
+        => Assert.Equal("in_flight", await BindingAfterOneSliceAsync(
+            new GoldpathCampaignPolicy(10_000, null, 2, null, null, "UTC") { MaxAwaitingAck = 5 }));
+
+    [Theory]
+    [InlineData(10, null, 0L, 0L, false)]   // no acknowledgement ceiling: never awaiting_ack
+    [InlineData(100, 2, 0L, 0L, true)]      // ack room 2 < live room 100
+    [InlineData(2, 5, 0L, 0L, false)]       // live room 2 < ack room 5
+    [InlineData(5, 5, 0L, 0L, false)]       // a tie names in_flight, the live-call ceiling
+    [InlineData(10, 20, 18L, 15L, true)]    // ack room 20 − 18 = 2 < live room 10 − (18 − 15) = 7
+    [InlineData(10, 50, 18L, 10L, false)]   // live room 10 − 8 = 2 < ack room 32
+    [InlineData(10, 20, 15L, 10L, false)]   // 5 and 5: the tie again, with acceptances outstanding
+    [InlineData(10, 5, 4L, -3L, true)]      // a drifted count is clamped to 0: ack room 1 < live room 6
+    public void AckCeilingBinds_NamesTheTighterInFlightCeiling(int maxInFlight, int? maxAwaitingAck, long inFlight, long awaitingAck, bool expected)
+    {
+        var policy = new GoldpathCampaignPolicy(10, null, maxInFlight, null, null, "UTC") { MaxAwaitingAck = maxAwaitingAck };
+        var campaign = new GoldpathCampaign { ReleasedThrough = inFlight, AwaitingAckCount = awaitingAck };
+        Assert.Equal(expected, GoldpathCampaignPacerJob<CampaignTestContext>.AckCeilingBinds(policy, campaign));
+    }
 
     [Fact]
     public async Task Binding_Quota_WhenTheDayIsSpent()

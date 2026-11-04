@@ -54,6 +54,13 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
         var streams = new Dictionary<Guid, LeaderStream>();
         var tick = 0;
         var nextDrainSweep = DateTimeOffset.MinValue;
+        // R3.4: the acknowledgement count is a cache (D3) — the slice is the takeover boundary,
+        // so the new leader corrects whatever a crashed flush left behind before it paces on it.
+        using (var recountScope = context.Services.CreateScope())
+        {
+            await _engine.RecountAwaitingAckAsync(recountScope.ServiceProvider.GetRequiredService<TContext>(), cancellationToken);
+        }
+
         try
         {
             while (_time.GetUtcNow() < sliceEnd)
@@ -335,15 +342,70 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
 
         var budget = Refill(tpsBudgets.GetValueOrDefault(campaign.Id), policy.Tps, _options.LeaderTick);
         tpsBudgets[campaign.Id] = budget;
-        var inFlight = campaign.ReleasedThrough - campaign.SucceededCount - campaign.FailedCount;
+        // R3.4: with MaxAwaitingAck set, both in-flight ceilings bound the release; the binding
+        // constraint names awaiting_ack when the acknowledgement ceiling is the tighter of the two.
+        var inFlightRoom = InFlightRoom(policy, campaign);
         long? quotaRoom = policy.DailyQuota is { } quota ? quota - campaign.ReleasedToday : null;
-        ownLimits[campaign.Id] = OwnLimit(budget, policy.MaxInFlight - inFlight, quotaRoom);
+        var ownLimit = OwnLimit(budget, inFlightRoom, quotaRoom);
+        ownLimits[campaign.Id] = ownLimit == BindingInFlight && AckCeilingBinds(policy, campaign) ? BindingAwaitingAck : ownLimit;
         return (int)Math.Floor(Math.Min(budget, Math.Max(0,
-            Math.Min(policy.MaxInFlight - inFlight, quotaRoom ?? long.MaxValue))));
+            Math.Min(inFlightRoom, quotaRoom ?? long.MaxValue))));
+    }
+
+    /// <summary>
+    /// How many more items the in-flight ceilings let this campaign release (R3.4). With
+    /// <see cref="GoldpathCampaignPolicy.MaxAwaitingAck"/> null it is R2's rule, line for line:
+    /// <c>MaxInFlight − (ReleasedThrough − SucceededCount − FailedCount)</c>, where an acceptance
+    /// keeps its slot. Set, <c>MaxInFlight</c> caps live work — everything in flight but the
+    /// acceptances, so a waiting retry keeps its slot (owner decision Q2) — and
+    /// <c>MaxAwaitingAck</c> caps the acceptances, and the campaign releases only while both have
+    /// room. A release holds a slot under BOTH ceilings until its outcome says which one it stays
+    /// under — any live call may come back accepted — so the acknowledgement room is
+    /// <c>MaxAwaitingAck − in flight</c>, and <c>AwaitingAckCount</c> can never pass the ceiling
+    /// (counting only the acceptances already landed would let it overshoot by up to
+    /// <c>MaxInFlight</c>). That room is read from the watermarks, so it is exact; the live room
+    /// rides the cached count, which a re-count landing between a flush's item updates and its
+    /// counter update can leave off by that flush's rows until the next slice. The count is held
+    /// inside [0, in flight], so a drifted cache can never make live work look negative.
+    /// </summary>
+    internal static long InFlightRoom(GoldpathCampaignPolicy policy, GoldpathCampaign campaign)
+    {
+        var inFlight = campaign.ReleasedThrough - campaign.SucceededCount - campaign.FailedCount;
+        if (policy.MaxAwaitingAck is not { } maxAwaitingAck)
+        {
+            return policy.MaxInFlight - inFlight;
+        }
+
+        var awaitingAck = Math.Clamp(campaign.AwaitingAckCount, 0, Math.Max(0, inFlight));
+        return Math.Min(policy.MaxInFlight - (inFlight - awaitingAck), maxAwaitingAck - inFlight);
     }
 
     /// <summary>The binding constraint of a running campaign whose send window or day is closed.</summary>
     internal const string BindingWindow = "window";
+
+    /// <summary>The binding constraint of a campaign held by an in-flight ceiling.</summary>
+    internal const string BindingInFlight = "in_flight";
+
+    /// <summary>The binding constraint of a campaign held by its acknowledgement ceiling (R3.4).</summary>
+    internal const string BindingAwaitingAck = "awaiting_ack";
+
+    /// <summary>
+    /// True when <see cref="GoldpathCampaignPolicy.MaxAwaitingAck"/> is set and its room
+    /// (<c>MaxAwaitingAck − in flight</c>) is strictly smaller than the live-work room under
+    /// <c>MaxInFlight</c> (R3.4) — the one an operator raises is then the acknowledgement ceiling.
+    /// A tie names <c>in_flight</c>, the ceiling on live calls into the target system.
+    /// </summary>
+    internal static bool AckCeilingBinds(GoldpathCampaignPolicy policy, GoldpathCampaign campaign)
+    {
+        if (policy.MaxAwaitingAck is not { } maxAwaitingAck)
+        {
+            return false;
+        }
+
+        var inFlight = campaign.ReleasedThrough - campaign.SucceededCount - campaign.FailedCount;
+        var awaitingAck = Math.Clamp(campaign.AwaitingAckCount, 0, Math.Max(0, inFlight));
+        return maxAwaitingAck - inFlight < policy.MaxInFlight - (inFlight - awaitingAck);
+    }
 
     /// <summary>
     /// Which of a campaign's OWN limits set its allowance this tick (RFC §7): the smallest room
@@ -360,7 +422,7 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
             return "quota";
         }
 
-        return inFlight <= tpsRoom ? "in_flight" : "tps";
+        return inFlight <= tpsRoom ? BindingInFlight : "tps";
     }
 
     /// <summary>
