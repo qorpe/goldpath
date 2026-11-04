@@ -52,7 +52,12 @@ if [ "${1:-all}" = fleet02 ]; then
   {
     echo "date_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "commit=$(git rev-parse HEAD 2>/dev/null || echo unknown)"
-    echo "run=${GITHUB_RUN_ID:+$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID}${GITHUB_RUN_ID:-local: $0 fleet02}"
+    if [ -n "${GITHUB_RUN_ID:-}" ]; then
+      echo "run=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+    else
+      echo "run=local: $0 fleet02"
+    fi
+    echo "configuration=Release"
     echo "kernel=$(uname -srm)"
     echo "cpu_model=$(awk -F': ' '/^model name/{print $2; exit}' /proc/cpuinfo 2>/dev/null)"
     echo "logical_cpus=$(nproc)"
@@ -66,7 +71,8 @@ if [ "${1:-all}" = fleet02 ]; then
   SAMPLER=$!
   trap 'kill "$SAMPLER" 2>/dev/null || true' EXIT
   set +e
-  dotnet test tests/Goldpath.IntegrationTests --nologo --filter "$FILTER" --logger "console;verbosity=detailed" > "$GOLDPATH_BENCH_OUT/bench.log" 2>&1
+  # Release: this run produces the published G10c number, so it is measured on optimised code.
+  dotnet test tests/Goldpath.IntegrationTests -c Release --nologo --filter "$FILTER" --logger "console;verbosity=detailed" > "$GOLDPATH_BENCH_OUT/bench.log" 2>&1
   STATUS=$?
   set -e
   grep -aE "BENCH-CAMPAIGN|^(Passed|Failed|Skipped)!|^\s+(Passed|Failed|Skipped) Goldpath|Assert\.|Error Message" "$GOLDPATH_BENCH_OUT/bench.log" || true

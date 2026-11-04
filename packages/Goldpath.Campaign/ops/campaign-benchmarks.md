@@ -214,7 +214,8 @@ and 75% of RAM, with its disk on the internal SSD. For example, on a Mac with 10
 
 The mode exports `GOLDPATH_BENCH_FLEET02=1`. Without it `CampaignFleet02BenchTests` shows as **skipped**, so
 `bench.yml`'s monthly `Category=Bench` run never starts an hours-long bench. A skip is never reported as a pass: the
-script exits 1 when the bench log shows one.
+script exits 1 when the bench log shows one. The mode builds and runs the tests in **Release**, because this run
+produces the published number, and `host.txt` records that configuration beside the commit and the run link.
 
 | Knob (environment) | fleet02 default | What it is |
 |---|---|---|
