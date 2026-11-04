@@ -71,6 +71,31 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   - **Runbook:** §9 covers `QRTZ_LOCKS` row-lock contention.
   - **Still open:** `GoldpathJobExecutions` loses the history row of a fire with no error on Oracle.
     The `Error` document column refuses a NULL in ODP.NET (#475).
+- **Campaign: a policy version on the throttle — a stale throttle is refused, not silently applied (campaign RFC
+  R3.5, slice R3-S4, #298).** The campaign half of optimistic concurrency; the HTTP half (`ETag`, `If-Match`, `412`)
+  is admin-contract R4's route slice (#304), so the HTTP `throttle` route behaves as before.
+  - **API (additive):** `GoldpathCampaignInfo.PolicyVersion` (the detail and the list return it), the record
+    `GoldpathCampaignThrottleResult(Ok, Message, PolicyVersion, Stale)`, and the overload
+    `ThrottleAsync(id, patch, long? expectedPolicyVersion, actor, ct)`. The shipped four-argument `ThrottleAsync`
+    calls it with no expected version and returns the same messages as before.
+  - **The rule:** `PolicyVersion` (the R3-S1 column, 0 on every existing row) moves by one on every APPLIED
+    throttle and on nothing else — the pacer, the sink, pause, resume and abort leave it alone, and a refused
+    throttle does not move it. It is not an EF concurrency token.
+  - **The write:** a throttle is now one conditional `ExecuteUpdate` per attempt (`WHERE Id`, `State` and
+    `PolicyVersion` as read) that sets the policy columns, `LastVerb` and `PolicyVersion + 1`; it no longer goes
+    through `SaveChanges` and the `State` token. With an expected version, a policy that moved since is refused
+    ("…changed since you read it (version 4, by *actor* at *time*; you read version 3) — re-read and retry"), and
+    the refusal is audited as `throttle-refused` with both versions. Without one, a lost race is re-read and
+    re-applied (up to eight attempts), so the last writer still wins and the version moves once per applied throttle.
+  - **Behaviour change:** a throttle that raced a state change (the pacer starting a campaign, an operator's pause)
+    used to be refused with "changed state while the verb ran"; it is now re-read and applied, because a state
+    change is not a policy change. A race into a terminal state is still refused, in the terminal state's words.
+    The audit detail, `LastVerb` and the success message are byte-identical to before.
+  - **Proof:** `R3PolicyVersionTests` (14 test methods, 17 cases). Three of them race a competing verb into the
+    instant between the throttle's read and its conditional update, through a command interceptor. Four planted
+    faults turn them red: no `PolicyVersion + 1` (8 of 17 red), a single attempt with no re-read (5 red), no
+    version check (4 red), and no `State` guard in the conditional `WHERE` (1 red). `CampaignPolicyVersionPostgresTests` and an `OracleDataTests` fact (`Category=Oracle`, 19c form) run
+    the conditional update on real PostgreSQL 17 and Oracle Free, every policy column included.
 - **Campaign: the four options an operator tunes reload without a restart (campaign RFC R3.3, slice R3-S7, #317).**
   - **What reloads:** `AddGoldpathCampaign` now reads the section `Goldpath:Campaign` through
     `IOptionsMonitor`. Exactly four keys reload: `RetryBackoff`, `RetryJitter`, `OrphanReleaseAfter` and

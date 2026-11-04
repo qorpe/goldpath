@@ -129,7 +129,7 @@ at f459fe2, so its row carries it (minutes not recorded).
 | Console | 91.46 % (75.00) | 21.46 | — | 75.00 %, 24.3 |
 | Bulk | 88.37 % (88.38) | 18.37 | 19.7 | never finished (timeout) |
 | Idempotency | 84.91 % (73.58) | 14.91 | 1.8 | 73.58 %, 3.3 |
-| Campaign | 83.95 % (76.30) | 13.95 | 43.4 | never finished (OOM) |
+| Campaign | 79.22 % (83.95) | 9.22 | 104 (contended) | never finished (OOM) |
 | Messaging | 82.70 % (86.09) | 12.70 | 99.8 | 80.72 %, 69.4 |
 | AuditTrail | 81.97 % | 11.97 | 5.1 | 81.97 %, 5.7 |
 | MultiTenancy | 81.40 % (72.09) | 11.40 | 6.1 | 75.58 %, 38.5 |
@@ -235,6 +235,31 @@ coverage.
   audit row, because the tick's scope and its tracker are discarded at the end of the tick.
 - **Not R3-S2's:** the rest sit on the rewritten audit-text line (`Describe`), on its pre-existing
   `excludedDays` and `endDate` terms.
+
+**Campaign after R3-S4, the policy version (#298), 2026-11-01.** A full local run of
+`mutation-gate.sh Goldpath.Campaign` at d84a0d2 on the #298 branch: **79.22 %** — 1,277 mutants
+tested (1,030 killed, 11 timeouts, 236 survived, 37 without coverage), 326 tests. The run took
+104 minutes in the agent sandbox, and for 40 of them a second Stryker job shared its four cores, so
+the time is not a profile number. The drop from 83.95 % is not this slice's to explain alone: R3-S3
+(#315) and R3-S7 (#317) merged since 1c77033 and grew the scored code from 1,148 to 1,277 tested
+mutants, and no run isolated the three slices. By file, the pacer (`GoldpathCampaignJobs.cs`, 65.0 %)
+is still the weakest.
+
+On the lines R3-S4 rewrote (the throttle, from `ThrottleAsync` through the stale refusal): 70
+killed, 16 survived, 3 without coverage.
+- **Killed afterwards by four facts in `R3PolicyVersionTests`, each red against its mutant:**
+  - the retry bound (`<` → `<=`), by `AThrottleThatLosesEveryRace_StopsAfterEightAttempts_…`. The
+    `attempt++` → `attempt--` mutant loops forever under the same fact and dies by timeout; that one
+    is reasoned, not re-run.
+  - the stale refusal's "who moved it" lookup, `OrderByDescending` → `OrderBy` and `&&` → `||`, by
+    `AStaleRefusal_NamesTheNewestThrottleOfThisCampaign_…`;
+  - the terminal-state pattern (`or` → `and`), by `EveryTerminalState_RefusesTheThrottle_…`;
+  - the three mutants on the excluded-days column (`null` ↔ `""`, and the separator), by
+    `ClearedExcludedDays_AreStoredAsNoValue_…`.
+- **Not R3-S4's:** the other eight survivors and three without coverage sit in the patch validation
+  (the positive-values check, the unknown-day and seven-day messages) and the "already started"
+  message. Those lines moved verbatim from the shipped throttle into `ThrottleRefusal` and
+  `ApplyThrottle`, and the shipped tests assert only `Ok = false` on them.
 
 ## Excluded files
 
