@@ -201,6 +201,17 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
         Assert.Equal(0, await db.Rows.CountAsync());
     }
 
+    // ---- Campaign R3.5: the conditional throttle (#298) ----
+
+    [Fact]
+    public async Task The_campaign_throttle_conditional_update_translates_on_Oracle_and_refuses_a_stale_version()
+    {
+        var connection = await oracle.CreateSchemaAsync("GP_POLICYVERSION");
+        await CampaignPolicyVersionProof.RunAsync<OracleComposedDb>(o => o
+            .UseOracle(connection, x => x.UseOracleSQLCompatibility(OracleSQLCompatibility.DatabaseVersion19))
+            .EnableServiceProviderCaching(false));
+    }
+
     // ---- DateOnly / TimeOnly ----
 
     [Fact]

@@ -25,6 +25,9 @@ public sealed class GoldpathCampaignEngine<TContext>
         _logger = logger;
     }
 
+    /// <summary>The engine's clock — the item handler times its calls on it (RFC §7).</summary>
+    internal TimeProvider Time => _time;
+
     /// <summary>Creates a campaign INSTANCE over a registered type (operators launch, developers ship types — D1).</summary>
     public async Task<GoldpathCampaign> CreateAsync(
         IServiceProvider services, string typeKey, string name,
@@ -558,15 +561,21 @@ public sealed class GoldpathCampaignEngine<TContext>
         var now = _time.GetUtcNow();
         var accepted = outcomes.Where(o => !o.Succeeded && o.Accepted).ToArray();
         var failed = outcomes.Where(o => !o.Succeeded && !o.Accepted).ToArray();
-        var policy = failed.Length == 0
-            ? null
-            : await db.Set<GoldpathCampaign>().AsNoTracking()
-                .Where(c => c.Id == campaignId).Select(c => new { c.MaxAttempts, c.State }).SingleAsync(cancellationToken);
+        // One read per flush: the type tags every outcome this flush counts (RFC §7), and the
+        // ladder below needs the attempts and the state.
+        var policy = await db.Set<GoldpathCampaign>().AsNoTracking()
+            .Where(c => c.Id == campaignId).Select(c => new { c.Type, c.MaxAttempts, c.State }).SingleOrDefaultAsync(cancellationToken);
+        if (policy is null)
+        {
+            return;   // an outcome naming no campaign has no row to move — a no-op, as every guard below would make it
+        }
+
+        var claims = await ClaimsOfAsync(db, campaignId, outcomes, cancellationToken);
         // The ladder runs only while the pacer still releases this campaign (or will after a
         // resume). On a finished, aborted or expired campaign a retryable failure — an ack
         // timeout, a replay that failed again — is terminal: AwaitingRetry there would wait
         // for a release that never comes (R2 review #8).
-        var maxAttempts = policy is null
+        var maxAttempts = failed.Length == 0
             ? 1
             : policy.State is GoldpathCampaignState.Created or GoldpathCampaignState.Enumerating
                 or GoldpathCampaignState.Running or GoldpathCampaignState.Paused or GoldpathCampaignState.Ready
@@ -581,13 +590,15 @@ public sealed class GoldpathCampaignEngine<TContext>
             var seqs = attempt.Select(o => o.Seq).ToArray();
             var anyAttempt = attempt.Key == 0;
             var prior = attempt.Key - 1;
-            settled += await db.Set<GoldpathCampaignItem>()
+            var moved = await db.Set<GoldpathCampaignItem>()
                 .Where(i => i.CampaignId == campaignId && seqs.Contains(i.Seq)
                     && (i.State == GoldpathCampaignItemState.Processing || i.State == GoldpathCampaignItemState.AwaitingAck)
                     && (anyAttempt || i.Attempts == prior))
                 .ExecuteUpdateAsync(s => s
                     .SetProperty(i => i.State, GoldpathCampaignItemState.Succeeded)
                     .SetProperty(i => i.CompletedAt, now), cancellationToken);
+            settled += moved;
+            GoldpathCampaignMetrics.Applied(policy.Type, "succeeded", null, moved);
         }
 
         foreach (var acceptance in accepted)
@@ -596,13 +607,14 @@ public sealed class GoldpathCampaignEngine<TContext>
             // names the correlation id or the deadline passes. Still in flight.
             var anyAttempt = acceptance.Attempt == 0;
             var prior = acceptance.Attempt - 1;
-            await db.Set<GoldpathCampaignItem>()
+            var moved = await db.Set<GoldpathCampaignItem>()
                 .Where(i => i.CampaignId == campaignId && i.Seq == acceptance.Seq && i.State == GoldpathCampaignItemState.Processing
                     && (anyAttempt || i.Attempts == prior))
                 .ExecuteUpdateAsync(s => s
                     .SetProperty(i => i.State, GoldpathCampaignItemState.AwaitingAck)
                     .SetProperty(i => i.CorrelationId, acceptance.CorrelationId)
                     .SetProperty(i => i.AckDeadline, acceptance.AckDeadline ?? now + _options.NextRetryDelay(1)), cancellationToken);
+            GoldpathCampaignMetrics.Applied(policy.Type, "accepted", null, moved);
         }
 
         var exhausted = 0;
@@ -630,7 +642,7 @@ public sealed class GoldpathCampaignEngine<TContext>
             {
                 // R1.3/R2.3: attempts LEFT → wait out the (jittered) rung, then the pacer re-releases.
                 var nextAttemptAt = now + _options.NextRetryDelay(attemptsAfter);
-                await db.Set<GoldpathCampaignItem>()
+                var moved = await db.Set<GoldpathCampaignItem>()
                     .Where(i => i.CampaignId == campaignId && i.Seq == failure.Seq && i.State == current.State && i.Attempts == current.Attempts)
                     .ExecuteUpdateAsync(s => s
                         .SetProperty(i => i.State, GoldpathCampaignItemState.AwaitingRetry)
@@ -643,11 +655,12 @@ public sealed class GoldpathCampaignEngine<TContext>
                         .SetProperty(i => i.AckDeadline, (DateTimeOffset?)null)
                         .SetProperty(i => i.Error, failure.Error)
                         .SetProperty(i => i.ErrorCode, failure.ErrorCode), cancellationToken);
+                GoldpathCampaignMetrics.Applied(policy.Type, "retry", failure.ErrorCode, moved);
             }
             else
             {
                 // Exhausted, or the provider said a retry cannot help (R2.1): durable failure, once.
-                exhausted += await db.Set<GoldpathCampaignItem>()
+                var moved = await db.Set<GoldpathCampaignItem>()
                     .Where(i => i.CampaignId == campaignId && i.Seq == failure.Seq && i.State == current.State && i.Attempts == current.Attempts)
                     .ExecuteUpdateAsync(s => s
                         .SetProperty(i => i.State, GoldpathCampaignItemState.Failed)
@@ -656,6 +669,19 @@ public sealed class GoldpathCampaignEngine<TContext>
                         .SetProperty(i => i.NextAttemptAt, (DateTimeOffset?)null)
                         .SetProperty(i => i.Error, failure.Error)
                         .SetProperty(i => i.ErrorCode, failure.ErrorCode), cancellationToken);
+                exhausted += moved;
+                GoldpathCampaignMetrics.Applied(policy.Type, "failed", failure.ErrorCode, moved);
+            }
+        }
+
+        foreach (var outcome in outcomes)
+        {
+            // The lag of what this flush made durable, for each outcome that answered the claim it
+            // read, once per item (an acceptance's later callback answers a wait, not a claim, and is not timed).
+            if (claims.Remove(outcome.Seq, out var claim)
+                && (outcome.Attempt == 0 || claim.Attempts == outcome.Attempt - 1) && claim.ClaimedAt is { } claimedAt)
+            {
+                GoldpathCampaignMetrics.Flushed(policy.Type, now - claimedAt);
             }
         }
 
@@ -669,6 +695,30 @@ public sealed class GoldpathCampaignEngine<TContext>
         {
             await SettleParkedCallbacksAsync(db, campaignId, accepted, cancellationToken);
         }
+    }
+
+    /// <summary>
+    /// The claim instant and attempt of every item this flush may answer straight from
+    /// <c>Processing</c>, read before the flush moves them (the sink-lag histogram, RFC §7).
+    /// Read in slices of 500 so a long batch never meets a provider's IN-list limit.
+    /// </summary>
+    private static async Task<Dictionary<long, (int Attempts, DateTimeOffset? ClaimedAt)>> ClaimsOfAsync(
+        TContext db, Guid campaignId, IReadOnlyList<GoldpathCampaignOutcomeMessage> outcomes, CancellationToken cancellationToken)
+    {
+        var claims = new Dictionary<long, (int Attempts, DateTimeOffset? ClaimedAt)>();
+        foreach (var slice in outcomes.Select(o => o.Seq).Distinct().Chunk(500))
+        {
+            var rows = await db.Set<GoldpathCampaignItem>().AsNoTracking()
+                .Where(i => i.CampaignId == campaignId && slice.Contains(i.Seq) && i.State == GoldpathCampaignItemState.Processing)
+                .Select(i => new { i.Seq, i.Attempts, i.ClaimedAt })
+                .ToListAsync(cancellationToken);
+            foreach (var row in rows)
+            {
+                claims[row.Seq] = (row.Attempts, row.ClaimedAt);
+            }
+        }
+
+        return claims;
     }
 
     /// <summary>

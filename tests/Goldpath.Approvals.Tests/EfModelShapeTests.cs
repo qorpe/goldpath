@@ -63,15 +63,28 @@ public sealed class EfModelShapeTests : IDisposable
     }
 
     [Theory]
-    [InlineData(typeof(GoldpathApprovalRequest), "Status")]
-    [InlineData(typeof(GoldpathApprovalDelegationRow), "Until")]
-    [InlineData(typeof(GoldpathApprovalSignatureRow), "RequestId")]
-    public void The_declared_indexes_exist(Type entity, string property)
+    [InlineData(typeof(GoldpathApprovalRequest), "Status", false)]
+    [InlineData(typeof(GoldpathApprovalDelegationRow), "Until", false)]
+    // #480: one identity signs a request once, held by the database. It leads with RequestId, so it also serves the
+    // per-request lookup the single-column RequestId index it replaced served.
+    [InlineData(typeof(GoldpathApprovalSignatureRow), "RequestId,SignedBy", true)]
+    public void The_declared_indexes_exist(Type entity, string properties, bool unique)
     {
         using var scope = _provider.CreateScope();
         var model = scope.ServiceProvider.GetRequiredService<EfApprovalStoreTests.ApprovalsDbContext>().Model;
         Assert.Contains(model.FindEntityType(entity)!.GetIndexes(),
-            i => i.Properties.Single().Name == property);
+            i => string.Join(",", i.Properties.Select(p => p.Name)) == properties && i.IsUnique == unique);
+    }
+
+    [Fact]
+    public void The_request_row_carries_a_concurrency_token_and_nothing_else_does()
+    {
+        // #480: a write from a stale read is refused by the version the request was read at.
+        using var scope = _provider.CreateScope();
+        var model = scope.ServiceProvider.GetRequiredService<EfApprovalStoreTests.ApprovalsDbContext>().Model;
+        var tokens = model.GetEntityTypes()
+            .SelectMany(e => e.GetProperties().Where(p => p.IsConcurrencyToken).Select(p => $"{e.GetTableName()}.{p.GetColumnName()}:{p.ClrType.Name}"));
+        Assert.Equal(["GoldpathApprovals.Version:Int64"], tokens);
     }
 
     [Fact]

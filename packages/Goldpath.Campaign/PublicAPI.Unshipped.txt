@@ -260,3 +260,24 @@ virtual Goldpath.GoldpathCampaignActionResult.Equals(Goldpath.GoldpathCampaignAc
 virtual Goldpath.GoldpathCampaignActionResult.PrintMembers(System.Text.StringBuilder! builder) -> bool
 ~override Goldpath.GoldpathCampaignFairShareClaim.Equals(object obj) -> bool
 ~override Goldpath.GoldpathCampaignFairShareClaim.ToString() -> string
+Goldpath.GoldpathCampaignInfo.PolicyVersion.get -> long
+Goldpath.GoldpathCampaignInfo.PolicyVersion.init -> void
+Goldpath.GoldpathCampaignThrottleResult
+Goldpath.GoldpathCampaignThrottleResult.GoldpathCampaignThrottleResult(bool Ok, string! Message, long PolicyVersion, bool Stale) -> void
+Goldpath.GoldpathCampaignThrottleResult.Ok.get -> bool
+Goldpath.GoldpathCampaignThrottleResult.Ok.init -> void
+Goldpath.GoldpathCampaignThrottleResult.Message.get -> string!
+Goldpath.GoldpathCampaignThrottleResult.Message.init -> void
+Goldpath.GoldpathCampaignThrottleResult.PolicyVersion.get -> long
+Goldpath.GoldpathCampaignThrottleResult.PolicyVersion.init -> void
+Goldpath.GoldpathCampaignThrottleResult.Stale.get -> bool
+Goldpath.GoldpathCampaignThrottleResult.Stale.init -> void
+Goldpath.GoldpathCampaignAdminService<TContext>.ThrottleAsync(System.Guid id, Goldpath.GoldpathCampaignThrottle! patch, long? expectedPolicyVersion, string! actor, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathCampaignThrottleResult!>!
+Goldpath.GoldpathCampaignThrottleResult.<Clone>$() -> Goldpath.GoldpathCampaignThrottleResult!
+Goldpath.GoldpathCampaignThrottleResult.Deconstruct(out bool Ok, out string! Message, out long PolicyVersion, out bool Stale) -> void
+Goldpath.GoldpathCampaignThrottleResult.Equals(Goldpath.GoldpathCampaignThrottleResult? other) -> bool
+override Goldpath.GoldpathCampaignThrottleResult.Equals(object? obj) -> bool
+override Goldpath.GoldpathCampaignThrottleResult.GetHashCode() -> int
+override Goldpath.GoldpathCampaignThrottleResult.ToString() -> string!
+static Goldpath.GoldpathCampaignThrottleResult.operator !=(Goldpath.GoldpathCampaignThrottleResult? left, Goldpath.GoldpathCampaignThrottleResult? right) -> bool
+static Goldpath.GoldpathCampaignThrottleResult.operator ==(Goldpath.GoldpathCampaignThrottleResult? left, Goldpath.GoldpathCampaignThrottleResult? right) -> bool

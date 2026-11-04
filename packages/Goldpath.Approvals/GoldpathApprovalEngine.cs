@@ -63,6 +63,30 @@ public enum GoldpathApprovalDecisionOutcome
 }
 
 /// <summary>
+/// A store write lost an optimistic-concurrency race (#480): the request changed after it was read, or the same
+/// identity's signature landed first. The engine answers it by reading again; a caller of the store sees an
+/// <see cref="InvalidOperationException"/>.
+/// </summary>
+internal sealed class GoldpathApprovalConflictException(Guid requestId, Exception? inner = null)
+    : InvalidOperationException($"Approval request '{requestId}' changed after it was read; read it again and decide on what it is now.", inner)
+{
+    /// <summary>The request whose write lost.</summary>
+    public Guid RequestId { get; } = requestId;
+}
+
+/// <summary>
+/// What the built-in stores add to <see cref="IGoldpathApprovalStore"/> (#480): a quorum signature and the request's
+/// new state written as ONE unit, checked against the version the request was read at. A store without it keeps the
+/// two separate calls, so its own guarantees decide what a concurrent decision can do.
+/// </summary>
+internal interface IGoldpathApprovalAtomicStore
+{
+    /// <summary>Adds the signature and persists the request together, or neither; a lost race throws
+    /// <see cref="GoldpathApprovalConflictException"/>.</summary>
+    Task SignAsync(GoldpathApprovalSignature signature, GoldpathApprovalRequest request, CancellationToken cancellationToken);
+}
+
+/// <summary>
 /// The approvals engine: routes by amount, enforces four-eyes, applies decisions,
 /// honors bounded delegation, and escalates on rung deadlines. Every step lands in the
 /// request's trail — the audit value the e-mail thread never had.
@@ -124,7 +148,16 @@ public sealed class GoldpathApprovalEngine
     /// grant on a quorum rung collects a SIGNATURE; the request completes when the rung's
     /// quorum is met. A rejection is terminal at any point and its reason is mandatory.
     /// </summary>
-    public async Task<GoldpathApprovalDecisionOutcome> DecideAsync(Guid id, string decidedBy, string deciderRole, bool granted, string reason, CancellationToken cancellationToken = default)
+    /// <remarks>
+    /// A decision that loses a write race to another one (#480) reads the request again and decides on what it is now:
+    /// the same identity a second time is <see cref="GoldpathApprovalDecisionOutcome.AlreadySigned"/>, a decision on a
+    /// request another one closed is <see cref="GoldpathApprovalDecisionOutcome.NotPending"/>, and a distinct signer
+    /// signs on top of the winner. That holds on the built-in stores; a custom store's own guarantees decide it there.
+    /// </remarks>
+    public Task<GoldpathApprovalDecisionOutcome> DecideAsync(Guid id, string decidedBy, string deciderRole, bool granted, string reason, CancellationToken cancellationToken = default)
+        => OnFreshReadAsync(id, () => DecideOnceAsync(id, decidedBy, deciderRole, granted, reason, cancellationToken));
+
+    private async Task<GoldpathApprovalDecisionOutcome> DecideOnceAsync(Guid id, string decidedBy, string deciderRole, bool granted, string reason, CancellationToken cancellationToken)
     {
         var request = await _store.GetAsync(id, cancellationToken);
         if (request is null)
@@ -175,7 +208,7 @@ public sealed class GoldpathApprovalEngine
             return GoldpathApprovalDecisionOutcome.AlreadySigned;
         }
 
-        await _store.AddSignatureAsync(new GoldpathApprovalSignature(request.Id, decidedBy, request.PendingRole, now), cancellationToken);
+        var signature = new GoldpathApprovalSignature(request.Id, decidedBy, request.PendingRole, now);
         // Quorum counts per RUNG (signatures carry the rung they covered); an escalated
         // request starts its new rung's count from zero while the chain-wide list above
         // keeps every earlier signer barred.
@@ -184,7 +217,7 @@ public sealed class GoldpathApprovalEngine
         if (collected < required)
         {
             request.Trail.Add(new GoldpathApprovalTrailEntry(now, decidedBy, "signed", $"{collected}/{required} at {request.PendingRole}: {reason}"));
-            await _store.UpdateAsync(request, cancellationToken);
+            await SignAsync(signature, request, cancellationToken);
             return GoldpathApprovalDecisionOutcome.Applied;
         }
 
@@ -192,14 +225,17 @@ public sealed class GoldpathApprovalEngine
         request.DecidedBy = decidedBy;
         request.Reason = reason;
         request.Trail.Add(new GoldpathApprovalTrailEntry(now, decidedBy, "granted", reason));
-        await _store.UpdateAsync(request, cancellationToken);
+        await SignAsync(signature, request, cancellationToken);
         GoldpathApprovalsMetrics.CountGranted(request.Ladder);
         await PublishAsync(new GoldpathApprovalGranted(request.Id, request.Ladder, request.Subject, decidedBy), cancellationToken);
         return GoldpathApprovalDecisionOutcome.Applied;
     }
 
     /// <summary>Takes back a PENDING request — only its requester may; the step lands in the trail.</summary>
-    public async Task<GoldpathApprovalDecisionOutcome> WithdrawAsync(Guid id, string requestedBy, CancellationToken cancellationToken = default)
+    public Task<GoldpathApprovalDecisionOutcome> WithdrawAsync(Guid id, string requestedBy, CancellationToken cancellationToken = default)
+        => OnFreshReadAsync(id, () => WithdrawOnceAsync(id, requestedBy, cancellationToken));
+
+    private async Task<GoldpathApprovalDecisionOutcome> WithdrawOnceAsync(Guid id, string requestedBy, CancellationToken cancellationToken)
     {
         var request = await _store.GetAsync(id, cancellationToken);
         if (request is null)
@@ -267,8 +303,25 @@ public sealed class GoldpathApprovalEngine
         request.Trail.Add(new GoldpathApprovalTrailEntry(now, requestedBy, "resubmitted", $"supersedes {rejected.Id}; routed to {rung.Role} for {rejected.Amount}"));
         await _store.AddAsync(request, cancellationToken);
 
-        rejected.Trail.Add(new GoldpathApprovalTrailEntry(now, requestedBy, "superseded", $"resubmitted as {request.Id}"));
-        await _store.UpdateAsync(rejected, cancellationToken);
+        // The rejected request is terminal, so only another trail step can race this one (#480). A lost write puts
+        // the step onto the request as it is now, never over it.
+        var superseded = new GoldpathApprovalTrailEntry(now, requestedBy, "superseded", $"resubmitted as {request.Id}");
+        rejected.Trail.Add(superseded);
+        GoldpathApprovalRequest? current = rejected;
+        await OnFreshReadAsync(rejected.Id, async () =>
+        {
+            if (current is null)
+            {
+                current = await _store.GetAsync(rejected.Id, cancellationToken)
+                    ?? throw new InvalidOperationException($"Request '{rejected.Id}' disappeared while it was being superseded.");
+                current.Trail.Add(superseded);
+            }
+
+            var writing = current;
+            current = null;   // a retry re-reads
+            await _store.UpdateAsync(writing, cancellationToken);
+            return true;
+        });
 
         await PublishAsync(new GoldpathApprovalRequested(request.Id, ladder.Name, request.Subject, request.Amount, rung.Role), cancellationToken);
         return request;
@@ -338,7 +391,11 @@ public sealed class GoldpathApprovalEngine
             {
                 request.Status = GoldpathApprovalStatus.Expired;
                 request.Trail.Add(new GoldpathApprovalTrailEntry(now, "system", "expired", $"overdue at top rung {rung.Role}"));
-                await _store.UpdateAsync(request, cancellationToken);
+                if (!await SweptAsync(request, cancellationToken))
+                {
+                    continue;
+                }
+
                 GoldpathApprovalsMetrics.CountExpired(request.Ladder);
                 await PublishAsync(new GoldpathApprovalExpired(request.Id, request.Ladder, request.Subject, rung.Role), cancellationToken);
             }
@@ -347,7 +404,11 @@ public sealed class GoldpathApprovalEngine
                 request.PendingRole = above.Role;
                 request.PendingSince = now;
                 request.Trail.Add(new GoldpathApprovalTrailEntry(now, "system", "escalated", $"{rung.Role} -> {above.Role}"));
-                await _store.UpdateAsync(request, cancellationToken);
+                if (!await SweptAsync(request, cancellationToken))
+                {
+                    continue;
+                }
+
                 GoldpathApprovalsMetrics.CountEscalated(request.Ladder);
                 await PublishAsync(new GoldpathApprovalEscalated(request.Id, request.Ladder, request.Subject, rung.Role, above.Role), cancellationToken);
             }
@@ -388,13 +449,69 @@ public sealed class GoldpathApprovalEngine
         return delegations.Any(d => string.Equals(d.To, identity, StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>How many times one call reads again after losing a write race before it gives up (#480).</summary>
+    private const int ConflictAttempts = 8;
+
+    /// <summary>
+    /// Runs <paramref name="attempt"/> — which reads the request itself — and runs it again on a fresh read when its
+    /// write loses a race. Every lost race means another write landed, so the retries make progress; the bound only
+    /// stops a call that keeps losing.
+    /// </summary>
+    private async Task<T> OnFreshReadAsync<T>(Guid id, Func<Task<T>> attempt)
+    {
+        for (var tries = 1; ; tries++)
+        {
+            try
+            {
+                return await attempt();
+            }
+            catch (GoldpathApprovalConflictException) when (tries < ConflictAttempts)
+            {
+                _logger.LogDebug("Approval request {RequestId} changed while it was being decided; reading it again (attempt {Attempt}).", id, tries + 1);
+            }
+        }
+    }
+
+    /// <summary>A quorum signature and the request's new state: one write on a built-in store, two on any other.</summary>
+    private async Task SignAsync(GoldpathApprovalSignature signature, GoldpathApprovalRequest request, CancellationToken cancellationToken)
+    {
+        if (_store is IGoldpathApprovalAtomicStore atomic)
+        {
+            await atomic.SignAsync(signature, request, cancellationToken);
+            return;
+        }
+
+        await _store.AddSignatureAsync(signature, cancellationToken);
+        await _store.UpdateAsync(request, cancellationToken);
+    }
+
+    /// <summary>The sweep's write: a request decided while the sweep looked at it is left to the decision, and the
+    /// next sweep reads it again (#480).</summary>
+    private async Task<bool> SweptAsync(GoldpathApprovalRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _store.UpdateAsync(request, cancellationToken);
+            return true;
+        }
+        catch (GoldpathApprovalConflictException)
+        {
+            _logger.LogDebug("Approval request {RequestId} changed during the escalation sweep; left for the next sweep.", request.Id);
+            return false;
+        }
+    }
+
     private Task PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken cancellationToken)
         where TEvent : class, IIntegrationEvent
         => _publisher?.PublishAsync(integrationEvent, cancellationToken) ?? Task.CompletedTask;
 }
 
-/// <summary>In-memory store: tests and single-node hosts; database stores compose via the seam.</summary>
-public sealed class GoldpathInMemoryApprovalStore : IGoldpathApprovalStore
+/// <summary>
+/// In-memory store: tests and single-node hosts; database stores compose via the seam. It keeps the database store's
+/// two concurrency rules (#480): every read hands out a copy, a write made from a stale copy is refused, and one
+/// identity signs a request once.
+/// </summary>
+public sealed class GoldpathInMemoryApprovalStore : IGoldpathApprovalStore, IGoldpathApprovalAtomicStore
 {
     private readonly object _gate = new();
     private readonly Dictionary<Guid, GoldpathApprovalRequest> _requests = [];
@@ -406,7 +523,7 @@ public sealed class GoldpathInMemoryApprovalStore : IGoldpathApprovalStore
     {
         lock (_gate)
         {
-            _requests.Add(request.Id, request);
+            _requests.Add(request.Id, request.Snapshot());
         }
 
         return Task.CompletedTask;
@@ -417,16 +534,18 @@ public sealed class GoldpathInMemoryApprovalStore : IGoldpathApprovalStore
     {
         lock (_gate)
         {
-            return Task.FromResult(_requests.TryGetValue(id, out var request) ? request : null);
+            return Task.FromResult(_requests.TryGetValue(id, out var request) ? request.Snapshot() : null);
         }
     }
 
     /// <inheritdoc />
+    /// <remarks>Refused with an <see cref="InvalidOperationException"/> when the request changed since this copy
+    /// was read (#480).</remarks>
     public Task UpdateAsync(GoldpathApprovalRequest request, CancellationToken cancellationToken = default)
     {
         lock (_gate)
         {
-            _requests[request.Id] = request;
+            Write(request);
         }
 
         return Task.CompletedTask;
@@ -438,7 +557,7 @@ public sealed class GoldpathInMemoryApprovalStore : IGoldpathApprovalStore
         lock (_gate)
         {
             IReadOnlyList<GoldpathApprovalRequest> pending =
-                _requests.Values.Where(r => r.Status == GoldpathApprovalStatus.Pending).ToList();
+                _requests.Values.Where(r => r.Status == GoldpathApprovalStatus.Pending).Select(r => r.Snapshot()).ToList();
             return Task.FromResult(pending);
         }
     }
@@ -449,7 +568,7 @@ public sealed class GoldpathInMemoryApprovalStore : IGoldpathApprovalStore
         lock (_gate)
         {
             IReadOnlyList<GoldpathApprovalRequest> recent =
-                _requests.Values.OrderByDescending(r => r.RequestedAt).Take(take).ToList();
+                _requests.Values.OrderByDescending(r => r.RequestedAt).Take(take).Select(r => r.Snapshot()).ToList();
             return Task.FromResult(recent);
         }
     }
@@ -476,10 +595,13 @@ public sealed class GoldpathInMemoryApprovalStore : IGoldpathApprovalStore
     }
 
     /// <inheritdoc />
+    /// <remarks>A second signature by the same <c>SignedBy</c> on the same request is refused with an
+    /// <see cref="InvalidOperationException"/>, as the database store's unique key refuses it (#480).</remarks>
     public Task AddSignatureAsync(GoldpathApprovalSignature signature, CancellationToken cancellationToken = default)
     {
         lock (_gate)
         {
+            RefuseSecondSignature(signature);
             _signatures.Add(signature);
         }
 
@@ -495,5 +617,44 @@ public sealed class GoldpathInMemoryApprovalStore : IGoldpathApprovalStore
                 _signatures.Where(s => s.RequestId == requestId).OrderBy(s => s.At).ToList();
             return Task.FromResult(signatures);
         }
+    }
+
+    Task IGoldpathApprovalAtomicStore.SignAsync(GoldpathApprovalSignature signature, GoldpathApprovalRequest request, CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            // Both checks before either change: the pair lands together or not at all.
+            RefuseSecondSignature(signature);
+            RefuseStale(request);
+            _signatures.Add(signature);
+            Write(request);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    // The key the database store declares unique: (RequestId, SignedBy), compared exactly. The engine's distinct-eyes
+    // check above it ignores case.
+    private void RefuseSecondSignature(GoldpathApprovalSignature signature)
+    {
+        if (_signatures.Any(s => s.RequestId == signature.RequestId && string.Equals(s.SignedBy, signature.SignedBy, StringComparison.Ordinal)))
+        {
+            throw new GoldpathApprovalConflictException(signature.RequestId);
+        }
+    }
+
+    private void RefuseStale(GoldpathApprovalRequest request)
+    {
+        if (_requests.TryGetValue(request.Id, out var stored) && stored.Version != request.Version)
+        {
+            throw new GoldpathApprovalConflictException(request.Id);
+        }
+    }
+
+    private void Write(GoldpathApprovalRequest request)
+    {
+        RefuseStale(request);
+        request.Version++;
+        _requests[request.Id] = request.Snapshot();
     }
 }
