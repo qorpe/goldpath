@@ -54,6 +54,7 @@ C:
   - 'scripts/kit-freshness.sh'
   - 'scripts/specanchor-freshness.sh'  # the pinned specanchor schemas (#276)
   - 'scripts/train-freshness.sh'
+  - 'scripts/corpay-feed.sh'        # which feed the nightly's CorPay restores from (#378)
   - 'scripts/product-guard.sh'
   - 'scripts/validate-*.sh'        # the GM matrix, the CLI and the migration proofs
   - 'scripts/console-smoke.sh'

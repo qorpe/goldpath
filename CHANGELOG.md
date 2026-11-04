@@ -486,6 +486,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     - A custom `IGoldpathApprovalStore` keeps its own guarantees. Its signature and request writes stay two calls.
   - **No public API changed:** the version is an internal member.
   - **Migration:** one, with a query to run first for existing duplicate signatures (upgrade guide).
+- **The nightly's `sample-corpay` job is no longer red on every release night (#378).** Since #312 the release PR pins
+  CorPay to a train nuget.org does not have yet, and the job restored from nuget.org only. The new
+  `scripts/corpay-feed.sh` decides the feed from the same condition `train-freshness.sh` calls "release in flight":
+  - this repository's train is published → nothing changes, and CorPay restores from nuget.org only (ADR-0007);
+  - it is not published yet → the repository is packed (console assets first) into a local feed, added to CorPay's
+    `nuget.config` beside nuget.org, and `goldpath check` runs the packed CLI at that train;
+  - nuget.org unreachable, or an empty or malformed version index → the job fails rather than guess.
+
+  The log line and the step summary name the feed used. `corpay-feed.sh --selftest` (ten planted cases) runs in CI's
+  `gates` job. No package changes.
 - **Archival: an entry whose `DueAt` carries sub-microsecond ticks now verifies on PostgreSQL (#383).** The engine
   hashed `DueAt` at 100 ns, but `timestamptz` stores microseconds, so verification re-hashed a different value and
   reported "document does not match its content hash" with nothing tampered. It happened whenever the candidate's
