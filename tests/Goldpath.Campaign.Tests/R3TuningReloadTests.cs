@@ -15,6 +15,7 @@ namespace Goldpath.Campaign.Tests;
 /// restart. Every test builds its host through <c>AddGoldpathCampaign</c>, so what is proven is the
 /// module's own wiring, not a hand-assembled monitor.
 /// </summary>
+[Collection(TuningReloadCounterCollection.Name)]
 public class R3TuningReloadTests
 {
     private static readonly TimeSpan[] CodeLadder = [TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(10)];

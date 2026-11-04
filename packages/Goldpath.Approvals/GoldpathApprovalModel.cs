@@ -60,6 +60,36 @@ public sealed class GoldpathApprovalRequest
 
     /// <summary>Every lifecycle step, oldest first — the audit value e-mail never had.</summary>
     public List<GoldpathApprovalTrailEntry> Trail { get; } = [];
+
+    /// <summary>
+    /// The row's optimistic-concurrency version (#480). Every write the built-in stores make checks it against the
+    /// version the request was read at and moves it on, so two decisions read from the same state cannot both apply.
+    /// Internal: the store seam's public shape is unchanged.
+    /// </summary>
+    internal long Version { get; set; }
+
+    /// <summary>A detached copy, trail included — what the in-memory store hands out, as a database read would.</summary>
+    internal GoldpathApprovalRequest Snapshot()
+    {
+        var copy = new GoldpathApprovalRequest
+        {
+            Id = Id,
+            Ladder = Ladder,
+            Subject = Subject,
+            Amount = Amount,
+            RequestedBy = RequestedBy,
+            RequestedAt = RequestedAt,
+            PendingRole = PendingRole,
+            PendingSince = PendingSince,
+            Status = Status,
+            DecidedBy = DecidedBy,
+            Reason = Reason,
+            SupersedesId = SupersedesId,
+            Version = Version,
+        };
+        copy.Trail.AddRange(Trail);
+        return copy;
+    }
 }
 
 /// <summary>One audited lifecycle step.</summary>

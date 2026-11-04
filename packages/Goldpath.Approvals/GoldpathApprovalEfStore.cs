@@ -75,6 +75,9 @@ public static class GoldpathApprovalModelExtensions
                 // say its own shape.
                 .HasMaxLength(-1);
             e.Property(x => x.Reason).HasMaxLength(1024);   // human decision text — bounded, but not by accident
+            // Optimistic concurrency (#480): every write checks the version the request was read at, so two decisions
+            // read from the same state cannot both apply. Internal on the entity, so the public shape is unchanged.
+            e.Property(x => x.Version).IsConcurrencyToken();
         });
 
         modelBuilder.Entity<GoldpathApprovalDelegationRow>(e =>
@@ -92,7 +95,10 @@ public static class GoldpathApprovalModelExtensions
             e.HasKey(x => x.Id);
             e.Property(x => x.SignedBy).HasMaxLength(128);
             e.Property(x => x.Role).HasMaxLength(128);
-            e.HasIndex(x => x.RequestId);
+            // One identity signs a request once (#480): the distinct-eyes rule, held by the database as well as the
+            // engine, so a double click cannot slip two signatures between the check and the write. It also serves
+            // the per-request lookup the plain RequestId index used to.
+            e.HasIndex(x => new { x.RequestId, x.SignedBy }).IsUnique();
         });
 
         return modelBuilder;
@@ -105,7 +111,7 @@ public static class GoldpathApprovalModelExtensions
 /// survive restarts and every node sees the same worklist. Each call runs in its own scope,
 /// so the store itself carries no scoped state.
 /// </summary>
-public sealed class GoldpathEfApprovalStore<TContext> : IGoldpathApprovalStore
+public sealed class GoldpathEfApprovalStore<TContext> : IGoldpathApprovalStore, IGoldpathApprovalAtomicStore
     where TContext : DbContext
 {
     private readonly IServiceScopeFactory _scopes;
@@ -131,12 +137,22 @@ public sealed class GoldpathEfApprovalStore<TContext> : IGoldpathApprovalStore
     }
 
     /// <inheritdoc />
+    /// <remarks>Refused with an <see cref="InvalidOperationException"/> when the row changed since
+    /// <paramref name="request"/> was read (#480).</remarks>
     public async Task UpdateAsync(GoldpathApprovalRequest request, CancellationToken cancellationToken = default)
     {
         await using var scope = _scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<TContext>();
-        db.Update(request);
-        await db.SaveChangesAsync(cancellationToken);
+        var readAt = Track(db, request);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException e)
+        {
+            request.Version = readAt;
+            throw new GoldpathApprovalConflictException(request.Id, e);
+        }
     }
 
     /// <inheritdoc />
@@ -187,12 +203,85 @@ public sealed class GoldpathEfApprovalStore<TContext> : IGoldpathApprovalStore
     }
 
     /// <inheritdoc />
+    /// <remarks>A second signature by the same <c>SignedBy</c> on the same request is refused with an
+    /// <see cref="InvalidOperationException"/> (#480).</remarks>
     public async Task AddSignatureAsync(GoldpathApprovalSignature signature, CancellationToken cancellationToken = default)
     {
         await using var scope = _scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<TContext>();
-        db.Add(new GoldpathApprovalSignatureRow { RequestId = signature.RequestId, SignedBy = signature.SignedBy, Role = signature.Role, At = signature.At });
-        await db.SaveChangesAsync(cancellationToken);
+        db.Add(Row(signature));
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException e)
+        {
+            if (await SignedAsync(signature, cancellationToken))
+            {
+                throw new GoldpathApprovalConflictException(signature.RequestId, e);
+            }
+
+            throw;
+        }
+    }
+
+    async Task IGoldpathApprovalAtomicStore.SignAsync(GoldpathApprovalSignature signature, GoldpathApprovalRequest request, CancellationToken cancellationToken)
+    {
+        await using var scope = _scopes.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<TContext>();
+        db.Add(Row(signature));
+        var readAt = Track(db, request);
+        try
+        {
+            // One SaveChanges is one transaction: the signature and the request's new state land together or not at all.
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException e)
+        {
+            request.Version = readAt;
+            throw new GoldpathApprovalConflictException(request.Id, e);
+        }
+        catch (DbUpdateException e)
+        {
+            request.Version = readAt;
+            if (await SignedAsync(signature, cancellationToken))
+            {
+                // The unique key refused it: the same identity's signature landed first.
+                throw new GoldpathApprovalConflictException(request.Id, e);
+            }
+
+            throw;
+        }
+        catch
+        {
+            request.Version = readAt;
+            throw;
+        }
+    }
+
+    /// <summary>Attaches a request read elsewhere as modified, checked against the version it was read at and moved on
+    /// by one. Returns the version it was read at.</summary>
+    private static long Track(TContext db, GoldpathApprovalRequest request)
+    {
+        var readAt = request.Version;
+        db.Update(request);
+        var version = db.Entry(request).Property(x => x.Version);
+        version.OriginalValue = readAt;
+        version.CurrentValue = readAt + 1;
+        return readAt;
+    }
+
+    private static GoldpathApprovalSignatureRow Row(GoldpathApprovalSignature signature)
+        => new() { RequestId = signature.RequestId, SignedBy = signature.SignedBy, Role = signature.Role, At = signature.At };
+
+    /// <summary>Whether a failed write failed because this identity's signature is already there — read on a fresh
+    /// context, so a provider's error text never decides it.</summary>
+    private async Task<bool> SignedAsync(GoldpathApprovalSignature signature, CancellationToken cancellationToken)
+    {
+        await using var scope = _scopes.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<TContext>();
+        return await db.Set<GoldpathApprovalSignatureRow>().AsNoTracking()
+            .AnyAsync(x => x.RequestId == signature.RequestId && x.SignedBy == signature.SignedBy, cancellationToken);
     }
 
     /// <inheritdoc />

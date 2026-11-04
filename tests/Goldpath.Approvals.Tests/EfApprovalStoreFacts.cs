@@ -36,6 +36,23 @@ public abstract class EfApprovalStoreFacts : IAsyncLifetime
             => modelBuilder.AddGoldpathApprovalModel();
     }
 
+    /// <summary>
+    /// A clock that runs a hook the next time the engine reads it. The engine reads the clock after it has read the
+    /// request and before it writes, so the hook lands another write exactly in that gap, on any store.
+    /// </summary>
+    public sealed class RacingClock(DateTimeOffset now) : TimeProvider
+    {
+        public Func<Task>? OnNextRead { get; set; }
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            var hook = OnNextRead;
+            OnNextRead = null;
+            hook?.Invoke().GetAwaiter().GetResult();
+            return now;
+        }
+    }
+
     private ServiceProvider _provider = null!;
 
     /// <summary>Opens an empty database and returns the provider configuration that reaches it.</summary>
@@ -60,7 +77,7 @@ public abstract class EfApprovalStoreFacts : IAsyncLifetime
         await CloseDatabaseAsync();
     }
 
-    private GoldpathApprovalEngine BuildEngine(FakeTimeProvider clock) => new(
+    private GoldpathApprovalEngine BuildEngine(TimeProvider clock) => new(
         new GoldpathApprovalsOptions().AddLadder("credit-limit", l => l
             .Rung("expert", 1_000_000m, TimeSpan.FromHours(8))
             .TopRung("general-manager", TimeSpan.FromHours(24))),
@@ -180,6 +197,80 @@ public abstract class EfApprovalStoreFacts : IAsyncLifetime
         Assert.Equal(rejected.Id, reloaded.SupersedesId);
         Assert.Equal(["requested", "rejected", "superseded"], (await Reload(rejected.Id)).Trail.Select(t => t.Action));
     }
+
+    [Fact]
+    public async Task The_store_refuses_a_second_signature_by_the_same_identity_on_one_request()
+    {
+        // #480: the database holds distinct-eyes too, so a double click cannot slip two signatures between the
+        // engine's check and its write. Proven on the store itself: the engine's own check would hide the key.
+        var store = Store();
+        var at = DateTimeOffset.Parse("2026-11-03T09:00:00Z");
+        var request = Guid.NewGuid();
+        await store.AddSignatureAsync(new GoldpathApprovalSignature(request, "checker", "expert", at));
+
+        await Assert.ThrowsAnyAsync<InvalidOperationException>(
+            () => store.AddSignatureAsync(new GoldpathApprovalSignature(request, "checker", "general-manager", at.AddMinutes(1))));
+        Assert.Equal(["checker"], (await store.GetSignaturesAsync(request)).Select(s => s.SignedBy));
+
+        // Only the pair is unique: another identity on this request, and this identity on another request, still sign.
+        var other = Guid.NewGuid();
+        await store.AddSignatureAsync(new GoldpathApprovalSignature(request, "checker-2", "expert", at.AddMinutes(2)));
+        await store.AddSignatureAsync(new GoldpathApprovalSignature(other, "checker", "expert", at.AddMinutes(3)));
+        Assert.Equal(2, (await store.GetSignaturesAsync(request)).Count);
+        Assert.Single(await store.GetSignaturesAsync(other));
+    }
+
+    [Fact]
+    public async Task A_write_from_a_stale_read_is_refused_and_the_write_that_won_stands()
+    {
+        // #480: two reads of one request, two writes. The second was decided on a state that no longer exists.
+        var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-11-03T09:00:00Z"));
+        var created = await BuildEngine(clock).RequestAsync("credit-limit", "K26-480", 500_000m, "maker");
+        var store = Store();
+        var first = await Reload(created.Id);
+        var second = await Reload(created.Id);
+
+        first.Status = GoldpathApprovalStatus.Rejected;
+        first.Trail.Add(new GoldpathApprovalTrailEntry(clock.GetUtcNow(), "checker-a", "rejected", "no"));
+        await store.UpdateAsync(first);
+
+        second.Status = GoldpathApprovalStatus.Granted;
+        second.Trail.Add(new GoldpathApprovalTrailEntry(clock.GetUtcNow(), "checker-b", "granted", "yes"));
+        await Assert.ThrowsAnyAsync<InvalidOperationException>(() => store.UpdateAsync(second));
+
+        var stored = await Reload(created.Id);
+        Assert.Equal(GoldpathApprovalStatus.Rejected, stored.Status);
+        Assert.Equal(["requested", "rejected"], stored.Trail.Select(t => t.Action));
+
+        // A fresh read writes, and so does the next one after it: the version moves with every write.
+        stored.Trail.Add(new GoldpathApprovalTrailEntry(clock.GetUtcNow(), "maker", "noted", "1"));
+        await store.UpdateAsync(stored);
+        var again = await Reload(created.Id);
+        again.Trail.Add(new GoldpathApprovalTrailEntry(clock.GetUtcNow(), "maker", "noted", "2"));
+        await store.UpdateAsync(again);
+        Assert.Equal(["requested", "rejected", "noted", "noted"], (await Reload(created.Id)).Trail.Select(t => t.Action));
+    }
+
+    [Fact]
+    public async Task A_grant_that_loses_to_a_reject_between_its_read_and_its_write_answers_NotPending_and_signs_nothing()
+    {
+        // #480 on the database store, made deterministic: the reject lands in the gap the grant's clock read marks.
+        var clock = new RacingClock(DateTimeOffset.Parse("2026-11-03T09:00:00Z"));
+        var engine = BuildEngine(clock);
+        var request = await engine.RequestAsync("credit-limit", "K26-486", 500_000m, "maker");
+        clock.OnNextRead = async () => Assert.Equal(
+            GoldpathApprovalDecisionOutcome.Applied,
+            await BuildEngine(new FakeTimeProvider(DateTimeOffset.Parse("2026-11-03T09:00:00Z"))).DecideAsync(request.Id, "checker-b", "expert", false, "no"));
+
+        Assert.Equal(GoldpathApprovalDecisionOutcome.NotPending, await engine.DecideAsync(request.Id, "checker-a", "expert", true, "yes"));
+        Assert.Empty(await Store().GetSignaturesAsync(request.Id));
+        var stored = await Reload(request.Id);
+        Assert.Equal(GoldpathApprovalStatus.Rejected, stored.Status);
+        Assert.Equal(["requested", "rejected"], stored.Trail.Select(t => t.Action));
+    }
+
+    private GoldpathEfApprovalStore<ApprovalsDbContext> Store()
+        => new(_provider.GetRequiredService<IServiceScopeFactory>());
 
     private async Task<GoldpathApprovalRequest> Reload(Guid id)
     {
