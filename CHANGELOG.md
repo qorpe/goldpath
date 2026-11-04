@@ -610,6 +610,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     ceiling of 100; now 5 a tick. S-FLEET-03 at its own numbers (GlobalTps 1000, two campaigns at 800):
     1950 in one second before, at most 1000 now. `CampaignR1Tests` on RabbitMQ and PostgreSQL drops its
     +50% tolerance and holds every second of ticks of the run to `GlobalTps` itself.
+- **`Goldpath.Bulk`: an upload to an unknown definition answers `404`, not `500` (#377).**
+  `POST /goldpath/admin/bulk/batches/{definition}` with a name nobody registered used to reach
+  `GoldpathBulkOptions.Definition(name)`, which throws, so the host answered a generic `500`. The route now
+  looks the name up first (ordinal, exactly as the engine does) and answers a `404` problem whose `detail`
+  names the registered definitions, before the request body is read. Known definitions are unchanged, and
+  `Definition(name)` keeps its throwing contract for in-process callers; no public API changes. ZAP rules
+  100000 and 90022 leave the INFO list in `scripts/zap-baseline.conf`, so they fail the night again (WARN)
+  if the 500 ever returns. Proof: `Goldpath.Bulk.Tests.AdminEndpointsTests` over TestServer with the host's
+  exception handler, red (`500`) with the lookup removed.
 - **`Goldpath.Messaging.Wolverine` (not published) is wire-compatible with a MassTransit fleet:
   S4, mixed-fleet compatibility, in the conformance suite (GA gate G5 Part 4/5, #333).**
   `MixedFleetTests` runs a MassTransit 8.5.11 process and a Wolverine process on one RabbitMQ and one
