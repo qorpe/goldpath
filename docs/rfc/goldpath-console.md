@@ -2,7 +2,8 @@
 
 Status: **ACCEPTED** (2026-07-14) — D1 (React+Tailwind, dist-shipped; supersedes the
 RCL wording), D2 (triage-first home) and D3 (component tests + the GmConsole nightly
-shape) approved by the owner. U1 (kit) is live.
+shape) approved by the owner. U1 (kit) is live. **Revision OIDC-1** (the console signs in by OIDC,
+GA gate G6) is PROPOSED 2026-10-29 at the end of this document.
 Visual contract: `docs/strategy/ui-standard-v1.md` (adopted). Locked antecedents:
 ONE run console; the UI knows CAPABILITIES, not levels; products (such as Mockifyr)
 own their UI — the console links, never embeds; UI is written ONCE against the full,
@@ -67,7 +68,7 @@ custom-develop ON, with the same kit, the same way they add features to the back
      service must (a) sit under the same auth as the console's origin, or (b) allow that
      origin explicitly in CORS *with* credentials. There is no third option that does not
      involve a token the console would have to hold.
-  3. **A token the console holds is NOT built.** A browser-side OIDC client would put an
+  3. **A token the console holds is NOT built** (superseded once [Revision OIDC-1](#revision-oidc-1--the-console-signs-in-oidc-proposed-2026-10-29-merging-the-pr-that-adds-this-section-is-its-acceptance) is accepted: the console signs in by OIDC as an opt-in, and this case stays true for a console with no IdP configured). A browser-side OIDC client would put an
      identity library in the dist and a per-adopter authority/clientId in config, which is
      a different product decision from "the console is a client of the app's floor". Until
      an adopter needs it, the honest answer is (1) and (2) — and the console says so when
@@ -159,3 +160,211 @@ custom-develop ON, with the same kit, the same way they add features to the back
 No CRUD generator for business entities (vertical slices own their screens); no
 embedded Grafana re-implementation (panels link/embed the boards the modules already
 ship); no theme marketplace — one standard, one accent swap.
+
+## Revision OIDC-1 — the console signs in (OIDC) (PROPOSED 2026-10-29; merging the PR that adds this section is its acceptance)
+
+**Why now.** Owner decision 2026-10-21 (GA readiness RFC Q7): console OIDC is a 1.0 gate, **G6**
+(open-threads T10), because "a split-origin enterprise deployment is the common case". §3's auth
+case 3 said a token the console holds is NOT built. This revision supersedes case 3 and keeps
+cases 1, 1b, 2 and 4 exactly as they are. Nothing in it is built yet: each slice below carries its
+own red → green proof.
+
+### OIDC-1.1 What changes, and what does not
+
+- **Opt-in, per console.** A console whose configuration names no identity provider behaves
+  byte-for-byte as today:
+  - it is served behind the app's own floor (case 1);
+  - its calls carry `credentials: "include"`;
+  - it holds no token.
+
+  The served console with no IdP at all is the default, and it stays so. The existing
+  `scripts/console-smoke.sh` journeys and the `GmConsole`/`GmConsoleAuthed` shapes are the
+  regression proof that this stays true.
+- **With an IdP configured**, the console signs the operator in once. It then sends
+  `Authorization: Bearer <token>` with `credentials: "omit"` to every service the registry names.
+  The services are the apps' own admin surfaces under the existing `openid` strategy
+  (`Goldpath.Auth`, JwtBearer). The token is validated against each service's own
+  `Goldpath:Auth:Authority` and `Audience` (audit A3 already refuses a missing audience).
+- **The admin contract is unchanged.** It keeps its routes, envelopes, admin-contract R1 tenant scoping
+  and admin-contract R4.1's read and act roles. A bearer token is one more way to carry the principal those rules
+  already judge.
+
+### OIDC-1.2 The flow
+
+**Authorization code with PKCE, in the browser, as a public client.** There is no client secret:
+a browser cannot keep one.
+- **Library:** the console composes **`oidc-client-ts`**, pinned exactly to `3.5.0`
+  (Apache-2.0, published 2026-03-13; its one dependency is `jwt-decode` ^4, MIT, resolved by the lockfile). The flow is
+  not hand-rolled (ADR-0003).
+- **Licence gate:** the pin is gated in slice C-1 before the library enters the graph (OIDC-1.7).
+- **Sign-in:** the console redirects to the authority, returns to its own `…/console/` path,
+  exchanges the code, and removes the `code` and `state` parameters from the address bar.
+- **The token lives in memory only.** The console uses `InMemoryWebStorage` for the user store,
+  never `localStorage` or `sessionStorage`, so a script injected into the page cannot read a
+  token that outlives the tab.
+- **The sign-in state is tab-scoped, short-lived and token-free.** A redirect flow must keep the
+  PKCE `code_verifier` and `nonce` across the navigation to the IdP and back, so they cannot live
+  in memory. `oidc-client-ts` 3.5.0 defaults its `stateStore` to `localStorage`, which outlives the
+  tab and is shared by every tab of the origin, so the console sets it explicitly:
+  `stateStore: new WebStorageStateStore({ store: window.sessionStorage })`. The callback removes
+  the entry it redeems; `staleStateAgeInSeconds` bounds an abandoned one, and the console calls
+  `clearStaleState()` at start-up. The state never holds a token.
+- **A reload loses the token.** The console then redirects once more. The IdP's own session
+  makes that round trip silent for an operator who is still signed in there.
+- **Nothing the console writes outlives the tab.** The only sign-in artefact that does is the
+  IdP's session cookie, on the IdP's origin. `localStorage` stays empty.
+
+### OIDC-1.3 Where the authority and the client id come from (no per-adopter rebuild)
+
+The dist is built once by CI and shipped embedded in `Goldpath.Console` (D1). Configuration
+therefore travels the way the service registry already does: the app that serves the console
+writes it at runtime.
+- **`GoldpathConsoleOptions.UseOidc(authority, clientId, scopes)`**, or configuration under
+  `Goldpath:Console:Oidc` (`Authority`, `ClientId`, `Scopes`). The console options bind no
+  configuration today, so this section is new. Configuration wins over code, so each
+  environment can point at its own IdP without a rebuild.
+- **A new anonymous route, `…/console/console.auth.json`.** It answers
+  `{ "authority", "clientId", "scopes" }`, values that are public by the nature of a public
+  client. The console must read them before anyone is signed in. When no IdP is configured, the
+  route answers `404`, and the console takes that as "no sign-in, case 1".
+- **`console.config.json`, which holds the service registry, stays behind the floor.** With OIDC
+  on, it is fetched with the bearer token like any admin `GET`. Internal service addresses are
+  never served to an anonymous caller.
+- **The page shell (HTML, JS, CSS) is served anonymously when OIDC is configured.** It carries no
+  data, and a browser cannot attach a bearer token to a document navigation. It stays behind the
+  floor when OIDC is off, unchanged. This is **Q1** below.
+- **Each registry entry may name the token its service accepts:**
+  `{ name, adminBaseUrl, audience?, scopes? }`, with `AddService(name, url, audience?, scopes?)`.
+  An entry without them uses the console's default token.
+
+### OIDC-1.4 One sign-in, several services: the token's audience
+
+Services validate the token's `aud` against their own `Audience`. Two IdP behaviours are
+common, and the console supports both:
+1. **One token, many audiences.** A Keycloak audience mapper, or any IdP that mints a
+   multi-audience token. Each service accepts the same token, and the console holds one.
+2. **One token per resource.** Microsoft Entra ID mints one resource per access token. The
+   console then redeems the one refresh token once per distinct `scopes` set, on a path it owns:
+   - **Not `UserManager`.** In 3.5.0, `UserManager.signinSilent` takes the refresh-token path
+     with the user's original scope (it forwards `resource` and `extraTokenParams`, never a
+     scope), and stores the one `User` it gets back, replacing the console's default token.
+   - **`OidcClient.useRefreshToken({ state, extraTokenParams: { scope } })` instead.** 3.5.0
+     spreads `extraTokenParams` after its own `scope`, so the console's set is the one sent.
+     `state` is an object of `RefreshState`'s shape built from the current `UserManager` user
+     (the class is typed, not exported at runtime). This call never reaches
+     `UserManager.storeUser`.
+   - **A console-owned in-memory map** holds each access token, keyed by the sorted scope set
+     the console **requested**, never by the response's `scope`: when the IdP omits `scope`,
+     3.5.0 reports the original scope there, which would file B's token under A's key. The
+     default token stays the `UserManager` user's.
+   - **Rotation.** When the IdP rotates refresh tokens, the new one is written back onto the
+     `UserManager` user, so the next redemption, for any service, uses it.
+   - **One queue for every redemption, the default renew included.** 3.5.0's
+     `automaticSilentRenew` defaults to `true`, and that renew runs `signinSilent` on the
+     library's own timer, outside any queue the console keeps, and stores a new `User`. So the
+     console sets `automaticSilentRenew: false` and drives the default token's renew itself
+     (OIDC-1.5), through the same single-flight queue as the per-scope redemptions. One refresh
+     token is then never presented twice at once (under rotation with reuse detection, a second
+     presentation can revoke the whole token family and sign the operator out), and no
+     redemption's write-back overwrites another's rotated refresh token.
+
+   A service whose token cannot be obtained becomes a triage row ("signed in, but not for this
+   service"), never a silent omission (D2(b)).
+
+The proof drives case 1 against a real IdP container (OIDC-1.6). Case 2 is proven at unit level
+against the published 3.5.0 code paths named above (`OidcClient.useRefreshToken` and the token
+request it sends, never a hand-written stand-in for the library), and slice C-5 carries its red
+proof. Whether a hosted Entra tenant joins the nightly is **Q3**.
+
+### OIDC-1.5 CORS, expiry and the honest refusals
+
+- **CORS (slice C-3).** A service the console reaches from another origin must answer the
+  preflight and allow that origin with `Authorization` and `Content-Type`, **without**
+  `Allow-Credentials`, because the console sends none.
+  - `Goldpath.Sdk` gains an opt-in `AddGoldpathConsoleOrigins(params string[] origins)` and the
+    `Goldpath:Console:AllowedOrigins` configuration, both applied to the admin groups only.
+  - A preflight is answered before the auth floor, as the ASP.NET CORS middleware does, and a
+    test pins it.
+  - Every actual call still meets the floor.
+  - Wildcards are refused at startup: `*` with an auth header is a mistake, not a posture.
+- **Bearer tokens close the CSRF gap for this mode.** The console sends no cookie, so a foreign
+  page's form has nothing to ride. That is threat-model T-ADM-07 / #452 for OIDC deployments.
+  Gateway-cookie deployments keep #452 open.
+- **Expiry.** The console renews before expiry with the refresh token (rotating, in memory). It
+  drives that renew itself (`automaticSilentRenew: false`), through the one single-flight queue
+  OIDC-1.4 case 2 describes, so the library's timer never redeems the refresh token beside a
+  console redemption.
+  - A `401` from a service triggers one silent renew and one retry of a **read**.
+  - A **verb** is never retried automatically. It answers "your sign-in expired — sign in and
+    run it again", because a verb run twice is not a read run twice.
+  - A second `401`, or a failed renew, shows "signed out" with a sign-in button, and the triage
+    home lists every service as unreadable for that reason (D2(b)).
+- **`401` is never shown as `403`.** A `401` means "who are you" and asks for sign-in. A `403`
+  stays the server's own sentence: admin-contract R4.1's role refusal, admin-contract R1's
+  tenant refusal. The console does not
+  hide verbs from a viewer; the refusal is the explanation (case 4).
+- **The IdP is unreachable.** The console says so, names the authority, and offers a retry. It
+  does not fall back to cookie mode, because a silent mode switch would hide a misconfiguration.
+- **Sign-out** ends the console's tokens and calls the IdP's end-session endpoint when the
+  discovery document names one.
+
+### OIDC-1.6 The proof plan (G6's bar)
+
+The console smoke gains a second mode, `scripts/console-smoke.sh oidc`, and a job in
+`console-smoke.yml` and the nightly.
+- **A real IdP container: Keycloak, pinned by exact tag.** The realm is imported from a committed
+  file with three users: an operator (`goldpath-ops`), a viewer (`goldpath-ops-read`) and a user
+  with neither role. It has a public client with PKCE required and an audience mapper for both
+  services. The image is pre-pulled, and the realm file is local, so the mode runs air-gapped
+  (CLAUDE.md invariant).
+- **Two services on two origins.** Two `Goldpath.Jobs.TestHost` instances under the `openid`
+  strategy, on different ports, each with its own `Audience`, and the console allowed by
+  `AddGoldpathConsoleOrigins`. The console itself is served from a third origin by Vite, the
+  split-origin case.
+- **Journeys, in Playwright, through Keycloak's real login form:**
+  - the operator signs in once and reads both services, and a verb on each is applied;
+  - the viewer reads both, and every verb shows the server's `403` sentence;
+  - the no-role user sees both services as triage rows ("refused");
+  - a token expired in the IdP renews silently for a read, and the next verb asks to sign in
+    again;
+  - with the IdP stopped, sign-in says so;
+  - sign-out returns to the sign-in screen with the tokens gone from memory.
+- **axe stays green on every screen**, including the signed-out and IdP-unreachable states.
+- **Regression:** the existing smoke (served console, no IdP) runs unchanged and green in the
+  same job.
+- **Red proofs**, one per slice. Examples:
+  - a token sent to the wrong audience is refused by the service;
+  - a console that put the token in `sessionStorage` fails the unit fact asserting no token is in
+    web storage;
+  - a console that left `stateStore` at the library's default fails the fact asserting
+    `localStorage` stays empty through a full sign-in;
+  - a wildcard origin is refused at startup.
+
+### OIDC-1.7 Slices (each ≤ ~3 hours of agent time, in order)
+
+| Slice | Delivers | Red → green proof |
+|---|---|---|
+| C-1 | The npm licence gate. `scripts/license-gate.py`, or a sibling, reads `ui/console`'s production dependency graph from `pnpm-lock.yaml`, applies the same allowlist, and runs in `gates`. Then `oidc-client-ts@3.5.0` (exact) enters `dependencies` | A planted GPL dependency turns the gate red. The current graph is green |
+| C-2 | Server configuration: `UseOidc`, `Goldpath:Console:Oidc`, the anonymous `console.auth.json` (404 when off), the anonymous shell only when OIDC is on, and `AddService(…, audience, scopes)` | Console route tests: the auth route is anonymous and minimal; the registry stays behind the floor; with OIDC off, every route is byte-identical to today |
+| C-3 | `AddGoldpathConsoleOrigins` with preflight-before-floor, no credentials, and wildcards refused | Sdk tests: the preflight answers; the actual call still gets `401` without a token; a wildcard refuses at startup |
+| C-4 | The console signs in: `UserManager` with PKCE, in-memory user store, a `sessionStorage` state store with stale-state cleanup, redirect handling; `AdminClient` sends the bearer token with `credentials: "omit"` per service | Vitest against the **real** `oidc-client-ts` 3.5.0 `UserManager`, with only the IdP's endpoints faked: the bearer goes per service; no access or refresh token is in `localStorage` or `sessionStorage` at any point; `localStorage` stays empty through a full sign-in; the sign-in state is gone from `sessionStorage` after the callback; with no `auth.json` the console runs in case-1 mode. Leaving `stateStore` at its default turns the `localStorage` fact red. Coverage floors held |
+| C-5 | Expiry and refusals: silent renew, the one retry for reads only, a verb never retried, `401` vs `403` wording, IdP-unreachable and signed-out states, sign-out. Case 2 of OIDC-1.4: per-scope-set redemption through `OidcClient.useRefreshToken`, the console-owned token map keyed by the requested set, the rotated refresh token written back, one single-flight queue for every redemption including the default renew (`automaticSilentRenew: false`) | Vitest on each branch; a planted retry of a verb turns its fact red. Case 2, against the real `oidc-client-ts` 3.5.0 with only the token endpoint faked: refreshing for service B leaves service A's token **and** the shared refresh token usable, with rotation on. Routing the redemption through `UserManager.signinSilent` turns it red (B's token arrives with A's scope, and the default user is replaced). With rotation on, a default renew and a redemption for B issued together leave A's token, B's token and the shared refresh token usable; leaving `automaticSilentRenew` at its default `true` turns it red, deterministically: the fact uses fake timers advanced to the library's expiring notification (`expires_in` − `accessTokenExpiringNotificationTimeInSeconds`), so the library's own renew fires inside the fact rather than whenever the clock allows. An IdP that omits `scope` in the response still files B's token under B's requested set |
+| C-6 | `console-smoke.sh oidc` with Keycloak pinned, the realm file, two origins, the OIDC-1.6 journeys and axe, in `console-smoke.yml` and the nightly | The full mode green. A wrong audience on one service turns its journey red (CI link) |
+| C-7 | Docs: Console README, `ops/` runbook (Keycloak and Entra setup, the two audience shapes, CORS), upgrade guide, T10 closed, `ga-gate-status` G6 | `docs-freshness`; T10's proof is C-6's green run |
+
+### OIDC-1.8 Questions for the owner (each with a recommendation)
+
+- **Q1 — The anonymous shell.** With OIDC on, may the console's static shell and
+  `console.auth.json` be served without the floor? **Recommended: yes.** The shell carries no
+  data; the registry and every admin call stay behind the floor; and a browser cannot put a
+  bearer token on a document request. The alternative, keeping the shell behind a gateway cookie,
+  makes OIDC useless exactly where it is needed.
+- **Q2 — The library.** **`oidc-client-ts` 3.5.0, recommended.** It is maintained (3.5.0, March 2026),
+  Apache-2.0, has one MIT dependency, and no framework coupling. The
+  alternative is a hand-rolled PKCE flow, which ADR-0003 argues against.
+- **Q3 — Entra in CI.** **Recommended: no hosted tenant in CI** (no secrets, no cloud account,
+  and the air-gapped rule). The Entra shape, one token per resource, is proven at unit level and
+  documented in the runbook. A hosted proof waits for an adopter on Entra (a T10 follow-up row).
+- **Q4 — Token renewal.** **Recommended:** refresh tokens with rotation, held in memory.
+  Hidden-iframe silent renew is not used: third-party-cookie blocking in current browsers breaks
+  it.

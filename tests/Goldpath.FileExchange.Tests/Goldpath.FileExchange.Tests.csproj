@@ -20,4 +20,9 @@
     <ProjectReference Include="../../packages/Goldpath.FileExchange/Goldpath.FileExchange.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The operator the R1 rule-5 proofs sign in as, shared with the approvals surface's proof. -->
+    <Compile Include="../Goldpath.Approvals.Tests/OperatorScheme.cs" Link="Shared/OperatorScheme.cs" />
+  </ItemGroup>
+
 </Project>
