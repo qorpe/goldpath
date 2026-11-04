@@ -159,6 +159,16 @@ past means now, and a start after the end date's local day is refused. `pause` a
 `Ready` campaign, and `resume` returns it to `Ready` while its start is still ahead. A `Ready`
 campaign past its end date expires, like a running one.
 
+### Two operators, one policy (R3.5)
+
+Every applied throttle moves the campaign's `PolicyVersion` by one; nothing else moves it.
+The detail and the list return it. A caller that read version *n* can pass it to
+`ThrottleAsync(id, patch, expectedPolicyVersion: n, actor, ct)`: when somebody else's throttle
+landed in between, the call is refused (`Stale = true`) in words that name the current version
+and who changed it, and the refusal is audited as `throttle-refused`. A throttle without a
+version (scripts, R2 clients, today's HTTP route) keeps last-writer-wins. The HTTP shape — the
+version as the `ETag`, an optional `If-Match`, `412` — is admin-contract revision R4's.
+
 ## Auto-suspend on a failure ratio (R3.6)
 
 A campaign may stop itself when its target system starts failing, before the operator notices:

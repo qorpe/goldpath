@@ -98,6 +98,28 @@ the dynamic-assembly filter, the scan's catch branches, the kebab formatter on t
 builder names every endpoint), the test host's dispose branches, and its body guard, which the engine's
 own guard now makes equivalent.
 
+**Approvals was re-measured 2026-11-03**, a full run of `mutation-gate.sh Goldpath.Approvals` on the #480 branch
+(concurrent decisions: a version on the request row, a signature written with the request in one transaction, a
+unique signature key), on the local sandbox: 77.78 % → 77.87 % (2.8 minutes, the sandbox's, not the CI profile's).
+- **The first run scored 76.75 %.** The new code's survivors were the custom-store two-call path and the in-memory
+  store's stale check on that path, both without coverage, and the EF store's conflict branch, reached only by the
+  PostgreSQL proof, which is outside the mutated test project. A clock that lands a reject between a grant's read and
+  its write now reaches all three in the unit suite.
+- **Survivors left on the new lines:**
+  - The version moving by −1 instead of +1, in either store. Equivalent: any change of the token refuses the stale
+    write, and the value never returns to one already read.
+  - The in-memory atomic path's duplicate-signature check. Through the engine it is unreachable: every signature
+    write also moves the version, which refuses first. It mirrors the database's unique key in the same write.
+  - The EF store's duplicate-signature probe, `&&` → `||`, and its unique-violation branch. Only a provider error
+    other than the unique key tells them apart, and the proof for that branch is the PostgreSQL concurrency fact.
+- No threshold moved and nothing was excluded.
+
+**Archival was re-measured 2026-11-02**, a full run of `mutation-gate.sh Goldpath.Archival` on the
+#383 branch (an entry's `DueAt` is hashed and stored at the same microsecond), on the local sandbox:
+79.55 % → 79.90 % (382 mutants tested, 7.9 minutes, the sandbox's, not the CI profile's). Every
+mutant on the new lines is killed: the sign and the `%` of the truncation, and the entry's
+initializer. No threshold moved and nothing was excluded.
+
 **Bulk was re-measured 2026-10-24**, a full run of `mutation-gate.sh Goldpath.Bulk` at 6b97bc3 on
 the #300 branch (the duplicate check keeps hashes, not keys), at concurrency 1 on the local
 sandbox: 88.38 % → 88.37 % (577 mutants tested). The new `GoldpathBulkDuplicateKeys` leaves one
@@ -123,17 +145,17 @@ at f459fe2, so its row carries it (minutes not recorded).
 | Console | 91.46 % (75.00) | 21.46 | — | 75.00 %, 24.3 |
 | Bulk | 88.37 % (88.38) | 18.37 | 19.7 | never finished (timeout) |
 | Idempotency | 84.91 % (73.58) | 14.91 | 1.8 | 73.58 %, 3.3 |
-| Campaign | 83.95 % (76.30) | 13.95 | 43.4 | never finished (OOM) |
+| Campaign | 79.22 % (83.95) | 9.22 | 104 (contended) | never finished (OOM) |
 | Messaging | 82.70 % (86.09) | 12.70 | 99.8 | 80.72 %, 69.4 |
 | AuditTrail | 81.97 % | 11.97 | 5.1 | 81.97 %, 5.7 |
 | MultiTenancy | 81.40 % (72.09) | 11.40 | 6.1 | 75.58 %, 38.5 |
 | Notification | 81.23 % | 11.23 | 5.9 | never finished (OOM) |
 | DataProtection | 78.95 % | 8.95 | 1.5 | 78.95 %, 33.0 |
 | ServiceDefaults | 78.48 % (72.15) | 8.48 | 1.4 | 72.15 %, 4.3 |
-| Approvals | 77.78 % (74.84) | 7.78 | 3.4 | 74.84 %, 217.7 |
+| Approvals | 77.87 % (74.84) | 7.87 | 2.8 | 74.84 %, 217.7 |
 | Data | 77.38 % | 7.38 | 2.3 | 77.38 %, 38.0 |
 | FileExchange | 76.92 % | 6.92 | 3.6 | 76.92 %, 31.8 |
-| Archival | 79.55 % (74.49) | 9.55 | 5.1 | never finished (OOM) |
+| Archival | 79.90 % (74.49) | 9.90 | 7.9 | never finished (OOM) |
 | Analyzers | 77.37 % (72.55) | 7.37 | 3.4 | 72.55 %, 5.4 |
 | Jobs | 79.39 % (72.52) | 9.39 | 4.2 | never finished (OOM) |
 
@@ -229,6 +251,31 @@ coverage.
   audit row, because the tick's scope and its tracker are discarded at the end of the tick.
 - **Not R3-S2's:** the rest sit on the rewritten audit-text line (`Describe`), on its pre-existing
   `excludedDays` and `endDate` terms.
+
+**Campaign after R3-S4, the policy version (#298), 2026-11-01.** A full local run of
+`mutation-gate.sh Goldpath.Campaign` at d84a0d2 on the #298 branch: **79.22 %** — 1,277 mutants
+tested (1,030 killed, 11 timeouts, 236 survived, 37 without coverage), 326 tests. The run took
+104 minutes in the agent sandbox, and for 40 of them a second Stryker job shared its four cores, so
+the time is not a profile number. The drop from 83.95 % is not this slice's to explain alone: R3-S3
+(#315) and R3-S7 (#317) merged since 1c77033 and grew the scored code from 1,148 to 1,277 tested
+mutants, and no run isolated the three slices. By file, the pacer (`GoldpathCampaignJobs.cs`, 65.0 %)
+is still the weakest.
+
+On the lines R3-S4 rewrote (the throttle, from `ThrottleAsync` through the stale refusal): 70
+killed, 16 survived, 3 without coverage.
+- **Killed afterwards by four facts in `R3PolicyVersionTests`, each red against its mutant:**
+  - the retry bound (`<` → `<=`), by `AThrottleThatLosesEveryRace_StopsAfterEightAttempts_…`. The
+    `attempt++` → `attempt--` mutant loops forever under the same fact and dies by timeout; that one
+    is reasoned, not re-run.
+  - the stale refusal's "who moved it" lookup, `OrderByDescending` → `OrderBy` and `&&` → `||`, by
+    `AStaleRefusal_NamesTheNewestThrottleOfThisCampaign_…`;
+  - the terminal-state pattern (`or` → `and`), by `EveryTerminalState_RefusesTheThrottle_…`;
+  - the three mutants on the excluded-days column (`null` ↔ `""`, and the separator), by
+    `ClearedExcludedDays_AreStoredAsNoValue_…`.
+- **Not R3-S4's:** the other eight survivors and three without coverage sit in the patch validation
+  (the positive-values check, the unknown-day and seven-day messages) and the "already started"
+  message. Those lines moved verbatim from the shipped throttle into `ThrottleRefusal` and
+  `ApplyThrottle`, and the shipped tests assert only `Ok = false` on them.
 
 **Campaign after R3-S10, auto-suspend (#299), 2026-11-02.** A full local run of
 `mutation-gate.sh Goldpath.Campaign` at ba32e9a on the #299 branch scored **78.87 %**: 1,409 mutants tested,

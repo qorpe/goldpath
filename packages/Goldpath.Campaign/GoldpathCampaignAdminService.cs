@@ -61,7 +61,24 @@ public sealed record GoldpathCampaignInfo(
     /// only while a ratio is set.
     /// </summary>
     public double? FailureRatioNow { get; init; }
+
+    /// <summary>
+    /// The policy version (R3.5): incremented by every APPLIED throttle and by nothing else. A
+    /// throttle that names the version it read is refused when the policy moved since.
+    /// </summary>
+    public long PolicyVersion { get; init; }
 }
+
+/// <summary>
+/// What a versioned throttle did (R3.5). <paramref name="PolicyVersion"/> is the version the call
+/// wrote, or the one it last read when it applied nothing (0 when no campaign exists); <paramref name="Stale"/> is true only when
+/// the throttle named a version the policy no longer has, so a caller can map it (admin-contract R4: 412).
+/// </summary>
+/// <param name="Ok">True when the patch was applied.</param>
+/// <param name="Message">The server's words: the outcome, or why it was refused.</param>
+/// <param name="PolicyVersion">The policy version the call wrote, or last read when it applied nothing.</param>
+/// <param name="Stale">True when the refusal is a stale expected version.</param>
+public sealed record GoldpathCampaignThrottleResult(bool Ok, string Message, long PolicyVersion, bool Stale);
 
 /// <summary>One failed item (the drill-down; REPLAY delegates to the jobs console).</summary>
 public sealed record GoldpathCampaignFailedItem(long Seq, string? Error, DateTimeOffset? CompletedAt);
@@ -117,6 +134,9 @@ public sealed record GoldpathCampaignThrottle(
 public sealed class GoldpathCampaignAdminService<TContext>
     where TContext : DbContext
 {
+    /// <summary>How many conditional updates one throttle attempts before it reports the races it lost.</summary>
+    private const int ThrottleAttempts = 8;
+
     private readonly GoldpathCampaignOptions _options;
     private readonly GoldpathCampaignEngine<TContext> _engine;
     private readonly IServiceScopeFactory _scopeFactory;
@@ -327,20 +347,126 @@ public sealed class GoldpathCampaignAdminService<TContext>
         return new GoldpathAdminResult(true, $"Campaign aborted; {stamped} unsent items stamped Aborted (claimed items drain).");
     }
 
-    /// <summary>The LIVE throttle (D6): patches policy on the row; takes effect within one leader tick.</summary>
-    public Task<GoldpathAdminResult> ThrottleAsync(Guid id, GoldpathCampaignThrottle patch, string actor, CancellationToken ct)
+    /// <summary>
+    /// The LIVE throttle (D6): patches policy on the row; takes effect within one leader tick.
+    /// Last writer wins (R3.5): the shipped shape, kept for scripts and R2 clients.
+    /// </summary>
+    public async Task<GoldpathAdminResult> ThrottleAsync(Guid id, GoldpathCampaignThrottle patch, string actor, CancellationToken ct)
+    {
+        var result = await ThrottleAsync(id, patch, expectedPolicyVersion: null, actor, ct);
+        return new GoldpathAdminResult(result.Ok, result.Message);
+    }
+
+    /// <summary>
+    /// The LIVE throttle with the campaign half of optimistic concurrency (R3.5). Each attempt is
+    /// one conditional update — the patched policy columns and <c>PolicyVersion + 1</c>, where the
+    /// row still has the state and the policy version this call read. With
+    /// <paramref name="expectedPolicyVersion"/>, a policy that moved since is refused (and audited
+    /// as <c>throttle-refused</c>); without it, a lost race is re-read and re-applied, so the last
+    /// writer wins and the version still moves once per applied throttle.
+    /// </summary>
+    public async Task<GoldpathCampaignThrottleResult> ThrottleAsync(
+        Guid id, GoldpathCampaignThrottle patch, long? expectedPolicyVersion, string actor, CancellationToken ct)
+    {
+        var invalid = ThrottleRefusal(patch);
+        if (invalid is null && patch.SuspendOnFailureRatio is not null && !patch.ClearSuspendOnFailureRatio)
+        {
+            // R3.6: a ratio switched on judges outcomes from now on. The window restarts BEFORE the
+            // policy is written, so no tick can read the new ratio against the old counters; a
+            // throttle refused below leaves a restarted window and no ratio, which changes nothing. Only a
+            // live campaign with no ratio yet, whose new suspend policy will stand, is touched at all.
+            var now = _time.GetUtcNow();
+            await RestartWindowAsync(id, row => row.SuspendOnFailureRatio is null && !IsTerminal(row.State)
+                && SuspendRefusal(Apply(GoldpathCampaignEngine<TContext>.PolicyOf(row), patch, now)) is null, ct);
+        }
+
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TContext>();
+        var lastVersion = 0L;
+        for (var attempt = 0; attempt < ThrottleAttempts; attempt++)
+        {
+            // Read without tracking: the throttle writes through its own conditional update, never
+            // through SaveChanges, so the State token cannot fail it and it cannot clobber the pacer.
+            var campaign = await db.Set<GoldpathCampaign>().AsNoTracking().SingleOrDefaultAsync(c => c.Id == id, ct);
+            if (campaign is null)
+            {
+                // A nonsense patch is named before a missing campaign, exactly as the shipped verb did.
+                return new GoldpathCampaignThrottleResult(false, invalid ?? $"No campaign {id:N}.", 0, Stale: false);
+            }
+
+            var readState = campaign.State;
+            var readVersion = campaign.PolicyVersion;
+            lastVersion = readVersion;
+            if (invalid is not null)
+            {
+                return new GoldpathCampaignThrottleResult(false, invalid, readVersion, Stale: false);
+            }
+
+            if (expectedPolicyVersion is { } expected && expected != readVersion)
+            {
+                return await StaleAsync(db, campaign, expected, actor, ct);
+            }
+
+            if (ApplyThrottle(campaign, patch, actor, out var verb) is { } refusal)
+            {
+                return new GoldpathCampaignThrottleResult(false, refusal, readVersion, Stale: false);
+            }
+
+            var applied = await db.Set<GoldpathCampaign>()
+                .Where(c => c.Id == id && c.State == readState && c.PolicyVersion == readVersion)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(c => c.Tps, campaign.Tps)
+                    .SetProperty(c => c.DailyQuota, campaign.DailyQuota)
+                    .SetProperty(c => c.MaxInFlight, campaign.MaxInFlight)
+                    .SetProperty(c => c.WindowStart, campaign.WindowStart)
+                    .SetProperty(c => c.WindowEnd, campaign.WindowEnd)
+                    .SetProperty(c => c.TimeZoneId, campaign.TimeZoneId)
+                    .SetProperty(c => c.ExcludedDays, campaign.ExcludedDays)
+                    .SetProperty(c => c.EndDate, campaign.EndDate)
+                    .SetProperty(c => c.MaxAttempts, campaign.MaxAttempts)
+                    .SetProperty(c => c.Priority, campaign.Priority)
+                    .SetProperty(c => c.StartAt, campaign.StartAt)
+                    .SetProperty(c => c.SuspendOnFailureRatio, campaign.SuspendOnFailureRatio)
+                    .SetProperty(c => c.SuspendWindow, campaign.SuspendWindow)
+                    .SetProperty(c => c.SuspendMinSample, campaign.SuspendMinSample)
+                    .SetProperty(c => c.LastVerb, campaign.LastVerb)
+                    .SetProperty(c => c.PolicyVersion, c => c.PolicyVersion + 1), ct);
+            if (applied == 1)
+            {
+                var version = readVersion + 1;
+                // The audit detail stays the verb text exactly (old -> new), bounded to the audit row's
+                // 1024 rather than LastVerb's 512 (R3.6); the version rides the result.
+                await AuditAsync(db, id, "throttle", actor, Bound(verb, 1024), ct);
+                _logger.LogInformation("Campaign {CampaignId}: throttle by {Actor} (policy version {PolicyVersion}).", id, actor, version);
+                return new GoldpathCampaignThrottleResult(true,
+                    $"throttle: '{campaign.Name}' is now {readState}.",
+                    version, Stale: false);
+            }
+
+            // Lost the race: the state or the policy moved between the read and the update. Re-read;
+            // a versioned throttle is refused there if it was the policy, and re-applied if it was only the state.
+        }
+
+        return new GoldpathCampaignThrottleResult(false,
+            string.Create(CultureInfo.InvariantCulture,
+                $"The throttle lost {ThrottleAttempts} races in a row to concurrent changes on campaign {id:N} — nothing was applied; re-read and retry."),
+            lastVersion, Stale: false);
+    }
+
+    /// <summary>Why a patch is nonsense on any campaign, or null (checked before the row matters).</summary>
+    private static string? ThrottleRefusal(GoldpathCampaignThrottle patch)
     {
         if (patch.Tps is <= 0 || patch.MaxInFlight is <= 0 || patch.DailyQuota is <= 0 || patch.MaxAttempts is <= 0
             || patch.SuspendWindow is <= 0 || patch.SuspendMinSample is <= 0)
         {
-            return Task.FromResult(new GoldpathAdminResult(false, "Throttle values must be positive."));
+            return "Throttle values must be positive.";
         }
 
         if (patch.SuspendOnFailureRatio is { } ratio && !patch.ClearSuspendOnFailureRatio
             && SuspendRefusal(new GoldpathCampaignPolicy(1, null, 1, null, null, "UTC") { SuspendOnFailureRatio = ratio }) is { } ratioRefusal)
         {
             // Refused before anything is written: switching a ratio on restarts the window first.
-            return Task.FromResult(new GoldpathAdminResult(false, ratioRefusal));
+            return ratioRefusal;
         }
 
         if (patch.ExcludedDays is { } days)
@@ -348,13 +474,13 @@ public sealed class GoldpathCampaignAdminService<TContext>
             var unknown = days.Where(day => !Enum.TryParse<DayOfWeek>(day, ignoreCase: true, out _)).ToArray();
             if (unknown.Length > 0)
             {
-                return Task.FromResult(new GoldpathAdminResult(false, $"Unknown day '{unknown[0]}' — use English day names (Saturday, Sunday…)."));
+                return $"Unknown day '{unknown[0]}' — use English day names (Saturday, Sunday…).";
             }
 
             if (GoldpathCampaignPolicy.ParseDays(string.Join(",", days)).Count == 7)
             {
                 // Seven excluded days is a pause wearing a policy's clothes — say so.
-                return Task.FromResult(new GoldpathAdminResult(false, "Every day excluded would never release — pause the campaign instead."));
+                return "Every day excluded would never release — pause the campaign instead.";
             }
         }
 
@@ -366,72 +492,62 @@ public sealed class GoldpathCampaignAdminService<TContext>
             }
             catch (TimeZoneNotFoundException)
             {
-                return Task.FromResult(new GoldpathAdminResult(false, $"Unknown timezone '{tz}'."));
+                return $"Unknown timezone '{tz}'.";
             }
         }
 
-        return ThrottleCoreAsync(id, patch, actor, ct);
+        return null;
     }
 
-    private async Task<GoldpathAdminResult> ThrottleCoreAsync(Guid id, GoldpathCampaignThrottle patch, string actor, CancellationToken ct)
+    /// <summary>
+    /// Applies the patch to a detached read of the row, or says why it cannot stand there.
+    /// <paramref name="verb"/> is the full old -> new text for the audit row (up to 1024); the row's
+    /// own <see cref="GoldpathCampaign.LastVerb"/> keeps it bounded to its 512.
+    /// </summary>
+    private string? ApplyThrottle(GoldpathCampaign campaign, GoldpathCampaignThrottle patch, string actor, out string verb)
     {
-        if (patch.SuspendOnFailureRatio is not null && !patch.ClearSuspendOnFailureRatio)
+        verb = "";
+        if (IsTerminal(campaign.State))
         {
-            // R3.6: a ratio switched on judges outcomes from now on. The window restarts BEFORE the
-            // policy is written, so no tick can read the new ratio against the old counters; a
-            // throttle refused below leaves a restarted window and no ratio, which changes nothing. Only a
-            // live campaign with no ratio yet, whose new suspend policy will stand, is touched at all.
-            var now = _time.GetUtcNow();
-            await RestartWindowAsync(id, row => row.SuspendOnFailureRatio is null && !IsTerminal(row.State)
-                && SuspendRefusal(Apply(GoldpathCampaignEngine<TContext>.PolicyOf(row), patch, now)) is null, ct);
+            return $"'{campaign.Name}' is terminal ({campaign.State}) — nothing left to throttle.";
         }
 
-        string? verb = null;
-        return await MutateAsync(id, "throttle", actor, detail: null, campaign =>
+        var now = _time.GetUtcNow();
+        if ((patch.StartAt is not null || patch.ClearStartAt)
+            && (campaign.State == GoldpathCampaignState.Running || campaign.ReleasedThrough > 0))
         {
-            if (campaign.State is GoldpathCampaignState.Completed or GoldpathCampaignState.CompletedWithFailures
-                or GoldpathCampaignState.Aborted or GoldpathCampaignState.ExpiredIncomplete)
-            {
-                return $"'{campaign.Name}' is terminal ({campaign.State}) — nothing left to throttle.";
-            }
+            return string.Create(CultureInfo.InvariantCulture,
+                $"'{campaign.Name}' has already started ({campaign.State}, {campaign.ReleasedThrough} released) — a scheduled start moves only before the campaign starts; to hold it, pause it, or lower its Tps.");
+        }
 
-            var now = _time.GetUtcNow();
-            if ((patch.StartAt is not null || patch.ClearStartAt)
-                && (campaign.State == GoldpathCampaignState.Running || campaign.ReleasedThrough > 0))
-            {
-                return string.Create(CultureInfo.InvariantCulture,
-                    $"'{campaign.Name}' has already started ({campaign.State}, {campaign.ReleasedThrough} released) — a scheduled start moves only before the campaign starts; to hold it, pause it, or lower its Tps.");
-            }
+        var current = GoldpathCampaignEngine<TContext>.PolicyOf(campaign);
+        var effective = Apply(current, patch, now);
+        if ((StartRefusal(effective, now) ?? SuspendRefusal(effective)) is { } refusal)
+        {
+            return refusal;
+        }
 
-            var current = GoldpathCampaignEngine<TContext>.PolicyOf(campaign);
-            var effective = Apply(current, patch, now);
-            if ((StartRefusal(effective, now) ?? SuspendRefusal(effective)) is { } refusal)
-            {
-                return refusal;
-            }
-
-            var showStart = current.StartAt is not null || effective.StartAt is not null;
-            var showSuspend = ShowsSuspend(current, effective);
-            var before = Describe(current, showStart, showSuspend);
-            campaign.Tps = effective.Tps;
-            campaign.DailyQuota = effective.DailyQuota;
-            campaign.MaxInFlight = effective.MaxInFlight;
-            campaign.WindowStart = effective.WindowStart;
-            campaign.WindowEnd = effective.WindowEnd;
-            campaign.TimeZoneId = effective.TimeZoneId;
-            campaign.ExcludedDays = effective.ExcludedDays.Count == 0 ? null : string.Join(",", effective.ExcludedDays);
-            campaign.EndDate = effective.EndDate;
-            campaign.MaxAttempts = effective.MaxAttempts;
-            campaign.Priority = effective.Priority;
-            campaign.StartAt = effective.StartAt;
-            campaign.SuspendOnFailureRatio = effective.SuspendOnFailureRatio;
-            campaign.SuspendWindow = effective.SuspendWindow;
-            campaign.SuspendMinSample = effective.SuspendMinSample;
-            verb = $"throttled by {actor}: {before} -> {Describe(effective, showStart, showSuspend)}";
-            // Both sides of a wide policy can outgrow the row's 512; the audit row keeps up to 1024.
-            campaign.LastVerb = Bound(verb, 512);
-            return null;
-        }, ct, detailFactory: _ => Bound(verb!, 1024));
+        var showStart = current.StartAt is not null || effective.StartAt is not null;
+        var showSuspend = ShowsSuspend(current, effective);
+        var before = Describe(current, showStart, showSuspend);
+        campaign.Tps = effective.Tps;
+        campaign.DailyQuota = effective.DailyQuota;
+        campaign.MaxInFlight = effective.MaxInFlight;
+        campaign.WindowStart = effective.WindowStart;
+        campaign.WindowEnd = effective.WindowEnd;
+        campaign.TimeZoneId = effective.TimeZoneId;
+        campaign.ExcludedDays = effective.ExcludedDays.Count == 0 ? null : string.Join(",", effective.ExcludedDays);
+        campaign.EndDate = effective.EndDate;
+        campaign.MaxAttempts = effective.MaxAttempts;
+        campaign.Priority = effective.Priority;
+        campaign.StartAt = effective.StartAt;
+        campaign.SuspendOnFailureRatio = effective.SuspendOnFailureRatio;
+        campaign.SuspendWindow = effective.SuspendWindow;
+        campaign.SuspendMinSample = effective.SuspendMinSample;
+        verb = $"throttled by {actor}: {before} -> {Describe(effective, showStart, showSuspend)}";
+        // Both sides of a wide policy can outgrow the row's 512; the audit row keeps up to 1024.
+        campaign.LastVerb = Bound(verb, 512);
+        return null;
     }
 
     /// <summary>True for the four states no verb but replay moves a campaign out of.</summary>
@@ -460,6 +576,32 @@ public sealed class GoldpathCampaignAdminService<TContext>
 
         await GoldpathCampaignEngine<TContext>.RestartWindowAsync(
             db, id, read.WindowOutcomes, read.WindowFailures, _time.GetUtcNow(), ct);
+    }
+
+    /// <summary>
+    /// Refuses a throttle whose expected version the policy no longer has (R3.5), in the server's
+    /// words — the current version, and who moved it when — and audits the refusal with both versions.
+    /// </summary>
+    private async Task<GoldpathCampaignThrottleResult> StaleAsync(
+        TContext db, GoldpathCampaign campaign, long expected, string actor, CancellationToken ct)
+    {
+        // Who moved it is the newest applied throttle's audit row. That row is written just after
+        // its update commits, so a refusal landing in that instant names the throttle before it;
+        // the version it reports is the row's own, always.
+        var last = await db.Set<GoldpathCampaignAudit>().AsNoTracking()
+            .Where(a => a.CampaignId == campaign.Id && a.Action == "throttle")
+            .OrderByDescending(a => a.Id)
+            .FirstOrDefaultAsync(ct);
+        var message = last is null
+            ? string.Create(CultureInfo.InvariantCulture,
+                $"You named policy version {expected} of '{campaign.Name}', but its policy has never changed (version {campaign.PolicyVersion}) — re-read and retry.")
+            : string.Create(CultureInfo.InvariantCulture,
+                $"The policy of '{campaign.Name}' changed since you read it (version {campaign.PolicyVersion}, by {last.Actor} at {last.At.UtcDateTime:yyyy-MM-ddTHH:mm:ss}Z; you read version {expected}) — re-read and retry.");
+        await AuditAsync(db, campaign.Id, "throttle-refused", actor,
+            string.Create(CultureInfo.InvariantCulture, $"expected policy version {expected}, current {campaign.PolicyVersion}"), ct);
+        _logger.LogInformation("Campaign {CampaignId}: throttle by {Actor} refused stale (expected policy version {Expected}, current {Current}).",
+            campaign.Id, actor, expected, campaign.PolicyVersion);
+        return new GoldpathCampaignThrottleResult(false, message, campaign.PolicyVersion, Stale: true);
     }
 
     private async Task<GoldpathAdminResult> MutateAsync(
@@ -532,6 +674,7 @@ public sealed class GoldpathCampaignAdminService<TContext>
             SuspendMinSample = policy.SuspendMinSample,
             SuspendedReason = c.SuspendedReason,
             FailureRatioNow = c.WindowOutcomes > 0 ? c.WindowFailures / (double)c.WindowOutcomes : null,
+            PolicyVersion = c.PolicyVersion,
         };
     }
 
