@@ -99,7 +99,8 @@ heading was inverted. The third column is the only column that is a fact.
 ## 6. The matrix today (docs-freshness gate keeps this table honest)
 
 Every shape below runs nightly via `scripts/validate-gm.sh` — pack → generate → build →
-spec-lint → smoke with real containers; the shapes marked **PR** also run on every pull
+spec-lint → smoke with real containers (GmOffline through `scripts/validate-gm-offline.sh`, which
+runs it a second time with the network denied); the shapes marked **PR** also run on every pull
 request that touches what a generated app is built from (§6a). The list lives in
 [`.github/gm-shapes.yml`](../../.github/gm-shapes.yml), which `gm.yml` reads for both lanes;
 a shape there and a row here may not drift apart, nor may the Runs column and the file's
@@ -130,6 +131,7 @@ a shape there and a row here may not drift apart, nor may the Runs column and th
 | GmWorkerJobs | worker `--trigger jobs` | jobs-profile worker shape | nightly |
 | GmWorkerJobsAuthed | worker `--trigger jobs --db sqlserver --auth openid --features audittrail,softdelete,locking,fileexchange` | worker concept parity (T25): the management head's auth floor UP — admin surface and console answer 401; the jobs store provider flip on SQL Server | PR + nightly |
 | GmWorkerQueueFeatures | worker `--features multitenancy,audittrail,softdelete,dataprotection,locking,notification --auth none` | worker concept parity (T25): the tenant rides the message header, the riders bring the jobs runtime next to the inbox, the console SERVES from the worker's head | PR + nightly |
+| GmOffline | `--auth none` (postgres, rabbitmq), run by `validate-gm-offline.sh` | the air-gapped install (GA gate G14): the shape once connected, to fill a local NuGet feed with the closure the app, its `dotnet-ef` tool and the CLI restore and a local registry with every image its containers ran; then again with outbound network denied (nuget.org and Docker Hub checked unreachable first), restoring into an empty packages folder from that feed alone, through `goldpath db bundle`, the bundle applied twice to a real PostgreSQL, and the smoke. Steps: [air-gapped install](../ops/air-gapped-install.md) | nightly |
 
 ## 6a. At PR time — the covering subset (open-threads T30)
 

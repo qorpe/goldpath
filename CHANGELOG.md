@@ -214,6 +214,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     `integration` job excludes `Category=Oracle`. `nightly.yml` runs the same filter.
   - **Advisories:** of ODP.NET's six transitive packages only `System.Security.Cryptography.Pkcs`
     8.0.1 carries advisories. It resolves to the existing central lift, 10.0.13.
+- **The air-gapped install, proven by a golden-manifest shape (GA gate G14, #338).** CI only: no package
+  or template change.
+  - **The shape:** `GmOffline` (`.github/gm-shapes.yml`, nightly) runs through the new `scripts/validate-gm-offline.sh`.
+  - **Connected run:** `validate-gm.sh` runs the shape with its global-packages folder emptied after the repository's pack, so
+    the folder ends holding exactly the closure the app, its pinned `dotnet-ef` and the CLI restore. Every image a container ran is pushed to a
+    registry on 127.0.0.1 and removed from the daemon.
+  - **Denied run:** the denial is scoped to the run, not the host: the script and the Docker daemon move into their own
+    cgroup-v2 group, and iptables rejects all non-loopback, non-bridge egress from that group, including a local proxy's
+    port, so a CI runner keeps its own connection to GitHub. The rules and the group are removed on exit and on
+    INT/TERM/HUP (a CI cancel or timeout). The script refuses to go on unless nuget.org and Docker Hub are unreachable. The shape then runs again into an empty packages
+    folder, its `nuget.config` naming the flattened feed alone, through `goldpath db bundle`, the bundle applied twice to
+    a real PostgreSQL (the second must apply nothing), and the smoke.
+  - **Planted fault:** `GOLDPATH_GM_OFFLINE_DROP=<package id>` removes one package from the feed, and the restore must fail with
+    NU1101.
+  - **`validate-gm.sh`:** gains four knobs that only this shape sets: `GOLDPATH_GM_APP_PACKAGES`, `GOLDPATH_GM_FEED_ONLY`,
+    `GOLDPATH_GM_CLI_NO_BUILD` and `GOLDPATH_GM_BEFORE_SMOKE`. Every other shape runs exactly as before.
+  - **Docs:** the steps, by hand, are `docs/ops/air-gapped-install.md`. What one shape leaves uncovered is open-threads T56.
 - **The second messaging engine runs the conformance suite: a Wolverine adapter, and the engine contract
   it plugs into (GA gate G5 Part 1/5, #330).**
   - **`Goldpath.Messaging`:** the engine contract of RFC goldpath-messaging-engines §4.1 row 5, built

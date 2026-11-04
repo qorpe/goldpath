@@ -106,4 +106,6 @@ scanner. CodeQL's actions are pinned to a commit and the ZAP image to a digest.
 - Classified fields are masked at the boundary, and the console masks them again on render —
   defence in depth, deliberately duplicated.
 - Air-gapped installation is a first-class scenario: nothing in a generated app phones home,
-  and every dependency is pinned. There is no runtime licence check anywhere in Goldpath.
+  and every dependency is pinned. There is no runtime licence check anywhere in Goldpath. The
+  nightly GmOffline shape installs, migrates and smokes a generated app with outbound network
+  denied ([docs/ops/air-gapped-install.md](docs/ops/air-gapped-install.md)).
