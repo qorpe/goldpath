@@ -784,6 +784,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   campaign stayed `Processing` forever — the stale-claim sweep visited only campaigns
   releasing that tick. It now reaches every campaign with work in flight.
 
+### Security
+- **Approvals and FileExchange admin surfaces demand the all-tenants privilege on a multi-tenant app (admin
+  contract R1 rule 5, #481).** Neither store carries a tenant column, but neither group applied the rule campaign and
+  archival apply. So an operator scoped to tenant A could read every tenant's approval requests and trails and
+  **decide** them, and read every rail's files and quarantined rows with their reasons. Both groups now call
+  `AdminTenantScope.RequireAllTenantsAsync`, and a tenant-scoped operator gets `403` naming
+  `goldpath-ops-all-tenants`. Single-tenant apps are unchanged. Proven over HTTP behind the real ops floor by
+  `ApprovalAdminTenantScopeTests` and `FileExchangeAdminTenantScopeTests`. Upgrade note: `docs/upgrades/0.1.0-preview.10.md`.
+
 ## [0.1.0-preview.9] - 2026-10-19
 
 The repair train — and the security train. preview.8 shipped four ways for a generated or grown
