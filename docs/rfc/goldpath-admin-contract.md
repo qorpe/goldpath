@@ -91,7 +91,10 @@ versioning note per H7).
 Decisions run the engine unchanged: the caller's principal is the decider, so four-eyes,
 distinct-eyes, the rung's role and the mandatory rejection reason all hold on this surface
 exactly as anywhere else. The store is not tenant-scoped (the approvals model predates R1's
-scoping and carries no tenant column), so no `?tenant=` parameter exists to lie with.
+scoping and carries no tenant column), so no `?tenant=` parameter exists to lie with. **R1 rule 5
+applies** (#481): on a multi-tenant app the WHOLE surface, both reads and both decisions, demands
+`GoldpathPolicies.OpsAllTenants`, and a tenant-scoped operator gets `403`. Single-tenant apps are
+unchanged.
 
 ### fileexchange — `/goldpath/admin/fileexchange` (T22 console federation, 2026-09-03; read-only)
 | Method | Route | Returns |
@@ -106,7 +109,9 @@ and its pick-up job, and re-delivering it IS the reprocess (the engine dedups on
 only pretend. The reads ride a separate `IGoldpathFileLedgerQueries` seam both shipped ledgers
 implement; a custom ledger without it makes `MapGoldpathFileExchangeAdmin` refuse at STARTUP
 with the teaching text. Not tenant-scoped (the ledger carries no tenant column), so no
-`?tenant=` parameter exists to lie with.
+`?tenant=` parameter exists to lie with. **R1 rule 5 applies** (#481): on a multi-tenant app every
+read demands `GoldpathPolicies.OpsAllTenants`, and a tenant-scoped operator gets `403`.
+Single-tenant apps are unchanged.
 
 ## Freeze mechanics
 
@@ -150,7 +155,8 @@ lets any operator read every tenant's batches, evidence and archives.
    endpoints call — not per-module reimplementations. The ADR-0005 companion analyzer
    rule (`GP0904`: an admin endpoint taking a tenant parameter without the seam — 0902 was taken) follows
    in the same preview.3 train.
-5. **Surfaces without tenant-stamped rows (campaign)** are inherently cross-tenant on a
+5. **Surfaces without tenant-stamped rows (campaign; approvals and fileexchange, which were
+   added after R1 and joined the rule in #481)** are inherently cross-tenant on a
    multi-tenant app: the WHOLE surface demands `GoldpathPolicies.OpsAllTenants` (an
    endpoint filter on the group). Single-tenant apps see no change.
 6. **The same logic per-endpoint where a single surface mixes both kinds** (review-agent
