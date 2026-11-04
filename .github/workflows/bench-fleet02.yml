@@ -1,0 +1,64 @@
+# S-FLEET-02's repeatable lane (#349; the rig spec the owner signed on #326, point 6): the same
+# scenario as the Mac `bench` VM, on a GitHub-hosted runner (ubuntu-latest, 4 vCPU / 16 GB) inside
+# its 6-hour job cap, on the FULL 30M dataset. Its number is the repeatable one, published beside
+# the Mac number with its own hardware line (host.txt). Dispatch only: it is hours long and is
+# never part of bench.yml's monthly `Category=Bench` run (the fact is opt-in, GOLDPATH_BENCH_FLEET02).
+name: bench-fleet02
+
+on:
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: 'Synthetic targets to seed (the signed spec: 30000000, never shrunk for a result)'
+        default: '30000000'
+      seconds:
+        description: 'The measured window in seconds (the signed spec: 3600)'
+        default: '3600'
+      tps:
+        description: 'The configured rate (the plan: 2000)'
+        default: '2000'
+
+permissions:
+  contents: read
+
+jobs:
+  fleet02:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: S-FLEET-02 (real containers, headroom every 10 s)
+        env:
+          TARGETS: ${{ inputs.targets }}
+          SECONDS_IN: ${{ inputs.seconds }}
+          TPS: ${{ inputs.tps }}
+        run: |
+          # Inputs reach the shell as environment, never as interpolated script text.
+          for v in "$TARGETS" "$SECONDS_IN" "$TPS"; do
+            [[ "$v" =~ ^[1-9][0-9]{0,9}$ ]] || { echo "inputs must be positive integers, got '$v'" >&2; exit 2; }
+          done
+          GOLDPATH_BENCH_OUT="$RUNNER_TEMP/fleet02" \
+          GOLDPATH_BENCH_CAMPAIGN_TARGETS="$TARGETS" \
+          GOLDPATH_BENCH_CAMPAIGN_SECONDS="$SECONDS_IN" \
+          GOLDPATH_BENCH_CAMPAIGN_TPS="$TPS" \
+            scripts/bench-campaign.sh fleet02
+      - name: verdict → job summary
+        if: always()
+        run: |
+          echo '## S-FLEET-02, runner lane (ubuntu-latest)' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/fleet02/host.txt" "$RUNNER_TEMP/fleet02/verdict.txt" >> "$GITHUB_STEP_SUMMARY" 2>/dev/null \
+            || echo "no verdict written" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        # The raw series is the evidence the report cites: keep it the 90 days a report needs.
+        if: always()
+        with:
+          name: fleet02-${{ github.run_id }}
+          path: ${{ runner.temp }}/fleet02
+          retention-days: 90
