@@ -40,6 +40,9 @@ public static class GoldpathCampaignMetrics
     private static readonly Counter<long> TuningReloadRefusedTotal = Meter.CreateCounter<long>(
         "goldpath_campaign_tuning_reload_refused_total", description: "Reloads of Goldpath:Campaign refused for an invalid value; the previous values stayed in force (R3.3).");
 
+    private static readonly Counter<long> SuspendedTotal = Meter.CreateCounter<long>(
+        "goldpath_campaign_suspended_total", description: "Campaigns the pacer suspended because their failure ratio crossed the policy's threshold (R3.6).");
+
     private static readonly Counter<long> OutcomesTotal = Meter.CreateCounter<long>(
         "goldpath_campaign_outcomes_total",
         description: "Outcomes the sink applied, per campaign type, outcome (succeeded, accepted, retry, failed) and the provider's error code (R2.1).");
@@ -133,6 +136,9 @@ public static class GoldpathCampaignMetrics
             FailedTotal.Add(failed, tag);
         }
     }
+
+    internal static void Suspended(string type)
+        => SuspendedTotal.Add(1, new KeyValuePair<string, object?>("type", type));
 
     /// <summary>
     /// What the sink applied, counted by the rows it moved: <paramref name="outcome"/> is

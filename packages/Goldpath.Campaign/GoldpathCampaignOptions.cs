@@ -89,6 +89,24 @@ public sealed record GoldpathCampaignPolicy(
     /// </summary>
     public DateTimeOffset? StartAt { get; init; }
 
+    /// <summary>
+    /// The failure ratio at or above which the pacer suspends the campaign (R3.6), in (0, 1];
+    /// null = never (the default). Every completed attempt counts, retryable failures included.
+    /// </summary>
+    public double? SuspendOnFailureRatio { get; init; }
+
+    /// <summary>The outcomes the failure ratio is measured over before its window restarts (R3.6); 1,000 by default.</summary>
+    public int SuspendWindow { get; init; } = DefaultSuspendWindow;
+
+    /// <summary>The outcomes a window must hold before its ratio may suspend the campaign (R3.6); 100 by default.</summary>
+    public int SuspendMinSample { get; init; } = DefaultSuspendMinSample;
+
+    /// <summary>The window a row without one is measured over (R3.6; owner decision Q3).</summary>
+    internal const int DefaultSuspendWindow = 1_000;
+
+    /// <summary>The minimum sample a row without one waits for (R3.6; owner decision 2026-10-20).</summary>
+    internal const int DefaultSuspendMinSample = 100;
+
     /// <summary>True when <paramref name="utcNow"/> falls inside the send window (always true when no window).</summary>
     public bool IsWindowOpen(DateTimeOffset utcNow)
     {

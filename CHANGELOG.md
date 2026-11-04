@@ -120,6 +120,47 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     faults turn them red: no `PolicyVersion + 1` (8 of 17 red), a single attempt with no re-read (5 red), no
     version check (4 red), and no `State` guard in the conditional `WHERE` (1 red). `CampaignPolicyVersionPostgresTests` and an `OracleDataTests` fact (`Category=Oracle`, 19c form) run
     the conditional update on real PostgreSQL 17 and Oracle Free, every policy column included.
+- **Campaign: auto-suspend on a failure ratio, and the `Suspended` state (campaign RFC R3.6, slice R3-S10, #299).**
+  - **What it adds:** `SuspendOnFailureRatio` (in (0, 1]; null, the default, = never), `SuspendWindow`
+    (1,000) and `SuspendMinSample` (100) on the policy and the throttle (with `ClearSuspendOnFailureRatio`);
+    `SuspendedReason` and `FailureRatioNow` beside them on the detail. Additions only; the columns came
+    with R3-S1's schema, and a row without a window or sample reads the defaults.
+  - **Counting:** `WindowOutcomes` and `WindowFailures` ride the campaign `UPDATE` the sink's flush
+    already runs, and the stale-claim sweep's update: no extra write. Every completed attempt is an
+    outcome; a retryable failure, an `ACK_TIMEOUT` and an interrupted claim are failures; an
+    acceptance is not an outcome until it settles. Counted by rows touched, so a duplicate outcome
+    moves nothing.
+  - **The pacer's evaluation:** each tick, for a `Running` campaign with a ratio set, from the row it
+    loaded and before anything releases: at least `SuspendMinSample` outcomes at or above the ratio →
+    `Suspended`, through one conditional update on the state AND the ratio it read (a pause, an abort or
+    a throttle that cleared the ratio wins the race). Otherwise, at `SuspendWindow` outcomes, the window
+    restarts by subtracting what was read, never by zeroing, so an outcome flushed in between is kept.
+  - **The reason:** culture-invariant, e.g. *failure ratio 0.52 ≥ 0.3 over 400 outcomes since
+    2026-11-02T07:42:05Z (minimum sample 100); most frequent code TIMEOUT (61%)*, the code from one
+    read of at most 500 of the window's `Failed`/`AwaitingRetry` rows. Audited `suspend` with the actor
+    `system`, and counted in the new `goldpath_campaign_suspended_total{type}`.
+  - **The verbs:** `resume` accepts `Suspended`; it restarts the window before the state flips (so no
+    tick can judge the resumed campaign on the failures that stopped it), clears the reason and marks
+    `Released` rows due (R2.6). `abort` and `throttle` accept it; `pause` refuses it with teaching
+    text. The ladder keeps running on a suspended campaign, as on a paused one, so a resume finds its
+    retries waiting; `LoadWorkableAsync` does not load it, the drain sweep still visits it, and the
+    claim guard is unchanged (`Running` only). Switching a ratio on through `throttle` also restarts the
+    window, so outcomes from before the ratio existed do not judge the campaign. A ratio outside (0, 1]
+    (NaN included), a non-positive window or sample, or a sample larger than the window is refused on
+    create and on throttle. A throttle's `LastVerb` is now cut to its 512-character column (the audit
+    row keeps up to 1,024): the two sides of a wide policy could outgrow it.
+  - **Proof:** `R3SuspendTests` (28 cases through the real pacer job on a tick clock, the admin service
+    and the admin HTTP routes). Twelve planted faults each turn it red: a pacer that never judges (12
+    of 28 red), a reason whose code is read from failures before the window restarted, a restart that zeroes, `Suspended` dropped from the ladder, retryable failures not counted, a
+    flip that ignores a ratio cleared since the load, an interrupted claim not counted, a resume or a
+    switched-on ratio that keeps the old window, a `pause` that does not refuse `Suspended`, a restart
+    without its guard against a second restart on the same read (counters went negative), and a refused
+    throttle that still restarted the window. `CampaignSuspendProof` runs the suspension and the resume on
+    real PostgreSQL 17 and, in the Oracle lane, on Oracle Free (the RFC's 19c SQL form): the counters on
+    the sink's update, the flip guarded on a `double precision`/`BINARY_DOUBLE` ratio, the bounded sample
+    and a UTC `WindowStartedAt`.
+  - **Not in this slice:** S-OPS-03 on a real broker, the console's suspended view and the runbook item
+    (R3-S11, #319). The new counter is a row in #294's export test (`MetricsExportTests`).
 - **Campaign: the four options an operator tunes reload without a restart (campaign RFC R3.3, slice R3-S7, #317).**
   - **What reloads:** `AddGoldpathCampaign` now reads the section `Goldpath:Campaign` through
     `IOptionsMonitor`. Exactly four keys reload: `RetryBackoff`, `RetryJitter`, `OrphanReleaseAfter` and

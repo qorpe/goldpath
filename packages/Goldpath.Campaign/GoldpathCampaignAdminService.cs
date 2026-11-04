@@ -43,6 +43,25 @@ public sealed record GoldpathCampaignInfo(
     /// </summary>
     public DateTimeOffset? StartAt { get; init; }
 
+    /// <summary>The failure ratio at or above which the pacer suspends the campaign (R3.6); null = never.</summary>
+    public double? SuspendOnFailureRatio { get; init; }
+
+    /// <summary>The outcomes the failure ratio is measured over (R3.6).</summary>
+    public int SuspendWindow { get; init; }
+
+    /// <summary>The outcomes a window must hold before its ratio may suspend the campaign (R3.6).</summary>
+    public int SuspendMinSample { get; init; }
+
+    /// <summary>Why the pacer suspended the campaign (R3.6): the ratio, the window and the most frequent error code; null unless it is suspended.</summary>
+    public string? SuspendedReason { get; init; }
+
+    /// <summary>
+    /// Failures over outcomes in the current window (R3.6), whether or not a ratio is set; null
+    /// while the window holds no outcome. The window restarts at <see cref="SuspendWindow"/> outcomes
+    /// only while a ratio is set.
+    /// </summary>
+    public double? FailureRatioNow { get; init; }
+
     /// <summary>
     /// The policy version (R3.5): incremented by every APPLIED throttle and by nothing else. A
     /// throttle that names the version it read is refused when the policy moved since.
@@ -89,6 +108,21 @@ public sealed record GoldpathCampaignThrottle(
 
     /// <summary>Clears the scheduled start (R3.1): the campaign starts as soon as its snapshot is ready.</summary>
     public bool ClearStartAt { get; init; }
+
+    /// <summary>
+    /// Sets the failure ratio that suspends the campaign (R3.6), in (0, 1]; null keeps it. Turning
+    /// it on restarts the window, so outcomes from before the ratio existed do not judge the campaign.
+    /// </summary>
+    public double? SuspendOnFailureRatio { get; init; }
+
+    /// <summary>Turns auto-suspend off (R3.6).</summary>
+    public bool ClearSuspendOnFailureRatio { get; init; }
+
+    /// <summary>The outcomes the failure ratio is measured over (R3.6); null keeps it.</summary>
+    public int? SuspendWindow { get; init; }
+
+    /// <summary>The outcomes a window must hold before its ratio may suspend (R3.6); null keeps it. At most <see cref="SuspendWindow"/>.</summary>
+    public int? SuspendMinSample { get; init; }
 }
 
 /// <summary>
@@ -136,7 +170,7 @@ public sealed class GoldpathCampaignAdminService<TContext>
         var now = _time.GetUtcNow();
         var defaults = _options.Type(type).DefaultPolicy;
         var effective = policy is null ? defaults : Apply(defaults, policy, now);
-        if (StartRefusal(effective, now) is { } refusal)
+        if ((StartRefusal(effective, now) ?? SuspendRefusal(effective)) is { } refusal)
         {
             return new GoldpathAdminResult(false, refusal);
         }
@@ -145,7 +179,7 @@ public sealed class GoldpathCampaignAdminService<TContext>
         var campaign = await _engine.CreateAsync(scope.ServiceProvider, type, name, parameters, effective, tenant, actor, ct);
         var db = scope.ServiceProvider.GetRequiredService<TContext>();
         await AuditAsync(db, campaign.Id, "create", actor,
-            $"type={type} policy=({Describe(effective, effective.StartAt is not null)})", ct);
+            $"type={type} policy=({Describe(effective, effective.StartAt is not null, ShowsSuspend(effective, effective))})", ct);
         return new GoldpathAdminResult(true, $"Campaign '{name}' created as {campaign.Id:N} ({type}).");
     }
 
@@ -208,6 +242,11 @@ public sealed class GoldpathCampaignAdminService<TContext>
     public Task<GoldpathAdminResult> PauseAsync(Guid id, string actor, CancellationToken ct)
         => MutateAsync(id, "pause", actor, detail: null, campaign =>
         {
+            if (campaign.State == GoldpathCampaignState.Suspended)
+            {
+                return $"'{campaign.Name}' is already stopped — the pacer suspended it ({campaign.SuspendedReason ?? "failure ratio"}). Resume it, or abort it.";
+            }
+
             if (campaign.State is not (GoldpathCampaignState.Created or GoldpathCampaignState.Enumerating or GoldpathCampaignState.Running
                 or GoldpathCampaignState.Ready))
             {
@@ -220,20 +259,25 @@ public sealed class GoldpathCampaignAdminService<TContext>
         }, ct);
 
     /// <summary>
-    /// Resumes a paused campaign (back to enumeration when the stream never finished, and to
-    /// Ready while its scheduled start is still ahead, R3.1).
+    /// Resumes a paused or suspended campaign (back to enumeration when the stream never finished,
+    /// and to Ready while its scheduled start is still ahead, R3.1).
     /// R2.6: every Released item is marked due for the orphan sweep at once — the messages
     /// consumers refused during the pause come back on the next tick, not after
     /// <see cref="GoldpathCampaignOptions.OrphanReleaseAfter"/>.
+    /// R3.6: resuming a suspended campaign clears its reason and restarts its failure-ratio
+    /// window first, so the failures that suspended it cannot suspend it again.
     /// </summary>
     public async Task<GoldpathAdminResult> ResumeAsync(Guid id, string actor, CancellationToken ct)
     {
+        await RestartWindowAsync(id, row => row.State == GoldpathCampaignState.Suspended, ct);
         var result = await MutateAsync(id, "resume", actor, detail: null, campaign =>
         {
-            if (campaign.State != GoldpathCampaignState.Paused)
+            if (campaign.State is not (GoldpathCampaignState.Paused or GoldpathCampaignState.Suspended))
             {
-                return $"'{campaign.Name}' is {campaign.State} — only a paused campaign can resume.";
+                return $"'{campaign.Name}' is {campaign.State} — only a paused or suspended campaign can resume.";
             }
+
+            campaign.SuspendedReason = null;
 
             campaign.State = !campaign.EnumerationComplete
                 ? GoldpathCampaignState.Enumerating
@@ -325,6 +369,19 @@ public sealed class GoldpathCampaignAdminService<TContext>
         Guid id, GoldpathCampaignThrottle patch, long? expectedPolicyVersion, string actor, CancellationToken ct)
     {
         var invalid = ThrottleRefusal(patch);
+        if (invalid is null && patch.SuspendOnFailureRatio is not null && !patch.ClearSuspendOnFailureRatio)
+        {
+            // R3.6: a ratio switched on judges outcomes from now on. The window restarts BEFORE the
+            // policy is written, so no tick can read the new ratio against the old counters; a
+            // throttle refused below leaves a restarted window and no ratio, which changes nothing. Only a
+            // live campaign with no ratio yet, whose new suspend policy will stand, is touched at all;
+            // a versioned throttle whose expected version is already stale touches nothing (R3.5).
+            var now = _time.GetUtcNow();
+            await RestartWindowAsync(id, row => row.SuspendOnFailureRatio is null && !IsTerminal(row.State)
+                && (expectedPolicyVersion is null || row.PolicyVersion == expectedPolicyVersion)
+                && SuspendRefusal(Apply(GoldpathCampaignEngine<TContext>.PolicyOf(row), patch, now)) is null, ct);
+        }
+
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TContext>();
         var lastVersion = 0L;
@@ -352,7 +409,7 @@ public sealed class GoldpathCampaignAdminService<TContext>
                 return await StaleAsync(db, campaign, expected, actor, ct);
             }
 
-            if (ApplyThrottle(campaign, patch, actor) is { } refusal)
+            if (ApplyThrottle(campaign, patch, actor, out var verb) is { } refusal)
             {
                 return new GoldpathCampaignThrottleResult(false, refusal, readVersion, Stale: false);
             }
@@ -371,13 +428,17 @@ public sealed class GoldpathCampaignAdminService<TContext>
                     .SetProperty(c => c.MaxAttempts, campaign.MaxAttempts)
                     .SetProperty(c => c.Priority, campaign.Priority)
                     .SetProperty(c => c.StartAt, campaign.StartAt)
+                    .SetProperty(c => c.SuspendOnFailureRatio, campaign.SuspendOnFailureRatio)
+                    .SetProperty(c => c.SuspendWindow, campaign.SuspendWindow)
+                    .SetProperty(c => c.SuspendMinSample, campaign.SuspendMinSample)
                     .SetProperty(c => c.LastVerb, campaign.LastVerb)
                     .SetProperty(c => c.PolicyVersion, c => c.PolicyVersion + 1), ct);
             if (applied == 1)
             {
                 var version = readVersion + 1;
-                // The audit detail stays the verb text exactly (old -> new); the version rides the result.
-                await AuditAsync(db, id, "throttle", actor, campaign.LastVerb, ct);
+                // The audit detail stays the verb text exactly (old -> new), bounded to the audit row's
+                // 1024 rather than LastVerb's 512 (R3.6); the version rides the result.
+                await AuditAsync(db, id, "throttle", actor, Bound(verb, 1024), ct);
                 _logger.LogInformation("Campaign {CampaignId}: throttle by {Actor} (policy version {PolicyVersion}).", id, actor, version);
                 return new GoldpathCampaignThrottleResult(true,
                     $"throttle: '{campaign.Name}' is now {readState}.",
@@ -397,9 +458,17 @@ public sealed class GoldpathCampaignAdminService<TContext>
     /// <summary>Why a patch is nonsense on any campaign, or null (checked before the row matters).</summary>
     private static string? ThrottleRefusal(GoldpathCampaignThrottle patch)
     {
-        if (patch.Tps is <= 0 || patch.MaxInFlight is <= 0 || patch.DailyQuota is <= 0 || patch.MaxAttempts is <= 0)
+        if (patch.Tps is <= 0 || patch.MaxInFlight is <= 0 || patch.DailyQuota is <= 0 || patch.MaxAttempts is <= 0
+            || patch.SuspendWindow is <= 0 || patch.SuspendMinSample is <= 0)
         {
             return "Throttle values must be positive.";
+        }
+
+        if (patch.SuspendOnFailureRatio is { } ratio && !patch.ClearSuspendOnFailureRatio
+            && SuspendRefusal(new GoldpathCampaignPolicy(1, null, 1, null, null, "UTC") { SuspendOnFailureRatio = ratio }) is { } ratioRefusal)
+        {
+            // Refused before anything is written: switching a ratio on restarts the window first.
+            return ratioRefusal;
         }
 
         if (patch.ExcludedDays is { } days)
@@ -432,11 +501,15 @@ public sealed class GoldpathCampaignAdminService<TContext>
         return null;
     }
 
-    /// <summary>Applies the patch to a detached read of the row, or says why it cannot stand there.</summary>
-    private string? ApplyThrottle(GoldpathCampaign campaign, GoldpathCampaignThrottle patch, string actor)
+    /// <summary>
+    /// Applies the patch to a detached read of the row, or says why it cannot stand there.
+    /// <paramref name="verb"/> is the full old -> new text for the audit row (up to 1024); the row's
+    /// own <see cref="GoldpathCampaign.LastVerb"/> keeps it bounded to its 512.
+    /// </summary>
+    private string? ApplyThrottle(GoldpathCampaign campaign, GoldpathCampaignThrottle patch, string actor, out string verb)
     {
-        if (campaign.State is GoldpathCampaignState.Completed or GoldpathCampaignState.CompletedWithFailures
-            or GoldpathCampaignState.Aborted or GoldpathCampaignState.ExpiredIncomplete)
+        verb = "";
+        if (IsTerminal(campaign.State))
         {
             return $"'{campaign.Name}' is terminal ({campaign.State}) — nothing left to throttle.";
         }
@@ -451,13 +524,14 @@ public sealed class GoldpathCampaignAdminService<TContext>
 
         var current = GoldpathCampaignEngine<TContext>.PolicyOf(campaign);
         var effective = Apply(current, patch, now);
-        if (StartRefusal(effective, now) is { } startRefusal)
+        if ((StartRefusal(effective, now) ?? SuspendRefusal(effective)) is { } refusal)
         {
-            return startRefusal;
+            return refusal;
         }
 
         var showStart = current.StartAt is not null || effective.StartAt is not null;
-        var before = Describe(current, showStart);
+        var showSuspend = ShowsSuspend(current, effective);
+        var before = Describe(current, showStart, showSuspend);
         campaign.Tps = effective.Tps;
         campaign.DailyQuota = effective.DailyQuota;
         campaign.MaxInFlight = effective.MaxInFlight;
@@ -469,8 +543,41 @@ public sealed class GoldpathCampaignAdminService<TContext>
         campaign.MaxAttempts = effective.MaxAttempts;
         campaign.Priority = effective.Priority;
         campaign.StartAt = effective.StartAt;
-        campaign.LastVerb = $"throttled by {actor}: {before} -> {Describe(effective, showStart)}";
+        campaign.SuspendOnFailureRatio = effective.SuspendOnFailureRatio;
+        campaign.SuspendWindow = effective.SuspendWindow;
+        campaign.SuspendMinSample = effective.SuspendMinSample;
+        verb = $"throttled by {actor}: {before} -> {Describe(effective, showStart, showSuspend)}";
+        // Both sides of a wide policy can outgrow the row's 512; the audit row keeps up to 1024.
+        campaign.LastVerb = Bound(verb, 512);
         return null;
+    }
+
+    /// <summary>True for the four states no verb but replay moves a campaign out of.</summary>
+    private static bool IsTerminal(GoldpathCampaignState state)
+        => state is GoldpathCampaignState.Completed or GoldpathCampaignState.CompletedWithFailures
+            or GoldpathCampaignState.Aborted or GoldpathCampaignState.ExpiredIncomplete;
+
+    /// <summary>Cuts a text to a column's length.</summary>
+    internal static string Bound(string text, int length) => text.Length > length ? text[..length] : text;
+
+    /// <summary>
+    /// Restarts a campaign's failure-ratio window (R3.6): subtracts the counters it read and stamps
+    /// the start, never zeroes them, so an outcome the sink flushes in between is kept. Only when the
+    /// row it read satisfies <paramref name="applies"/>, so it touches only the campaign the verb is
+    /// about to change.
+    /// </summary>
+    private async Task RestartWindowAsync(Guid id, Func<GoldpathCampaign, bool> applies, CancellationToken ct)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TContext>();
+        var read = await db.Set<GoldpathCampaign>().AsNoTracking().SingleOrDefaultAsync(c => c.Id == id, ct);
+        if (read is null || !applies(read))
+        {
+            return;
+        }
+
+        await GoldpathCampaignEngine<TContext>.RestartWindowAsync(
+            db, id, read.WindowOutcomes, read.WindowFailures, _time.GetUtcNow(), ct);
     }
 
     /// <summary>
@@ -564,6 +671,11 @@ public sealed class GoldpathCampaignAdminService<TContext>
             eta, c.CreatedAt, c.CreatedBy, c.CompletedAt, c.LastVerb, c.Tenant)
         {
             StartAt = c.StartAt,
+            SuspendOnFailureRatio = policy.SuspendOnFailureRatio,
+            SuspendWindow = policy.SuspendWindow,
+            SuspendMinSample = policy.SuspendMinSample,
+            SuspendedReason = c.SuspendedReason,
+            FailureRatioNow = c.WindowOutcomes > 0 ? c.WindowFailures / (double)c.WindowOutcomes : null,
             PolicyVersion = c.PolicyVersion,
         };
     }
@@ -591,7 +703,41 @@ public sealed class GoldpathCampaignAdminService<TContext>
                 : patch.StartAt is { } start
                     ? (start < now ? now : start).ToUniversalTime()
                     : current.StartAt,
+            SuspendOnFailureRatio = patch.ClearSuspendOnFailureRatio ? null : patch.SuspendOnFailureRatio ?? current.SuspendOnFailureRatio,
+            SuspendWindow = patch.SuspendWindow ?? current.SuspendWindow,
+            SuspendMinSample = patch.SuspendMinSample ?? current.SuspendMinSample,
         };
+
+    /// <summary>
+    /// Why a policy's auto-suspend cannot stand (R3.6), or null: the ratio lies in (0, 1], the window
+    /// and the minimum sample are positive, and the sample fits in the window — a window that restarts
+    /// before it holds the minimum sample could never suspend anything.
+    /// </summary>
+    private static string? SuspendRefusal(GoldpathCampaignPolicy policy)
+    {
+        if (policy.SuspendOnFailureRatio is { } ratio && !(ratio > 0 && ratio <= 1))
+        {
+            return string.Create(CultureInfo.InvariantCulture,
+                $"The failure ratio {ratio} is outside (0, 1] — 0.3 suspends the campaign when three outcomes in ten fail.");
+        }
+
+        if (policy.SuspendWindow <= 0 || policy.SuspendMinSample <= 0)
+        {
+            return "The suspend window and the minimum sample must be positive.";
+        }
+
+        return policy.SuspendMinSample > policy.SuspendWindow
+            ? string.Create(CultureInfo.InvariantCulture,
+                $"The minimum sample {policy.SuspendMinSample} is larger than the window {policy.SuspendWindow} — the window would restart before it could ever suspend. Lower the sample or widen the window.")
+            : null;
+    }
+
+    /// <summary>Whether the audit's policy text names auto-suspend (R3.6): when either side sets a ratio, or the window or sample moved.</summary>
+    private static bool ShowsSuspend(GoldpathCampaignPolicy before, GoldpathCampaignPolicy after)
+        => before.SuspendOnFailureRatio is not null || after.SuspendOnFailureRatio is not null
+            || before.SuspendWindow != after.SuspendWindow || before.SuspendMinSample != after.SuspendMinSample
+            || after.SuspendWindow != GoldpathCampaignPolicy.DefaultSuspendWindow
+            || after.SuspendMinSample != GoldpathCampaignPolicy.DefaultSuspendMinSample;
 
     /// <summary>
     /// Why a policy's scheduled start cannot stand (R3.1), or null: a start still ahead must fall
@@ -613,9 +759,16 @@ public sealed class GoldpathCampaignAdminService<TContext>
 
     /// <summary>
     /// The audit's policy text. <paramref name="showStart"/> adds the scheduled start (R3.1) when
-    /// either side of the change has one, so a policy without a start reads exactly as before.
+    /// either side of the change has one, so a policy without a start reads exactly as before;
+    /// <paramref name="showSuspend"/> does the same for auto-suspend (R3.6).
     /// </summary>
-    private static string Describe(GoldpathCampaignPolicy p, bool showStart = false)
+    private static string Describe(GoldpathCampaignPolicy p, bool showStart = false, bool showSuspend = false)
+        => DescribeCore(p, showStart) + (showSuspend
+            ? string.Create(CultureInfo.InvariantCulture,
+                $" suspendOn={p.SuspendOnFailureRatio?.ToString("0.###", CultureInfo.InvariantCulture) ?? "off"} suspendWindow={p.SuspendWindow} suspendMinSample={p.SuspendMinSample}")
+            : "");
+
+    private static string DescribeCore(GoldpathCampaignPolicy p, bool showStart)
         => string.Create(CultureInfo.InvariantCulture,
             $"tps={p.Tps} quota={p.DailyQuota?.ToString(CultureInfo.InvariantCulture) ?? "none"} maxInFlight={p.MaxInFlight} window={(p.WindowStart is null ? "always" : $"{p.WindowStart}-{p.WindowEnd} {p.TimeZoneId}")} excludedDays={(p.ExcludedDays.Count == 0 ? "none" : string.Join("+", p.ExcludedDays))} endDate={p.EndDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "open"} maxAttempts={p.MaxAttempts} priority={p.Priority}{(showStart ? $" start={(p.StartAt is { } s ? s.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture) + "Z" : "when-ready")}" : "")}");
 }

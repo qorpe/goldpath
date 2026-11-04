@@ -277,6 +277,30 @@ killed, 16 survived, 3 without coverage.
   message. Those lines moved verbatim from the shipped throttle into `ThrottleRefusal` and
   `ApplyThrottle`, and the shipped tests assert only `Ok = false` on them.
 
+**Campaign after R3-S10, auto-suspend (#299), 2026-11-02.** A full local run of
+`mutation-gate.sh Goldpath.Campaign` at ba32e9a on the #299 branch scored **78.87 %**: 1,409 mutants tested,
+343 tests, 112.5 minutes. The minutes are the agent sandbox's, with a container run beside it, not the CI
+profile's. The fall from 83.95 % (R3-S2) is not this slice's alone: `main` gained R3-S7 and other Campaign
+work since 1c77033, and no run isolated the two. The table row above is unchanged until a CI run confirms
+the number.
+
+On the lines R3-S10 changed: 153 killed, 37 survived, 4 without coverage (78.9 %). The survivors:
+- **Single-campaign blind spots:** the window restart's and the suspension flip's `Id == …` turned into
+  `||`. Every fact runs one campaign, so a guard that also matches another campaign's row is not seen.
+- **Return-value and in-memory bookkeeping:** `EvaluateFailureRatioAsync`'s booleans, the tick's `-1`, and
+  the in-memory counter subtraction after a restart. The row, not the loaded copy, is what the next tick reads.
+- **Validation boundaries:** the throttle's `SuspendWindow`/`SuspendMinSample` `<= 0` against `< 0`, and
+  `SuspendRefusal`'s ordering against `StartRefusal`. The theory accepts either refusal text on the
+  throttle, so a boundary that falls through to the other refusal still passes.
+- **Audit text:** `ShowsSuspend`'s terms and `Bound`'s `>` against `>=`. The second is equivalent: a text of
+  exactly the column's length is unchanged either way.
+- **No coverage at the run above; covered since:** the sample's `CompletedAt >= WindowStartedAt` filter.
+  `TheReasonsCode_IsReadFromTheCurrentWindowOnly_NotFromTheFailuresBeforeItRestarted` (added after the run)
+  suspends a campaign after its window restarted; replacing the filter with `true` turns it red ("B (71%)"
+  instead of "B (100%)"). The score above was not re-run for it.
+
+These are the next facts to add for this package (T39's proof for R3-S10).
+
 ## Excluded files
 
 | Package | Excluded file | Why it is not scored |

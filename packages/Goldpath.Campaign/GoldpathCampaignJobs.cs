@@ -305,6 +305,13 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
             return -1;   // paused / ceiling-paused / still enumerating first batch / ready before its start
         }
 
+        // R3.6: the failure ratio is judged before anything releases, on the row this tick loaded,
+        // and whatever the window or the day: a closed window still drains outcomes.
+        if (await EvaluateFailureRatioAsync(db, campaign, cancellationToken))
+        {
+            return -1;   // suspended this tick: it releases nothing more
+        }
+
         // 2) Policy math on the LIVE row values (throttle takes effect within one tick).
         var policy = GoldpathCampaignEngine<TContext>.PolicyOf(campaign);
         var now = _time.GetUtcNow();
@@ -642,7 +649,8 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
         {
             var timedOut = await _engine.SweepAckTimeoutsAsync(db, campaign, cancellationToken);
             if (timedOut.Count > 0 && campaign.State is not (GoldpathCampaignState.Created or GoldpathCampaignState.Enumerating
-                or GoldpathCampaignState.Running or GoldpathCampaignState.Paused or GoldpathCampaignState.Ready))
+                or GoldpathCampaignState.Running or GoldpathCampaignState.Paused or GoldpathCampaignState.Ready
+                or GoldpathCampaignState.Suspended))
             {
                 foreach (var seq in timedOut)
                 {
@@ -680,8 +688,12 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
                 .SetProperty(i => i.State, GoldpathCampaignItemState.Failed)
                 .SetProperty(i => i.CompletedAt, now)
                 .SetProperty(i => i.Error, "interrupted mid-flight — confirm the provider, then replay"), cancellationToken);
+        // R3.6: an interrupted claim is a failed outcome in the failure-ratio window too, on the same update.
         await db.Set<GoldpathCampaign>().Where(c => c.Id == campaignId)
-            .ExecuteUpdateAsync(s => s.SetProperty(c => c.FailedCount, c => c.FailedCount + swept), cancellationToken);
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(c => c.FailedCount, c => c.FailedCount + swept)
+                .SetProperty(c => c.WindowOutcomes, c => c.WindowOutcomes + swept)
+                .SetProperty(c => c.WindowFailures, c => c.WindowFailures + swept), cancellationToken);
         foreach (var seq in stale)
         {
             chunk.ReportItemFailure(
@@ -740,6 +752,121 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
         await db.SaveChangesAsync(cancellationToken);
         db.ChangeTracker.Clear();
         _logger.LogInformation("Campaign {CampaignId} started at its scheduled start.", campaign.Id);
+    }
+
+    /// <summary>How many of the window's failures the suspension reads to name the most frequent error code (R3.6).</summary>
+    internal const int SuspendReasonSample = 500;
+
+    /// <summary>
+    /// The failure-ratio check (R3.6) on a Running campaign with a ratio set, from the counters on
+    /// the row this tick loaded. At least <c>SuspendMinSample</c> outcomes at or above the ratio →
+    /// suspend; otherwise, once the window holds <c>SuspendWindow</c> outcomes, restart it by
+    /// subtracting what was read. Returns true when this call suspended the campaign.
+    /// </summary>
+    private async Task<bool> EvaluateFailureRatioAsync(TContext db, GoldpathCampaign campaign, CancellationToken cancellationToken)
+    {
+        var policy = GoldpathCampaignEngine<TContext>.PolicyOf(campaign);
+        if (policy.SuspendOnFailureRatio is not { } threshold)
+        {
+            return false;
+        }
+
+        var outcomes = campaign.WindowOutcomes;
+        var failures = campaign.WindowFailures;
+        if (outcomes > 0 && outcomes >= policy.SuspendMinSample && failures / (double)outcomes >= threshold)
+        {
+            return await TrySuspendAsync(db, campaign, policy, threshold, outcomes, failures, cancellationToken);
+        }
+
+        if (outcomes >= policy.SuspendWindow)
+        {
+            var now = _time.GetUtcNow();
+            await GoldpathCampaignEngine<TContext>.RestartWindowAsync(db, campaign.Id, outcomes, failures, now, cancellationToken);
+            campaign.WindowOutcomes -= outcomes;
+            campaign.WindowFailures -= failures;
+            campaign.WindowStartedAt = now;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Suspends a Running campaign whose failure ratio crossed its threshold (R3.6). The flip is one
+    /// conditional update on the state AND the ratio this tick loaded: a racing verb wins — a pause or
+    /// an abort moves the state, a throttle that cleared or moved the ratio moves the ratio — and the
+    /// next tick re-evaluates. The reason names the ratio, the window and the most frequent error code
+    /// in a sample of at most <see cref="SuspendReasonSample"/> of the window's failures. Audited
+    /// <c>suspend</c> with the actor <c>system</c>, after the flip, and counted.
+    /// </summary>
+    private async Task<bool> TrySuspendAsync(
+        TContext db, GoldpathCampaign campaign, GoldpathCampaignPolicy policy, double threshold, long outcomes, long failures,
+        CancellationToken cancellationToken)
+    {
+        var now = _time.GetUtcNow();
+        var since = campaign.WindowStartedAt;
+        var codes = await db.Set<GoldpathCampaignItem>().AsNoTracking()
+            .Where(i => i.CampaignId == campaign.Id
+                && (i.State == GoldpathCampaignItemState.Failed || i.State == GoldpathCampaignItemState.AwaitingRetry)
+                && (since == null || i.CompletedAt >= since))
+            .Select(i => i.ErrorCode)
+            .Take(SuspendReasonSample)
+            .ToListAsync(cancellationToken);
+        var reason = GoldpathCampaignAdminService<TContext>.Bound(
+            SuspendReason(threshold, outcomes, failures, since, policy.SuspendMinSample, codes), 512);
+        var ratio = campaign.SuspendOnFailureRatio;
+        var verb = GoldpathCampaignAdminService<TContext>.Bound("goldpath: suspended — " + reason, 512);
+        var suspended = await db.Set<GoldpathCampaign>()
+            .Where(c => c.Id == campaign.Id && c.State == GoldpathCampaignState.Running && c.SuspendOnFailureRatio == ratio)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(c => c.State, GoldpathCampaignState.Suspended)
+                .SetProperty(c => c.SuspendedReason, reason)
+                .SetProperty(c => c.LastVerb, verb), cancellationToken);
+        if (suspended == 0)
+        {
+            return false;
+        }
+
+        campaign.State = GoldpathCampaignState.Suspended;
+        campaign.SuspendedReason = reason;
+        campaign.LastVerb = verb;
+        db.Set<GoldpathCampaignAudit>().Add(new GoldpathCampaignAudit
+        {
+            At = now,
+            Actor = "system",
+            Action = "suspend",
+            CampaignId = campaign.Id,
+            Detail = reason,
+        });
+        await db.SaveChangesAsync(cancellationToken);
+        db.ChangeTracker.Clear();
+        GoldpathCampaignMetrics.Suspended(campaign.Type);
+        _logger.LogWarning("Campaign {CampaignId} suspended: {Reason}", campaign.Id, reason);
+        return true;
+    }
+
+    /// <summary>
+    /// The suspension's words (R3.6), culture-invariant: <c>failure ratio 0.52 ≥ 0.3 over 400 outcomes
+    /// since 2026-11-02T10:42:05Z (minimum sample 100); most frequent code TIMEOUT (61%)</c>. A failure
+    /// without a code (a thrown handler, an interrupted claim) is counted as <c>(none)</c>.
+    /// </summary>
+    internal static string SuspendReason(
+        double threshold, long outcomes, long failures, DateTimeOffset? since, int minSample, IReadOnlyList<string?> sampledCodes)
+    {
+        var ratio = failures / (double)outcomes;
+        var window = since is { } start
+            ? start.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture) + "Z"
+            : "the campaign began";
+        var code = sampledCodes.Count == 0
+            ? "no failure sampled"
+            : sampledCodes
+                .GroupBy(c => string.IsNullOrEmpty(c) ? "(none)" : c, StringComparer.Ordinal)
+                .OrderByDescending(g => g.Count())
+                .ThenBy(g => g.Key, StringComparer.Ordinal)
+                .Select(g => string.Create(CultureInfo.InvariantCulture,
+                    $"most frequent code {g.Key} ({Math.Round(100.0 * g.Count() / sampledCodes.Count, MidpointRounding.AwayFromZero)}%)"))
+                .First();
+        return string.Create(CultureInfo.InvariantCulture,
+            $"failure ratio {ratio:0.##} ≥ {threshold:0.###} over {outcomes} outcomes since {window} (minimum sample {minSample}); {code}");
     }
 
     /// <summary>
