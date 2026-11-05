@@ -257,6 +257,83 @@ public class R3TargetSystemTests
         Assert.Equal((50, 200, "ops@example.test"), (system.MaxTps, system.SeedMaxTps, system.UpdatedBy));
     }
 
+    [Fact]
+    public async Task OfTwoSystemsSeededAlike_OnlyTheOneWhoseCodeMoved_Follows()
+    {
+        using var fixture = new CampaignFixture(FastTicks(o =>
+        {
+            o.AddTargetSystem("sms-gateway", 200);
+            o.AddTargetSystem("device-core", 200);
+        }));
+        await ReconcileAsync(fixture);
+
+        var next = new GoldpathCampaignOptions();
+        next.AddTargetSystem("sms-gateway", 300);   // only this one's code moved
+        next.AddTargetSystem("device-core", 200);
+        await ReconcileAsync(fixture, next);
+
+        var rows = Rows(fixture).Where(r => r.Kind == GoldpathCampaignCeilingKind.TargetSystem).ToDictionary(r => r.Name, r => (r.MaxTps, r.SeedMaxTps));
+        Assert.Equal((300, 300), rows["sms-gateway"]);
+        Assert.Equal((200, 200), rows["device-core"]);
+    }
+
+    [Fact]
+    public async Task ACodeValueThatDidNotMove_LeavesAnOperatorsRowAlone_WithoutAWarning()
+    {
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200));
+        await ReconcileAsync(fixture);
+        MoveSystemRow(fixture, 100, "ops@example.test");
+
+        var logger = new ListLogger<GoldpathCampaignEngine<CampaignTestContext>>();
+        await ReconcileAsync(fixture, fixture.Options, logger);   // the same code: nothing to follow, nothing to disagree with
+
+        var system = Rows(fixture).Single(r => r.Kind == GoldpathCampaignCeilingKind.TargetSystem);
+        Assert.Equal((100, 200, "ops@example.test"), (system.MaxTps, system.SeedMaxTps, system.UpdatedBy));
+        Assert.Empty(logger.Entries);
+    }
+
+    [Fact]
+    public async Task WithNoRowsYet_TheLiveCeilingsAreTheCodeSeeds()
+    {
+        // A row deleted since the slice began (or a read before the first reconcile) never opens a ceiling.
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200, o => o.GlobalTps = 900));
+        using var scope = fixture.Services.CreateScope();
+        var live = await fixture.Engine.ReadCeilingsAsync(scope.ServiceProvider.GetRequiredService<CampaignTestContext>(), CancellationToken.None);
+
+        Assert.Equal(900, live.GlobalTps);
+        Assert.Equal(200, live.TargetSystems[System]);
+    }
+
+    [Fact]
+    public async Task ASystemNamedLikeTheGlobalRow_IsStillItsOwnRow()
+    {
+        // The key is (Kind, Name): a system called "*" and the global row "*" are two rows, read apart.
+        using var fixture = new CampaignFixture(FastTicks(o =>
+        {
+            o.GlobalTps = 900;
+            o.AddTargetSystem(GoldpathCampaignCeiling.GlobalName, 7);
+        }));
+        await ReconcileAsync(fixture);
+
+        var rows = Rows(fixture);
+        Assert.Equal(2, rows.Count);
+        Assert.Equal(900, rows.Single(r => r.Kind == GoldpathCampaignCeilingKind.Global).MaxTps);
+        Assert.Equal(7, rows.Single(r => r.Kind == GoldpathCampaignCeilingKind.TargetSystem).MaxTps);
+
+        using var scope = fixture.Services.CreateScope();
+        var live = await fixture.Engine.ReadCeilingsAsync(scope.ServiceProvider.GetRequiredService<CampaignTestContext>(), CancellationToken.None);
+        Assert.Equal(900, live.GlobalTps);
+        Assert.Equal(7, live.TargetSystems[GoldpathCampaignCeiling.GlobalName]);
+
+        // A later release moves only the system's code: the system's row follows, the global row is not mistaken for it.
+        var next = new GoldpathCampaignOptions { GlobalTps = 900 };
+        next.AddTargetSystem(GoldpathCampaignCeiling.GlobalName, 8);
+        await ReconcileAsync(fixture, next);
+        rows = Rows(fixture);
+        Assert.Equal((8, 8), (rows.Single(r => r.Kind == GoldpathCampaignCeilingKind.TargetSystem).MaxTps, rows.Single(r => r.Kind == GoldpathCampaignCeilingKind.TargetSystem).SeedMaxTps));
+        Assert.Equal(900, rows.Single(r => r.Kind == GoldpathCampaignCeilingKind.Global).MaxTps);
+    }
+
     // ---- the pacer's target-system bucket ----
 
     [Fact]

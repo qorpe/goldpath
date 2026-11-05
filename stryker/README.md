@@ -311,6 +311,23 @@ On the lines R3-S10 changed: 153 killed, 37 survived, 4 without coverage (78.9 %
 
 These are the next facts to add for this package (T39's proof for R3-S10).
 
+**Campaign after R3-S8, target-system ceilings (#290), 2026-11-05.**
+- **The run:** a diff-mode run, `GOLDPATH_MUTATE_SINCE=origin/main mutation-gate.sh Goldpath.Campaign`, on the #290 branch at 8997b6c. It mutated the four changed files whole: 1,298 mutants, 487 tests, 113.6 minutes in the agent sandbox, scoring **79.40 %** (gate green). This is diff mode, so the full run stays the authoritative score, and the table row above is unchanged.
+- **On the lines R3-S8 added:** 72 killed, 23 survived, 1 without coverage, 43 compile errors.
+- **Killed since the run:** five of the survivors are killed by facts added after the run, each planted by hand and seen red:
+  - the follow's guard with `&&` turned into `||` (`OfTwoSystemsSeededAlike_OnlyTheOneWhoseCodeMoved_Follows`);
+  - the `continue` for an unmoved code value (`ACodeValueThatDidNotMove_…`);
+  - the reconcile's and the read's row match with `&&` turned into `||` (`ASystemNamedLikeTheGlobalRow_IsStillItsOwnRow`);
+  - the missing-global-row fallback (`WithNoRowsYet_TheLiveCeilingsAreTheCodeSeeds`).
+- **The rest, read one by one:**
+  - **Equivalent:** the two-pass loop's bounds (`<=`, `||`, `--`). Once `desired` is empty a further pass changes nothing.
+  - **Equivalent:** the `continue` after the disagreement warning. The guarded update that follows matches no row.
+  - **Equivalent within one conflict:** the insert's `true`/`false` and its `finally` detach. A second pass re-reads the row, and no later `SaveChanges` runs on that context.
+  - **Equivalent:** the global bucket's reset while off. The charge guard alone already prevents the debt (planted: both together go red, either alone does not).
+  - **Unreachable through a host that passed the startup check:** the target step's `continue` for an undeclared system.
+  - **A collision only with a system named `global`:** the `"target:"` ledger prefix.
+  - **Log text only:** the `moved == 1` log and the message strings.
+
 ## Excluded files
 
 | Package | Excluded file | Why it is not scored |
