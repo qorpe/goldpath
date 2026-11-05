@@ -76,6 +76,9 @@ public sealed record GoldpathCampaignInfo(
     /// throttle that names the version it read is refused when the policy moved since.
     /// </summary>
     public long PolicyVersion { get; init; }
+
+    /// <summary>The target system this campaign's type names (R3.2), whose shared ceiling binds it; null when it names none.</summary>
+    public string? TargetSystem { get; init; }
 }
 
 /// <summary>
@@ -706,6 +709,7 @@ public sealed class GoldpathCampaignAdminService<TContext>
             SuspendedReason = c.SuspendedReason,
             FailureRatioNow = c.WindowOutcomes > 0 ? c.WindowFailures / (double)c.WindowOutcomes : null,
             PolicyVersion = c.PolicyVersion,
+            TargetSystem = _options.TypeMap.TryGetValue(c.Type, out var type) ? type.TargetSystem : null,
         };
     }
 

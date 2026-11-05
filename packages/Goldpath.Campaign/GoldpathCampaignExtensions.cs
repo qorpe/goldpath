@@ -19,12 +19,15 @@ namespace Goldpath;
 public static class GoldpathCampaignExtensions
 {
     /// <summary>Registers the engine, the campaign types and the pacer job.</summary>
+    /// <exception cref="InvalidOperationException">A campaign type names a target system the delegate never declared (R3.2).</exception>
     public static TBuilder AddGoldpathCampaign<TBuilder, TContext>(this TBuilder builder, Action<GoldpathCampaignOptions> configure)
         where TBuilder : IHostApplicationBuilder
         where TContext : DbContext
     {
         var options = new GoldpathCampaignOptions();
         configure(options);
+        // R3.2: after the WHOLE delegate, so a target system may be declared after the type that names it.
+        options.ValidateTargetSystems();
 
         // R3.3: the four keys an operator turns during an incident reload from Goldpath:Campaign
         // through IOptionsMonitor; the code values above stay the defaults.

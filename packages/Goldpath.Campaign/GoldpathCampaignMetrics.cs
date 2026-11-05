@@ -98,10 +98,12 @@ public static class GoldpathCampaignMetrics
             description: "The Tps each running campaign's policy allows (the ceiling its released rate is read against).");
         Meter.CreateObservableGauge("goldpath_campaign_type_max_tps", ObserveTypeCeilings,
             description: "Each campaign type's MaxTps, the shared ceiling of its target system (R2.4); types without one are absent.");
+        Meter.CreateObservableGauge("goldpath_campaign_target_system_max_tps", ObserveTargetSystemCeilings,
+            description: "Each declared target system's live ceiling, read from its row, shared by every type naming it (R3.2).");
         Meter.CreateObservableGauge("goldpath_campaign_global_tps", ObserveGlobalTps,
-            description: "GlobalTps, the one ceiling over every campaign (R1.4); absent when not configured.");
+            description: "The global ceiling over every campaign, read from its row (R1.4, R3.2); absent when off.");
         Meter.CreateObservableGauge("goldpath_campaign_binding_constraint", ObserveBinding,
-            description: "1 for the limit that bound each running campaign's last tick: tps, in_flight, awaiting_ack, quota, window, type, global or none.");
+            description: "1 for the limit that bound each running campaign's last tick: tps, in_flight, awaiting_ack, quota, window, type, target_system, global or none.");
         Meter.CreateObservableGauge("goldpath_campaign_released_today", ObserveReleasedToday,
             description: "Items each running campaign released in its quota day (DailyQuota consumption).");
         Meter.CreateObservableGauge("goldpath_campaign_daily_quota", ObserveDailyQuota,
@@ -258,6 +260,7 @@ public static class GoldpathCampaignMetrics
                 {
                     Campaigns = new Dictionary<Guid, GoldpathCampaignTickFacts>(),
                     TypeCeilings = new Dictionary<string, int>(StringComparer.Ordinal),
+                    TargetSystemCeilings = new Dictionary<string, int>(StringComparer.Ordinal),
                     GlobalTps = null,
                 };
             }
@@ -342,6 +345,20 @@ public static class GoldpathCampaignMetrics
         return measurements;
     }
 
+    private static IEnumerable<Measurement<long>> ObserveTargetSystemCeilings()
+    {
+        List<Measurement<long>> measurements = [];
+        lock (SnapshotLock)
+        {
+            foreach (var (system, ceiling) in Ticks.Values.SelectMany(t => t.TargetSystemCeilings))
+            {
+                measurements.Add(new Measurement<long>(ceiling, new KeyValuePair<string, object?>("target_system", system)));
+            }
+        }
+
+        return measurements;
+    }
+
     private static IEnumerable<Measurement<long>> ObserveGlobalTps()
     {
         lock (SnapshotLock)
@@ -387,4 +404,8 @@ internal sealed record GoldpathCampaignTickFacts(string Type, int Tps, long? Dai
 /// <summary>One pacer's last tick (RFC §7): the running campaigns, the configured shared ceilings and when it ran.</summary>
 internal sealed record GoldpathCampaignTickState(
     IReadOnlyDictionary<Guid, GoldpathCampaignTickFacts> Campaigns, IReadOnlyDictionary<string, int> TypeCeilings,
-    int? GlobalTps, DateTimeOffset At);
+    int? GlobalTps, DateTimeOffset At)
+{
+    /// <summary>Each declared target system's live ceiling this tick, read from its row (R3.2).</summary>
+    public IReadOnlyDictionary<string, int> TargetSystemCeilings { get; init; } = new Dictionary<string, int>(StringComparer.Ordinal);
+}

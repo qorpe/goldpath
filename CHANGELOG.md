@@ -5,6 +5,48 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **Campaign: target-system ceilings as data (campaign RFC R3.2, part a, slice R3-S8, #290).**
+  - **API (additive):**
+    - `GoldpathCampaignOptions.AddTargetSystem(name, maxTps)` and `TargetSystems`;
+    - `GoldpathCampaignTypeBuilder<T>.TargetSystem(name)`;
+    - `GoldpathCampaignType.TargetSystem`;
+    - `GoldpathCampaignInfo.TargetSystem`, which is init-only, so no positional constructor changes.
+  - **The startup check (owner decision Q7, no analyzer):** `AddGoldpathCampaign` refuses a type that
+    names an undeclared system once the whole `configure` delegate has run, with teaching text. That text
+    names the declared systems, or the near spelling. Declaring a name twice is refused, compared ignoring
+    case, and so are an empty name, a name over 128 characters and a non-positive ceiling.
+  - **The rows (owner decision Q4):** at every leadership slice start, the leader reconciles
+    `GoldpathCampaignCeilings`, with one row per declared system plus the global row seeded from
+    `GlobalTps`.
+    - A missing row is inserted.
+    - A changed code value is followed only while `MaxTps == SeedMaxTps`. The update is guarded on the
+      values it read, so an operator's change landing in between stands.
+    - Otherwise the operator's value stays, and a warning names both values.
+    - An insert that loses the key to a concurrent writer re-reads that row and applies the same rule.
+  - **The pacer:**
+    - One query per tick reads the rows. A deleted row, or a system row holding no value, falls back to
+      the code seed, so the ceiling never silently opens.
+    - `Allocate` gains the target-system step between the type split and the global split. That step
+      uses R2.5's weighted fair share, with its own credit ledger (`target:<name>`) and #292's
+      one-tick bank.
+    - The global ceiling is read from its row. While it is off, it is charged nothing and holds
+      nothing, so turning it on mid-slice starts an empty bucket, not one in debt for what went out
+      meanwhile.
+    - A row value below zero, which only an edit outside the module can write, reads as zero.
+    - A leadership slice is now measured from after its start-of-slice bookkeeping (the re-count and
+      the ceiling reconcile). The first slice in a process otherwise spent part of its length
+      compiling those statements instead of ticking.
+  - **Signals:**
+    - a new gauge, `goldpath_campaign_target_system_max_tps{target_system}`;
+    - `goldpath_campaign_global_tps` now reports the row;
+    - `goldpath_campaign_binding_constraint` gains `target_system`.
+  - **Proof:**
+    - `R3TargetSystemTests` (SQLite), every fact red with its fault planted.
+    - `CampaignCeilingProof` (PostgreSQL 17) and `CampaignCeilingOracleProof` (the Oracle lane): eight
+      leaders seeding at once, the global row's NULL seed followed, the operator's value standing, and a
+      pacer slice bound by the row rather than by code.
+  - **Not in this slice:** the audited verbs, the routes under admin-contract R4 and the governor's
+    editor (R3-S9, #318).
 - **Campaign: a ceiling for outstanding acknowledgements, `MaxAwaitingAck` (campaign RFC R3.4,
   slice R3-S5, #293).**
   - **API (additive, init-only):** `GoldpathCampaignPolicy.MaxAwaitingAck`,
