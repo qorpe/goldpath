@@ -161,7 +161,7 @@
   },
   {
     "fact": "*",
-    "path": "error-queue.*.message-types",
-    "reason": "The oracle's parked envelope lists the event's interface URN (urn:message:Goldpath:IIntegrationEvent) after the event's own; the candidate's lists the event's own only. Every Goldpath endpoint binds the event's own exchange, which both name, and S4.5 proves the parked message is handled by the oracle once shovelled back; open-threads T51 records the difference."
+    "path": "error-queue.*.message-type.urn:message:Goldpath:IIntegrationEvent",
+    "reason": "The oracle's parked envelope lists the event's interface URN (urn:message:Goldpath:IIntegrationEvent) after the event's own; the candidate's lists the event's own only. This entry excuses that one URN's line and nothing else: the event's own type, an empty list and an unreadable envelope are each a line of their own that no entry excuses. Every Goldpath endpoint binds the event's own exchange, which both name, and S4.5 proves the parked message is handled by the oracle once shovelled back; open-threads T51 records the difference."
   }
 ]

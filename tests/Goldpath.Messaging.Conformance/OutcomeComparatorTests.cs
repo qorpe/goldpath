@@ -113,6 +113,39 @@ public sealed class OutcomeComparatorTests
         Assert.Equal("{[0]}", record["deliveries.poison.attempts.values"]);
     }
 
+    private const string IntegrationEventUrn = "urn:message:Goldpath:IIntegrationEvent";
+    private const string PoisonUrn = "urn:message:Goldpath.Messaging.Conformance:Poison";
+
+    private static SortedDictionary<string, string> Parked(params string[][] messageTypes)
+        => OutcomeRecord.Of([], [.. messageTypes.Select(t => new ParkedMessage("poison_error", [], t))], Empty, ordered: false);
+
+    [Fact]
+    public void A_parked_envelope_records_each_type_it_names_on_a_line_of_its_own()
+    {
+        var record = Parked([PoisonUrn, IntegrationEventUrn], [PoisonUrn], []);
+
+        Assert.Equal("3", record["error-queue.poison_error.count"]);
+        Assert.Equal("2", record[$"error-queue.poison_error.message-type.{PoisonUrn}"]);
+        Assert.Equal("1", record[$"error-queue.poison_error.message-type.{IntegrationEventUrn}"]);
+        Assert.Equal("1", record["error-queue.poison_error.message-type-missing"]);
+    }
+
+    [Fact]
+    public void The_committed_allow_list_excuses_the_missing_interface_urn_and_nothing_else_about_a_parked_envelope()
+    {
+        var allowed = OutcomeComparator.LoadAllowList(Path.Combine(AppContext.BaseDirectory, "differential-allowlist.json"));
+        var oracle = Parked([PoisonUrn, IntegrationEventUrn]);
+
+        // What the reason describes: the candidate lists the event's own type only.
+        Assert.All(OutcomeComparator.Compare("S2_3_retry", oracle, Parked([PoisonUrn]), allowed), d => Assert.NotNull(d.AllowedBy));
+
+        // What it must not excuse: the wrong own type, an empty list, an unreadable envelope.
+        foreach (var candidate in new[] { Parked(["urn:message:Goldpath.Messaging.Conformance:Ping"]), Parked([]), Parked(["(no envelope)"]), Parked(["(not json)"]) })
+        {
+            Assert.Contains(OutcomeComparator.Compare("S2_3_retry", oracle, candidate, allowed), d => d.Path.StartsWith("error-queue.poison_error.message-type", StringComparison.Ordinal) && d.AllowedBy is null);
+        }
+    }
+
     [Fact]
     public void The_recorder_keeps_delivery_order_and_forgets_on_clear()
     {
@@ -145,6 +178,12 @@ public sealed class OutcomeComparatorTests
             foreach (var guarded in new[] { "attempts.values", "per-message-id.values", "per-key.values", "context.tenant", "context.correlation", "order" })
             {
                 Assert.False(entry.Matches(itsFact, $"deliveries.ping.{guarded}"), $"'{entry.Path}' would excuse deliveries.*.{guarded}");
+            }
+
+            // A parked envelope's own type is never excused, on any queue an entry does not name outright.
+            foreach (var guarded in new[] { $"message-type.{PoisonUrn}", "message-type.(no envelope)", "message-type.(not json)", "message-type-missing" })
+            {
+                Assert.False(entry.Matches(itsFact, $"error-queue.poison_error.{guarded}"), $"'{entry.Path}' would excuse error-queue.*.{guarded}");
             }
         });
         Assert.Equal(allowed.Count, allowed.Select(e => (e.Fact, e.Path)).Distinct().Count());

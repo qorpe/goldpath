@@ -60,7 +60,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
       message id are in flight at once (S2.1, S2.19).
     - The fault-diagnostic headers on a parked message are each engine's own (`MT-Fault-*` / `MT-Host-*` /
       `MT-Reason` against `exception-*` / `failed-at` / `attempts`).
-    - A Wolverine-parked envelope does not list the `IIntegrationEvent` URN.
+    - A Wolverine-parked envelope does not list the `IIntegrationEvent` URN. The record holds one line per type a
+      parked envelope names, so only that URN's line is excused and the event's own type is still compared.
     - Both of the last two are open-threads T51.
 - **Campaign: the metrics RFC §7 promised, and the ones an impact dashboard needs (#294).** Ten new instruments
   on the `Goldpath.Campaign` meter; no `PublicAPI` change. RFC campaign §7 is rewritten as the table of every

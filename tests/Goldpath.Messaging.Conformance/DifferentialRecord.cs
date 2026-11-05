@@ -119,7 +119,14 @@ public static class OutcomeRecord
         {
             var p = $"error-queue.{queue.Key}";
             record[$"{p}.count"] = Number(queue.Count());
-            record[$"{p}.message-types"] = Values(queue.SelectMany(m => m.MessageTypes));
+            // One line per type an envelope names, counting the parked messages that name it: an entry can then excuse one
+            // URN without excusing the event's own type, an empty list, "(no envelope)" or "(not json)" beside it.
+            foreach (var type in queue.SelectMany(m => m.MessageTypes).Distinct(StringComparer.Ordinal))
+            {
+                record[$"{p}.message-type.{type}"] = Number(queue.Count(m => m.MessageTypes.Contains(type, StringComparer.Ordinal)));
+            }
+
+            record[$"{p}.message-type-missing"] = Number(queue.Count(m => m.MessageTypes.Count == 0));
             foreach (var key in queue.SelectMany(m => m.HeaderKeys).Distinct(StringComparer.Ordinal))
             {
                 record[$"{p}.headers.{key}"] = Number(queue.Count(m => m.HeaderKeys.Contains(key)));

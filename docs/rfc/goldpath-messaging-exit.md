@@ -307,7 +307,8 @@ S2.18 and the differential. The run measured three behaviours the facts never as
   oracle's fault headers reads engine-specific names (T51).
 - **The candidate's parked envelope lists fewer types.** It lists the event's own type and not the
   `urn:message:Goldpath:IIntegrationEvent` the oracle's adds. S4.5 shovels such a message back and the oracle handles
-  it (T51).
+  it (T51). The record keeps one line per type a parked envelope names, so the allow-list excuses that URN's line
+  alone: a parked envelope naming the wrong own type, none, or no readable envelope at all is still a divergence.
 
 The rest of the allow-list is engine bookkeeping (`ReceiveCount`, the RabbitMQ client's `x-dotnet-pub-seq-no`, the
 W3C `traceparent` beside `MT-Activity-Id`), the batch endpoint's missing inbox (T51), and S2.8's backlog, which the
