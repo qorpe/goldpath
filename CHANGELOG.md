@@ -40,6 +40,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     (red without the re-count). Mutation gate: 82.31 % (`stryker/README.md`).
   - **Not yet:** the real-broker proof with a slow-acknowledging target and the console's view
     and edit of the ceiling (R3-S6, #316).
+- **The S3 differential run: every bus conformance fact on both engines, the candidate's outcome compared with the
+  oracle's (messaging-exit RFC §7.1 S3, GA gate G5 Part 3/5, #332).** Tests and CI only; no package changes.
+  - `BusDifferentialTests` (`Category=Differential`, in `tests/Goldpath.Messaging.Conformance`) runs every fact of
+    the two conformance classes, found by reflection, on MassTransit 8.5.12 and then on the Wolverine adapter. Every
+    harness handler reports to a `DeliveryRecorder`, and after each run the record holds: deliveries per endpoint,
+    per business key and per message id; the retry attempts each message was given; the headers the handler saw, and
+    the values of `X-Goldpath-Tenant` and `X-Correlation-Id`; the order, only where the seam promises one (S2.14);
+    every `*_error` queue's messages, read from the broker; and the `InboxState` / `OutboxMessage` / `OutboxState`
+    rows. Error queues and those tables are emptied before each engine's run.
+  - The comparator fails on any line where the two records differ, unless an entry of the reviewed allow-list
+    `differential-allowlist.json` excuses it. There are 33 entries, each carrying its reason, and a container-free
+    fact keeps every entry narrow: no entry may excuse the retry ladder, duplicates, the tenant, the correlation or an
+    order.
+  - The report (`summary.md` plus one `<fact>.json` per fact) is uploaded by CI's integration job as the
+    `s3-differential-report` artifact.
+  - **Measured on the way, and allowed with a reason, not fixed:**
+    - The oracle parks duplicates of a message it has already handled in `<queue>_error` when two deliveries of one
+      message id are in flight at once (S2.1, S2.19).
+    - The fault-diagnostic headers on a parked message are each engine's own (`MT-Fault-*` / `MT-Host-*` /
+      `MT-Reason` against `exception-*` / `failed-at` / `attempts`).
+    - A Wolverine-parked envelope does not list the `IIntegrationEvent` URN. The record holds one line per type a
+      parked envelope names, so only that URN's line is excused and the event's own type is still compared.
+    - Both of the last two are open-threads T51.
 - **Campaign: the metrics RFC §7 promised, and the ones an impact dashboard needs (#294).** Ten new instruments
   on the `Goldpath.Campaign` meter; no `PublicAPI` change. RFC campaign §7 is rewritten as the table of every
   exported instrument, and `MetricsExportTests` holds each one's name, unit and tags against it.
