@@ -158,6 +158,30 @@ public class ApprovalEngineTests
     }
 
     [Fact]
+    public async Task A_delegation_admits_its_rung_on_a_ladder_that_spells_the_rung_differently()
+    {
+        // The role is recorded in the FIRST matching ladder's spelling ("expert"); a second ladder that declares
+        // "Expert" must still admit the delegate, in the decision and in the worklist alike.
+        var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-08-18T09:00:00Z"));
+        var options = Options().AddLadder("overdraft", ladder => ladder
+            .Rung("Expert", 10_000m, RungDeadline)
+            .TopRung("general-manager", TimeSpan.FromHours(24)));
+        var store = new GoldpathInMemoryApprovalStore();
+        var engine = new GoldpathApprovalEngine(options, store, clock,
+            NullLogger<GoldpathApprovalEngine>.Instance, new RecordingPublisher());
+        var creditLimit = await engine.RequestAsync("credit-limit", "K26-7g", 500_000m, "maker");
+        var overdraft = await engine.RequestAsync("overdraft", "OD-2", 5_000m, "maker");
+        await engine.DelegateRoleAsync("expert-user", "expert", "stand-in", TimeSpan.FromDays(1));
+        Assert.Equal("expert", Assert.Single(await store.GetDelegationsAsync(clock.GetUtcNow())).Role);
+
+        Assert.Equal(new[] { creditLimit.Id, overdraft.Id }.Order(), (await engine.WorklistAsync("stand-in", "no-role")).Select(r => r.Id).Order());
+        Assert.Equal(GoldpathApprovalDecisionOutcome.Applied,
+            await engine.DecideAsync(overdraft.Id, "stand-in", "no-role", true, "the rung spelled Expert"));
+        Assert.Equal(GoldpathApprovalDecisionOutcome.Applied,
+            await engine.DecideAsync(creditLimit.Id, "stand-in", "no-role", true, "the rung spelled expert"));
+    }
+
+    [Fact]
     public async Task The_worklist_shows_a_delegate_only_the_delegated_rung()
     {
         var (engine, _, _, _) = Build();
