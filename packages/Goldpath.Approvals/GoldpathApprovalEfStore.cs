@@ -19,6 +19,9 @@ public sealed class GoldpathApprovalDelegationRow
 
     /// <summary>Absolute UTC expiry.</summary>
     public DateTimeOffset Until { get; set; }
+
+    /// <summary>The delegator's role — the one rung the delegation admits to (#479); null on a pre-preview.10 row, which admits to none.</summary>
+    public string? Role { get; set; }
 }
 
 /// <summary>One collected quorum signature as a row (the record itself has no key; the row carries one).</summary>
@@ -86,6 +89,7 @@ public static class GoldpathApprovalModelExtensions
             e.HasKey(x => x.Id);
             e.Property(x => x.From).HasMaxLength(128);
             e.Property(x => x.To).HasMaxLength(128);
+            e.Property(x => x.Role).HasMaxLength(128);   // #479: nullable, so rows written before it survive the column
             e.HasIndex(x => x.Until);
         });
 
@@ -185,7 +189,7 @@ public sealed class GoldpathEfApprovalStore<TContext> : IGoldpathApprovalStore, 
     {
         await using var scope = _scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<TContext>();
-        db.Add(new GoldpathApprovalDelegationRow { From = delegation.From, To = delegation.To, Until = delegation.Until });
+        db.Add(new GoldpathApprovalDelegationRow { From = delegation.From, To = delegation.To, Until = delegation.Until, Role = delegation.Role });
         await db.SaveChangesAsync(cancellationToken);
     }
 
@@ -199,7 +203,7 @@ public sealed class GoldpathEfApprovalStore<TContext> : IGoldpathApprovalStore, 
         var rows = await db.Set<GoldpathApprovalDelegationRow>().AsNoTracking()
             .ToListAsync(cancellationToken);
         return rows.Where(r => r.Until > now)
-            .Select(r => new GoldpathApprovalDelegation(r.From, r.To, r.Until)).ToList();
+            .Select(r => new GoldpathApprovalDelegation(r.From, r.To, r.Until) { Role = r.Role }).ToList();
     }
 
     /// <inheritdoc />
