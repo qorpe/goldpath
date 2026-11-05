@@ -37,7 +37,7 @@ public sealed class CampaignCeilingOracleProof(OracleFixture oracle)
     [Fact]
     public async Task Target_system_ceilings_seed_follow_code_stand_for_the_operator_and_bind_the_pacer_on_Oracle()
     {
-        var connection = await oracle.CreateSchemaAsync("GP_CEILING");
+        var connection = await oracle.CreateSchemaAsync("GP_TGT_CEILING");
         await CampaignCeilingScenario<OracleComposedDb>.RunAsync(services => services.AddScoped(_ => OracleComposedDb.Create(connection)));
     }
 }

@@ -649,7 +649,12 @@ public sealed class GoldpathCampaignEngine<TContext>
     {
         var row = new GoldpathCampaignCeiling
         {
-            Kind = kind, Name = name, MaxTps = code, SeedMaxTps = code, UpdatedAt = _time.GetUtcNow(), UpdatedBy = CeilingSeedActor,
+            Kind = kind,
+            Name = name,
+            MaxTps = code,
+            SeedMaxTps = code,
+            UpdatedAt = _time.GetUtcNow(),
+            UpdatedBy = CeilingSeedActor,
         };
         db.Add(row);
         try
