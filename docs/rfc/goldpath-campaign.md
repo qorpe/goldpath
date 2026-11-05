@@ -996,7 +996,7 @@ three decisions about it:
 - 2026-10-20: T37's trigger has fired.
 - 2026-10-20: the gate sits at `Ready`, after the snapshot, so the ladder's amount is the real
   enumerated count, and it goes through `Goldpath.Approvals`.
-- 2026-10-21 (Q6): the binding is this amendment. It adds no campaign column and binds the
+- 2026-10-21 (R3's Q6): the binding is this amendment. It adds no campaign column and binds the
   Approvals subject to the campaign id.
 
 It plugs into the one start gate R3.1 left empty: `GoldpathCampaignJobs.StartGates` is an empty
@@ -1221,7 +1221,7 @@ no enum value, no route.
 
 #### Migration, admin contract, console, scenario
 
-- **No migration** (Q6): no column, no table, no index. Approvals' tables are Approvals'.
+- **No migration** (R3's Q6): no column, no table, no index. Approvals' tables are Approvals'.
 - **Admin contract.** The campaign detail gains `startBlockedBy`, omitted when null, the way R1
   and R2 grew the detail. There is no new route: approving happens on the existing Approvals
   routes. This fits admin-contract R4's text with no new revision; the slice says so in R4's
@@ -1291,7 +1291,7 @@ no enum value, no route.
   per-action ladders are app code).
 - **A gate at `create`** instead of at `Ready`: the owner put it at `Ready` (2026-10-20).
 - **Resubmission** of a rejected request into the same campaign (Q4).
-- **A campaign column** for the request id, or a `PendingApproval` state: Q6 says no column, and
+- **A campaign column** for the request id, or a `PendingApproval` state: R3's Q6 says no column, and
   `Ready` plus `StartBlockedBy` already says why it waits.
 - **Approvals console federation** (T21) and **fixing #478 / #487**. Those defects are
   prerequisites, named here and fixed in their own issues.
