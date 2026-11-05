@@ -80,6 +80,24 @@ public sealed class ApprovalConcurrencyTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_delegation_keeps_its_rung_through_the_database()
+    {
+        // #479 (T-APR-05) on real PostgreSQL: the role column round-trips, and a manager's stand-in decides the manager
+        // rung and is refused the general manager's.
+        var (engine, store) = Build(new Published());
+        var managerRung = await engine.RequestAsync("credit-limit", "D-1", 500_000m, "maker");
+        var topRung = await engine.RequestAsync("credit-limit", "D-2", 9_000_000m, "maker");
+        await engine.DelegateRoleAsync("manager-user", "Manager", "stand-in", TimeSpan.FromDays(1));
+
+        var delegation = Assert.Single(await store.GetDelegationsAsync(DateTimeOffset.Parse("2026-11-03T09:00:00Z")));
+        Assert.Equal(("manager-user", "stand-in", "manager"), (delegation.From, delegation.To, delegation.Role));
+        Assert.Equal(GoldpathApprovalDecisionOutcome.WrongRole,
+            await engine.DecideAsync(topRung.Id, "stand-in", "no-role", true, "beyond the delegated rung"));
+        Assert.Equal(GoldpathApprovalDecisionOutcome.Applied,
+            await engine.DecideAsync(managerRung.Id, "stand-in", "no-role", true, "the delegated rung"));
+    }
+
+    [Fact]
     public async Task The_same_identity_granting_twice_at_once_signs_once_and_the_second_is_AlreadySigned()
     {
         var published = new Published();

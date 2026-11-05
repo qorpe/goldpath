@@ -34,8 +34,10 @@ builder.AddGoldpathApprovals(approvals => approvals
 - **Resubmit** — `ResubmitAsync(rejectedId, requestedBy)` reworks a rejected request as a
   fresh one, linked by `SupersedesId` with both trails cross-referenced — the audit reads
   request → reject → rework as one story.
-- **Delegate** — bounded window, depth one (a delegate cannot re-delegate; the cycle guard
-  is structural).
+- **Delegate** — `DelegateRoleAsync(from, fromRole, to, window)`: the delegate decides the
+  delegator's rung (`fromRole`, taken from the authenticated delegator's claims, never from a
+  request body) and no other; bounded window, depth one (a delegate cannot re-delegate; the cycle
+  guard is structural). The role-less `DelegateAsync` refuses since preview.10 (#479).
 - **Escalate** — `EscalateOverdueAsync()` moves overdue requests one rung up; overdue at
   the top rung expires. Schedule it with `jobs.AddGoldpathApprovalsJobs()` (a five-minute
   sweep by default — rung deadlines are measured in hours, so the granularity never moves
