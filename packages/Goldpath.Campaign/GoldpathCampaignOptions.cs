@@ -186,6 +186,14 @@ public sealed class GoldpathCampaignType
     /// </summary>
     public int? MaxTps { get; internal set; }
 
+    /// <summary>
+    /// The target system every campaign of this type calls (R3.2); null = none, and the type keeps
+    /// <see cref="MaxTps"/> alone. Types naming one system share its ceiling, which is a row an
+    /// operator changes live (<see cref="GoldpathCampaignCeiling"/>), seeded from
+    /// <see cref="GoldpathCampaignOptions.AddTargetSystem"/>. Both may be set: the buckets nest.
+    /// </summary>
+    public string? TargetSystem { get; internal set; }
+
     /// <summary>Default policy for new instances (operators may override per instance).</summary>
     public GoldpathCampaignPolicy DefaultPolicy { get; internal set; }
         = new(Tps: 50, DailyQuota: null, MaxInFlight: 1_000, WindowStart: null, WindowEnd: null, TimeZoneId: "UTC");
@@ -278,6 +286,23 @@ public sealed class GoldpathCampaignTypeBuilder<TTarget>
         }
 
         _type.MaxTps = maxTps;
+        return this;
+    }
+
+    /// <summary>
+    /// Names the target system every campaign of this type calls (R3.2): campaigns of every type
+    /// naming it share its ceiling by weighted fair share. The system must be declared with
+    /// <see cref="GoldpathCampaignOptions.AddTargetSystem"/> somewhere in the same <c>configure</c>
+    /// delegate, before or after this type; an undeclared name refuses at startup.
+    /// </summary>
+    public GoldpathCampaignTypeBuilder<TTarget> TargetSystem(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("The target system's name must not be empty.", nameof(name));
+        }
+
+        _type.TargetSystem = name;
         return this;
     }
 
@@ -406,6 +431,7 @@ public sealed class GoldpathCampaignOptions
     private TimeSpan _staleClaimAfter = TimeSpan.FromMinutes(10);
     private volatile GoldpathCampaignTuning? _tuning;
     private IDisposable? _subscription;
+    private readonly Dictionary<string, int> _targetSystems = new(StringComparer.Ordinal);
 
     internal Dictionary<string, GoldpathCampaignType> TypeMap { get; } = new(StringComparer.Ordinal);
 
@@ -464,6 +490,81 @@ public sealed class GoldpathCampaignOptions
     /// app, so per-process IS per-app. Cross-app limiting belongs at the gateway.
     /// </summary>
     public int? GlobalTps { get; set; }
+
+    /// <summary>
+    /// The target systems declared in code (R3.2), each with the ceiling it is SEEDED with: the
+    /// live value is its <see cref="GoldpathCampaignCeiling"/> row, which the leader inserts from this
+    /// value and follows only while an operator has never moved it.
+    /// </summary>
+    public IReadOnlyDictionary<string, int> TargetSystems => _targetSystems;
+
+    /// <summary>
+    /// Declares a target system and the ceiling its row is seeded with (R3.2): releases per second
+    /// across every campaign of every type that names it with
+    /// <see cref="GoldpathCampaignTypeBuilder{TTarget}.TargetSystem"/>. Which systems exist is code;
+    /// how fast one may be called is the row, so changing <paramref name="maxTps"/> here moves the
+    /// live value only while an operator has never changed it.
+    /// </summary>
+    /// <exception cref="ArgumentException">The name is empty, longer than 128 characters, or already declared (compared ignoring case, because a database collation may).</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxTps"/> is not positive.</exception>
+    public GoldpathCampaignOptions AddTargetSystem(string name, int maxTps)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("The target system's name must not be empty.", nameof(name));
+        }
+
+        if (name.Length > MaxTargetSystemNameLength)
+        {
+            throw new ArgumentException(
+                $"The target system's name is {name.Length} characters; its ceiling row holds at most {MaxTargetSystemNameLength}.", nameof(name));
+        }
+
+        if (maxTps <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxTps), "A target system's ceiling must be positive; to leave it effectively open, set a high number.");
+        }
+
+        // Ignoring case: SQL Server's and MySQL's default collations compare the key that way, so two names that differ
+        // only in case would be one row there and two here. OrdinalIgnoreCase is culture-blind (tr-TR's dotted I included).
+        if (_targetSystems.Keys.FirstOrDefault(known => string.Equals(known, name, StringComparison.OrdinalIgnoreCase)) is { } existing)
+        {
+            throw new ArgumentException($"Target system '{name}' is already declared (as '{existing}').", nameof(name));
+        }
+
+        _targetSystems[name] = maxTps;
+        return this;
+    }
+
+    /// <summary>The longest target-system name a <see cref="GoldpathCampaignCeiling"/> row holds.</summary>
+    internal const int MaxTargetSystemNameLength = 128;
+
+    /// <summary>
+    /// Refuses, with teaching text, a type that names a target system nobody declared (R3.2, owner
+    /// decision Q7: this is the verifier, there is no analyzer). Runs once the whole <c>configure</c>
+    /// delegate has, so a declaration may follow the type that names it.
+    /// </summary>
+    internal void ValidateTargetSystems()
+    {
+        foreach (var type in TypeMap.Values)
+        {
+            if (type.TargetSystem is not { } name || _targetSystems.ContainsKey(name))
+            {
+                continue;
+            }
+
+            var near = _targetSystems.Keys.FirstOrDefault(known => string.Equals(known, name, StringComparison.OrdinalIgnoreCase));
+            var declared = _targetSystems.Count == 0
+                ? "No target system is declared."
+                : $"Declared: {string.Join(", ", _targetSystems.Keys.Order(StringComparer.Ordinal).Select(k => $"'{k}'"))}.";
+            throw new InvalidOperationException(
+                $"goldpath: campaign type '{type.Key}' names target system '{name}', which is not declared. {declared} "
+                + (near is null
+                    ? $"Declare it in the same AddGoldpathCampaign block — campaign.AddTargetSystem(\"{name}\", maxTps: <the rate it takes>) — "
+                      + "or remove .TargetSystem(...) from the type to keep only its own MaxTps."
+                    : $"Names are compared exactly: did you mean '{near}'?"));
+        }
+    }
 
     /// <summary>
     /// The retry ladder (R2.3): the wait before attempt N+1 is rung N, the last rung
