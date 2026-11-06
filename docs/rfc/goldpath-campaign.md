@@ -188,7 +188,9 @@ instrument list asks only for the `goldpath_campaign_awaiting_ack` gauge. *ETA a
 
 Grafana board: the operator's single screen per campaign (progress, rate governor, failure
 rate, ETA) — "screen-trackable by construction" is the case's own bar. Runs ride the jobs
-dashboard. Its panels and alert rules for the instruments above are Part 2 (#295).
+dashboard. Its panels and alert rules for the instruments above are Part 2 (#295): the panels are in
+`ops/grafana-campaign-dashboard.json`, the rules in `ops/alerts.yaml` (severity critical | major | minor,
+each linked to its runbook item), held by `scripts/alert-rules.sh`.
 
 ## 8. Operational (runbook or it didn't happen)
 

@@ -5,6 +5,34 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **Campaign: alert rules and the dashboard's missing panels (#295, campaign operability Part 2/2).**
+  - **`packages/Goldpath.Campaign/ops/alerts.yaml`**, plain Prometheus rule groups (the
+    `PrometheusRule` wrapper documented, not required), six rules, each with a `severity` and a
+    `runbook_url`: the pacer's tick older than 60 s (`critical`); no process exporting a tick for
+    2 min (`critical` — the first rule cannot judge a series that has expired); over 5 % of acceptances
+    timing out for 10 min (`major`); over 20 % of attempts failing, retries included, over at least
+    100 attempts, for 10 min (`major`); re-releases over 1 % of releases for 15 min (`minor` — a
+    resume's one jump cannot hold that long); any item failed terminally in the last hour (`minor`,
+    including a campaign's FIRST failures, which `increase` alone never sees). Runbook item 13
+    (the pacer stopped ticking) is new, and the runbook opens with the alert → item table.
+  - **Severity scheme** `critical | major | minor` (owner decision 2026-10-20), defined in
+    `Goldpath.ServiceDefaults/ops/dashboard-and-alerts.md` with where each package's rule file lives;
+    the baseline's two `warning` rows read `major`.
+  - **Gate:** `scripts/alert-rules.sh`, in its own `alert-rules` workflow — `promtool check rules` and
+    `promtool test rules` on every `packages/*/ops/alerts.yaml` (a rule file without its
+    `alerts.test.yaml` is refused), every severity from the scheme, every `runbook_url` resolving to
+    a heading. promtool comes from Prometheus 3.5.0, its archive checked against a pinned SHA-256;
+    an air-gapped run passes the archive or a provisioned binary of that version.
+  - **Dashboard:** the release-rate panel gains the ceilings (the running campaigns' policy `Tps`
+    per type, the type's `MaxTps`, `GlobalTps`) and sums the released rate per type; new panels for
+    the pacer's tick age, handler p50/p95, outcomes by code, the binding constraint and daily-quota
+    consumption.
+  - **Proof:** `alerts.test.yaml`'s six cases, among them the issue's: a pacer that stops ticking fires
+    `GoldpathCampaignLeaderStalled` once it has been silent for more than a minute (not at 60 s, at
+    75 s), and the case is red with the rule removed. 23 planted faults in the rules (thresholds,
+    windows, `for`, label filters, aggregation, severity, the link) each turn a case red. On a real
+    OpenTelemetry Collector 0.120.0 and Prometheus 3.5.0, a stalled pacer fired the rule 63 s after
+    its last tick, and the exported names are the ones the rules query.
 - **Campaign: a ceiling for outstanding acknowledgements, `MaxAwaitingAck` (campaign RFC R3.4,
   slice R3-S5, #293).**
   - **API (additive, init-only):** `GoldpathCampaignPolicy.MaxAwaitingAck`,
