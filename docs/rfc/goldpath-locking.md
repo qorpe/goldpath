@@ -106,6 +106,11 @@ GoldpathLockNames.Global("schema-migration");       // deliberately tenant-free
   already implies commercially-licensed Microsoft infrastructure — the same chain the
   template's `--db sqlserver` choice pulls via EF). Core `AddGoldpathLocking` fails LOUDLY at
   registration if the manifest says sqlserver without the optional package.
+- **Oracle (G7, O-4, #407, 2026-11-06), the same shape:** `DistributedLock.Oracle` reaches ODP.NET (Oracle Free
+  Use Terms and Conditions), so the Oracle provider ships as the OPTIONAL `Goldpath.Locking.Oracle` package
+  (`AddGoldpathOracleLocking()`, `DBMS_LOCK`), under the FUTC exception the Oracle RFC (§2.1) already scopes to
+  it. `AddGoldpathLocking` refuses `Provider = Oracle` at registration and names the package, and refuses any value
+  that names no provider rather than building PostgreSQL for it.
 
 ## 9. Decision Points (Ömer)
 

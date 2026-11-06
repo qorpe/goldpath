@@ -5,6 +5,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **Locking on Oracle: the optional `Goldpath.Locking.Oracle` package (G7, slice O-4, #407; RFC goldpath-oracle
+  §2.9).**
+  - **API (additive):** `AddGoldpathOracleLocking<TBuilder>(configure)` in the new package, and
+    `GoldpathLockProvider.Oracle` (= 3) in `Goldpath.Locking`.
+  - **The provider:** Medallion's `DistributedLock.Oracle` 1.0.5 (MIT, `DBMS_LOCK`), composed as the SQL
+    Server package composes its own (ADR-0003). `ConnectionName` defaults to `database`.
+  - **Why separate:** its chain reaches ODP.NET (FUTC). The package raises ODP.NET to the repository's
+    23.26.301 pin and `System.Security.Cryptography.Pkcs` to the patched line. It is the one Goldpath package
+    that references ODP.NET, under the existing scoped licence exception: `license-gate.py` has no new
+    exception.
+  - **The grant:** the runtime user needs `EXECUTE ON SYS.DBMS_LOCK`. The README and
+    `ops/locking-oracle.md` say so, and the runbook covers inspecting a held lock (`DBA_LOCKS` / `V$LOCK`
+    type `UL`) and session-owned semantics.
+  - **Proof:** on a real Oracle Database Free 23.26.3 container (`LockContractOracleTests`, `Category=Oracle`),
+    both lock-contract facts pass through `AddGoldpathOracleLocking`, in a schema granted as the runbook says.
+    Three more facts:
+    - a schema without the grant fails its first acquire with `PLS-00201` naming `DBMS_LOCK`;
+    - a 300-character name is one exclusive lock, and a name differing only past Oracle's limit is another;
+    - a `Provider` left in configuration for another store is refused in words, rather than describing a lock
+      the method does not build.
+    The facts are red with the grant not run, red with a provider whose lock is not exclusive, and red with the
+    configuration check removed. Mutation gate for `Goldpath.Locking`: 91.67 % → 92.00 % (`stryker/README.md`).
 - **Campaign: a ceiling for outstanding acknowledgements, `MaxAwaitingAck` (campaign RFC R3.4,
   slice R3-S5, #293).**
   - **API (additive, init-only):** `GoldpathCampaignPolicy.MaxAwaitingAck`,
@@ -524,6 +546,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
 ### Changed
+- **`AddGoldpathLocking` refuses a provider it does not build (#407).** `Provider = Oracle` is refused at
+  registration and names `Goldpath.Locking.Oracle` and `AddGoldpathOracleLocking()`, as `SqlServer` already
+  was. A value that names no provider at all (an out-of-range cast) is refused in words; before, it was built
+  as PostgreSQL. Proof: `LockingRegistrationTests` (three facts), red with the old registration.
 - **Console: TypeScript 5.9.3 → 7.0.2, the native compiler (#493, replaces Dependabot #243).** A dev dependency, pinned
   exactly (`"typescript": "7.0.2"`, no range; the newest 7.0.x, published 2026-07-08). The console uses TypeScript only
   for `pnpm typecheck` (`tsc --noEmit`): Vite and Vitest transpile without loading the TypeScript API, and the console

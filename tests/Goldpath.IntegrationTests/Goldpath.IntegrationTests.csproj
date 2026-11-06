@@ -35,6 +35,7 @@
     <ProjectReference Include="../../packages/Goldpath.Caching/Goldpath.Caching.csproj" />
     <ProjectReference Include="../../packages/Goldpath.MultiTenancy/Goldpath.MultiTenancy.csproj" />
     <ProjectReference Include="../../packages/Goldpath.Locking/Goldpath.Locking.csproj" />
+    <ProjectReference Include="../../packages/Goldpath.Locking.Oracle/Goldpath.Locking.Oracle.csproj" />
     <ProjectReference Include="../../packages/Goldpath.Jobs/Goldpath.Jobs.csproj" />
     <ProjectReference Include="../../packages/Goldpath.Archival/Goldpath.Archival.csproj" />
     <ProjectReference Include="../../packages/Goldpath.Bulk/Goldpath.Bulk.csproj" />

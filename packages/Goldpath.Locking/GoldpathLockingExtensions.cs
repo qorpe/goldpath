@@ -26,6 +26,14 @@ public enum GoldpathLockProvider
     /// reviewed). Use its <c>AddGoldpathSqlServerLocking()</c> instead of <c>AddGoldpathLocking()</c>.
     /// </summary>
     SqlServer,
+
+    /// <summary>
+    /// Oracle <c>DBMS_LOCK</c> — ships in the OPTIONAL <c>Goldpath.Locking.Oracle</c> package, because
+    /// its dependency chain carries Oracle's ODP.NET driver under the Oracle Free Use Terms and
+    /// Conditions; only Oracle choosers take that on (license-gate exception, reviewed). Use its
+    /// <c>AddGoldpathOracleLocking()</c> instead of <c>AddGoldpathLocking()</c>.
+    /// </summary>
+    Oracle,
 }
 
 /// <summary>Tuning surface — bound from <c>Goldpath:DistributedLocking</c>.</summary>
@@ -53,13 +61,25 @@ public static class GoldpathLockingExtensions
         builder.Configuration.GetSection("Goldpath:DistributedLocking").Bind(options);
         configure?.Invoke(options);
 
-        if (options.Provider == GoldpathLockProvider.SqlServer)
+        // Loud at registration, not at first use: the SqlServer and Oracle providers live in
+        // optional packages so the pure-OSS dependency graph stays pure for everyone else. Any
+        // value this method does not build is refused here, never mistaken for Postgres below.
+        switch (options.Provider)
         {
-            // Loud at registration, not at first use: the SqlServer provider lives in the
-            // optional package so the pure-OSS dependency graph stays pure for everyone else.
-            throw new InvalidOperationException(
-                "SqlServer locking ships in the optional Goldpath.Locking.SqlServer package — "
-                + "reference it and call AddGoldpathSqlServerLocking() instead of AddGoldpathLocking().");
+            case GoldpathLockProvider.Redis or GoldpathLockProvider.Postgres:
+                break;
+            case GoldpathLockProvider.SqlServer:
+                throw new InvalidOperationException(
+                    "SqlServer locking ships in the optional Goldpath.Locking.SqlServer package — "
+                    + "reference it and call AddGoldpathSqlServerLocking() instead of AddGoldpathLocking().");
+            case GoldpathLockProvider.Oracle:
+                throw new InvalidOperationException(
+                    "Oracle locking ships in the optional Goldpath.Locking.Oracle package — "
+                    + "reference it and call AddGoldpathOracleLocking() instead of AddGoldpathLocking().");
+            default:
+                throw new InvalidOperationException(
+                    $"Goldpath:DistributedLocking:Provider '{options.Provider}' is not a lock provider — use Redis or Postgres here, "
+                    + "or the optional package's own registration for SqlServer or Oracle.");
         }
 
         builder.Services.AddSingleton(options);

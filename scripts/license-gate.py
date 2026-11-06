@@ -22,7 +22,7 @@ EXCEPTIONS: dict[str, str] = {
     # The Oracle EF Core provider and its ODP.NET driver. Reachable ONLY through the template's
     # explicit `--db oracle` / manifest `database: oracle` choice — i.e. only adopters who
     # already run a commercially licensed Oracle Database. No Goldpath package references
-    # them; the optional Goldpath.Locking.Oracle package (if O-4 ships it) is the one
+    # them; the optional Goldpath.Locking.Oracle package (O-4, #407) is the one
     # exception and carries the same scope. Approved 2026-10-23 (goldpath-oracle RFC, #287).
     "Oracle.EntityFrameworkCore": "proprietary-free (Oracle Free Use Terms and Conditions)",
     "Oracle.ManagedDataAccess.Core": "proprietary-free (Oracle Free Use Terms and Conditions)",

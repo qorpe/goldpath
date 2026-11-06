@@ -127,6 +127,13 @@ survivor, `unit >> 8` → `unit >>> 8` in the hash, which is equivalent: a `char
 two shifts agree. The other survivors are in lines the change did not touch. Minutes are the
 sandbox's, not the CI profile's.
 
+**Locking was re-measured 2026-11-06**, a full run of `mutation-gate.sh Goldpath.Locking` on the #407
+branch (base 9513a76), after `AddGoldpathLocking` gained its provider switch (Oracle refused like SqlServer,
+an undefined value refused rather than built as PostgreSQL). 91.67 % → 92.00 % (46 killed, 4 survived, of 50
+scored mutants). The first run scored 90.00 %: the default arm's pointer to the optional packages was asserted
+by nothing, and `A_value_that_names_no_provider_is_refused_never_built_as_postgres` now asserts it. The four
+survivors are in lines the change did not touch. Minutes are the sandbox's, not the CI profile's.
+
 **Console was re-measured 2026-10-19**, a full run on the #272 branch, after the product
 console link tiles (#257) put the package's first real decision logic in it — the link URL
 rule and the registry's links-only shape. 75.00 % → 91.46 % (75 killed, 6 survived, 1 without
@@ -139,8 +146,8 @@ at f459fe2, so its row carries it (minutes not recorded).
 | Caching | 100.00 % (69.57) | 30.00 | 2.3 | 69.57 %, 33.4 (RED there too) |
 | Auth | 97.83 % (70.65) | 27.83 | 1.8 | 70.65 %, 32.3 |
 | Abstractions | 95.24 % | 25.24 | 0.9 | 95.24 %, 30.0 |
+| Locking | 92.00 % | 22.00 | 6.5 | 91.67 %, 59.5 |
 | SoftDelete | 91.67 % | 21.67 | 1.4 | 91.67 %, 3.7 |
-| Locking | 91.67 % | 21.67 | 7.1 | 91.67 %, 59.5 |
 | Cli | 91.48 % | 21.48 | 7.6 | 91.44 %, 8.6 |
 | Console | 91.46 % (75.00) | 21.46 | — | 75.00 %, 24.3 |
 | Bulk | 88.37 % (88.38) | 18.37 | 19.7 | never finished (timeout) |
@@ -354,8 +361,9 @@ Jobs admin service is the exception above, and the reason is measured, not assum
 
 ## Packages without a gate
 
-`ApiDefaults`, `Locking.SqlServer`, `Sdk` — composition and adapter shells with little
-branching logic; each has a unit suite. A gate joins the moment one of them grows an engine
+`ApiDefaults`, `Locking.SqlServer`, `Locking.Oracle`, `Sdk` — composition and adapter shells with little
+branching logic; each has a unit suite, except `Locking.Oracle`, whose one registration method is proven on a
+real Oracle by the lock contract (`LockContractOracleTests`, the `oracle` CI job). A gate joins the moment one of them grows an engine
 path (the 2026-09-01 audit's rule). `Console`, `Messaging` and `ServiceDefaults` gained
 gates on 2026-09-03 (the thin-suites PR): each carries real branching (asset resolution,
 the publish/consume filters, correlation + concurrency guard) that a unit suite can score.

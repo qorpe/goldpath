@@ -1,1 +1,2 @@
 #nullable enable
+Goldpath.GoldpathLockProvider.Oracle = 3 -> Goldpath.GoldpathLockProvider
