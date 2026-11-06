@@ -102,4 +102,15 @@ public sealed class ClassificationTests
         Assert.Throws<InvalidOperationException>(() =>
             builder.AddGoldpathDataProtection(o => o.Redactor = GoldpathRedactionMode.Hmac));
     }
+
+    /// <summary>
+    /// Threat model T-DPK-07: an HMAC key too short to resist a guess (under 44 Base64 characters, the
+    /// composed redactor's own rule) or not Base64 at all is refused when the redactor is resolved,
+    /// before a single value is pseudonymized with it.
+    /// </summary>
+    [Theory]
+    [InlineData("c2hvcnQ=")]                 // "short": 8 characters
+    [InlineData("not a base64 key at all, though long enough to pass a length check")]
+    public void Hmac_mode_refuses_a_short_or_non_base64_key_before_it_redacts(string key)
+        => Assert.Throws<Microsoft.Extensions.Options.OptionsValidationException>(() => Build(o => o.UseHmacRedaction(key)));
 }
