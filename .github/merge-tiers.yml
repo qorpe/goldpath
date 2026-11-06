@@ -62,6 +62,7 @@ C:
   - 'scripts/review-agent.sh'
   - 'scripts/sbom.sh'
   - 'scripts/zap-baseline*'       # G15's dynamic scan and its rules file (every IGNORE carries a reason)
+  - 'scripts/alert-rules.sh'       # the packages' alert rules: promtool check + test, severities, runbook links (#295)
   # EXTENSION: lowering a verifier's severity or skipping a test switches a gate off from
   # outside the gate's own files ("suppression without justification is forbidden").
   - '**/.editorconfig'
