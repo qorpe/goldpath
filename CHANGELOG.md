@@ -23,6 +23,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
       values it read, so an operator's change landing in between stands.
     - Otherwise the operator's value stays, and a warning names both values.
     - An insert that loses the key to a concurrent writer re-reads that row and applies the same rule.
+    - An insert refused for any other reason (a missing grant, an adopter's trigger or constraint, a
+      deadlock) is logged at Warning with its exception and the row's name. The code seed binds until
+      the row exists, and the next slice tries again.
   - **The pacer:**
     - One query per tick reads the rows. A deleted row, or a system row holding no value, falls back to
       the code seed, so the ceiling never silently opens.

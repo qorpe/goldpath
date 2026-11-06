@@ -582,7 +582,10 @@ public sealed class GoldpathCampaignEngine<TContext>
     /// (<c>MaxTps == SeedMaxTps</c>, owner decision Q4), by an update guarded on exactly the values
     /// it read, so an operator's change landing in between is never overwritten; otherwise the
     /// operator's value stays and the disagreement is logged. An insert that meets a row someone
-    /// else inserted first (a primary-key conflict) re-reads and applies the same rule to it.
+    /// else inserted first (a primary-key conflict) re-reads and applies the same rule to it. An
+    /// insert that still fails on the second pass (not a conflict: a missing grant, an adopter's
+    /// trigger or constraint, a deadlock) is logged at Warning with its exception, naming the row;
+    /// the code seed binds until the row exists, and the next slice tries again.
     /// Rows code no longer declares are left alone: nothing reads them.
     /// </summary>
     internal async Task ReconcileCeilingsAsync(TContext db, CancellationToken cancellationToken)
@@ -594,18 +597,21 @@ public sealed class GoldpathCampaignEngine<TContext>
         desired.AddRange(_options.TargetSystems.Select(t => (GoldpathCampaignCeilingKind.TargetSystem, t.Key, (int?)t.Value)));
 
         // Two passes at most: the second only re-reads the rows whose insert met a concurrent one.
+        var failed = new List<(GoldpathCampaignCeilingKind Kind, string Name, DbUpdateException Error)>();
         for (var attempt = 0; attempt < 2 && desired.Count > 0; attempt++)
         {
             var rows = await db.Set<GoldpathCampaignCeiling>().AsNoTracking().ToListAsync(cancellationToken);
             var conflicted = new List<(GoldpathCampaignCeilingKind Kind, string Name, int? Code)>();
+            failed.Clear();
             foreach (var (kind, name, code) in desired)
             {
                 var row = rows.FirstOrDefault(r => r.Kind == kind && string.Equals(r.Name, name, StringComparison.Ordinal));
                 if (row is null)
                 {
-                    if (!await TryInsertCeilingAsync(db, kind, name, code, cancellationToken))
+                    if (await TryInsertCeilingAsync(db, kind, name, code, cancellationToken) is { } error)
                     {
                         conflicted.Add((kind, name, code));
+                        failed.Add((kind, name, error));
                     }
 
                     continue;
@@ -641,10 +647,20 @@ public sealed class GoldpathCampaignEngine<TContext>
 
             desired = conflicted;
         }
+
+        // A conflict is quiet: the second pass found the other writer's row. A row still missing after
+        // it was refused for another reason, and the operator must hear why the verbs see no row.
+        foreach (var (kind, name, error) in failed)
+        {
+            _logger.LogWarning(
+                error,
+                "Campaign ceiling {Kind} '{Name}': its seed row could not be written ({Error}); the code seed binds until the row exists, and the next slice tries again.",
+                kind, name, error.GetBaseException().Message);
+        }
     }
 
-    /// <summary>Inserts one seed row; false when another writer's row took its key first.</summary>
-    private async Task<bool> TryInsertCeilingAsync(
+    /// <summary>Inserts one seed row; null when it landed, else the failure (usually another writer's row took its key first).</summary>
+    private async Task<DbUpdateException?> TryInsertCeilingAsync(
         TContext db, GoldpathCampaignCeilingKind kind, string name, int? code, CancellationToken cancellationToken)
     {
         var row = new GoldpathCampaignCeiling
@@ -660,11 +676,13 @@ public sealed class GoldpathCampaignEngine<TContext>
         try
         {
             await db.SaveChangesAsync(cancellationToken);
-            return true;
+            return null;
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException error)
         {
-            return false;   // the key exists now (the admin verb, or another leader's last slice): the next pass re-reads it
+            // Usually the key exists now (the admin verb, or another leader's last slice): the next pass
+            // re-reads it. Anything else is still missing after that pass and is logged by the caller.
+            return error;
         }
         finally
         {

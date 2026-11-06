@@ -238,6 +238,51 @@ public class R3TargetSystemTests
     }
 
     [Fact]
+    public async Task ASeedRowRefusedForAnotherReasonThanAConflict_IsLoggedAtWarning_WithItsException()
+    {
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200));
+        // An adopter's DBA refuses every insert into the table (a missing grant reads the same way).
+        await using (var deny = fixture.Connection.CreateCommand())
+        {
+            deny.CommandText = "CREATE TRIGGER deny_ceiling_insert BEFORE INSERT ON \"GoldpathCampaignCeilings\" "
+                + "BEGIN SELECT RAISE(ABORT, 'permission denied for table GoldpathCampaignCeilings'); END;";
+            await deny.ExecuteNonQueryAsync();
+        }
+
+        var logger = new ListLogger<GoldpathCampaignEngine<CampaignTestContext>>();
+        await ReconcileAsync(fixture, fixture.Options, logger);   // fails safe: nothing escapes, the code seed binds
+
+        Assert.Empty(Rows(fixture));
+        var warnings = logger.Entries.Where(e => e.Level == LogLevel.Warning).ToList();
+        Assert.Equal(2, warnings.Count);   // the global row and the system's, each named once
+        var system = Assert.Single(warnings, w => w.Message.Contains($"'{System}'", StringComparison.Ordinal));
+        Assert.Contains("code seed binds", system.Message, StringComparison.Ordinal);
+        Assert.Contains("permission denied", system.Message, StringComparison.Ordinal);
+        Assert.IsType<DbUpdateException>(system.Exception);
+        Assert.Single(warnings, w => w.Message.Contains($"'{GoldpathCampaignCeiling.GlobalName}'", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task AnInsertThatMeetsAConcurrentRow_IsQuiet()
+    {
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200));
+        var interceptor = new InsertFirst(
+            $"INSERT INTO \"GoldpathCampaignCeilings\" (\"Kind\", \"Name\", \"MaxTps\", \"SeedMaxTps\", \"UpdatedAt\", \"UpdatedBy\") "
+            + $"VALUES (1, '{System}', 200, 200, '2026-11-05 00:00:00+00:00', 'system')");
+        var options = new DbContextOptionsBuilder<CampaignTestContext>().UseSqlite(fixture.Connection).AddInterceptors(interceptor).Options;
+        var logger = new ListLogger<GoldpathCampaignEngine<CampaignTestContext>>();
+        var engine = new GoldpathCampaignEngine<CampaignTestContext>(fixture.Options, TimeProvider.System, logger);
+        await using (var db = new CampaignTestContext(options))
+        {
+            await engine.ReconcileCeilingsAsync(db, CancellationToken.None);
+        }
+
+        Assert.True(interceptor.Fired);
+        Assert.Equal(2, Rows(fixture).Count);
+        Assert.DoesNotContain(logger.Entries, e => e.Level >= LogLevel.Warning);
+    }
+
+    [Fact]
     public async Task AFollowIsGuardedOnTheValuesItRead_SoAnOperatorsChangeInBetweenStands()
     {
         using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200));
@@ -632,13 +677,13 @@ public class R3TargetSystemTests
 
     private sealed class ListLogger<T> : ILogger<T>
     {
-        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+        public List<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = [];
 
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
         public bool IsEnabled(LogLevel logLevel) => true;
 
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
-            => Entries.Add((logLevel, formatter(state, exception)));
+            => Entries.Add((logLevel, formatter(state, exception), exception));
     }
 }
