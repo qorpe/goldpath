@@ -618,6 +618,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **Messaging: an outbox event above the broker's size limit no longer stops every later event, on either engine (#458).**
+  - **What went wrong:** RabbitMQ refuses a body above `max_message_size` (16 MiB by default) on every attempt. Both
+    adapters' delivery loops retry the oldest undelivered outbox first, so one such row held back every row committed
+    after it, for ever (the verifier's probe P1 on #457: the small row behind it undelivered after 45 s, on both).
+  - **Now:** `GoldpathMessagingOptions.MaxMessageBytes` (`Goldpath:Messaging:MaxMessageBytes`, default 16777216, must be
+    positive; the only public addition) is enforced in the floor, once for every engine:
+    - **A publish above it is refused at the seam:** `PublishAsync` throws `InvalidOperationException` (the event, its
+      size and the limit, never the payload), and the row leaves the unit of work, so nothing commits it.
+    - **A committed row above it is marked failed in place:** an outbox sweep (its first pass at start, before the
+      bus; then every delivery poll) keeps the row and its body, detaches it from its outbox or inbox, writes
+      `Goldpath-Outbox-Failed*` headers with the reason and where it came from, and logs id, type and size at Error.
+      The rows behind it are delivered. The outbox schema is unchanged.
+    - Both count in a new counter, `goldpath.messaging.outbox.oversized{stage=publish|outbox}` (meter `Goldpath.Messaging`).
+  - **Proof:** conformance S2.20 (a committed oversized row, then a small one; the small one is delivered, the large one
+    is kept and marked) and S2.21 (the refusal commits nothing; the next publish goes through), both on MassTransit
+    8.5.12 and Wolverine on real RabbitMQ 4 and PostgreSQL 17. Both are red on `main`, and red again with the detach or
+    the refusal planted out. Boundaries in UTF-8 bytes (ASCII, `İ`, `€`, a surrogate pair) and the sweep's page walk are
+    `MessageSizeTests`.
+  - **Docs:** the package README's "Message size", and the runbook's "An outbox row marked failed" (how to recover one).
+  - **Upgrade note:** none required. A publish above 16 MiB now throws where it used to commit a row that never left. To
+    publish larger bodies, raise the broker's `max_message_size` and this option together.
 - **[schema]** **Approvals: concurrent decisions no longer both apply (#480, threat model T-APR-06).** A decision read the
   request and its signatures, then wrote them in separate calls with nothing guarding the gap.
   - **What went wrong:**

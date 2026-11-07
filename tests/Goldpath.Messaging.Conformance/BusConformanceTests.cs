@@ -339,6 +339,81 @@ public abstract class BusConformanceTests(ConformanceContainers containers, stri
     }
 
     [Fact]
+    public async Task S2_20_an_outbox_row_above_the_size_limit_does_not_hold_back_the_rows_after_it()
+    {
+        // #458: a committed row the broker refuses (RabbitMQ 4 refuses a body above max_message_size, 16 MiB) was
+        // retried for ever, and every row committed after it waited behind it. The row is written by a build whose limit
+        // was raised (it passes that build's seam), then a host on the default limit starts: the small row is delivered,
+        // and the large one is marked failed IN PLACE — still in the table, detached from its outbox, never sent.
+        var observed = new Observed();
+        var large = Guid.NewGuid();
+        var small = Guid.NewGuid();
+        await using (var writer = await containers.BuildHostAsync(engine, observed, options: o => o.MaxMessageBytes = 64 * 1024 * 1024))
+        {
+            await writer.PublishCommittedAsync(new Ping { Id = large, Payload = new string('x', 17 * 1024 * 1024) });
+            await writer.PublishCommittedAsync(new Ping { Id = small, Payload = "behind-the-large-one" });
+        }
+
+        long counted = 0;
+        using var meter = new System.Diagnostics.Metrics.MeterListener();
+        meter.InstrumentPublished = (instrument, listener) =>
+        {
+            if (instrument.Meter.Name == "Goldpath.Messaging" && instrument.Name == "goldpath.messaging.outbox.oversized")
+            {
+                listener.EnableMeasurementEvents(instrument);
+            }
+        };
+        meter.SetMeasurementEventCallback<long>((_, value, _, _) => Interlocked.Add(ref counted, value));
+        meter.Start();
+
+        await using var host = await containers.BuildHostAsync(engine, observed);
+        await host.StartAsync();
+        await observed.WaitForPingsAsync(1, Wait);
+        await Task.Delay(TimeSpan.FromSeconds(3));   // grace for a wrong delivery of the large one
+        Assert.Equal(small, Assert.Single(observed.Pings).Event.Id);
+
+        using var scope = host.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ConformanceDb>();
+        // The table read as the operator's runbook reads it, in SQL: the suite names no engine's types.
+        var failed = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleAsync(
+            Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.SqlQuery<OutboxRow>(db.Database,
+                $"SELECT \"OutboxId\", \"Headers\" FROM \"OutboxMessage\" WHERE strpos(\"Body\", {large.ToString()}) > 0"));
+        Assert.Null(failed.OutboxId);
+        Assert.Contains("Goldpath-Outbox-Failed", failed.Headers);
+        Assert.Contains("exceeds MaxMessageBytes", failed.Headers);
+        Assert.True(Interlocked.Read(ref counted) >= 1);
+        await host.StopAsync();
+    }
+
+    /// <summary>An outbox row as S2.20 reads it.</summary>
+    private sealed record OutboxRow(Guid? OutboxId, string? Headers);
+
+    [Fact]
+    public async Task S2_21_a_publish_above_the_size_limit_is_refused_at_the_seam_and_commits_nothing()
+    {
+        // #458: the failure points at the publisher, not at the outbox. The caller's unit of work is refused before it
+        // commits, so neither the row nor the event exists; the next publish goes through.
+        var observed = new Observed();
+        await using var host = await containers.BuildHostAsync(engine, observed, options: o => o.MaxMessageBytes = 1024 * 1024);
+        await host.StartAsync();
+
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            host.PublishCommittedAsync(new Ping { Id = Guid.NewGuid(), Payload = new string('x', 2 * 1024 * 1024) }, note: "s2-21-refused"));
+        Assert.Contains("MaxMessageBytes", refused.Message);
+        Assert.Contains(nameof(Ping), refused.Message);
+
+        var after = Guid.NewGuid();
+        await host.PublishCommittedAsync(new Ping { Id = after, Payload = "after-the-refusal" });
+        await observed.WaitForPingsAsync(1, Wait);
+        Assert.Equal(after, Assert.Single(observed.Pings).Event.Id);
+
+        using var scope = host.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ConformanceDb>();
+        Assert.False(await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.AnyAsync(db.Rows.Where(r => r.Note == "s2-21-refused")));
+        await host.StopAsync();
+    }
+
+    [Fact]
     public async Task S2_16_publish_and_consume_are_one_trace_whose_consume_span_carries_tenant_and_correlation()
     {
         var exported = new List<Activity>();

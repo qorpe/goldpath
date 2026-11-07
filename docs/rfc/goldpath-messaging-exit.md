@@ -263,6 +263,17 @@ they guard):
   yet. It now claims the row (an insert that does nothing on the existing key) before it locks it, so a concurrent
   duplicate waits for the first delivery's transaction and then sees it consumed.
 
+**2026-11-07 — the size limit ([#458](https://github.com/qorpe/goldpath/issues/458), owner decision 2026-10-27).**
+Two facts join the class, each red on `main` on both engines and green after, and red again with its half of the
+fix planted out:
+
+- **S2.20, an oversized outbox row does not hold back the rows after it.** A row above the broker's
+  `max_message_size` was retried for ever on both engines, ahead of everything committed after it. It is now
+  marked failed in place by the floor's sweep: kept, detached from its outbox, its reason in its headers, and counted
+  in `goldpath.messaging.outbox.oversized`. The rows behind it are delivered.
+- **S2.21, a publish above `MaxMessageBytes` is refused at the seam.** The publish throws, its row leaves the unit
+  of work, nothing commits, and the next publish goes through.
+
 **Delayed redelivery is not in the suite, and that is a finding, not a skip** (open-threads T52; S2.13 is
 reserved for it). The Wolverine
 adapter refuses a redelivery ladder at registration (T51). The default engine schedules a redelivery through
