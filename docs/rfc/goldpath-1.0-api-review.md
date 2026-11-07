@@ -36,7 +36,7 @@ The counter, not a hand-typed table, is the source of every number (§7).
 |---|---|---|
 | Public .NET API (the 23 ledgers) | `scripts/api-review-gate.sh` (this record), then API-12's additions-only gate (#401) | API-2 … API-7 |
 | Diagnostic contract: meter, activity-source, instrument and span names | `scripts/diagnostic-names-gate.sh` over [`diagnostic-names-gate.inventory.txt`](../../scripts/diagnostic-names-gate.inventory.txt) (10 meters, 3 activity sources, 69 instruments, 8 span names; 3 subscribed names Goldpath does not own) | API-8 (#397) |
-| Goldpath-owned tables | the names: the same gate and inventory (39 tables across 8 packages, the 11 `qrtz_*` included); the DDL: `scripts/validate-migrations.sh` (D7) and GP1801 | API-8 (#397) |
+| Goldpath-owned tables | the names: the same gate and inventory (39 tables across 8 packages, the 11 `qrtz_*` included), every mapped entity required to carry its `ToTable` so no table is named by convention; the DDL: `scripts/validate-migrations.sh` (D7) and GP1801 | API-8 (#397) |
 | Admin routes and the signed callback route | a route-contract test per module | API-9 (#398) |
 | CLI verbs and flags, template parameters, the manifest schema | an additions-only snapshot gate | API-10 (#399) |
 | `[Experimental]` marks on Approvals and FileExchange | the diagnostic ids of §4 | API-11 (#400) |

@@ -10,7 +10,7 @@
 #   source      <activity source>          a System.Diagnostics.ActivitySource a package creates
 #   instrument  <meter> <instrument>       an instrument, with the meter that creates it
 #   span        <source> <span name>       a span name, with its source (an interpolated name is kept as written)
-#   table       <package> <table>          a table a package's model maps (ToTable)
+#   table       <package> <table>          a table a package's model maps (ToTable — required on every entity)
 #   external    <meter or source>          a name ServiceDefaults subscribes to that Goldpath does NOT own
 #
 # The gate scans packages/**/*.cs and fails on:
@@ -21,10 +21,15 @@
 #   - a name it cannot read: a meter, source, instrument, span or table created from an expression
 #     that is neither a string literal nor a const string in the same file. Make it one.
 #
+# Every entity a package maps with modelBuilder.Entity<T>(…) must carry a ToTable (in its configuration, or
+# chained): a table EF names by convention follows the class name, and would be a Goldpath-owned table outside
+# the inventory. Any other way to declare a table (IEntityTypeConfiguration, [Table], DbSet, Entity(typeof(…)))
+# is refused, so the rule cannot be walked around.
+#
 # `diagnostic-names-gate.sh --selftest` plants a renamed meter, a renamed span, a renamed table, an
-# un-inventoried instrument, an unreadable name, an un-inventoried factory meter (MeterOptions), a removed
-# external subscription and a name kept alive only by a comment in a scratch copy, each red, and the
-# unplanted copy green.
+# un-inventoried instrument, an unreadable name, an un-inventoried factory meter (MeterOptions), an entity
+# mapped without ToTable, a table declared by attribute, a removed external subscription and a name kept
+# alive only by a comment in a scratch copy, each red, and the unplanted copy green.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 python3 - "$@" <<'PY'
@@ -42,6 +47,11 @@ INSTRUMENT = re.compile(r'\.Create(?:Counter|Histogram|UpDownCounter|ObservableC
 SPAN = re.compile(r'(\w+)\s*\.\s*StartActivity\s*\(\s*([^,)]*)')
 TABLE = re.compile(r'\.ToTable\s*\(\s*([^,)]*)')
 EXTERNAL = re.compile(r'\.Add(?:Meter|Source)\s*\(\s*"([^"]+)"\s*\)')
+# A table EF names by convention (no ToTable) is a Goldpath-owned table the TABLE pattern cannot see, so every
+# entity a package maps must carry its ToTable, and every other way to declare one is refused (fail closed).
+ENTITY = re.compile(r'\.Entity\s*<\s*([\w.]+)\s*>\s*\(')
+CHAINED_TABLE = re.compile(r'\s*\.ToTable\s*\(')
+OTHER_MAPPING = re.compile(r'IEntityTypeConfiguration\s*<|\[\s*Table\s*\(|\bDbSet\s*<|\.Entity\s*\(\s*typeof\s*\(|\.SharedTypeEntity\s*<')
 
 
 def cs_files(root):
@@ -65,6 +75,15 @@ def strip_comments(text):
         elif text.startswith("/*", i):
             j = text.find("*/", i + 2)
             i = n if j < 0 else j + 2
+        elif c == "'":
+            # A char literal ('"' or '\\'') is kept whole, so a quote inside it never opens a string.
+            j = i + 1
+            if j < n and text[j] == "\\":
+                j += 2
+            while j < n and text[j] != "'":
+                j += 1
+            out.append(text[i:j + 1])
+            i = j + 1
         elif c == '"' or (c == "$" and i + 1 < n and text[i + 1] == '"') or (c == "@" and i + 1 < n and text[i + 1] == '"'):
             j = i + (2 if c in "$@" else 1)
             while j < n and text[j] != '"':
@@ -75,6 +94,27 @@ def strip_comments(text):
             out.append(c)
             i += 1
     return "".join(out)
+
+
+def call_span(code, start):
+    """The text of a call's argument list, from the '(' at code[start - 1] to its matching ')', and the index after it."""
+    depth, i, n = 1, start, len(code)
+    while i < n and depth:
+        c = code[i]
+        if c == '"':
+            i += 1
+            while i < n and code[i] != '"':
+                i += 2 if code[i] == "\\" else 1
+        elif c == "'":
+            i += 1
+            while i < n and code[i] != "'":
+                i += 2 if code[i] == "\\" else 1
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+        i += 1
+    return code[start:i - 1], i
 
 
 def resolve(expr, consts):
@@ -99,6 +139,7 @@ def package_of(path):
 def scan(root):
     found, unreadable, sources_by_package = set(), [], {}
     spans = []
+    entities = {}   # (package, entity type) -> [path, has a ToTable]
     for path in cs_files(root):
         with open(os.path.join(root, path), encoding="utf-8") as f:
             code = strip_comments(f.read())
@@ -129,10 +170,20 @@ def scan(root):
         for m in TABLE.finditer(code):
             name = resolve(m.group(1), consts)
             (found.add(("table", package, name))) if name else unreadable.append(f"{path}: table {m.group(1).strip()}")
+        for m in ENTITY.finditer(code):
+            args, after = call_span(code, m.end())
+            mapped = ".ToTable(" in re.sub(r"\s+", "", args) or CHAINED_TABLE.match(code, after) is not None
+            entry = entities.setdefault((package, m.group(1)), [path, False])
+            entry[1] = entry[1] or mapped
+        for m in OTHER_MAPPING.finditer(code):
+            unreadable.append(f"{path}: entity mapping '{m.group(0).strip()}' — map a Goldpath table with modelBuilder.Entity<T>(e => e.ToTable(\"…\"))")
         if package == "Goldpath.ServiceDefaults":
             for name in EXTERNAL.findall(code):
                 if not name.startswith("Goldpath."):
                     found.add(("external", name))
+    for (package, entity), (path, mapped) in sorted(entities.items()):
+        if not mapped:
+            unreadable.append(f"{path}: entity {entity} has no ToTable — map it with ToTable so its name is frozen (a convention name follows the class)")
     for path, package, name, expr in spans:
         owned = sources_by_package.get(package, set())
         if not name:
@@ -228,6 +279,12 @@ def selftest(root):
         "a factory-made meter missing from the inventory": ("packages/Goldpath.Locking/GoldpathLockingExtensions.cs", 'new("Goldpath.Locking")',
                                                             'new("Goldpath.Locking"); static readonly object s_factory = new MeterOptions("Goldpath.Planted")',
                                                             "missing from the inventory (add the line in the same PR): meter Goldpath.Planted"),
+        "an entity mapped by convention, without ToTable": ("packages/Goldpath.Notification/NotificationModel.cs", 'modelBuilder.Entity<GoldpathNotificationAttachment>(attachment =>',
+                                                            'modelBuilder.Entity<ZzPlanted>(e => { e.HasKey(x => x.Id); }); modelBuilder.Entity<GoldpathNotificationAttachment>(attachment =>',
+                                                            "entity ZzPlanted has no ToTable"),
+        "a table declared by attribute": ("packages/Goldpath.Notification/NotificationModel.cs", 'public class GoldpathNotification\n',
+                                          '[Table("Planted")] public class GoldpathNotification\n',
+                                          "entity mapping '[Table('"),
         "a dropped external subscription": ("packages/Goldpath.ServiceDefaults/GoldpathServiceDefaultsExtensions.cs", '.AddMeter("Npgsql")', '',
                                             "gone from the code (a rename or removal — breaking, Versioning D2): external Npgsql"),
     }

@@ -15,12 +15,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     `gates`. It fails on three things:
     - an inventory name gone from the code: a rename or removal, breaking under Versioning D2;
     - a name in the code the inventory lacks;
-    - a name it cannot read: neither a literal nor a const string in its file.
+    - a name it cannot read: neither a literal nor a const string in its file;
+    - an entity mapped without `ToTable` (EF would name its table after the class, outside the inventory), or a table
+      declared any other way (`IEntityTypeConfiguration`, `[Table]`, `DbSet`, `Entity(typeof(…))`).
   - **Measured:** every one of today's names is a literal. Five spans looked non-literal to a grep because their name
     is on the next line; the adapter's `{endpoint} consume` is kept as written.
   - **Proof:** `--selftest` plants a renamed meter, span and table, an un-inventoried instrument, an unreadable name,
-    an un-inventoried factory meter (`MeterOptions`), a dropped external subscription, and a name kept alive only by a
-    comment. Each one is red; the unplanted copy is green.
+    an un-inventoried factory meter (`MeterOptions`), an entity mapped without `ToTable`, a table declared by
+    attribute, a dropped external subscription, and a name kept alive only by a comment. Each one is red; the unplanted
+    copy is green.
   - **The record:** §2 of the 1.0 API review gets the "Diagnostic contract" and "Goldpath-owned tables" rows. The
     question whether 1.0 needs Goldpath-named messaging instruments is recorded there for the owner (API-13, #402).
 - **Campaign: a ceiling for outstanding acknowledgements, `MaxAwaitingAck` (campaign RFC R3.4,
