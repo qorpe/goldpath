@@ -21,14 +21,28 @@
 #   - a name it cannot read: a meter, source, instrument, span or table created from an expression
 #     that is neither a string literal nor a const string in the same file. Make it one.
 #
-# Every entity a package maps with modelBuilder.Entity<T>(…) must carry a ToTable (in its configuration, or
-# chained): a table EF names by convention follows the class name, and would be a Goldpath-owned table outside
-# the inventory. Any other way to declare a table (IEntityTypeConfiguration, [Table], DbSet, Entity(typeof(…)))
-# is refused, so the rule cannot be walked around.
+# Every table must be named by a ToTable, because a table EF names by convention follows the class name and would
+# be a Goldpath-owned table outside the inventory. EF adds an entity, and so a table, in three ways, and the gate
+# reads all three from source:
+#   - an explicit modelBuilder.Entity<T>(…): it must carry its ToTable (in its configuration, or chained);
+#   - a relationship to a type, HasOne<T>/HasMany<T>/OwnsMany<T>: T must be an entity the package maps with
+#     ToTable (OwnsMany<T> may carry its own; OwnsOne<T> shares the owner's table and adds none);
+#   - a navigation: every public property of a mapped entity class (and of a base class declared under packages/)
+#     must be a scalar EF maps to a column, an enum, a collection of either, or a mapped entity — or be converted
+#     (Property(x => x.P)…HasConversion) or ignored (Ignore(x => x.P), [NotMapped]) in that entity's configuration.
+#     A type the gate does not know is refused, not guessed: map it, convert it, ignore it, or teach the gate.
+# The other ways to declare a table it knows (IEntityTypeConfiguration, [Table], DbSet, Entity(typeof(…)),
+# Entity("…"), SharedTypeEntity, AddEntityType, ApplyConfigurationsFromAssembly, a HasOne/HasMany/Owns* naming
+# its type by string or typeof) are refused. Reading source is not reading EF's model, so the gate also checks
+# against EF itself: every table in the Oracle composed model's golden
+# (tests/Goldpath.IntegrationTests/Oracle/composed-model.golden.txt, which OracleDataTests compares with the model
+# EF builds, failing in the oracle job — not a required check — when they differ) must be in the inventory,
+# unless it is named below as not Goldpath-owned. The Quartz tables are not in that golden; the three source rules above hold them.
 #
 # `diagnostic-names-gate.sh --selftest` plants a renamed meter, a renamed span, a renamed table, an
 # un-inventoried instrument, an unreadable name, an un-inventoried factory meter (MeterOptions), an entity
-# mapped without ToTable, a table declared by attribute, a removed external subscription and a name kept
+# mapped without ToTable, a table declared by attribute, a navigation to an unmapped class, a HasOne<T> to an
+# unmapped class, a golden table missing from the inventory, a removed external subscription and a name kept
 # alive only by a comment in a scratch copy, each red, and the unplanted copy green.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -51,7 +65,28 @@ EXTERNAL = re.compile(r'\.Add(?:Meter|Source)\s*\(\s*"([^"]+)"\s*\)')
 # entity a package maps must carry its ToTable, and every other way to declare one is refused (fail closed).
 ENTITY = re.compile(r'\.Entity\s*<\s*([\w.]+)\s*>\s*\(')
 CHAINED_TABLE = re.compile(r'\s*\.ToTable\s*\(')
-OTHER_MAPPING = re.compile(r'IEntityTypeConfiguration\s*<|\[\s*Table\s*\(|\bDbSet\s*<|\.Entity\s*\(\s*typeof\s*\(|\.SharedTypeEntity\s*<')
+OTHER_MAPPING = re.compile(r'IEntityTypeConfiguration\s*<|\[\s*Table\s*\(|\bDbSet\s*<|\.Entity\s*\(\s*(?:typeof\s*\(|")|\.SharedTypeEntity\s*<'
+                           r'|\.AddEntityType\s*\(|\.ApplyConfigurationsFromAssembly\s*\(|\.(?:HasOne|HasMany|OwnsOne|OwnsMany)\s*\(\s*(?:typeof\s*\(|")')
+# A relationship to a TYPE adds that type as an entity: it must be one the package maps (with ToTable).
+RELATED = re.compile(r'\.(HasOne|HasMany|OwnsOne|OwnsMany)\s*<\s*([\w.]+)\s*>\s*\(')
+# A navigation adds its type as an entity: every public property of a mapped class must be something EF maps
+# to a column, or a mapped entity, or be converted or ignored.
+CLASS = re.compile(r'\b(?:class|record|struct)\s+(\w+)(?:\s*<[^>{]*>)?(?:\s*\(([^)]*)\))?\s*(?::\s*([^{]+?))?\s*(?:where\b[^{]*)?\{')
+ENUM = re.compile(r'\benum\s+(\w+)')
+PROPERTY = re.compile(r'((?:\[[^\]]*\]\s*)*)\bpublic\s+((?:(?:required|virtual|override|new|sealed|static|abstract)\s+)*)'
+                      r'([\w.]+(?:\s*<[^{};=]*?>)?(?:\s*\[\s*\])?\??)\s+(\w+)\s*\{\s*(?:get|set|init|private|protected|internal)\b')
+CONVERTED = re.compile(r'\.Property\s*(?:<[^>()]*>)?\s*\(\s*\w+\s*=>\s*\w+\.(\w+)\s*\)[^;]*?\.HasConversion\b')
+IGNORED = re.compile(r'\.Ignore\s*\(\s*\w+\s*=>\s*\w+\.(\w+)\s*\)')
+SCALARS = {"string", "bool", "char", "byte", "sbyte", "short", "ushort", "int", "uint", "long", "ulong", "float", "double",
+           "decimal", "Guid", "DateTime", "DateTimeOffset", "DateOnly", "TimeOnly", "TimeSpan", "byte[]"}
+COLLECTIONS = {"List", "IList", "ICollection", "IEnumerable", "HashSet", "ISet", "IReadOnlyList", "IReadOnlyCollection", "Collection"}
+UNFROZEN = "a table whose name nothing freezes (EF would name it by convention): "
+# Tables in the composed-model golden that Goldpath does not own, each with its reason.
+COMPOSED_GOLDEN = "tests/Goldpath.IntegrationTests/Oracle/composed-model.golden.txt"
+NOT_GOLDPATH_TABLES = {
+    "OracleDataRows": "the golden's own test entity (OracleComposedDb), not a package's",
+    "MediantAuditEntries": "Mediant's audit table, composed by AuditTrail; Mediant owns its name",
+}
 
 
 def cs_files(root):
@@ -117,6 +152,34 @@ def call_span(code, start):
     return code[start:i - 1], i
 
 
+def block(code, start):
+    """The text of a brace block, from the '{' at code[start - 1] to its matching '}'."""
+    depth, i, n = 1, start, len(code)
+    while i < n and depth:
+        c = code[i]
+        if c in "\"'":
+            i += 1
+            while i < n and code[i] != c:
+                i += 2 if code[i] == "\\" else 1
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+        i += 1
+    return code[start:i - 1]
+
+
+def element(type_name):
+    """A property's type without its nullable mark, and a collection's element type; None for another generic."""
+    t = re.sub(r"\s+", "", type_name).rstrip("?")
+    m = re.fullmatch(r"(?:System\.Collections\.Generic\.)?(\w+)<(.+)>", t)
+    if m:
+        return m.group(2).rstrip("?") if m.group(1) in COLLECTIONS and "," not in m.group(2) else None
+    if t.endswith("[]") and t != "byte[]":
+        return t[:-2].rstrip("?")
+    return t
+
+
 def resolve(expr, consts):
     """The name an argument expression denotes: a literal, a const, or const + literal. None = unreadable."""
     parts = [p.strip() for p in expr.strip().split("+")]
@@ -140,6 +203,10 @@ def scan(root):
     found, unreadable, sources_by_package = set(), [], {}
     spans = []
     entities = {}   # (package, entity type) -> [path, has a ToTable]
+    configs = {}    # (package, entity type) -> the text of its configurations
+    related = []    # (path, package, method, type, carries its own ToTable)
+    classes = {}    # class name -> [(path, base list, body)]; a positional record's parameters are properties too
+    enums = set()
     for path in cs_files(root):
         with open(os.path.join(root, path), encoding="utf-8") as f:
             code = strip_comments(f.read())
@@ -175,15 +242,63 @@ def scan(root):
             mapped = ".ToTable(" in re.sub(r"\s+", "", args) or CHAINED_TABLE.match(code, after) is not None
             entry = entities.setdefault((package, m.group(1)), [path, False])
             entry[1] = entry[1] or mapped
+            configs[(package, m.group(1))] = configs.get((package, m.group(1)), "") + args
+        for m in RELATED.finditer(code):
+            args, _ = call_span(code, m.end())
+            related.append((path, package, m.group(1), m.group(2), ".ToTable(" in re.sub(r"\s+", "", args)))
+        enums.update(ENUM.findall(code))
+        for m in CLASS.finditer(code):
+            positional = "".join(f"public {p.strip().split('=')[0].strip()} {{ get; }}\n" for p in (m.group(2) or "").split(",") if p.strip())
+            classes.setdefault(m.group(1), []).append((path, m.group(3) or "", positional + block(code, m.end())))
         for m in OTHER_MAPPING.finditer(code):
-            unreadable.append(f"{path}: entity mapping '{m.group(0).strip()}' — map a Goldpath table with modelBuilder.Entity<T>(e => e.ToTable(\"…\"))")
+            unreadable.append(UNFROZEN + f"{path}: entity mapping '{m.group(0).strip()}' — map a Goldpath table with modelBuilder.Entity<T>(e => e.ToTable(\"…\"))")
         if package == "Goldpath.ServiceDefaults":
             for name in EXTERNAL.findall(code):
                 if not name.startswith("Goldpath."):
                     found.add(("external", name))
     for (package, entity), (path, mapped) in sorted(entities.items()):
         if not mapped:
-            unreadable.append(f"{path}: entity {entity} has no ToTable — map it with ToTable so its name is frozen (a convention name follows the class)")
+            unreadable.append(UNFROZEN + f"{path}: entity {entity} has no ToTable — map it with ToTable so its name is frozen (a convention name follows the class)")
+    mapped_by_package = {}
+    for (package, entity), (_, mapped) in entities.items():
+        if mapped:
+            mapped_by_package.setdefault(package, set()).add(entity.split(".")[-1])
+    for path, package, method, type_name, own_table in related:
+        short = type_name.split(".")[-1]
+        if short in mapped_by_package.get(package, set()) or method == "OwnsOne" or (method == "OwnsMany" and own_table):
+            continue
+        unreadable.append(UNFROZEN + f"{path}: {method}<{type_name}> adds {type_name} as an entity named by convention — map it with "
+                          "modelBuilder.Entity<T>(e => e.ToTable(\"…\")) in this package")
+    for (package, entity), (path, mapped) in sorted(entities.items()):
+        short = entity.split(".")[-1]
+        known = mapped_by_package.get(package, set())
+        config = configs.get((package, entity), "")
+        exempt = set(CONVERTED.findall(config)) | set(IGNORED.findall(config))
+        pending, seen, declared = [short], set(), False
+        while pending:
+            name = pending.pop()
+            if name in seen:
+                continue
+            seen.add(name)
+            for _, bases, body in classes.get(name, []):
+                declared = True
+                pending += [b.strip().split("<")[0].split(".")[-1] for b in bases.split(",") if b.strip().split("<")[0].split(".")[-1] in classes]
+                for p in PROPERTY.finditer(body):
+                    attributes, modifiers, type_name, prop = p.groups()
+                    if "static" in modifiers or prop in exempt or re.search(r"\bNotMapped\b", attributes):
+                        continue
+                    target = element(type_name)
+                    if target is not None and (target in SCALARS or target.split(".")[-1] in enums or target.split(".")[-1] in known):
+                        continue
+                    unreadable.append(UNFROZEN + f"{path}: entity {entity} property {prop} of type {type_name.strip()} — EF would map it as an entity "
+                                      "named by convention; map that type with ToTable, convert the property (HasConversion) or ignore it")
+        if not declared:
+            unreadable.append(UNFROZEN + f"{path}: entity {entity} — its class is not declared under packages/, so its navigations cannot be read")
+    golden_tables = None   # None: the golden is missing, and the check against EF's own model cannot run
+    golden = os.path.join(root, COMPOSED_GOLDEN)
+    if os.path.exists(golden):
+        with open(golden, encoding="utf-8") as f:
+            golden_tables = sorted({line.split(".", 1)[0] for line in f if "." in line} - set(NOT_GOLDPATH_TABLES))
     for path, package, name, expr in spans:
         owned = sources_by_package.get(package, set())
         if not name:
@@ -192,7 +307,7 @@ def scan(root):
             unreadable.append(f"{path}: span {name} — its package must create exactly one activity source to attribute it")
         else:
             found.add(("span", next(iter(owned)), name))
-    return found, unreadable
+    return found, unreadable, golden_tables
 
 
 def read_inventory(root):
@@ -220,14 +335,21 @@ def read_inventory(root):
 
 
 def check(root):
-    found, problems = scan(root)
-    problems = [f"unreadable name (make it a literal or a const string in the same file): {u}" for u in problems]
+    found, problems, golden_tables = scan(root)
+    problems = [u if u.startswith(UNFROZEN) else f"unreadable name (make it a literal or a const string in the same file): {u}" for u in problems]
     inventory, inventory_problems = read_inventory(root)
     problems += inventory_problems
     for entry in sorted(inventory - found):
         problems.append(f"in the inventory, gone from the code (a rename or removal — breaking, Versioning D2): {' '.join(entry)}")
     for entry in sorted(found - inventory):
         problems.append(f"in the code, missing from the inventory (add the line in the same PR): {' '.join(entry)}")
+    inventoried_tables = {e[2] for e in inventory if e[0] == "table"}
+    if golden_tables is None:
+        problems.append(f"{COMPOSED_GOLDEN} is missing: the check against EF's own model cannot run")
+    for table in golden_tables or []:
+        if table not in inventoried_tables:
+            problems.append(f"in EF's composed model ({COMPOSED_GOLDEN}), missing from the inventory: table {table} — "
+                            "map it with ToTable and add its line, or name it in NOT_GOLDPATH_TABLES with the reason")
     return problems, inventory
 
 
@@ -252,6 +374,8 @@ def selftest(root):
             shutil.copy(os.path.join(root, path), os.path.join(tmp, path))
         os.makedirs(os.path.join(tmp, "scripts"))
         shutil.copy(os.path.join(root, INVENTORY), os.path.join(tmp, INVENTORY))
+        os.makedirs(os.path.dirname(os.path.join(tmp, COMPOSED_GOLDEN)))
+        shutil.copy(os.path.join(root, COMPOSED_GOLDEN), os.path.join(tmp, COMPOSED_GOLDEN))
         return tmp
 
     def plant(tmp, path, old, new):
@@ -285,6 +409,15 @@ def selftest(root):
         "a table declared by attribute": ("packages/Goldpath.Notification/NotificationModel.cs", 'public class GoldpathNotification\n',
                                           '[Table("Planted")] public class GoldpathNotification\n',
                                           "entity mapping '[Table('"),
+        "a navigation to a class no ToTable maps": ("packages/Goldpath.Notification/NotificationModel.cs", 'public string Recipient { get; set; } = "";',
+                                                     'public string Recipient { get; set; } = ""; public List<ZzNav> ZzNavs { get; set; } = new();',
+                                                     "entity GoldpathNotification property ZzNavs of type List<ZzNav>"),
+        "a HasOne<T> to a class no ToTable maps": ("packages/Goldpath.Jobs/QuartzStoreModel.cs", "e.HasOne<QrtzJobDetail>().WithMany()",
+                                                   "e.HasOne<ZzPrincipal>().WithMany()",
+                                                   "HasOne<ZzPrincipal> adds ZzPrincipal as an entity named by convention"),
+        "a table in EF's composed model missing from the inventory": (COMPOSED_GOLDEN, "GoldpathNotifications.Body:",
+                                                                      "ZzConvention.Id: RAW(16) not null\nGoldpathNotifications.Body:",
+                                                                      "missing from the inventory: table ZzConvention"),
         "a dropped external subscription": ("packages/Goldpath.ServiceDefaults/GoldpathServiceDefaultsExtensions.cs", '.AddMeter("Npgsql")', '',
                                             "gone from the code (a rename or removal — breaking, Versioning D2): external Npgsql"),
     }
