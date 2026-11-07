@@ -57,6 +57,38 @@ public sealed class LockingRegistrationTests
     }
 
     [Fact]
+    public void Oracle_points_at_the_optional_package_loudly_at_registration()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            builder.AddGoldpathLocking(o => o.Provider = GoldpathLockProvider.Oracle));
+
+        Assert.Contains("Goldpath.Locking.Oracle", ex.Message);
+        Assert.Contains("AddGoldpathOracleLocking", ex.Message);
+    }
+
+    [Fact]
+    public void Oracle_set_through_configuration_is_refused_the_same_way()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.Configuration["Goldpath:DistributedLocking:Provider"] = "Oracle";
+
+        var ex = Assert.Throws<InvalidOperationException>(() => builder.AddGoldpathLocking());
+        Assert.Contains("AddGoldpathOracleLocking", ex.Message);
+    }
+
+    [Fact]
+    public void A_value_that_names_no_provider_is_refused_never_built_as_postgres()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            builder.AddGoldpathLocking(o => o.Provider = (GoldpathLockProvider)42));
+
+        Assert.Contains("'42' is not a lock provider", ex.Message);
+        Assert.Contains("the optional package's own registration for SqlServer or Oracle", ex.Message);   // where to go instead
+    }
+
+    [Fact]
     public void Missing_connection_string_fails_at_first_resolve_with_the_fix_in_the_message()
     {
         var builder = Host.CreateApplicationBuilder();

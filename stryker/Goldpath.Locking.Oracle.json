@@ -1,0 +1,24 @@
+{
+  "stryker-config": {
+    "project": "Goldpath.Locking.Oracle.csproj",
+    "test-projects": [
+      "../../tests/Goldpath.IntegrationTests/Goldpath.IntegrationTests.csproj"
+    ],
+    "test-case-filter": "FullyQualifiedName~Goldpath.Tests.Integration.OracleLockNameTests",
+    "target-framework": "net10.0",
+    "mutate": [
+      "**/OracleLockNames.cs"
+    ],
+    "reporters": [
+      "progress",
+      "markdown",
+      "json"
+    ],
+    "thresholds": {
+      "high": 85,
+      "low": 75,
+      "break": 70
+    },
+    "mutation-level": "Standard"
+  }
+}

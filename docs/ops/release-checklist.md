@@ -13,7 +13,8 @@ only after that PR merges green.
       green nightly that ran on the commit BEFORE its own template changes, and every app
       generated with `fileexchange` on that train failed its first build (GP2102).
 - [ ] Mutation scores current for every package whose engine paths changed since the
-      last release. The nightly matrix scores every gated package — twenty-two packages since
+      last release. The nightly matrix scores every gated package — twenty-three packages
+      (`Goldpath.Locking.Oracle` joined with #407, for its lock-name mapping) and twenty-two since
       2026-10-20, when the big six (Jobs, Archival, Bulk, Notification, Campaign, Caching)
       joined it; `mutation-heavy.yml` re-scores those six on demand, or one of them with its
       `package` input (`-f package=Goldpath.Campaign`). A local run is
