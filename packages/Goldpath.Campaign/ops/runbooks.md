@@ -4,6 +4,19 @@ Verbs live at `/goldpath/admin/campaign` (create/pause/resume/abort/throttle —
 audited to `GoldpathCampaignAudit`). Item replay lives in the JOBS console (`replay-items`);
 the pacer's run health lives on the goldpath-jobs dashboard. This board owns the GOVERNOR.
 
+Alert rules: [`alerts.yaml`](alerts.yaml) (#295), each carrying a `severity` from the family's
+scheme (critical | major | minor — [dashboard-and-alerts.md](../../Goldpath.ServiceDefaults/ops/dashboard-and-alerts.md))
+and a `runbook_url` to the item below that answers it:
+
+| Alert | Severity | Item |
+|---|---|---|
+| `GoldpathCampaignLeaderStalled` — no pacer tick for more than 60 s | critical | [13](#13-the-pacer-stopped-ticking) |
+| `GoldpathCampaignNoLeader` — no process exports a tick, for 2 min | critical | [13](#13-the-pacer-stopped-ticking) |
+| `GoldpathCampaignAckTimeouts` — over 5 % of acceptances time out, for 10 min | major | [8](#8-acceptances-piling-up-r21) |
+| `GoldpathCampaignFailureRatio` — over 20 % of attempts fail (retries included, at least 100), for 10 min | major | [5](#5-failed-items--poisoned-targets) |
+| `GoldpathCampaignOrphansRereleased` — re-releases over 1 % of releases, for 15 min | minor | [9](#9-orphaned-releases-being-published-again-r26) |
+| `GoldpathCampaignRepairQueueGrowing` — an item failed terminally in the last hour | minor | [5](#5-failed-items--poisoned-targets) |
+
 ## 1. Release rate ≠ configured TPS
 
 - The `released/s` line should track the campaign's `Tps` within a leader tick or two.
@@ -166,3 +179,29 @@ settle on a forged word.
 - A throttle sent without a version is never refused this way: the last writer wins, and the
   version still moves once per applied throttle. A race with the pacer or a pause is not a policy
   change, so it is re-read and applied; only a race into a terminal state is refused.
+
+## 13. The pacer stopped ticking
+
+- `GoldpathCampaignLeaderStalled` reads `time() - max by (job) (goldpath_campaign_leader_last_tick_seconds)`:
+  the NEWEST tick of any process of that application. A leader ticks every `LeaderTick` (250 ms) and
+  leadership hands over in under a second, so a minute of silence is a pacer that is not running —
+  nothing releases, and neither the ack sweep nor the stale-claim sweep runs.
+- Nothing is lost while it is down: the watermarks and the items are durable, and the next leader
+  resumes from the row. What waits is the release, and acknowledgements pass their deadline
+  unswept until a leader sweeps them.
+- Check, in order:
+  - **Is the scrape healthy?** `up` for the collector (or the application) Prometheus scrapes. A
+    tick is judged by the last value Prometheus received, so a scrape that stops for a minute ages
+    it and fires this alert with the pacer working; the release rate on the dashboard says which.
+  - **Is any host up?** The application's `up` series, or its hosts. A fleet that is gone entirely stops exporting the
+    series; once it expires `GoldpathCampaignNoLeader` fires instead (it is global — while any
+    application still exports a tick it cannot fire, so the `up` alert is the per-application one).
+  - **Is the pacer run firing?** The goldpath-jobs dashboard: the campaign pacer is a Jobs run on a
+    ~1-minute cron (`AddGoldpathCampaignJobs`). No run starting means the scheduler is not running
+    on any host; a run failing at once is in its error.
+  - **Is the database reachable?** Every tick reads the workable campaigns; a tick blocked on the
+    database is a tick that never ends.
+- The alert resolves on the first tick after recovery. Then read item 1: the release rate climbs
+  back to the configured TPS within a tick or two, and no bucket bursts — it never holds more than
+  one tick's refill.
+
