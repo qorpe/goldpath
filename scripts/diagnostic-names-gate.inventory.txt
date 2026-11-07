@@ -1,0 +1,150 @@
+# The diagnostic contract and the Goldpath-owned table names (GA gate G4, part API-8, #397).
+# Checked by scripts/diagnostic-names-gate.sh against packages/**/*.cs; the format is in that script's header.
+# A line that leaves this file is a breaking change (Versioning D2) and needs a decision; a line added is an addition.
+# Tag names and values on spans are out of scope (#397). Table DDL is held by validate-migrations.sh and GP1801;
+# this file holds the names. On Oracle the qrtz_* tables are created upper case (QuartzStoreModel.ShapeForOracle,
+# O-3 #406): the names below are the model's.
+
+# Meters
+meter Goldpath.Approvals
+meter Goldpath.Archival
+meter Goldpath.Auth
+meter Goldpath.Bulk
+meter Goldpath.Campaign
+meter Goldpath.FileExchange
+meter Goldpath.Jobs
+meter Goldpath.Locking
+meter Goldpath.MultiTenancy
+meter Goldpath.Notification
+
+# Activity sources
+source Goldpath.Bulk
+source Goldpath.Jobs
+source Goldpath.Messaging.Wolverine
+
+# Instruments, by meter
+instrument Goldpath.Approvals goldpath_approvals_escalated_total
+instrument Goldpath.Approvals goldpath_approvals_expired_total
+instrument Goldpath.Approvals goldpath_approvals_granted_total
+instrument Goldpath.Approvals goldpath_approvals_rejected_total
+instrument Goldpath.Approvals goldpath_approvals_requested_total
+instrument Goldpath.Approvals goldpath_approvals_withdrawn_total
+instrument Goldpath.Archival goldpath_archival_due_backlog
+instrument Goldpath.Archival goldpath_archival_entries_appended_total
+instrument Goldpath.Archival goldpath_archival_entries_purged_total
+instrument Goldpath.Archival goldpath_archival_erasures_total
+instrument Goldpath.Archival goldpath_archival_retrieval_seconds
+instrument Goldpath.Archival goldpath_archival_verify_failures_total
+instrument Goldpath.Auth goldpath_auth_failures_total
+instrument Goldpath.Auth goldpath_auth_tenant_binding_rejects_total
+instrument Goldpath.Bulk goldpath_bulk_awaiting_approval_age_seconds
+instrument Goldpath.Bulk goldpath_bulk_batches
+instrument Goldpath.Bulk goldpath_bulk_dedup_hits_total
+instrument Goldpath.Bulk goldpath_bulk_rows_executed_total
+instrument Goldpath.Bulk goldpath_bulk_rows_failed_total
+instrument Goldpath.Bulk goldpath_bulk_rows_invalid_total
+instrument Goldpath.Bulk goldpath_bulk_rows_validated_total
+instrument Goldpath.Bulk goldpath_bulk_validate_duration_seconds
+instrument Goldpath.Campaign goldpath_campaign_ack_timeouts_total
+instrument Goldpath.Campaign goldpath_campaign_awaiting_ack
+instrument Goldpath.Campaign goldpath_campaign_binding_constraint
+instrument Goldpath.Campaign goldpath_campaign_callbacks_parked_total
+instrument Goldpath.Campaign goldpath_campaign_callbacks_rejected_total
+instrument Goldpath.Campaign goldpath_campaign_daily_quota
+instrument Goldpath.Campaign goldpath_campaign_failed_total
+instrument Goldpath.Campaign goldpath_campaign_global_tps
+instrument Goldpath.Campaign goldpath_campaign_handler_duration
+instrument Goldpath.Campaign goldpath_campaign_in_flight
+instrument Goldpath.Campaign goldpath_campaign_leader_last_tick
+instrument Goldpath.Campaign goldpath_campaign_orphans_rereleased_total
+instrument Goldpath.Campaign goldpath_campaign_outcomes_total
+instrument Goldpath.Campaign goldpath_campaign_released_today
+instrument Goldpath.Campaign goldpath_campaign_released_total
+instrument Goldpath.Campaign goldpath_campaign_remaining
+instrument Goldpath.Campaign goldpath_campaign_sink_flush_lag
+instrument Goldpath.Campaign goldpath_campaign_succeeded_total
+instrument Goldpath.Campaign goldpath_campaign_suspended_total
+instrument Goldpath.Campaign goldpath_campaign_tps_ceiling
+instrument Goldpath.Campaign goldpath_campaign_tuning_reload_refused_total
+instrument Goldpath.Campaign goldpath_campaign_type_max_tps
+instrument Goldpath.Campaign goldpath_campaign_window_closed_ticks_total
+instrument Goldpath.FileExchange goldpath_fileexchange_files_received_total
+instrument Goldpath.FileExchange goldpath_fileexchange_files_rejected_total
+instrument Goldpath.FileExchange goldpath_fileexchange_rows_duplicate_total
+instrument Goldpath.FileExchange goldpath_fileexchange_rows_processed_total
+instrument Goldpath.FileExchange goldpath_fileexchange_rows_quarantined_total
+instrument Goldpath.Jobs goldpath_jobs_checkpoint_age_seconds
+instrument Goldpath.Jobs goldpath_jobs_chunks_completed_total
+instrument Goldpath.Jobs goldpath_jobs_item_failures_total
+instrument Goldpath.Jobs goldpath_jobs_items_per_second
+instrument Goldpath.Jobs goldpath_jobs_predicted_finish_seconds
+instrument Goldpath.Jobs goldpath_jobs_repair_queue_depth
+instrument Goldpath.Jobs goldpath_jobs_run_duration_seconds
+instrument Goldpath.Jobs goldpath_jobs_run_progress_ratio
+instrument Goldpath.Locking goldpath_lock_acquire_total
+instrument Goldpath.Locking goldpath_lock_wait_seconds
+instrument Goldpath.MultiTenancy goldpath_tenant_unresolved_total
+instrument Goldpath.MultiTenancy goldpath_tenant_write_guard_trips_total
+instrument Goldpath.Notification goldpath_notification_dedup_hits_total
+instrument Goldpath.Notification goldpath_notification_failed_total
+instrument Goldpath.Notification goldpath_notification_oldest_requested_age_seconds
+instrument Goldpath.Notification goldpath_notification_queue
+instrument Goldpath.Notification goldpath_notification_send_duration_seconds
+instrument Goldpath.Notification goldpath_notification_sent_total
+instrument Goldpath.Notification goldpath_notification_suppressed_total
+
+# Span names, by source
+span Goldpath.Bulk goldpath.bulk.execute-range
+span Goldpath.Bulk goldpath.bulk.replay-row
+span Goldpath.Bulk goldpath.bulk.validate
+span Goldpath.Jobs goldpath.job.chunk
+span Goldpath.Jobs goldpath.job.replay
+span Goldpath.Jobs goldpath.job.replay-item
+span Goldpath.Jobs goldpath.job.run
+span Goldpath.Messaging.Wolverine {endpoint} consume  # interpolated: the endpoint's name, then ' consume' (OpenTelemetry messaging span naming)
+
+# Tables, by package
+table Goldpath.Approvals GoldpathApprovalDelegations
+table Goldpath.Approvals GoldpathApprovalSignatures
+table Goldpath.Approvals GoldpathApprovals
+table Goldpath.Archival GoldpathArchiveChainState
+table Goldpath.Archival GoldpathArchiveEntries
+table Goldpath.Archival GoldpathErasureRecords
+table Goldpath.Archival GoldpathLegalHolds
+table Goldpath.AuditTrail GoldpathAuditLog
+table Goldpath.Bulk GoldpathBulkBatches
+table Goldpath.Bulk GoldpathBulkFileChunks
+table Goldpath.Bulk GoldpathBulkFiles
+table Goldpath.Bulk GoldpathBulkRowErrors
+table Goldpath.Bulk GoldpathBulkRows
+table Goldpath.Campaign GoldpathCampaignAudit
+table Goldpath.Campaign GoldpathCampaignCeilings
+table Goldpath.Campaign GoldpathCampaignItems
+table Goldpath.Campaign GoldpathCampaignParkedCallbacks
+table Goldpath.Campaign GoldpathCampaigns
+table Goldpath.FileExchange GoldpathFileArchive
+table Goldpath.FileExchange GoldpathFileProcessed
+table Goldpath.FileExchange GoldpathFileQuarantine
+table Goldpath.Jobs GoldpathJobAdminAudit
+table Goldpath.Jobs GoldpathJobExecutions
+table Goldpath.Jobs GoldpathJobItemFailures
+table Goldpath.Jobs GoldpathJobRunChunks
+table Goldpath.Jobs GoldpathJobRuns
+table Goldpath.Jobs qrtz_blob_triggers
+table Goldpath.Jobs qrtz_calendars
+table Goldpath.Jobs qrtz_cron_triggers
+table Goldpath.Jobs qrtz_fired_triggers
+table Goldpath.Jobs qrtz_job_details
+table Goldpath.Jobs qrtz_locks
+table Goldpath.Jobs qrtz_paused_trigger_grps
+table Goldpath.Jobs qrtz_scheduler_state
+table Goldpath.Jobs qrtz_simple_triggers
+table Goldpath.Jobs qrtz_simprop_triggers
+table Goldpath.Jobs qrtz_triggers
+table Goldpath.Notification GoldpathNotificationAttachments
+table Goldpath.Notification GoldpathNotifications
+
+# Subscribed, not owned
+external MassTransit  # engine-owned (ADR-0013/ADR-0015): MassTransit's own meter and spans, outside the Goldpath diagnostic promise; Goldpath-named messaging instruments for 1.0 are an open question for API-13 (#402)
+external Microsoft.EntityFrameworkCore  # provider-owned: EF Core's meter, subscribed by ServiceDefaults (Data ops pack), outside the Goldpath diagnostic promise
+external Npgsql  # provider-owned: Npgsql's pool meter, subscribed by ServiceDefaults, outside the Goldpath diagnostic promise
