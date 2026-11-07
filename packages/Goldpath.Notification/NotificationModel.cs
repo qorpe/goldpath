@@ -46,7 +46,9 @@ public class GoldpathNotification
 
     /// <summary>
     /// The culture the template rendered with (after fallback); the empty name is the invariant culture. On Oracle,
-    /// which stores <c>''</c> as NULL, that name is held as NULL and still reads as <c>""</c> here (#502).
+    /// which stores <c>''</c> as NULL, that name is held as NULL and a materialised entity still reads it as <c>""</c>
+    /// here (#502). SQL does not: on Oracle a query that PROJECTS this column reads NULL for the invariant culture, and
+    /// <c>Culture != ""</c> matches the invariant rows too. Filter with <c>Culture == ""</c>, or materialise the entity.
     /// </summary>
     public string Culture
     {

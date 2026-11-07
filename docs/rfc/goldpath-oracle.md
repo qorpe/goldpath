@@ -132,7 +132,8 @@ Oracle test projects.
   adopter's `required` string column will refuse `""`.
   - *Amendment (#502, owner decision 2026-11-04):* the one exception is `GoldpathNotifications.Culture`, whose
     `""` is Notification's invariant culture. On Oracle alone that column is nullable, and Notification's own model
-    writes `""` as `NULL` (a converter) and reads `NULL` back as `""` (the entity's backing field). PostgreSQL and
+    writes `""` as `NULL` (a converter) and reads `NULL` back as `""` (the entity's backing field — a materialised
+    entity only: a SQL projection of the column reads `NULL`, as `packages/Goldpath.Data/ops/data.md` states). PostgreSQL and
     SQL Server keep the column and the entity exactly as before.
 - **The campaign global ceiling row's name** (#384, owner decision 2026-10-24). R3.2 keyed the
   global row `(Global, "")`, which Oracle cannot store in a primary key. The row is named

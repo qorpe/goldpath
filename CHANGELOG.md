@@ -627,7 +627,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   (NULL on disk, `""` read back, `tr-TR` untouched, a `Culture == ""` query finds the row) and the webhook fact of
   `NotificationFacts`, which on Oracle asserted the refusal and now runs end to end on both providers; both red with
   ORA-01400 without the mapping. The Oracle golden's column reads `NVARCHAR2(16) null`, and `MayWriteEmpty` drops its
-  entry. No migration step: Oracle is on no published train yet, so no adopter database has the old column.
+  entry. **The limit, on Oracle:** the round trip holds for a materialised entity, not for SQL. A query that projects
+  `Culture` reads NULL for the invariant culture, and `Culture != ""` matches the invariant rows too; filter with
+  `Culture == ""` or materialise the entity (`OracleDataTests.The_invariant_culture_reads_as_null_in_a_projection_…`
+  pins both). No Goldpath code projects or filters the column that way. No migration step: Oracle is on no published train yet, so no adopter database has the old column.
 - **[schema]** **Approvals: concurrent decisions no longer both apply (#480, threat model T-APR-06).** A decision read the
   request and its signatures, then wrote them in separate calls with nothing guarding the gap.
   - **What went wrong:**

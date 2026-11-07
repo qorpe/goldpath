@@ -191,6 +191,39 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
         Assert.Equal((1m, 1m), (reader.GetDecimal(0), reader.GetDecimal(1)));
     }
 
+    [Fact]
+    public async Task The_invariant_culture_reads_as_null_in_a_projection_and_not_equal_empty_still_matches_it()
+    {
+        // The limit of #502's mapping, pinned so the docs that state it cannot drift (verifier finding on 80396ea):
+        // the entity reads NULL back as "", but SQL does not. EF runs no converter on a NULL column value, so a
+        // projection of Culture returns null; and `!= ""` sends NULL as its parameter, so it matches the NULL row too.
+        // `== ""` is the filter that finds the invariant culture (the fact above), and a materialised entity reads "".
+        var connection = await oracle.CreateSchemaAsync("GP_CULTURE_SQL");
+        var invariant = Guid.NewGuid();
+        var turkish = Guid.NewGuid();
+        await using (var db = OracleComposedDb.Create(connection))
+        {
+            await db.Database.EnsureCreatedAsync();
+            db.Set<GoldpathNotification>().AddRange(Notification(invariant, ""), Notification(turkish, "tr-TR"));
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = OracleComposedDb.Create(connection))
+        {
+            var projected = await db.Set<GoldpathNotification>().Where(n => n.Id == invariant).Select(n => n.Culture).SingleAsync();
+            Assert.Null(projected);
+
+            var notInvariant = await db.Set<GoldpathNotification>().AsNoTracking()
+                .Where(n => n.Culture != "").Select(n => n.Id).ToListAsync();
+            Assert.Equal(new[] { invariant, turkish }.Order(), notInvariant.Order());
+
+            // What does work: a non-empty comparison excludes the NULL row, and the entity reads "".
+            var materialised = await db.Set<GoldpathNotification>().AsNoTracking().SingleAsync(n => n.Id == invariant);
+            Assert.Equal("", materialised.Culture);
+            Assert.Equal(turkish, (await db.Set<GoldpathNotification>().AsNoTracking().SingleAsync(n => n.Culture == "tr-TR")).Id);
+        }
+    }
+
     private static GoldpathNotification Notification(Guid id, string culture) => new()
     {
         Id = id,
