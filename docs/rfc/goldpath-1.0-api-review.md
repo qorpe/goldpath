@@ -35,10 +35,19 @@ The counter, not a hand-typed table, is the source of every number (§7).
 | Surface | Freeze gate | Owner of the rows |
 |---|---|---|
 | Public .NET API (the 23 ledgers) | `scripts/api-review-gate.sh` (this record), then API-12's additions-only gate (#401) | API-2 … API-7 |
-| Meter, span and table names | an inventory gate | API-8 (#397) |
+| Diagnostic contract: meter, activity-source, instrument and span names | `scripts/diagnostic-names-gate.sh` over [`diagnostic-names-gate.inventory.txt`](../../scripts/diagnostic-names-gate.inventory.txt) (10 meters, 3 activity sources, 69 instruments, 8 span names; 3 subscribed names Goldpath does not own) | API-8 (#397) |
+| Goldpath-owned tables | the names: the same gate and inventory (39 tables across 8 packages, the 11 `qrtz_*` included), every mapped entity required to carry its `ToTable` so no table is named by convention; the DDL: `scripts/validate-migrations.sh` (D7) and GP1801 | API-8 (#397) |
 | Admin routes and the signed callback route | a route-contract test per module | API-9 (#398) |
 | CLI verbs and flags, template parameters, the manifest schema | an additions-only snapshot gate | API-10 (#399) |
 | `[Experimental]` marks on Approvals and FileExchange | the diagnostic ids of §4 | API-11 (#400) |
+
+**What the diagnostic inventory does not promise.** The `MassTransit` meter and activity source are engine-owned
+(ADR-0013, ADR-0015): ServiceDefaults subscribes to them and the messaging floor's board reads them, but their names
+(`masstransit.consume`, …) belong to the engine and are outside the Goldpath diagnostic promise. So are EF Core's and
+Npgsql's meters. The inventory records all three as `external`, and the gate fails if ServiceDefaults stops subscribing
+to one. Span tag names and values are out of scope. **For the owner, at API-13 (#402):** should 1.0 ship
+Goldpath-named messaging instruments, so that an engine switch (ADR-0015: zero adopter impact) does not rename the
+signals an adopter's board reads? API-8 records the question and does not decide it.
 
 ## 3. Manifest Surface
 

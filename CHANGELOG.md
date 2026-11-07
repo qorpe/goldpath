@@ -5,6 +5,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **Gates: the diagnostic contract and the owned table names, frozen by one inventory (GA gate G4, API-8, #397).** No
+  package change.
+  - **The inventory:** `scripts/diagnostic-names-gate.inventory.txt` holds every meter (10), activity source (3),
+    instrument with its meter (69), span name with its source (8) and Goldpath-owned table with its package (39, the 11
+    `qrtz_*` included). It also lists the three names ServiceDefaults subscribes to that Goldpath does not own, marked
+    `external` (MassTransit, engine-owned per ADR-0015; EF Core; Npgsql).
+  - **The gate:** `scripts/diagnostic-names-gate.sh` scans `packages/**/*.cs` with comments stripped, and runs in
+    `gates`. It fails on three things:
+    - an inventory name gone from the code: a rename or removal, breaking under Versioning D2;
+    - a name in the code the inventory lacks;
+    - a name it cannot read: neither a literal nor a const string in its file;
+    - an entity mapped without `ToTable` (EF would name its table after the class, outside the inventory), or a table
+      declared any other way (`IEntityTypeConfiguration`, `[Table]`, `DbSet`, `Entity(typeof(…))`).
+  - **Measured:** every one of today's names is a literal. Five spans looked non-literal to a grep because their name
+    is on the next line; the adapter's `{endpoint} consume` is kept as written.
+  - **Proof:** `--selftest` plants a renamed meter, span and table, an un-inventoried instrument, an unreadable name,
+    an un-inventoried factory meter (`MeterOptions`), an entity mapped without `ToTable`, a table declared by
+    attribute, a dropped external subscription, and a name kept alive only by a comment. Each one is red; the unplanted
+    copy is green.
+  - **The record:** §2 of the 1.0 API review gets the "Diagnostic contract" and "Goldpath-owned tables" rows. The
+    question whether 1.0 needs Goldpath-named messaging instruments is recorded there for the owner (API-13, #402).
 - **Campaign: a ceiling for outstanding acknowledgements, `MaxAwaitingAck` (campaign RFC R3.4,
   slice R3-S5, #293).**
   - **API (additive, init-only):** `GoldpathCampaignPolicy.MaxAwaitingAck`,
