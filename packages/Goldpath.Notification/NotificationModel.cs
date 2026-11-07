@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Goldpath;
 
@@ -43,8 +44,20 @@ public class GoldpathNotification
     /// <summary>The destination address (masked on report surfaces when DataProtection is present).</summary>
     public string Recipient { get; set; } = "";
 
-    /// <summary>The culture the template rendered with (after fallback).</summary>
-    public string Culture { get; set; } = "";
+    /// <summary>
+    /// The culture the template rendered with (after fallback); the empty name is the invariant culture. On Oracle,
+    /// which stores <c>''</c> as NULL, that name is held as NULL and a materialised entity still reads it as <c>""</c>
+    /// here (#502). SQL does not: on Oracle a query that PROJECTS this column reads NULL for the invariant culture, and
+    /// <c>Culture != ""</c> matches the invariant rows too. Filter with <c>Culture == ""</c>, or materialise the entity.
+    /// </summary>
+    public string Culture
+    {
+        get => _culture ?? "";
+        set => _culture = value;
+    }
+
+    // EF maps this field (its convention finds it by name); null only where Oracle read the invariant name back as NULL.
+    private string? _culture = "";
 
     /// <summary>Rendered subject (nulled by body retention alongside the body).</summary>
     public string? Subject { get; set; }
@@ -131,6 +144,14 @@ public static class GoldpathNotificationModel
             notification.HasIndex(n => n.DedupKey).IsUnique();
             notification.HasIndex(n => new { n.State, n.RequestedAt });
             notification.HasIndex(n => new { n.Template, n.RequestedAt });
+            if (IsOracle(modelBuilder))
+            {
+                // #502 (owner decision A; oracle RFC §2.2): the invariant fallback's culture is the empty name, and
+                // Oracle stores '' as NULL, so a NOT NULL column refuses it (ORA-01400). On Oracle alone the column is
+                // nullable, "" is written as NULL and NULL is read back as "": the entity and every other provider's
+                // column stay as they are.
+                notification.Property(n => n.Culture).IsRequired(false).HasConversion(InvariantCultureAsNull);
+            }
         });
 
         modelBuilder.Entity<GoldpathNotificationAttachment>(attachment =>
@@ -144,4 +165,19 @@ public static class GoldpathNotificationModel
 
         return modelBuilder;
     }
+
+    /// <summary>
+    /// The invariant culture's empty name, written as NULL (Oracle only, #502). A NULL read back lands in the entity's
+    /// backing field, and <see cref="GoldpathNotification.Culture"/> reads it as the empty name.
+    /// </summary>
+    private static readonly ValueConverter<string, string> InvariantCultureAsNull = new(
+        culture => culture.Length == 0 ? null! : culture,
+        stored => stored);
+
+    /// <summary>
+    /// The Oracle EF provider marks the model it builds with its own annotations (<c>Oracle:…</c>) before
+    /// <c>OnModelCreating</c> runs; nothing else does. The same test as the Quartz store model's in Goldpath.Jobs.
+    /// </summary>
+    private static bool IsOracle(ModelBuilder modelBuilder)
+        => modelBuilder.Model.GetAnnotations().Any(a => a.Name.StartsWith("Oracle:", StringComparison.Ordinal));
 }
