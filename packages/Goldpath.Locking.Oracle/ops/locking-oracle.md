@@ -23,8 +23,10 @@ FROM dba_locks l
 WHERE l.lock_type = 'PL/SQL User Lock';
 ```
 To see which Goldpath lock name an id is, join `SYS.DBMS_LOCK_ALLOCATED` on `lockid = lock_id1`
-(the provider allocates its names there; a name longer than Oracle's limit is stored hashed by the
-library). `V$LOCK` with `type = 'UL'` shows the same rows by `sid`; rows with `request > 0` are the
+(the provider allocates its names there). That column holds 128 BYTES: a name that is ASCII and fits
+reads as the Goldpath lock name itself; any other name — longer, or with non-ASCII characters such as
+Turkish ones — is stored by Goldpath (`OracleLockNames`, before the library sees it) as its leading
+ASCII, `#`, and the hex SHA-256 of its UTF-8. To find such a lock, compute the same digest of the name. `V$LOCK` with `type = 'UL'` shows the same rows by `sid`; rows with `request > 0` are the
 contention the timeout counter is about to record. Reading `DBA_LOCKS` and `V$LOCK` needs
 `SELECT_CATALOG_ROLE` (or a grant on the views) for the inspection queries only.
 

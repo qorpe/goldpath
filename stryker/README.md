@@ -41,6 +41,7 @@ borrow exactly those — not every container-backed story that happens to pass t
 | Messaging | `Goldpath.Messaging.Conformance` | The seam's own conformance suite (ADR-0013): `S2_1_exactly_once_…` is the outbox's exactly-once contract (1 mutant). |
 | Messaging | `Goldpath.IntegrationTests` | `Committed_transaction_delivers_exactly_once` and `Rolled_back_transaction_publishes_nothing` prove the outbox registration against real Postgres + RabbitMQ (3 mutants). |
 | Locking | `Goldpath.IntegrationTests` | `Exactly_one_competitor_holds_the_lock_and_release_hands_it_over` and `Tenant_scoped_names_do_not_contend_across_tenants` contend for a real lock; the unit suite has no second holder (1 mutant). |
+| Locking.Oracle | `Goldpath.IntegrationTests` | `OracleLockNameTests` is the package's only unit-level suite: it composes `AddGoldpathOracleLocking` and reads each lock's name back without opening a connection, so it needs no container. The package has no test project of its own, and the filter keeps the Oracle-container facts out of the run (all 24 mutants). |
 | Caching | `Goldpath.IntegrationTests` | `A_second_host_with_a_cold_l1_reads_the_value_from_redis_l2` is the only proof of the Redis L2 wiring (3 mutants). With it the package sat BELOW the break until `CachingCompositionTests` (2026-10-20) — see the measured scores. |
 
 ## Measured scores
@@ -134,6 +135,12 @@ scored mutants). The first run scored 90.00 %: the default arm's pointer to the 
 by nothing, and `A_value_that_names_no_provider_is_refused_never_built_as_postgres` now asserts it. The four
 survivors are in lines the change did not touch. Minutes are the sandbox's, not the CI profile's.
 
+**Locking.Oracle was first measured 2026-11-07**, a full run of `mutation-gate.sh Goldpath.Locking.Oracle`
+on the #407 branch (base 9513a76) after the lock-name mapping landed: 100.00 % (24 killed of 24 scored
+mutants; 1 ignored, 1 compile error). The first run, before the tests were sharpened, scored 73.33 %: the
+readable-prefix bounds, DEL as ASCII, the stand-in shape's `#` position and a null name were asserted by
+nothing; each now has a fact. Minutes are the sandbox's, not the CI profile's.
+
 **Console was re-measured 2026-10-19**, a full run on the #272 branch, after the product
 console link tiles (#257) put the package's first real decision logic in it — the link URL
 rule and the registry's links-only shape. 75.00 % → 91.46 % (75 killed, 6 survived, 1 without
@@ -147,6 +154,7 @@ at f459fe2, so its row carries it (minutes not recorded).
 | Auth | 97.83 % (70.65) | 27.83 | 1.8 | 70.65 %, 32.3 |
 | Abstractions | 95.24 % | 25.24 | 0.9 | 95.24 %, 30.0 |
 | Locking | 92.00 % | 22.00 | 6.5 | 91.67 %, 59.5 |
+| Locking.Oracle | 100.00 % | 30.00 | 0.8 | — (scoped to `OracleLockNames.cs`) |
 | SoftDelete | 91.67 % | 21.67 | 1.4 | 91.67 %, 3.7 |
 | Cli | 91.48 % | 21.48 | 7.6 | 91.44 %, 8.6 |
 | Console | 91.46 % (75.00) | 21.46 | — | 75.00 %, 24.3 |
@@ -361,9 +369,11 @@ Jobs admin service is the exception above, and the reason is measured, not assum
 
 ## Packages without a gate
 
-`ApiDefaults`, `Locking.SqlServer`, `Locking.Oracle`, `Sdk` — composition and adapter shells with little
-branching logic; each has a unit suite, except `Locking.Oracle`, whose one registration method is proven on a
-real Oracle by the lock contract (`LockContractOracleTests`, the `oracle` CI job). A gate joins the moment one of them grows an engine
+`ApiDefaults`, `Locking.SqlServer`, `Sdk` — composition and adapter shells with little
+branching logic; each has a unit suite. `Locking.Oracle` was in this list until #407's verifier found that
+`DBMS_LOCK` stores names in 128 BYTES: its name mapping (`OracleLockNames`) is an engine path, so it is gated,
+scoped to that one file (`mutate`) and to `OracleLockNameTests`, which need no container; its registration
+method stays proven on a real Oracle by the lock contract (`LockContractOracleTests`, the `oracle` CI job). A gate joins the moment one of them grows an engine
 path (the 2026-09-01 audit's rule). `Console`, `Messaging` and `ServiceDefaults` gained
 gates on 2026-09-03 (the thin-suites PR): each carries real branching (asset resolution,
 the publish/consume filters, correlation + concurrency guard) that a unit suite can score.

@@ -104,9 +104,34 @@ public sealed class LockContractOracleTests(OracleFixture oracle)
         Assert.Null(await locks.TryAcquireLockAsync(name, TimeSpan.FromSeconds(1)));
 
         // Two names that agree on their first 300 characters and differ in the last are two locks, not one
-        // truncated name: the library hashes a name too long for DBMS_LOCK rather than cut it.
+        // truncated name: a name too long for DBMS_LOCK is hashed (OracleLockNames), never cut.
         await using var other = await locks.TryAcquireLockAsync(name[..^1] + "y", TimeSpan.FromSeconds(2));
         Assert.NotNull(other);
+    }
+
+    [Fact]
+    public async Task A_name_under_128_characters_but_over_128_bytes_is_still_one_exclusive_lock()
+    {
+        using var host = BuildHost(await SchemaAsync(grant: true));
+        var locks = host.Services.GetRequiredService<IDistributedLockProvider>();
+
+        // 87 characters, 148 UTF-8 bytes: the library counts characters and passes it through, and
+        // DBMS_LOCK_ALLOCATED.NAME (128 BYTES) refused it with ORA-12899 before OracleLockNames.
+        var name = GoldpathLockNames.Global("işlem-" + new string('İ', 60));
+        Assert.True(name.Length <= 128 && System.Text.Encoding.UTF8.GetByteCount(name) > 128);
+
+        await using var first = await locks.TryAcquireLockAsync(name, TimeSpan.FromSeconds(2));
+        Assert.NotNull(first);
+        Assert.Null(await locks.TryAcquireLockAsync(name, TimeSpan.FromSeconds(1)));   // timeout → null, never a throw
+
+        // A name differing only in its last character is a second lock.
+        await using var other = await locks.TryAcquireLockAsync(name[..^1] + "ı", TimeSpan.FromSeconds(2));
+        Assert.NotNull(other);
+
+        // And a long multi-byte name (over 128 characters too) — the library's own hash keeps a prefix of
+        // the name, which in non-ASCII would exceed the bytes again.
+        await using var longer = await locks.TryAcquireLockAsync(GoldpathLockNames.Global(new string('ş', 300)), TimeSpan.FromSeconds(2));
+        Assert.NotNull(longer);
     }
 
     [Fact]

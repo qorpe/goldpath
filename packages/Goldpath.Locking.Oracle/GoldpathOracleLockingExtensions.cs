@@ -39,7 +39,8 @@ public static class GoldpathOracleLockingExtensions
             var connectionString = configuration.GetConnectionString(options.ConnectionName)
                 ?? throw new InvalidOperationException(
                     $"Goldpath:DistributedLocking (Oracle) needs the '{options.ConnectionName}' connection string.");
-            return new GoldpathMeteredLockProvider(new OracleDistributedSynchronizationProvider(connectionString));
+            // Names are made safe for DBMS_LOCK's 128-byte column BEFORE the library sees them (OracleLockNames).
+            return new GoldpathMeteredLockProvider(new OracleLockNames(new OracleDistributedSynchronizationProvider(connectionString)));
         });
 
         builder.Services.AddScoped<GoldpathLockNames>();
