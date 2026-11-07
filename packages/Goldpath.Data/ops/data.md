@@ -47,8 +47,16 @@ Measured in G7 slice O-2 (#405), on `gvenzl/oracle-free:23.26.3-slim-faststart` 
   fails in ODP.NET (`OracleParameter.set_Size`) before it is sent. Until #475 lands, a job execution that succeeds
   (its `Error` is NULL) cannot be recorded on Oracle.
 - **`''` is NULL.** Every NOT NULL string column refuses an empty string with `ORA-01400`. The known writers of
-  `""` are #476 (three admin verbs that accept a blank value), #502 and #503. The campaign global ceiling row was
-  one; since #384 it is named `"*"` on every provider. A LINQ filter
+  `""` are #476 (three admin verbs that accept a blank value) and #503. The campaign global ceiling row was
+  one; since #384 it is named `"*"` on every provider. A notification's culture was another: since #502,
+  `GoldpathNotifications.Culture` is nullable on Oracle only, and Notification writes the invariant culture's
+  empty name as NULL and reads it back as `""` into a materialised entity. A query that projects the column
+  (`Select(n => n.Culture)`) reads NULL for it, because EF runs no converter on a NULL value, and
+  `Culture != ""` matches the invariant rows as well. Only a LITERAL `== ""` becomes `IS NULL`: a `""` held in a
+  variable (`n.Culture == culture`), an `IN` list (`cultures.Contains(n.Culture)`) or one arm of an `OR` reaches
+  Oracle as a NULL parameter and matches nothing, so the invariant rows are silently missed. Match them with
+  `string.IsNullOrEmpty(n.Culture)` (or a literal `== ""`), or materialise the entity (every shape pinned in
+  `OracleDataTests`). A LINQ filter
   `x == ""` is translated as a NULL test, so on Oracle it matches the rows whose value is NULL: a query ported from
   PostgreSQL returns different rows, with no error.
 - **Keyset has no Oracle branch, and it is correct only in a session that sorts BINARY.** `ToPageAsync` emits

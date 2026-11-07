@@ -247,7 +247,7 @@ GoldpathNotifications.BodyDeletedAt: TIMESTAMP(7) WITH TIME ZONE null
 GoldpathNotifications.Channel: NVARCHAR2(64) not null
 GoldpathNotifications.ClaimedAt: TIMESTAMP(7) WITH TIME ZONE null
 GoldpathNotifications.CorrelationId: NVARCHAR2(128) null
-GoldpathNotifications.Culture: NVARCHAR2(16) not null
+GoldpathNotifications.Culture: NVARCHAR2(16) null
 GoldpathNotifications.DedupKey: NVARCHAR2(256) not null
 GoldpathNotifications.Detail: NVARCHAR2(1024) null
 GoldpathNotifications.FailedAt: TIMESTAMP(7) WITH TIME ZONE null
