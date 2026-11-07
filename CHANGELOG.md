@@ -618,6 +618,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **Notification on Oracle: a notification rendered from the invariant fallback is stored (#502).** Its culture is the
+  empty name, which Oracle stores as NULL, so the `NOT NULL` column refused it (ORA-01400) — every template registered
+  only for `""` (a webhook alert, say) and every request in a culture with no text of its own. On Oracle alone
+  `GoldpathNotifications.Culture` is now nullable: Notification's model writes `""` as NULL and the entity reads NULL
+  back as `""` (owner decision A; oracle RFC §2.2 amended). PostgreSQL and SQL Server are unchanged, and
+  `GoldpathNotification.Culture` keeps its signature. **Proof:** `OracleDataTests.The_invariant_culture_is_stored_as_null_and_read_back_as_the_empty_name`
+  (NULL on disk, `""` read back, `tr-TR` untouched, a `Culture == ""` query finds the row) and the webhook fact of
+  `NotificationFacts`, which on Oracle asserted the refusal and now runs end to end on both providers; both red with
+  ORA-01400 without the mapping. The Oracle golden's column reads `NVARCHAR2(16) null`, and `MayWriteEmpty` drops its
+  entry. No migration step: Oracle is on no published train yet, so no adopter database has the old column.
 - **[schema]** **Approvals: concurrent decisions no longer both apply (#480, threat model T-APR-06).** A decision read the
   request and its signatures, then wrote them in separate calls with nothing guarding the gap.
   - **What went wrong:**

@@ -36,7 +36,6 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
         ["GoldpathCampaigns.Name"] = "#476 — campaign create takes a blank name",
         ["GoldpathBulkFiles.FileName"] = "#476 — an upload's empty ?fileName= is stored as is",
         ["GoldpathErasureRecords.SubjectKey"] = "#476 — erase takes a blank subject key",
-        ["GoldpathNotifications.Culture"] = "#502 — the invariant fallback's culture is the empty name",
         ["GoldpathApprovals.Subject"] = "#503 — the engine takes a blank subject",
         ["GoldpathApprovals.RequestedBy"] = "#503 — the engine takes a blank requester",
         ["GoldpathApprovalSignatures.SignedBy"] = "#503 — the engine takes a blank decider",
@@ -157,6 +156,53 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
             Assert.Equal(1_000, global.MaxTps);
         }
     }
+
+    [Fact]
+    public async Task The_invariant_culture_is_stored_as_null_and_read_back_as_the_empty_name()
+    {
+        // #502 (owner decision A, 2026-11-04): Notification's invariant fallback is the culture "", and '' is NULL here.
+        // On Oracle alone the column is nullable and Notification's own mapping writes "" as NULL and reads NULL as "".
+        var connection = await oracle.CreateSchemaAsync("GP_CULTURE");
+        var invariant = Guid.NewGuid();
+        var turkish = Guid.NewGuid();
+        await using (var db = OracleComposedDb.Create(connection))
+        {
+            await db.Database.EnsureCreatedAsync();
+            db.Set<GoldpathNotification>().AddRange(Notification(invariant, ""), Notification(turkish, "tr-TR"));
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = OracleComposedDb.Create(connection))
+        {
+            var rows = await db.Set<GoldpathNotification>().AsNoTracking().ToDictionaryAsync(n => n.Id, n => n.Culture);
+            Assert.Equal("", rows[invariant]);
+            Assert.Equal("tr-TR", rows[turkish]);
+            // A query by the empty name finds the row: the converter runs on the parameter as on the column.
+            Assert.Equal(invariant, (await db.Set<GoldpathNotification>().AsNoTracking().SingleAsync(n => n.Culture == "")).Id);
+        }
+
+        // What is on disk: NULL for the invariant culture, the name as is for any other.
+        await using var raw = new OracleConnection(connection);
+        await raw.OpenAsync();
+        await using var command = raw.CreateCommand();
+        command.CommandText = "SELECT COUNT(CASE WHEN \"Culture\" IS NULL THEN 1 END), COUNT(CASE WHEN \"Culture\" = 'tr-TR' THEN 1 END) FROM \"GoldpathNotifications\"";
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal((1m, 1m), (reader.GetDecimal(0), reader.GetDecimal(1)));
+    }
+
+    private static GoldpathNotification Notification(Guid id, string culture) => new()
+    {
+        Id = id,
+        DedupKey = id.ToString("N"),
+        Template = "ops-alert",
+        TemplateHash = "hash",
+        Channel = "webhook",
+        Recipient = "ops-room",
+        Culture = culture,
+        Body = "disk full",
+        RequestedAt = DateTimeOffset.UtcNow,
+    };
 
     [Fact]
     public async Task A_document_column_holds_2000_characters_and_refuses_the_2001st()

@@ -130,6 +130,10 @@ Oracle test projects.
 - **Empty string.** Oracle stores `''` as `NULL`. No Goldpath column distinguishes an empty
   string from null, which O-2 asserts across the model. The adopter guide states it, because an
   adopter's `required` string column will refuse `""`.
+  - *Amendment (#502, owner decision 2026-11-04):* the one exception is `GoldpathNotifications.Culture`, whose
+    `""` is Notification's invariant culture. On Oracle alone that column is nullable, and Notification's own model
+    writes `""` as `NULL` (a converter) and reads `NULL` back as `""` (the entity's backing field). PostgreSQL and
+    SQL Server keep the column and the entity exactly as before.
 - **The campaign global ceiling row's name** (#384, owner decision 2026-10-24). R3.2 keyed the
   global row `(Global, "")`, which Oracle cannot store in a primary key. The row is named
   `"*"` (`GoldpathCampaignCeiling.GlobalName`) on **every** provider, not only Oracle, so no

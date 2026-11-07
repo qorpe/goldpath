@@ -50,13 +50,6 @@ public abstract class NotificationFacts : IAsyncLifetime
     /// <summary>The Quartz store's provider for this database.</summary>
     protected abstract GoldpathJobStoreProvider JobStore { get; }
 
-    /// <summary>
-    /// The open issue under which this provider refuses a notification rendered from the invariant fallback (its
-    /// culture is the empty name), or <see langword="null"/> where it is stored. While it is set, the fact that
-    /// requests one asserts that refusal and stops: the day the issue lands, the assertion goes red.
-    /// </summary>
-    protected virtual string? InvariantCultureRefusedUnder => null;
-
     public async Task InitializeAsync()
     {
         var connection = await StartDatabaseAsync();
@@ -202,16 +195,12 @@ public abstract class NotificationFacts : IAsyncLifetime
             var request = new GoldpathNotificationRequest("ops-alert", "webhook", "ops-room", "",
                 new Dictionary<string, string> { ["Text"] = "disk full" }, dedupKey: "alert:disk:2026-07-08");
             var notifier = scope.ServiceProvider.GetRequiredService<IGoldpathNotifier>();
-            if (InvariantCultureRefusedUnder is not null)
-            {
-                // The template exists only in the invariant culture, so the stored culture is "" — NULL on this provider.
-                var refused = await Assert.ThrowsAsync<DbUpdateException>(() => notifier.RequestAsync(request, timeout.Token));
-                Assert.Contains("ORA-01400", refused.InnerException?.Message, StringComparison.Ordinal);
-                return;
-            }
-
             id = (await notifier.RequestAsync(request, timeout.Token)).Id;
         }
+
+        // The template exists only in the invariant culture, whose name is the empty string: it is stored and read
+        // back as that on every provider (#502 — on Oracle, where '' is NULL, through Notification's own mapping).
+        Assert.Equal("", Query(db => db.Set<GoldpathNotification>().AsNoTracking().Single(n => n.Id == id)).Culture);
 
         await WaitForFleetAsync(timeout.Token);
         Assert.True((await Admin.TriggerAsync(_fleet, "GoldpathNotificationSendJob`1", dryRun: false, "it-operator", timeout.Token)).Ok);
