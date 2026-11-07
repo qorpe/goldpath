@@ -5,6 +5,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **The console DRIVES CorPay, the adopter-shaped sample (GA gate G11, open-threads T1, #325).** No package change.
+  - **What runs:** `scripts/corpay-console-smoke.sh`, a new `corpay-console-smoke` job in the nightly. It brings CorPay up on
+    its PUBLISHED train (the API head behind its OpenID floor, and the EOD worker's internal head) on real Postgres, RabbitMQ
+    and Redis, with Keycloak `26.0.7` importing a committed realm (`ui/console/e2e/corpay-realm/realm.json`: `maker`,
+    `approver`, a `viewer` without the ops role). Playwright (`ui/console/e2e/corpay.spec.ts`) gets a token per actor by
+    direct grant and carries it as `Authorization: Bearer` on that actor's browser context (owner decision 2026-11-04).
+  - **What it drives, through the consoles CorPay serves:** the floor (no token 401, no ops role 403, an operator 200); the
+    EOD job triggered, its new run `Completed` and `Manual` in the history, paused and resumed with the store's state read
+    back after a reload, and the three crossings on the fleet's audit; a payment file uploaded by `maker`, validated, and
+    approved by `approver` in a second context, the batch recording `Approved by approver`, the jobs audit naming `maker`.
+  - **Proof:** `CORPAY_EXPECTED_APPROVER=maker` fails the run on the batch's decider.
+  - **Found by driving it:** the approved file's rows never execute on a multi-tenant app (#539; pinned as a `test.fail()`
+    that turns into an unexpected pass when it is fixed, T62); an approval leaves no admin-audit row (T63); a head's console
+    asked for another fleet's jobs answers 500 (T64). T1 closes on the job's first green night.
 - **Campaign: a ceiling for outstanding acknowledgements, `MaxAwaitingAck` (campaign RFC R3.4,
   slice R3-S5, #293).**
   - **API (additive, init-only):** `GoldpathCampaignPolicy.MaxAwaitingAck`,
