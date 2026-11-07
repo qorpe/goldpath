@@ -161,7 +161,8 @@ tests:
 
   # c1's first failures arrive at 20m, on a series that did not exist before (`increase` alone
   # would never see them); c3 starts life at 0 already holding 7; c2's series exists from the
-  # start at 0 and grows at 40m. Each resolves once its last failure is an hour old.
+  # start at 0 and grows at 40m; c4 likewise, by a single failure. Each resolves once its last
+  # failure is an hour old.
   - name: new terminal failures fire, including a campaign's first; they resolve after an hour
     interval: 1m
     input_series:
@@ -171,6 +172,9 @@ tests:
         values: '0x39 2x60'
       - series: 'goldpath_campaign_failed_total{job="fleet", campaign="c3"}'
         values: '7x100'
+      # c4 exists from the start and grows by exactly ONE: "any new one" is one, not more than one.
+      - series: 'goldpath_campaign_failed_total{job="fleet", campaign="c4"}'
+        values: '0x39 1x60'
     alert_rule_test:
       - eval_time: 21m
         alertname: GoldpathCampaignRepairQueueGrowing
@@ -193,6 +197,46 @@ tests:
               summary: "Campaign c2: items failed terminally in the last hour"
               description: "They sit in the jobs repair queue. Read GET /goldpath/admin/campaign/{id}/failures, fix the cause, and replay from the jobs console (replay-items)."
               runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#5-failed-items--poisoned-targets
+          - exp_labels: { severity: minor, job: fleet, campaign: c4 }
+            exp_annotations:
+              summary: "Campaign c4: items failed terminally in the last hour"
+              description: "They sit in the jobs repair queue. Read GET /goldpath/admin/campaign/{id}/failures, fix the cause, and replay from the jobs console (replay-items)."
+              runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#5-failed-items--poisoned-targets
       - eval_time: 101m
+        alertname: GoldpathCampaignRepairQueueGrowing
+        exp_alerts: []
+
+
+  # The minimum sample is inclusive: exactly 100 attempts in fifteen minutes is a real sample.
+  # cdr: every 3 minutes 14 attempts succeed and 6 are retried (30 %). A 15-minute window holds
+  # five steps of 20 spanning 12 minutes, which `increase` extrapolates to 80 × 15/12 = 100 exactly
+  # (900 s / 720 s is exact in binary, so the boundary is not left to rounding).
+  - name: the failure ratio's minimum sample is inclusive at exactly one hundred attempts
+    interval: 3m
+    input_series:
+      - series: 'goldpath_campaign_outcomes_total{job="fleet", type="cdr", outcome="succeeded", error_code="none"}'
+        values: '0+14x20'
+      - series: 'goldpath_campaign_outcomes_total{job="fleet", type="cdr", outcome="retry", error_code="TIMEOUT"}'
+        values: '0+6x20'
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: GoldpathCampaignFailureRatio
+        exp_alerts:
+          - exp_labels: { severity: major, job: fleet, type: cdr }
+            exp_annotations:
+              summary: "cdr: 30% of attempts fail"
+              description: "Read the error codes on the dashboard's outcomes-by-code panel, then the failed items. A provider limiting the rate is a throttle (runbook item 3); a poisoned target is a repair."
+              runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#5-failed-items--poisoned-targets
+
+  # A monitoring gap is not a new failure. c1 has held 5 failures since before the hour began;
+  # scraping stops for ten minutes at 29m. An hour after the gap, the instant `offset 1h` lookup
+  # (five minutes of lookback) would find nothing and call c1 a new series; the rule must not.
+  - name: a scrape gap longer than the staleness window does not make an old series look new
+    interval: 1m
+    input_series:
+      - series: 'goldpath_campaign_failed_total{job="fleet", campaign="c1"}'
+        values: '5x29 _x10 5x80'
+    alert_rule_test:
+      - eval_time: 1h35m
         alertname: GoldpathCampaignRepairQueueGrowing
         exp_alerts: []

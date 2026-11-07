@@ -34,7 +34,8 @@ if [[ -z "${PROMTOOL:-}" ]]; then
         "https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/${ARCHIVE_NAME}"
     fi
     echo "${PROMETHEUS_SHA256}  ${archive}" | sha256sum -c --quiet - \
-      || { echo "alert-rules: $archive does not match the pinned SHA-256 — refusing to run it" >&2; exit 1; }
+      || { [[ -z "${PROMETHEUS_ARCHIVE:-}" ]] && rm -f "$archive"   # a downloaded copy only: a re-run fetches it again
+           echo "alert-rules: $archive does not match the pinned SHA-256 — refusing to run it" >&2; exit 1; }
     tar -xzf "$archive" -C "$cache" "prometheus-${PROMETHEUS_VERSION}.linux-amd64/promtool"
   fi
 fi
@@ -64,14 +65,16 @@ SEVERITIES = {"critical", "major", "minor"}
 PREFIX = "https://github.com/qorpe/goldpath/blob/main/"
 
 def anchors(path):
-    """GitHub's heading anchors: lower-case, punctuation dropped, spaces to hyphens, repeats numbered."""
+    """GitHub's heading anchors: lower-case, punctuation other than `-` and `_` dropped, spaces to
+    hyphens, repeats numbered. `_` survives (a heading naming a metric keeps it), so only the
+    emphasis and code markers are stripped before the slug is taken."""
     seen, out = {}, set()
     for line in open(path, encoding="utf-8"):
         m = re.match(r"^#{1,6}\s+(.*?)\s*#*\s*$", line)
         if not m:
             continue
-        text = re.sub(r"[`*_]|\[([^\]]*)\]\([^)]*\)", r"\1", m.group(1)).strip().lower()
-        slug = "".join(c for c in text if c in " -" or unicodedata.category(c)[0] in "LN").replace(" ", "-")
+        text = re.sub(r"[`*]|\[([^\]]*)\]\([^)]*\)", r"\1", m.group(1)).strip().lower()
+        slug = "".join(c for c in text if c in " -_" or unicodedata.category(c)[0] in "LN").replace(" ", "-")
         n = seen.get(slug, 0)
         seen[slug] = n + 1
         out.add(slug if n == 0 else f"{slug}-{n}")

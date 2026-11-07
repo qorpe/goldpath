@@ -13,7 +13,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     timing out for 10 min (`major`); over 20 % of attempts failing, retries included, over at least
     100 attempts, for 10 min (`major`); re-releases over 1 % of releases for 15 min (`minor` — a
     resume's one jump cannot hold that long); any item failed terminally in the last hour (`minor`,
-    including a campaign's FIRST failures, which `increase` alone never sees). Runbook item 13
+    including a campaign's FIRST failures, which `increase` alone never sees — and "first" means no
+    sample anywhere in the hour before, so a scrape gap longer than the five-minute staleness window
+    does not make an old campaign's failures page again an hour later). Runbook item 13
     (the pacer stopped ticking) is new, and the runbook opens with the alert → item table.
   - **Severity scheme** `critical | major | minor` (owner decision 2026-10-20), defined in
     `Goldpath.ServiceDefaults/ops/dashboard-and-alerts.md` with where each package's rule file lives;
@@ -21,8 +23,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   - **Gate:** `scripts/alert-rules.sh`, in its own `alert-rules` workflow — `promtool check rules` and
     `promtool test rules` on every `packages/*/ops/alerts.yaml` (a rule file without its
     `alerts.test.yaml` is refused), every severity from the scheme, every `runbook_url` resolving to
-    a heading. promtool comes from Prometheus 3.5.0, its archive checked against a pinned SHA-256;
-    an air-gapped run passes the archive or a provisioned binary of that version.
+    a heading. promtool comes from Prometheus 3.5.0, its archive checked against a pinned SHA-256
+    (a downloaded copy that fails the check is deleted, so a re-run fetches it again); an air-gapped
+    run passes the archive or a provisioned binary of that version.
   - **Dashboard:** the release-rate panel gains the ceilings (the running campaigns' policy `Tps`
     per type, the type's `MaxTps`, `GlobalTps`) and sums the released rate per type; new panels for
     the pacer's tick age, handler p50/p95, outcomes by code, the binding constraint and daily-quota

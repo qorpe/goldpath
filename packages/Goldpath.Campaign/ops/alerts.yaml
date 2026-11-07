@@ -109,12 +109,15 @@ groups:
       # last one, whether or not it was replayed — the queue itself is on the jobs dashboard.
       # The counter is per campaign and appears with its first failures, and `increase` cannot see
       # a series' first sample, so the second half counts a series that did not exist an hour ago
-      # (a campaign's first failures, or a restarted host's) by its value.
+      # (a campaign's first failures, or a restarted host's) by its value. "Did not exist" means no
+      # sample ANYWHERE in the hour before, not none at that one instant: `x offset 1h` looks back
+      # only five minutes, so a scrape gap longer than that would make every old series look new an
+      # hour later and page for failures that are not new.
       - alert: GoldpathCampaignRepairQueueGrowing
         expr: |
           sum by (job, campaign) (increase(goldpath_campaign_failed_total[1h])) > 0
           or
-          sum by (job, campaign) (goldpath_campaign_failed_total unless goldpath_campaign_failed_total offset 1h) > 0
+          sum by (job, campaign) (goldpath_campaign_failed_total unless last_over_time(goldpath_campaign_failed_total[1h] offset 1h)) > 0
         labels:
           severity: minor
         annotations:
