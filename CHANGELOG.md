@@ -628,9 +628,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   `NotificationFacts`, which on Oracle asserted the refusal and now runs end to end on both providers; both red with
   ORA-01400 without the mapping. The Oracle golden's column reads `NVARCHAR2(16) null`, and `MayWriteEmpty` drops its
   entry. **The limit, on Oracle:** the round trip holds for a materialised entity, not for SQL. A query that projects
-  `Culture` reads NULL for the invariant culture, and `Culture != ""` matches the invariant rows too; filter with
-  `Culture == ""` or materialise the entity (`OracleDataTests.The_invariant_culture_reads_as_null_in_a_projection_…`
-  pins both). No Goldpath code projects or filters the column that way. No migration step: Oracle is on no published train yet, so no adopter database has the old column.
+  `Culture` reads NULL for the invariant culture, `Culture != ""` matches the invariant rows too, and a `""` held in a
+  variable, an `IN` list or one arm of an `OR` becomes a NULL parameter that matches nothing; match the invariant
+  culture with `string.IsNullOrEmpty(n.Culture)` (or a literal `== ""`), or materialise the entity
+  (`OracleDataTests.The_invariant_culture_reads_as_null_in_a_projection_…` and
+  `…_is_missed_by_a_parameter_an_in_list_and_an_or_arm_and_found_by_IsNullOrEmpty` pin every shape). No Goldpath code projects or filters the column that way. No migration step: Oracle is on no published train yet, so no adopter database has the old column.
 - **[schema]** **Approvals: concurrent decisions no longer both apply (#480, threat model T-APR-06).** A decision read the
   request and its signatures, then wrote them in separate calls with nothing guarding the gap.
   - **What went wrong:**

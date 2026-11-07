@@ -224,6 +224,40 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
         }
     }
 
+    [Fact]
+    public async Task The_invariant_culture_is_missed_by_a_parameter_an_in_list_and_an_or_arm_and_found_by_IsNullOrEmpty()
+    {
+        // The rest of the limit (verifier finding on 33b5565): only a LITERAL `== ""` becomes `IS NULL`. The same
+        // "" held in a variable, an IN list or one arm of an OR reaches Oracle as a NULL parameter, and `= NULL` /
+        // `IN (..., NULL)` match nothing, so the invariant row is silently missed. string.IsNullOrEmpty is the filter
+        // that finds it whatever the query's shape; the docs name it, and this fact keeps them honest.
+        var connection = await oracle.CreateSchemaAsync("GP_CULTURE_PARAM");
+        var invariant = Guid.NewGuid();
+        var turkish = Guid.NewGuid();
+        await using (var db = OracleComposedDb.Create(connection))
+        {
+            await db.Database.EnsureCreatedAsync();
+            db.Set<GoldpathNotification>().AddRange(Notification(invariant, ""), Notification(turkish, "tr-TR"));
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = OracleComposedDb.Create(connection))
+        {
+            var rows = db.Set<GoldpathNotification>().AsNoTracking();
+
+            var culture = "";
+            Assert.Empty(await rows.Where(n => n.Culture == culture).Select(n => n.Id).ToListAsync());
+
+            var cultures = new[] { "", "tr-TR" };
+            Assert.Equal([turkish], await rows.Where(n => cultures.Contains(n.Culture)).Select(n => n.Id).ToListAsync());
+
+            Assert.Equal([turkish], await rows.Where(n => n.Culture == "tr-TR" || n.Culture == "").Select(n => n.Id).ToListAsync());
+
+            Assert.Equal([invariant], await rows.Where(n => string.IsNullOrEmpty(n.Culture)).Select(n => n.Id).ToListAsync());
+            Assert.Equal([invariant], await rows.Where(n => n.Culture == "").Select(n => n.Id).ToListAsync());
+        }
+    }
+
     private static GoldpathNotification Notification(Guid id, string culture) => new()
     {
         Id = id,
