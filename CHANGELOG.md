@@ -15,7 +15,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     resume's one jump cannot hold that long); any item failed terminally in the last hour (`minor`,
     including a campaign's FIRST failures, which `increase` alone never sees — and "first" means no
     sample anywhere in the hour before, so a scrape gap longer than the five-minute staleness window
-    does not make an old campaign's failures page again an hour later). Runbook item 13
+    does not make an old campaign's failures page again an hour later — cases hold a 10- and a
+    40-minute gap, the second pinning the `[1h]` window). Runbook item 13
     (the pacer stopped ticking) is new, and the runbook opens with the alert → item table.
   - **Severity scheme** `critical | major | minor` (owner decision 2026-10-20), defined in
     `Goldpath.ServiceDefaults/ops/dashboard-and-alerts.md` with where each package's rule file lives;

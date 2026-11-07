@@ -240,3 +240,19 @@ tests:
       - eval_time: 1h35m
         alertname: GoldpathCampaignRepairQueueGrowing
         exp_alerts: []
+
+  # The same, for a gap longer than half the hour: the `[1h]` window is what holds it. A gap of 40
+  # minutes (29m..68m) leaves samples only before 29m in the window that ends at 2h05m - 1h; a
+  # window shrunk to 30m would see none there and page for c1 again.
+  - name: a scrape gap longer than half the hour does not make an old series look new either
+    interval: 1m
+    input_series:
+      - series: 'goldpath_campaign_failed_total{job="fleet", campaign="c1"}'
+        values: '5x29 _x40 5x80'
+    alert_rule_test:
+      - eval_time: 1h50m
+        alertname: GoldpathCampaignRepairQueueGrowing
+        exp_alerts: []
+      - eval_time: 2h5m
+        alertname: GoldpathCampaignRepairQueueGrowing
+        exp_alerts: []
