@@ -25,6 +25,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   `CampaignR2Tests` and `CampaignR2TakeoverTests`) run in the Oracle lane on Oracle + RabbitMQ, with the
   clustered Quartz store on Oracle. They are the same files, parameterised by store. `CampaignOracleBatchProof`
   pushes a 5,000-item batch through all three bounded lists to `Succeeded`. Campaign runbook §13 covers ORA-01795.
+  Each of the three rewritten filters is pinned by a Campaign fact that fails without it; the ripe-retry release's had
+  none (dropping it passed every suite, on `main` too), and `TheRipeRetryRelease_MarksReleasedOnlyTheItemsItPublished`
+  now holds that a not-yet-ripe retry and a ripe one beyond the allowance stay `AwaitingRetry`.
 - **Campaign: a ceiling for outstanding acknowledgements, `MaxAwaitingAck` (campaign RFC R3.4,
   slice R3-S5, #293).**
   - **API (additive, init-only):** `GoldpathCampaignPolicy.MaxAwaitingAck`,
