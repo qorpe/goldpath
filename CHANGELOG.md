@@ -5,6 +5,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **Data: `GoldpathQueryableExtensions.ChunkedContains` (G7 ORA-5, #408; RFC goldpath-oracle §2.5).**
+  - **API (additive):** `ChunkedContains<T, TValue>(this IQueryable<T>, member, values, providerName)` and
+    `OracleInListLimit = 1000`. On Oracle (a provider name containing `Oracle`), a list longer than 1,000 becomes
+    OR-joined chunks of at most 1,000, because Oracle refuses a longer `IN` list (ORA-01795). On every other
+    provider it is the plain `Contains` filter. Each chunk is a query parameter. `Goldpath.Data` still references
+    no Oracle package.
+  - **Campaign uses it** at the three lists `ReleaseBatchSize` bounds: the ripe retries (`due`), the orphaned
+    releases (`orphans`) and the success flush (`seqs`). It is not used at the lists bounded below 1,000: the
+    callback `correlations` and `settled` (a sink batch of 200) and the stale-claim sweep (`Take(100)`).
+  - **Measured:** a 5,000-item batch on Oracle Free 23.26.3 passes with and without the helper. The pinned Oracle
+    EF provider (10.23.26301) already splits a parameterised list into `IN` lists of 1,000. The helper stays,
+    as the RFC decides, so the bound does not depend on one provider build.
+- **Campaign: the R2 backfill has an Oracle branch (G7 ORA-5, #408; RFC goldpath-oracle §2.7).**
+  `GoldpathCampaignR2Backfill()` on Oracle stamps the R1 rung with `SYSTIMESTAMP` and Oracle interval literals,
+  as one statement with no trailing semicolon, schema-qualified when a schema is given. It has no ceiling-name step,
+  because Oracle never stored an empty-named global ceiling row (#384). An unknown provider is still refused.
+- **Campaign on Oracle (G7 ORA-5, #408):** the four Campaign suites (`CampaignTests`, `CampaignR1Tests`,
+  `CampaignR2Tests` and `CampaignR2TakeoverTests`) run in the Oracle lane on Oracle + RabbitMQ, with the
+  clustered Quartz store on Oracle. They are the same files, parameterised by store. `CampaignOracleBatchProof`
+  pushes a 5,000-item batch through all three bounded lists to `Succeeded`. Campaign runbook §13 covers ORA-01795.
 - **Campaign: a ceiling for outstanding acknowledgements, `MaxAwaitingAck` (campaign RFC R3.4,
   slice R3-S5, #293).**
   - **API (additive, init-only):** `GoldpathCampaignPolicy.MaxAwaitingAck`,

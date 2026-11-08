@@ -152,6 +152,27 @@ public class R2ReviewTests
         Assert.Contains("= 6", sql, StringComparison.Ordinal);   // AwaitingRetry only
     }
 
+    /// <summary>
+    /// ORA-5 (#408, RFC goldpath-oracle §2.7): Oracle's branch is the RFC's SQL — <c>SYSTIMESTAMP</c> and Oracle
+    /// interval literals, one statement with no trailing semicolon (ODP.NET refuses one), and no ceiling-name step,
+    /// because Oracle never stored an empty-named global row (#384). It runs on a real Oracle in
+    /// <c>CampaignR2OracleTests</c>.
+    /// </summary>
+    [Theory]
+    [InlineData(null, "UPDATE \"GoldpathCampaignItems\"")]
+    [InlineData("OPS", "UPDATE \"OPS\".\"GoldpathCampaignItems\"")]
+    public void TheR2BackfillHasAnOracleBranch_TheRfcSqlAsOneStatement(string? schema, string table)
+    {
+        var migration = new Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder("Oracle.EntityFrameworkCore");
+        migration.GoldpathCampaignR2Backfill(schema);
+        var sql = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(Assert.Single(migration.Operations)).Sql;
+        Assert.StartsWith(table + "\n", sql.ReplaceLineEndings("\n"), StringComparison.Ordinal);
+        Assert.Contains("SET \"NextAttemptAt\" = COALESCE(\"CompletedAt\", SYSTIMESTAMP)", sql, StringComparison.Ordinal);
+        Assert.Contains("CASE WHEN \"Attempts\" <= 1 THEN INTERVAL '30' SECOND ELSE INTERVAL '2' MINUTE END", sql, StringComparison.Ordinal);
+        Assert.EndsWith("WHERE \"State\" = 6 AND \"NextAttemptAt\" IS NULL", sql.TrimEnd(), StringComparison.Ordinal);
+        Assert.DoesNotContain(";", sql, StringComparison.Ordinal);
+    }
+
     /// <summary>Finding 4: a schema-qualified model gets a schema-qualified backfill; an unknown provider is told, not guessed.</summary>
     [Fact]
     public void TheR2BackfillHonoursASchema_AndRefusesAnUnknownProvider()
