@@ -30,7 +30,10 @@
 #   - a navigation: every public property of a mapped entity class (and of a base class declared under packages/)
 #     must be a scalar EF maps to a column, an enum, a collection of either, or a mapped entity — or be converted
 #     (Property(x => x.P)…HasConversion) or ignored (Ignore(x => x.P), [NotMapped]) in that entity's configuration.
-#     A type the gate does not know is refused, not guessed: map it, convert it, ignore it, or teach the gate.
+#     A global::-qualified type, an expression-bodied property (EF finds its backing field) and a base class reached
+#     through a primary constructor's arguments are read like any other. A type the gate does not know is refused,
+#     not guessed, and so is a public property whose type it cannot parse: map it, convert it, ignore it, spell it
+#     plainly, or teach the gate.
 # The other ways to declare a table it knows (IEntityTypeConfiguration, [Table], DbSet, Entity(typeof(…)),
 # Entity("…"), SharedTypeEntity, AddEntityType, ApplyConfigurationsFromAssembly, a HasOne/HasMany/Owns* naming
 # its type by string or typeof) are refused. Reading source is not reading EF's model, so the gate also checks
@@ -41,8 +44,9 @@
 #
 # `diagnostic-names-gate.sh --selftest` plants a renamed meter, a renamed span, a renamed table, an
 # un-inventoried instrument, an unreadable name, an un-inventoried factory meter (MeterOptions), an entity
-# mapped without ToTable, a table declared by attribute, a navigation to an unmapped class, a HasOne<T> to an
-# unmapped class, a golden table missing from the inventory, a removed external subscription and a name kept
+# mapped without ToTable, a table declared by attribute, a navigation to an unmapped class (plain, global::-qualified,
+# expression-bodied, and on a base class reached through a primary constructor's arguments), a property whose type
+# the gate cannot parse, a HasOne<T> to an unmapped class, a golden table missing from the inventory, a removed external subscription and a name kept
 # alive only by a comment in a scratch copy, each red, and the unplanted copy green.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -74,7 +78,11 @@ RELATED = re.compile(r'\.(HasOne|HasMany|OwnsOne|OwnsMany)\s*<\s*([\w.]+)\s*>\s*
 CLASS = re.compile(r'\b(?:class|record|struct)\s+(\w+)(?:\s*<[^>{]*>)?(?:\s*\(([^)]*)\))?\s*(?::\s*([^{]+?))?\s*(?:where\b[^{]*)?\{')
 ENUM = re.compile(r'\benum\s+(\w+)')
 PROPERTY = re.compile(r'((?:\[[^\]]*\]\s*)*)\bpublic\s+((?:(?:required|virtual|override|new|sealed|static|abstract)\s+)*)'
-                      r'([\w.]+(?:\s*<[^{};=]*?>)?(?:\s*\[\s*\])?\??)\s+(\w+)\s*\{\s*(?:get|set|init|private|protected|internal)\b')
+                      r'((?:global::)?[\w.]+(?:\s*<[^{};=]*?>)?(?:\s*\[\s*\])?\??)\s+(\w+)\s*(?:\{\s*(?:get|set|init|private|protected|internal)\b|=>)')
+# Anything that LOOKS like a public property (an accessor block, or an expression body) but that PROPERTY cannot
+# parse — a tuple type, a function pointer, a spelling not foreseen — is refused rather than skipped (fail closed).
+PROPERTY_LIKE = re.compile(r'\bpublic\s+([^;{}=]*?)\s*(?:\{\s*(?:get|set|init|private|protected|internal)\b|=>)')
+TYPE_DECLARATION = re.compile(r'\b(?:class|record|struct|interface|enum|delegate|event|operator)\b|\(\s*\)\s*$|\w\s*\([^)]*\)\s*$')
 CONVERTED = re.compile(r'\.Property\s*(?:<[^>()]*>)?\s*\(\s*\w+\s*=>\s*\w+\.(\w+)\s*\)[^;]*?\.HasConversion\b')
 IGNORED = re.compile(r'\.Ignore\s*\(\s*\w+\s*=>\s*\w+\.(\w+)\s*\)')
 SCALARS = {"string", "bool", "char", "byte", "sbyte", "short", "ushort", "int", "uint", "long", "ulong", "float", "double",
@@ -171,13 +179,18 @@ def block(code, start):
 
 def element(type_name):
     """A property's type without its nullable mark, and a collection's element type; None for another generic."""
-    t = re.sub(r"\s+", "", type_name).rstrip("?")
+    t = re.sub(r"\s+", "", type_name).rstrip("?").replace("global::", "")
     m = re.fullmatch(r"(?:System\.Collections\.Generic\.)?(\w+)<(.+)>", t)
     if m:
         return m.group(2).rstrip("?") if m.group(1) in COLLECTIONS and "," not in m.group(2) else None
     if t.endswith("[]") and t != "byte[]":
         return t[:-2].rstrip("?")
     return t
+
+
+def base_name(base):
+    """The class a base-list entry names: without a primary constructor's arguments, global::, a namespace or type arguments."""
+    return re.sub(r"\(.*", "", base, flags=re.S).strip().replace("global::", "").split("<")[0].split(".")[-1].strip()
 
 
 def resolve(expr, consts):
@@ -282,7 +295,12 @@ def scan(root):
             seen.add(name)
             for _, bases, body in classes.get(name, []):
                 declared = True
-                pending += [b.strip().split("<")[0].split(".")[-1] for b in bases.split(",") if b.strip().split("<")[0].split(".")[-1] in classes]
+                pending += [base_name(b) for b in re.sub(r"\([^)]*\)", "", bases).split(",") if base_name(b) in classes]
+                parsed = {p.end(1) for p in PROPERTY.finditer(body)}
+                for c in PROPERTY_LIKE.finditer(body):
+                    if c.start() not in parsed and not TYPE_DECLARATION.search(c.group(1)):
+                        unreadable.append(UNFROZEN + f"{path}: entity {entity} unreadable property 'public {c.group(1).strip()}' — the gate cannot tell "
+                                          "whether EF maps it; spell its type plainly, or convert (HasConversion) or ignore it")
                 for p in PROPERTY.finditer(body):
                     attributes, modifiers, type_name, prop = p.groups()
                     if "static" in modifiers or prop in exempt or re.search(r"\bNotMapped\b", attributes):
@@ -412,6 +430,18 @@ def selftest(root):
         "a navigation to a class no ToTable maps": ("packages/Goldpath.Notification/NotificationModel.cs", 'public string Recipient { get; set; } = "";',
                                                      'public string Recipient { get; set; } = ""; public List<ZzNav> ZzNavs { get; set; } = new();',
                                                      "entity GoldpathNotification property ZzNavs of type List<ZzNav>"),
+        "a global::-qualified navigation to a class no ToTable maps": ("packages/Goldpath.Notification/NotificationModel.cs", 'public string Recipient { get; set; } = "";',
+                                                                       'public string Recipient { get; set; } = ""; public global::Goldpath.Notification.ZzNav? ZzNav { get; set; } }\npublic class ZzNav { public Guid Id { get; set; }',
+                                                                       "entity GoldpathNotification property ZzNav of type global::Goldpath.Notification.ZzNav?"),
+        "a navigation on a base class reached through a primary constructor's arguments": ("packages/Goldpath.Notification/NotificationModel.cs", 'public class GoldpathNotification\n',
+                                                                                           'public class ZzBase(int n) { public List<ZzNav2> Navs { get; set; } = new(); }\npublic class GoldpathNotification() : ZzBase(1)\n',
+                                                                                           "entity GoldpathNotification property Navs of type List<ZzNav2>"),
+        "an expression-bodied navigation": ("packages/Goldpath.Notification/NotificationModel.cs", 'public string Recipient { get; set; } = "";',
+                                            'public string Recipient { get; set; } = ""; public IReadOnlyList<ZzNav3> ZzNav3s => _zzNav3s; private readonly List<ZzNav3> _zzNav3s = new();',
+                                            "entity GoldpathNotification property ZzNav3s of type IReadOnlyList<ZzNav3>"),
+        "a property whose type the gate cannot parse": ("packages/Goldpath.Notification/NotificationModel.cs", 'public string Recipient { get; set; } = "";',
+                                                        'public string Recipient { get; set; } = ""; public (int, ZzNav4) ZzPair { get; set; }',
+                                                        "entity GoldpathNotification unreadable property 'public (int, ZzNav4) ZzPair'"),
         "a HasOne<T> to a class no ToTable maps": ("packages/Goldpath.Jobs/QuartzStoreModel.cs", "e.HasOne<QrtzJobDetail>().WithMany()",
                                                    "e.HasOne<ZzPrincipal>().WithMany()",
                                                    "HasOne<ZzPrincipal> adds ZzPrincipal as an entity named by convention"),

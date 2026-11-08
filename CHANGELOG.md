@@ -20,7 +20,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
       ways EF adds an entity: an `Entity<T>(…)` without `ToTable`; a `HasOne<T>`/`HasMany<T>`/`OwnsMany<T>` to a type
       the package does not map with `ToTable`; and a navigation, meaning a public property of a mapped entity (or of
       its base class) that is not a column type, an enum, a collection of either or a mapped entity, unless it is
-      converted or ignored in that entity's configuration. A type it does not know is refused, not guessed. The other
+      converted or ignored in that entity's configuration. A `global::`-qualified type, an expression-bodied property
+      and a base class reached through a primary constructor's arguments are read like any other. A type it does not
+      know is refused, not guessed, and so is a public property whose type it cannot parse (a tuple, say). The other
       declaration forms it knows (`IEntityTypeConfiguration`, `[Table]`, `DbSet`, `Entity(typeof(…))`,
       `Entity("…")`, `AddEntityType`, `ApplyConfigurationsFromAssembly`, a relationship naming its type by string or
       `typeof`) are refused;
@@ -32,7 +34,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     is on the next line; the adapter's `{endpoint} consume` is kept as written.
   - **Proof:** `--selftest` plants a renamed meter, span and table, an un-inventoried instrument, an unreadable name,
     an un-inventoried factory meter (`MeterOptions`), an entity mapped without `ToTable`, a table declared by
-    attribute, a navigation and a `HasOne<T>` to an unmapped class, a golden table missing from the inventory, a dropped external subscription, and a name kept alive only by a comment. Each one is red; the unplanted
+    attribute, a navigation to an unmapped class (plain, `global::`-qualified, expression-bodied, and on a base class
+    reached through a primary constructor's arguments), a property whose type the gate cannot parse, a `HasOne<T>` to
+    an unmapped class, a golden table missing from the inventory, a dropped external subscription, and a name kept alive only by a comment. Each one is red; the unplanted
     copy is green.
   - **The record:** §2 of the 1.0 API review gets the "Diagnostic contract" and "Goldpath-owned tables" rows. The
     question whether 1.0 needs Goldpath-named messaging instruments is recorded there for the owner (API-13, #402).
