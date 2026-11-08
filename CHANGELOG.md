@@ -629,13 +629,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     - **A committed row above it is marked failed in place:** an outbox sweep (its first pass at start, before the
       bus; then every delivery poll) keeps the row and its body, detaches it from its outbox or inbox, writes
       `Goldpath-Outbox-Failed*` headers with the reason and where it came from, and logs id, type and size at Error.
-      The rows behind it are delivered. The outbox schema is unchanged.
+      The rows behind it are delivered. The outbox schema is unchanged. The sweep's database pre-filter is a QUARTER
+      of the limit, because PostgreSQL's, Oracle's and SQLite's `length()` count code points, which are up to four
+      bytes each; a third would skip a body made mostly of four-byte characters. A row whose headers are not a JSON
+      object is marked too, its headers kept as text in `Goldpath-Outbox-Failed-OriginalHeaders`, so one corrupt row
+      cannot stop the pass. The publish guard judges only the row its own publish added.
     - Both count in a new counter, `goldpath.messaging.outbox.oversized{stage=publish|outbox}` (meter `Goldpath.Messaging`).
   - **Proof:** conformance S2.20 (a committed oversized row, then a small one; the small one is delivered, the large one
     is kept and marked) and S2.21 (the refusal commits nothing; the next publish goes through), both on MassTransit
     8.5.12 and Wolverine on real RabbitMQ 4 and PostgreSQL 17. Both are red on `main`, and red again with the detach or
-    the refusal planted out. Boundaries in UTF-8 bytes (ASCII, `İ`, `€`, a surrogate pair) and the sweep's page walk are
-    `MessageSizeTests`.
+    the refusal planted out. S2.20b, on PostgreSQL 17 and both engines: a committed row of 80 × U+1F600 (80 code
+    points, 320 bytes) is marked under a 300-byte limit; red with the pre-filter at a third. Boundaries in UTF-8 bytes
+    (ASCII, `İ`, `€`, a surrogate pair; at the publish and, for four-byte code points, at the sweep), corrupt headers,
+    a row added outside the guarded publish and the sweep's page walk are `MessageSizeTests`.
   - **Docs:** the package README's "Message size", and the runbook's "An outbox row marked failed" (how to recover one).
   - **Upgrade note:** none required. A publish above 16 MiB now throws where it used to commit a row that never left. To
     publish larger bodies, raise the broker's `max_message_size` and this option together.

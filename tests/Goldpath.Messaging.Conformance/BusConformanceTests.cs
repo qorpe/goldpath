@@ -385,6 +385,44 @@ public abstract class BusConformanceTests(ConformanceContainers containers, stri
         await host.StopAsync();
     }
 
+    [Fact]
+    public async Task S2_20b_the_sweep_selects_an_oversized_body_of_four_byte_characters_by_PostgreSQLs_own_length()
+    {
+        // #458, on the production dialect: PostgreSQL's length() counts code points, and '😀' is one code point and four
+        // UTF-8 bytes, so 80 of them are 320 bytes in 80 code points. The sweep's database pre-filter must select it under
+        // a 300-byte limit (a third of the limit, 100, would not). Written in SQL, as a row an earlier build committed.
+        await using var host = await containers.BuildHostAsync(engine, new Observed());
+        using var scope = host.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ConformanceDb>();
+        var outbox = Guid.NewGuid();
+        var message = Guid.NewGuid();
+        var body = string.Concat(Enumerable.Repeat("😀", 80));
+        // Created far in the past: the oldest undelivered outbox, inside the sweep's head whatever earlier facts left.
+        await Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlAsync(db.Database,
+            $"INSERT INTO \"OutboxState\" (\"OutboxId\", \"LockId\", \"Created\") VALUES ({outbox}, {Guid.NewGuid()}, '2000-01-01')");
+        await Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlAsync(db.Database,
+            $"INSERT INTO \"OutboxMessage\" (\"OutboxId\", \"MessageId\", \"ContentType\", \"MessageType\", \"Body\", \"SentTime\") VALUES ({outbox}, {message}, 'application/json', 'urn:message:s2-20b', {body}, now())");
+        try
+        {
+            var sweeper = new GoldpathOutboxOversizeSweeper<ConformanceDb>(
+                host.Services.GetRequiredService<IServiceScopeFactory>(), new GoldpathMessagingOptions { MaxMessageBytes = 300 },
+                new GoldpathOutboxOptions(), Microsoft.Extensions.Logging.Abstractions.NullLogger<GoldpathOutboxOversizeSweeper<ConformanceDb>>.Instance);
+            await sweeper.SweepAsync(CancellationToken.None);
+
+            var row = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleAsync(
+                Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.SqlQuery<OutboxRow>(db.Database,
+                    $"SELECT \"OutboxId\", \"Headers\" FROM \"OutboxMessage\" WHERE \"MessageId\" = {message}"));
+            Assert.Null(row.OutboxId);
+            Assert.Contains("320 bytes exceeds MaxMessageBytes 300", row.Headers);
+        }
+        finally
+        {
+            // Delivered, so it does not sit at the head of every later fact's sweep.
+            await Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlAsync(db.Database,
+                $"UPDATE \"OutboxState\" SET \"Delivered\" = now() WHERE \"OutboxId\" = {outbox}");
+        }
+    }
+
     /// <summary>An outbox row as S2.20 reads it.</summary>
     private sealed record OutboxRow(Guid? OutboxId, string? Headers);
 

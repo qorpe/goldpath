@@ -149,6 +149,65 @@ public sealed class MessageSizeTests : IDisposable
     }
 
     [Fact]
+    public async Task A_guarded_publish_judges_only_the_row_it_added_not_one_already_in_the_unit_of_work()
+    {
+        // A row added by a path the guard does not wrap is not this event's: refusing it would name the wrong event.
+        // It stays for the save, and the sweep marks it once it is committed.
+        await using var db = await DbAsync();
+        db.Set<OutboxMessage>().Add(Message(new string('a', Max + 1), Guid.NewGuid()));
+        var guard = new GoldpathSizeGuardPublisher(new RowWritingPublisher(db, "small"), db, new GoldpathMessagingOptions { MaxMessageBytes = Max });
+
+        await guard.PublishAsync(new Sized("x"));
+
+        Assert.Equal(2, db.ChangeTracker.Entries<OutboxMessage>().Count(e => e.State == EntityState.Added));
+    }
+
+    // A database's length() is not .NET's: PostgreSQL, Oracle and SQLite count CODE POINTS, and '😀' is one code point
+    // and four UTF-8 bytes. 76 of them are 304 bytes in only 76 code points, under a third of the limit (100), so a
+    // pre-filter of a third would never select the row and it would hold back every row behind it for ever.
+    [Theory]
+    [InlineData(75, false)]
+    [InlineData(76, true)]
+    [InlineData(80, true)]
+    public async Task The_sweep_measures_a_body_of_four_byte_code_points(int repeat, bool marked)
+    {
+        var outbox = Guid.NewGuid();
+        await using (var db = await DbAsync())
+        {
+            db.Set<OutboxState>().Add(new OutboxState { OutboxId = outbox, LockId = Guid.NewGuid(), Created = DateTime.UtcNow });
+            db.Set<OutboxMessage>().Add(Message(string.Concat(Enumerable.Repeat("😀", repeat)), outbox));
+            await db.SaveChangesAsync();
+        }
+
+        Assert.Equal(marked ? 1 : 0, await Sweeper().SweepAsync(CancellationToken.None));
+    }
+
+    // Both engines write a JSON object; a row whose headers are anything else (corrupt data) must not make every pass
+    // throw before the rows behind it on its page.
+    [Fact]
+    public async Task The_sweep_marks_a_row_whose_headers_are_not_a_JSON_object_and_keeps_them_as_text()
+    {
+        var outbox = Guid.NewGuid();
+        await using (var db = await DbAsync())
+        {
+            db.Set<OutboxState>().Add(new OutboxState { OutboxId = outbox, LockId = Guid.NewGuid(), Created = DateTime.UtcNow });
+            db.Set<OutboxMessage>().Add(Message(new string('a', Max + 1), outbox, headers: "not-json"));
+            await db.SaveChangesAsync();
+            db.Set<OutboxMessage>().Add(Message(new string('b', Max + 1), outbox, headers: "[1]"));
+            await db.SaveChangesAsync();
+            db.Set<OutboxMessage>().Add(Message(new string('c', Max + 1), outbox));
+            await db.SaveChangesAsync();
+        }
+
+        Assert.Equal(3, await Sweeper().SweepAsync(CancellationToken.None));
+
+        await using var read = await DbAsync(create: false);
+        var rows = await read.Set<OutboxMessage>().OrderBy(m => m.SequenceNumber).ToListAsync();
+        Assert.Equal(["not-json", "[1]"], rows.Take(2).Select(r => (string?)JsonNode.Parse(r.Headers!)![GoldpathOutboxSize.FailedOriginalHeadersHeader]));
+        Assert.All(rows, r => Assert.StartsWith("301 bytes exceeds", (string?)JsonNode.Parse(r.Headers!)![GoldpathOutboxSize.FailedHeader]));
+    }
+
+    [Fact]
     public async Task The_sweep_marks_an_attached_row_above_the_limit_failed_in_place_and_nothing_else()
     {
         var outbox = Guid.NewGuid();

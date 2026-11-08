@@ -54,7 +54,9 @@ The SQL is PostgreSQL's. On SQL Server, `LEN("Body")` gives characters, a lower 
   producer, then delete the marked row.
 - **Or deliver it as it is,** if the broker can be given a larger `max_message_size`: raise the broker's limit AND
   `Goldpath:Messaging:MaxMessageBytes` above the row's `bytes`, restore the outbox it came from
-  (`Goldpath-Outbox-Failed-OutboxId` in its headers), and remove the three `Goldpath-Outbox-Failed*` headers:
+  (`Goldpath-Outbox-Failed-OutboxId` in its headers), and remove the `Goldpath-Outbox-Failed*` headers. A row whose
+  headers were not a JSON object when it was marked (corrupt data: neither engine writes one) carries them, as
+  written, in `Goldpath-Outbox-Failed-OriginalHeaders`; put that text back as `"Headers"` instead of editing the JSON.
   ```sql
   INSERT INTO "OutboxState" ("OutboxId", "LockId", "Created")
   VALUES ('<Goldpath-Outbox-Failed-OutboxId>', gen_random_uuid(), now() AT TIME ZONE 'utc') ON CONFLICT DO NOTHING;

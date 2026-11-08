@@ -273,6 +273,10 @@ fix planted out:
   in `goldpath.messaging.outbox.oversized`. The rows behind it are delivered.
 - **S2.21, a publish above `MaxMessageBytes` is refused at the seam.** The publish throws, its row leaves the unit
   of work, nothing commits, and the next publish goes through.
+- **S2.20b, the sweep reads the database's own length (verifier finding on #541).** PostgreSQL's `length()` counts
+  code points, up to four bytes each, so the sweep's pre-filter is a quarter of the limit: a committed row of
+  80 × U+1F600 (320 bytes) is marked under a 300-byte limit on both engines, and is skipped with the pre-filter at a
+  third. It is a fact about the floor's sweep against PostgreSQL rather than a change of behaviour on `main`.
 
 **Delayed redelivery is not in the suite, and that is a finding, not a skip** (open-threads T52; S2.13 is
 reserved for it). The Wolverine

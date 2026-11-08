@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using MassTransit.EntityFrameworkCoreIntegration;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -27,6 +28,9 @@ internal static class GoldpathOutboxSize
     /// <summary>The inbox row (message id, consumer id) a row published from a consumer was detached from.</summary>
     internal const string FailedInboxHeader = "Goldpath-Outbox-Failed-Inbox";
 
+    /// <summary>A failed row's original headers, kept as text when they were not a JSON object the marker could extend.</summary>
+    internal const string FailedOriginalHeadersHeader = "Goldpath-Outbox-Failed-OriginalHeaders";
+
     private static readonly Meter s_meter = new("Goldpath.Messaging");
 
     /// <summary>
@@ -45,6 +49,13 @@ internal static class GoldpathOutboxSize
     /// is at most three bytes (a surrogate pair is two characters and four bytes), so only a body longer than this can be.
     /// </summary>
     internal static int CandidateLength(int maxBytes) => maxBytes / 3;
+
+    /// <summary>
+    /// The same bound for a length the DATABASE measures: PostgreSQL's, Oracle's and SQLite's <c>length()</c> count code
+    /// points, and a code point is up to four UTF-8 bytes (an emoji is one code point, four bytes), so only a body of more
+    /// than a quarter of <paramref name="maxBytes"/> can be above it. A quarter holds for SQL Server's UTF-16 count too.
+    /// </summary>
+    internal static int DatabaseCandidateLength(int maxBytes) => maxBytes / 4;
 
     /// <summary>Refuses a <see cref="GoldpathMessagingOptions.MaxMessageBytes"/> that is not positive, at composition.</summary>
     internal static void Validate(GoldpathMessagingOptions options)
@@ -101,34 +112,46 @@ internal sealed class GoldpathSizeGuardPublisher(IIntegrationEventPublisher inne
     public async Task PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken cancellationToken = default)
         where TEvent : class, IIntegrationEvent
     {
-        await inner.PublishAsync(integrationEvent, cancellationToken);
+        // Only the rows THIS publish adds are judged: a row already in the unit of work came from elsewhere (an unguarded
+        // path), and refusing it here would name the wrong event; the sweep catches it once committed.
+        var before = Added().Select(e => e.Entity).ToHashSet(ReferenceEqualityComparer.Instance);
+        await inner.PublishAsync(integrationEvent, cancellationToken);   // the engine runs with the caller's tracker settings
+        foreach (var entry in Added().Where(e => !before.Contains(e.Entity)))
+        {
+            var body = entry.Entity.Body;
+            if (body is null || body.Length <= GoldpathOutboxSize.CandidateLength(options.MaxMessageBytes))
+            {
+                continue;
+            }
+
+            var bytes = GoldpathOutboxSize.BytesOf(body);
+            if (bytes <= options.MaxMessageBytes)
+            {
+                continue;
+            }
+
+            // Out of the unit of work: a caller that catches this and saves anyway must not commit the row.
+            entry.State = EntityState.Detached;
+            GoldpathOutboxSize.Oversized.Add(1, new KeyValuePair<string, object?>("stage", "publish"));
+            throw new InvalidOperationException(
+                $"The integration event {typeof(TEvent).Name} is {bytes} bytes, above Goldpath:Messaging:MaxMessageBytes ({options.MaxMessageBytes}), " +
+                "the largest body the broker accepts. It was not published, and its outbox row is not part of this unit of work. " +
+                "Publish less: a reference to the data rather than the data, or several smaller events.");
+        }
+    }
+
+    /// <summary>
+    /// The outbox rows tracked as Added. An added row is tracked as Added already, so the read skips the full
+    /// DetectChanges a tracker query would run (once before the publish and once after, on every publish).
+    /// </summary>
+    private List<EntityEntry<OutboxMessage>> Added()
+    {
         var tracker = context.ChangeTracker;
         var detect = tracker.AutoDetectChangesEnabled;
-        tracker.AutoDetectChangesEnabled = false;   // an added row is tracked as Added already; a full DetectChanges per publish is not needed
+        tracker.AutoDetectChangesEnabled = false;
         try
         {
-            foreach (var entry in tracker.Entries<OutboxMessage>().Where(e => e.State == EntityState.Added).ToList())
-            {
-                var body = entry.Entity.Body;
-                if (body is null || body.Length <= GoldpathOutboxSize.CandidateLength(options.MaxMessageBytes))
-                {
-                    continue;
-                }
-
-                var bytes = GoldpathOutboxSize.BytesOf(body);
-                if (bytes <= options.MaxMessageBytes)
-                {
-                    continue;
-                }
-
-                // Out of the unit of work: a caller that catches this and saves anyway must not commit the row.
-                entry.State = EntityState.Detached;
-                GoldpathOutboxSize.Oversized.Add(1, new KeyValuePair<string, object?>("stage", "publish"));
-                throw new InvalidOperationException(
-                    $"The integration event {typeof(TEvent).Name} is {bytes} bytes, above Goldpath:Messaging:MaxMessageBytes ({options.MaxMessageBytes}), " +
-                    "the largest body the broker accepts. It was not published, and its outbox row is not part of this unit of work. " +
-                    "Publish less: a reference to the data rather than the data, or several smaller events.");
-            }
+            return tracker.Entries<OutboxMessage>().Where(e => e.State == EntityState.Added).ToList();
         }
         finally
         {
@@ -211,11 +234,12 @@ internal sealed class GoldpathOutboxOversizeSweeper<TContext>(
         using var scope = scopes.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<TContext>();
         var max = options.MaxMessageBytes;
-        var candidateLength = GoldpathOutboxSize.CandidateLength(max);
+        // The database's length, not .NET's: in code points on PostgreSQL, Oracle and SQLite, so the bound is a quarter.
+        var candidateLength = GoldpathOutboxSize.DatabaseCandidateLength(max);
 
         // Only a row still attached to an outbox at the head, or to an inbox, can be the one a delivery pass is stuck on;
-        // a row already marked is detached from both and is never read again. The length is in characters, a cheap bound
-        // the database evaluates; the exact UTF-8 size is measured here, on the few rows long enough to be above it.
+        // a row already marked is detached from both and is never read again. The length is the database's own (code points
+        // on PostgreSQL), a cheap bound it evaluates; the exact UTF-8 size is measured here, on the few rows long enough to be above it.
         var head = await context.Set<OutboxState>()
             .Where(s => s.Delivered == null)
             .OrderBy(s => s.Created)
@@ -251,6 +275,32 @@ internal sealed class GoldpathOutboxOversizeSweeper<TContext>(
         }
     }
 
+    /// <summary>
+    /// A row's headers as an object the marker can extend. Both engines write a JSON object; anything else (corrupt data)
+    /// is kept as text under its own key rather than thrown on, so one such row cannot stop every pass before the rows behind it.
+    /// </summary>
+    internal static JsonObject Headers(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return [];
+        }
+
+        try
+        {
+            if (JsonNode.Parse(text) is JsonObject headers)
+            {
+                return headers;
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // not JSON at all: kept below, as written
+        }
+
+        return new JsonObject { [GoldpathOutboxSize.FailedOriginalHeadersHeader] = text };
+    }
+
     private async Task<bool> MarkIfOversizedAsync(TContext context, long sequenceNumber, int max, CancellationToken cancellationToken)
     {
         var row = await context.Set<OutboxMessage>().AsTracking().SingleOrDefaultAsync(m => m.SequenceNumber == sequenceNumber, cancellationToken);
@@ -266,7 +316,7 @@ internal sealed class GoldpathOutboxOversizeSweeper<TContext>(
             return false;
         }
 
-        var headers = (string.IsNullOrEmpty(row.Headers) ? null : JsonNode.Parse(row.Headers) as JsonObject) ?? [];
+        var headers = Headers(row.Headers);
         headers[GoldpathOutboxSize.FailedHeader] =
             $"{bytes} bytes exceeds MaxMessageBytes {max}; marked failed in place at {DateTimeOffset.UtcNow:O} and never sent";
         if (row.OutboxId is { } outboxId)
