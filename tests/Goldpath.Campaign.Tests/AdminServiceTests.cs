@@ -18,6 +18,26 @@ public class AdminServiceTests
         Assert.Contains("winback", result.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// #476: a blank name is refused in words before any row is written, the same on every provider. Oracle stores ''
+    /// as NULL, so the NOT NULL name column refused it with ORA-01400 (a 500); elsewhere it made an unnamed campaign.
+    /// </summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("\n")]
+    [InlineData(null)]
+    public async Task CreateRefusesABlankNameBeforeAnyRowIsWritten(string? blank)
+    {
+        using var fixture = new CampaignFixture();
+        var result = await fixture.Admin().CreateAsync("winback", blank!, new Dictionary<string, string>(), null, null, "op", CancellationToken.None);
+
+        Assert.False(result.Ok);
+        Assert.Contains("A campaign needs a name", result.Message, StringComparison.Ordinal);
+        Assert.Equal(0, fixture.Query(db => db.Set<GoldpathCampaign>().Count()));
+        Assert.Equal(0, fixture.Query(db => db.Set<GoldpathCampaignAudit>().Count()));
+    }
+
     [Fact]
     public async Task CreateAppliesThePolicyPatchOverTheTypeDefault()
     {
