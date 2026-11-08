@@ -128,6 +128,29 @@ public sealed partial class RawSqlOracleBranchTests
     }
 
     [Fact]
+    public void A_primary_constructor_type_is_not_mistaken_for_the_member_that_holds_the_call()
+    {
+        var source = """
+            namespace P;
+            public sealed class C(Db db)
+            {
+                public bool IsOracle(string provider) => provider.Contains("Oracle", StringComparison.Ordinal);
+
+                public int Purge() => db.Database.ExecuteSqlRaw("DELETE FROM t");
+            }
+            """;
+        var (problems, _) = Scan([("packages/Planted/Planted.cs", source)]);
+        Assert.Contains(problems, p => p.Contains("in Purge", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void An_object_initializer_is_not_mistaken_for_the_member_that_holds_the_call()
+    {
+        var (problems, _) = Scan([("packages/Planted/Planted.cs", Method("var r = new Result(1) { Rows = db.Database.ExecuteSqlRaw(\"x\") };"))]);
+        Assert.Contains(problems, p => p.Contains("in Run", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void A_raw_string_holding_braces_does_not_move_the_method_boundary()
     {
         var source = Method("var json = \"\"\"{ \"a\": 1\"\"\"; var v = @\"}\"; var c = '{'; db.Database.ExecuteSqlRaw(\"x\");")
@@ -237,7 +260,7 @@ public sealed partial class RawSqlOracleBranchTests
         {
             var header = Header(code, open);
             var member = MemberHeader().Match(header);
-            if (member.Success && !StatementKeyword().IsMatch(member.Groups["name"].Value))
+            if (member.Success && !StatementKeyword().IsMatch(member.Groups["name"].Value) && !TypeDeclaration().IsMatch(header))
             {
                 return (member.Groups["name"].Value, open, close);
             }
@@ -367,12 +390,16 @@ public sealed partial class RawSqlOracleBranchTests
     [GeneratedRegex(@"(?:\.(?:Contains|StartsWith|EndsWith|Equals)\s*\(\s*|==\s*)""[^""]*Oracle[^""]*""")]
     private static partial Regex OracleBranch();
 
-    [GeneratedRegex(@"(?<name>[A-Za-z_]\w*)\s*(?:<[^<>(){};]*>)?\s*\([^;{}]*\)\s*(?:where\b[^{;]*)?(?::\s*(?:base|this)\s*\([^;{}]*\)\s*)?$|\b(?<name>get|set|init)$")]
+    [GeneratedRegex(@"(?<!\bnew\s+)(?<!\.)\b(?<name>[A-Za-z_]\w*)\s*(?:<[^<>(){};]*>)?\s*\([^;{}]*\)\s*(?:where\b[^{;]*)?(?::\s*(?:base|this)\s*\([^;{}]*\)\s*)?$|\b(?<name>get|set|init)$")]
     private static partial Regex MemberHeader();
 
     [GeneratedRegex(@"(?<name>[A-Za-z_]\w*)\s*(?:<[^<>(){};]*>)?\s*\([^;{}]*\)\s*=>")]
     private static partial Regex ExpressionBodiedHeader();
 
-    [GeneratedRegex(@"^(?:if|for|foreach|while|using|switch|catch|lock|fixed|return|await|nameof|typeof|when|else)$")]
+    [GeneratedRegex(@"^(?:if|for|foreach|while|using|switch|catch|lock|fixed|return|await|nameof|typeof|when|else|delegate)$")]
     private static partial Regex StatementKeyword();
+
+    // A type with a primary constructor (`class C(DbContext db)`) has a method-shaped header; it is never the member.
+    [GeneratedRegex(@"\b(?:class|record|struct|interface)\b")]
+    private static partial Regex TypeDeclaration();
 }
