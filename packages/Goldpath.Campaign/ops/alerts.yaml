@@ -28,7 +28,7 @@ groups:
           description: >-
             Nothing is being released and no sweep is running. The watermarks are durable, so the
             next leader resumes where this one stopped; find out why none is leading.
-          runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#13-the-pacer-stopped-ticking
+          runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#14-the-pacer-stopped-ticking
 
       # The rule above can only judge a series that exists. When every process that exported one is
       # gone, the series expires and that rule goes quiet; this one speaks instead. It is global: while
@@ -43,7 +43,7 @@ groups:
           description: >-
             No host has led the campaign pacer since the series expired or the stack started. The
             pacer's cron fires every minute, so two minutes without one is a fleet that cannot lead.
-          runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#13-the-pacer-stopped-ticking
+          runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#14-the-pacer-stopped-ticking
 
       # One acceptance in twenty timing out, for ten minutes: the callback surface or the target
       # system is losing answers. A type with no acceptance in the window but timeouts still

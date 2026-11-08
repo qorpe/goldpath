@@ -173,7 +173,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Pacer tick age (s) — over 60 s is a stopped pacer, not a slow one: GoldpathCampaignLeaderStalled (runbook §13)",
+      "title": "Pacer tick age (s) — over 60 s is a stopped pacer, not a slow one: GoldpathCampaignLeaderStalled (runbook §14)",
       "gridPos": {
         "x": 12,
         "y": 24,

@@ -10,8 +10,8 @@ and a `runbook_url` to the item below that answers it:
 
 | Alert | Severity | Item |
 |---|---|---|
-| `GoldpathCampaignLeaderStalled` — no pacer tick for more than 60 s | critical | [13](#13-the-pacer-stopped-ticking) |
-| `GoldpathCampaignNoLeader` — no process exports a tick, for 2 min | critical | [13](#13-the-pacer-stopped-ticking) |
+| `GoldpathCampaignLeaderStalled` — no pacer tick for more than 60 s | critical | [14](#14-the-pacer-stopped-ticking) |
+| `GoldpathCampaignNoLeader` — no process exports a tick, for 2 min | critical | [14](#14-the-pacer-stopped-ticking) |
 | `GoldpathCampaignAckTimeouts` — over 5 % of acceptances time out, for 10 min | major | [8](#8-acceptances-piling-up-r21) |
 | `GoldpathCampaignFailureRatio` — over 20 % of attempts fail (retries included, at least 100), for 10 min | major | [5](#5-failed-items--poisoned-targets) |
 | `GoldpathCampaignOrphansRereleased` — re-releases over 1 % of releases, for 15 min | minor | [9](#9-orphaned-releases-being-published-again-r26) |
@@ -180,7 +180,20 @@ settle on a forged word.
   version still moves once per applied throttle. A race with the pacer or a pause is not a policy
   change, so it is re-read and applied; only a race into a terminal state is refused.
 
-## 13. The pacer stopped ticking
+## 13. ORA-01795 on an Oracle campaign database
+
+- **The symptom:** the pacer's log or a flush fails with `ORA-01795: maximum number of expressions in a list is
+  1000`. You raised `ReleaseBatchSize` past 1,000 on a build without `ChunkedContains`.
+- **Why:** three lists the engine sends to the database are bounded only by `ReleaseBatchSize`: the ripe
+  retries, the orphaned releases and the settled outcomes. Oracle refuses an `IN` list longer than 1,000.
+- **The fix:** upgrade to a build whose engine filters those lists through `GoldpathQueryableExtensions.ChunkedContains`
+  (RFC goldpath-oracle §2.5). It splits a list above 1,000 into OR-joined chunks on Oracle and changes nothing
+  elsewhere. Until then, keep `ReleaseBatchSize` at 1,000 or below.
+- **Measured:** the Oracle EF provider pinned with this build (10.23.26301) already splits a parameterised list
+  the same way. On that provider, a 5,000-item batch also passes without the helper (#408). The helper is the guarantee
+  for every provider build, not only the one measured.
+
+## 14. The pacer stopped ticking
 
 - `GoldpathCampaignLeaderStalled` reads `time() - max by (job) (goldpath_campaign_leader_last_tick_seconds)`:
   the NEWEST tick of any process of that application. A leader ticks every `LeaderTick` (250 ms) and
@@ -204,4 +217,3 @@ settle on a forged word.
 - The alert resolves on the first tick after recovery. Then read item 1: the release rate climbs
   back to the configured TPS within a tick or two, and no bucket bursts — it never holds more than
   one tick's refill.
-

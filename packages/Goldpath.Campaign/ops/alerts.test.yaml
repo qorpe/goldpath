@@ -35,7 +35,7 @@ tests:
             exp_annotations:
               summary: "No campaign pacer of fleet has ticked for 1m 15s"
               description: "Nothing is being released and no sweep is running. The watermarks are durable, so the next leader resumes where this one stopped; find out why none is leading."
-              runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#13-the-pacer-stopped-ticking
+              runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#14-the-pacer-stopped-ticking
       - eval_time: 6m15s
         alertname: GoldpathCampaignNoLeader
         exp_alerts: []
@@ -57,7 +57,7 @@ tests:
             exp_annotations:
               summary: "No process exports a campaign pacer tick"
               description: "No host has led the campaign pacer since the series expired or the stack started. The pacer's cron fires every minute, so two minutes without one is a fleet that cannot lead."
-              runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#13-the-pacer-stopped-ticking
+              runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#14-the-pacer-stopped-ticking
 
   # sms: 10 of 100 acceptances a minute time out (10 %); push: 2 of 100 (2 %), under the line;
   # mail: timeouts with no acceptance in the window at all (+Inf).
