@@ -1,1 +1,4 @@
 #nullable enable
+const Goldpath.GoldpathQueryableExtensions.OracleInListLimit = 1000 -> int
+Goldpath.GoldpathQueryableExtensions
+static Goldpath.GoldpathQueryableExtensions.ChunkedContains<T, TValue>(this System.Linq.IQueryable<T>! source, System.Linq.Expressions.Expression<System.Func<T, TValue>!>! member, System.Collections.Generic.IReadOnlyCollection<TValue>! values, string? providerName) -> System.Linq.IQueryable<T>!

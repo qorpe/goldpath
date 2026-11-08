@@ -91,6 +91,44 @@ public class R2ReviewTests
     }
 
     /// <summary>
+    /// R2.3 + the TPS allowance (#408 verifier finding): the ripe-retry release marks Released ONLY the items it
+    /// published. A waiting retry whose instant is still ahead keeps its backoff, and a ripe one beyond the allowance
+    /// waits for the next slice — both stay AwaitingRetry, never Released with no message behind them.
+    /// </summary>
+    [Fact]
+    public async Task TheRipeRetryRelease_MarksReleasedOnlyTheItemsItPublished()
+    {
+        using var fixture = new CampaignFixture(sourceSize: 5);
+        var campaign = await fixture.CreateAsync(R2Tests.Generous(maxAttempts: 3));
+        await fixture.EnumerateAllAsync(campaign);
+        var now = DateTimeOffset.UtcNow;
+        fixture.Mutate(db =>
+        {
+            foreach (var item in db.Set<GoldpathCampaignItem>().Where(i => i.Seq <= 4))
+            {
+                item.State = GoldpathCampaignItemState.AwaitingRetry;
+                item.Attempts = 1;
+                // Seq 1–3 are ripe; Seq 4 is not due for an hour.
+                item.NextAttemptAt = item.Seq == 4 ? now.AddHours(1) : now.AddMinutes(-1);
+            }
+        });
+        fixture.Publisher.Published.Clear();
+
+        using var scope = fixture.Services.CreateScope();
+        Assert.Equal(2, await fixture.Engine.ReleaseRipeRetriesAsync(scope.ServiceProvider, fixture.Reload(campaign.Id), 2, CancellationToken.None));
+
+        Assert.Equal([1L, 2L], fixture.Publisher.Published.OfType<GoldpathCampaignItemMessage>().Select(m => m.Seq).Order());
+        var states = fixture.Query(db => db.Set<GoldpathCampaignItem>().AsNoTracking().OrderBy(i => i.Seq)
+            .Select(i => i.State).ToList());
+        Assert.Equal(
+            [GoldpathCampaignItemState.Released, GoldpathCampaignItemState.Released,
+             GoldpathCampaignItemState.AwaitingRetry,   // ripe, beyond the allowance: the next slice's
+             GoldpathCampaignItemState.AwaitingRetry,   // not ripe: its backoff holds
+             GoldpathCampaignItemState.Pending],
+            states);
+    }
+
+    /// <summary>
     /// Finding 4 / R1.3: the same R1-shaped row whose message outran the mark claims too —
     /// the claim guard reads the same ripeness as the release query.
     /// </summary>
@@ -150,6 +188,27 @@ public class R2ReviewTests
         Assert.Contains(rung, sql, StringComparison.Ordinal);
         Assert.Contains(onlyUnstamped, sql, StringComparison.Ordinal);
         Assert.Contains("= 6", sql, StringComparison.Ordinal);   // AwaitingRetry only
+    }
+
+    /// <summary>
+    /// ORA-5 (#408, RFC goldpath-oracle §2.7): Oracle's branch is the RFC's SQL — <c>SYSTIMESTAMP</c> and Oracle
+    /// interval literals, one statement with no trailing semicolon (ODP.NET refuses one), and no ceiling-name step,
+    /// because Oracle never stored an empty-named global row (#384). It runs on a real Oracle in
+    /// <c>CampaignR2OracleTests</c>.
+    /// </summary>
+    [Theory]
+    [InlineData(null, "UPDATE \"GoldpathCampaignItems\"")]
+    [InlineData("OPS", "UPDATE \"OPS\".\"GoldpathCampaignItems\"")]
+    public void TheR2BackfillHasAnOracleBranch_TheRfcSqlAsOneStatement(string? schema, string table)
+    {
+        var migration = new Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder("Oracle.EntityFrameworkCore");
+        migration.GoldpathCampaignR2Backfill(schema);
+        var sql = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(Assert.Single(migration.Operations)).Sql;
+        Assert.StartsWith(table + "\n", sql.ReplaceLineEndings("\n"), StringComparison.Ordinal);
+        Assert.Contains("SET \"NextAttemptAt\" = COALESCE(\"CompletedAt\", SYSTIMESTAMP)", sql, StringComparison.Ordinal);
+        Assert.Contains("CASE WHEN \"Attempts\" <= 1 THEN INTERVAL '30' SECOND ELSE INTERVAL '2' MINUTE END", sql, StringComparison.Ordinal);
+        Assert.EndsWith("WHERE \"State\" = 6 AND \"NextAttemptAt\" IS NULL", sql.TrimEnd(), StringComparison.Ordinal);
+        Assert.DoesNotContain(";", sql, StringComparison.Ordinal);
     }
 
     /// <summary>Finding 4: a schema-qualified model gets a schema-qualified backfill; an unknown provider is told, not guessed.</summary>

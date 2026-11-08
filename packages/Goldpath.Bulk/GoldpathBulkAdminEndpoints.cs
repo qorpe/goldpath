@@ -48,6 +48,16 @@ public static class GoldpathBulkAdminEndpoints
                     detail: $"No bulk definition named '{definition}' — registered: {string.Join(", ", options.Batches.Select(b => b.Name))}.");
             }
 
+            // A name that is given but blank is refused, not stored (#476): it would be a nameless file on PostgreSQL and
+            // ORA-01400 on Oracle, where '' is NULL. Omitting the parameter still stores the upload as upload.csv.
+            if (fileName is not null && string.IsNullOrWhiteSpace(fileName))
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "Blank file name",
+                    detail: "fileName, when given, must name the file — omit it to store the upload as upload.csv.");
+            }
+
             return Results.Ok(await admin.UploadAsync(definition, http.Request.Body, fileName ?? "upload.csv", scope.Tenant, Actor(http), ct));
         });
 

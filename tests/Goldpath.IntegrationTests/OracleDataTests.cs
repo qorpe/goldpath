@@ -33,9 +33,6 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
     /// </summary>
     private static readonly IReadOnlyDictionary<string, string> MayWriteEmpty = new Dictionary<string, string>(StringComparer.Ordinal)
     {
-        ["GoldpathCampaigns.Name"] = "#476 — campaign create takes a blank name",
-        ["GoldpathBulkFiles.FileName"] = "#476 — an upload's empty ?fileName= is stored as is",
-        ["GoldpathErasureRecords.SubjectKey"] = "#476 — erase takes a blank subject key",
         ["GoldpathNotifications.Culture"] = "#502 — the invariant fallback's culture is the empty name",
         ["GoldpathApprovals.Subject"] = "#503 — the engine takes a blank subject",
         ["GoldpathApprovals.RequestedBy"] = "#503 — the engine takes a blank requester",

@@ -16,6 +16,19 @@ public class AdminServiceTests : IDisposable
 
     public void Dispose() => _fixture.Dispose();
 
+    /// <summary>#476: a caller of the service (not the route, which answers 400) gets the refusal before anything is stored.</summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("  ")]
+    [InlineData(null)]
+    public async Task Upload_refuses_a_blank_file_name_before_anything_is_stored(string? blank)
+    {
+        var refused = await Assert.ThrowsAnyAsync<ArgumentException>(() =>
+            _admin.UploadAsync("payments", BulkFixture.Csv(("E1", "TR1", "10", null)), blank!, null, "ops", CancellationToken.None));
+        Assert.Equal("fileName", refused.ParamName);
+        Assert.Equal(0, _fixture.Query(db => db.Set<GoldpathBulkFile>().Count()));
+    }
+
     [Fact]
     public async Task Upload_ingests_and_survives_a_missing_jobs_admin_surface()
     {
