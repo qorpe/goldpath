@@ -44,6 +44,18 @@ Page<OrderDto> page = await db.Orders
 - A tampered/invalid cursor throws `GoldpathInvalidCursorException` → map to HTTP 400
   (the golden-path template wires this mapping).
 
+**A `Contains` over a long local list** (`ChunkedContains`, RFC goldpath-oracle §2.5): Oracle refuses an
+`IN` list longer than 1,000 (ORA-01795). Where a list's length is set by configuration, filter through the helper:
+
+```csharp
+await db.Items
+    .Where(i => i.CampaignId == id)
+    .ChunkedContains(i => i.Seq, seqs, db.Database.ProviderName)   // OR-joined chunks of ≤ 1,000 on Oracle; plain Contains elsewhere
+    .ExecuteUpdateAsync(...);
+```
+
+The values are copied when the filter is built, and each chunk is a query parameter, never SQL text.
+
 **Save-contributor seam** (for Ring B modules, not application code): implement
 `IEntitySaveContributor`, register it, and every save runs it over Added/Modified/Deleted
 entries with `GoldpathSaveContext` (clock + tenant). AuditTrail/SoftDelete/MultiTenancy attach here.
