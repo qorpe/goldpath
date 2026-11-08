@@ -5,6 +5,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **Bulk and Archival on Oracle, and hand-written SQL guarded by a source scan (G7 ORA-6, #409; RFC goldpath-oracle
+  §2.5, §2.6, §2.7, §7).**
+  - **`ChunkedContains` at the three remaining sites** that can pass Oracle's 1,000-element `IN` list: Archival's
+    discovery `keys` (`BatchSize * 2`), and the admin listings' repeatable `definition` (Bulk) and `template`
+    (Notification) filters. On every provider other than Oracle the query is the same `Contains` as before.
+    Measured: the 1,001-value listings already passed on Oracle before the helper, because the pinned provider splits
+    the list (as ORA-5 found for Campaign); the helper is the guarantee for every provider build.
+  - **Bulk on Oracle:** the four `BulkTests` facts run in the Oracle lane (`BulkOracleTests`, `Category=Oracle`),
+    with the clustered Quartz store on Oracle.
+  - **Archival on Oracle is refused (#547).** The hash chain's genesis anchor is the empty hash, and Oracle stores
+    `''` as NULL, so a definition's first archive fails with ORA-01400 on `GoldpathArchiveChainState.PurgedHeadHash`.
+    `ArchivalOracleTests` asserts that refusal until #547 (an owner question) lands. The suite gains a
+    `BatchSize = 600` fact that pages 1,200 keys and archives each due aggregate exactly once, on PostgreSQL today.
+  - **The source scan:** `RawSqlOracleBranchTests` (Goldpath.Data.Tests, no container) fails on any
+    `ExecuteSql*`, `FromSql*`, `SqlQuery*`, `CommandText =` or `MigrationBuilder.Sql` call in `packages/` whose
+    method has no Oracle provider check. Its exemptions carry their reasons, and a stale one fails it. The two
+    exempt methods are the Wolverine adapter's outbox relay and inbox claim, which run on PostgreSQL only: the adapter
+    refuses any other EF provider at start.
+  - **Tests:** the Campaign suites' store (`CampaignStore`) is now `SuiteStore`, shared by Campaign, Bulk and
+    Archival.
 - **Data: `GoldpathQueryableExtensions.ChunkedContains` (G7 ORA-5, #408; RFC goldpath-oracle §2.5).**
   - **API (additive):** `ChunkedContains<T, TValue>(this IQueryable<T>, member, values, providerName)` and
     `OracleInListLimit = 1000`. On Oracle (a provider name containing `Oracle`), a list longer than 1,000 becomes

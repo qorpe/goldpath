@@ -47,7 +47,8 @@ Measured in G7 slice O-2 (#405), on `gvenzl/oracle-free:23.26.3-slim-faststart` 
   fails in ODP.NET (`OracleParameter.set_Size`) before it is sent. Until #475 lands, a job execution that succeeds
   (its `Error` is NULL) cannot be recorded on Oracle.
 - **`''` is NULL.** Every NOT NULL string column refuses an empty string with `ORA-01400`. The known writers of
-  `""` are #476 (three admin verbs that accept a blank value), #502 and #503. The campaign global ceiling row was
+  `""` are #476 (three admin verbs that accept a blank value), #502, #503 and #547 (Archival's hash chain, whose genesis
+  anchor is the empty hash, so a definition's first archive is refused). The campaign global ceiling row was
   one; since #384 it is named `"*"` on every provider. A LINQ filter
   `x == ""` is translated as a NULL test, so on Oracle it matches the rows whose value is NULL: a query ported from
   PostgreSQL returns different rows, with no error.
