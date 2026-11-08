@@ -333,7 +333,8 @@ public sealed class GoldpathCampaignEngine<TContext>
         }
 
         await db.Set<GoldpathCampaignItem>()
-            .Where(i => i.CampaignId == campaign.Id && due.Contains(i.Seq) && i.State == GoldpathCampaignItemState.AwaitingRetry)
+            .Where(i => i.CampaignId == campaign.Id && i.State == GoldpathCampaignItemState.AwaitingRetry)
+            .ChunkedContains(i => i.Seq, due, db.Database.ProviderName)   // up to ReleaseBatchSize: past Oracle's 1,000 (RFC goldpath-oracle §2.5)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(i => i.State, GoldpathCampaignItemState.Released)
                 .SetProperty(i => i.ReleasedAt, now), cancellationToken);
@@ -380,7 +381,8 @@ public sealed class GoldpathCampaignEngine<TContext>
         }
 
         await db.Set<GoldpathCampaignItem>()
-            .Where(i => i.CampaignId == campaign.Id && orphans.Contains(i.Seq) && i.State == GoldpathCampaignItemState.Released)
+            .Where(i => i.CampaignId == campaign.Id && i.State == GoldpathCampaignItemState.Released)
+            .ChunkedContains(i => i.Seq, orphans, db.Database.ProviderName)
             .ExecuteUpdateAsync(s => s.SetProperty(i => i.ReleasedAt, now), cancellationToken);
         GoldpathCampaignMetrics.Orphans(campaign.Type, orphans.Length);
         _logger.LogInformation("Campaign {CampaignId}: {Count} orphaned releases published again.", campaign.Id, orphans.Length);
@@ -626,8 +628,8 @@ public sealed class GoldpathCampaignEngine<TContext>
             foreach (var from in SettleableStates)
             {
                 var movedFrom = await db.Set<GoldpathCampaignItem>()
-                    .Where(i => i.CampaignId == campaignId && seqs.Contains(i.Seq) && i.State == from
-                        && (anyAttempt || i.Attempts == prior))
+                    .Where(i => i.CampaignId == campaignId && i.State == from && (anyAttempt || i.Attempts == prior))
+                    .ChunkedContains(i => i.Seq, seqs, db.Database.ProviderName)
                     .ExecuteUpdateAsync(s => s
                         .SetProperty(i => i.State, GoldpathCampaignItemState.Succeeded)
                         .SetProperty(i => i.CompletedAt, now), cancellationToken);

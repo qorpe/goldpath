@@ -99,6 +99,19 @@ the dynamic-assembly filter, the scan's catch branches, the kebab formatter on t
 builder names every endpoint), the test host's dispose branches, and its body guard, which the engine's
 own guard now makes equivalent.
 
+**Data was re-measured 2026-11-08**, a full run of `mutation-gate.sh Goldpath.Data` on the #408 branch
+(`GoldpathQueryableExtensions.ChunkedContains`, RFC goldpath-oracle §2.5), on the local sandbox: 77.38 % → 80.00 %
+(103 mutants tested, 3.8 minutes, the sandbox's, not the CI profile's).
+- **Two survivors on the new lines, both equivalent:**
+  - Removing `ThrowIfNull(source)`: `Queryable.Where` then refuses the null itself, with the same `ArgumentNullException`
+    and the same parameter name, `source`.
+  - `values.Count <= size` → `< size`: at exactly 1,000 values the list goes through `Chunk(1000)` instead. That
+    yields the same single chunk.
+- Every other mutant on the new lines is killed: the chunk size, the provider match (ordinal, `Oracle`), the `OR`
+  join, and the `Contains` overload lookup.
+- No threshold moved and nothing was excluded. Campaign's three call sites changed too; its diff-mode run on the
+  same branch is reported in the #408 pull request.
+
 **Approvals was re-measured 2026-11-03**, a full run of `mutation-gate.sh Goldpath.Approvals` on the #480 branch
 (concurrent decisions: a version on the request row, a signature written with the request in one transaction, a
 unique signature key), on the local sandbox: 77.78 % → 77.87 % (2.8 minutes, the sandbox's, not the CI profile's).
@@ -168,7 +181,7 @@ at f459fe2, so its row carries it (minutes not recorded).
 | DataProtection | 78.95 % | 8.95 | 1.5 | 78.95 %, 33.0 |
 | ServiceDefaults | 78.48 % (72.15) | 8.48 | 1.4 | 72.15 %, 4.3 |
 | Approvals | 77.87 % (74.84) | 7.87 | 2.8 | 74.84 %, 217.7 |
-| Data | 77.38 % | 7.38 | 2.3 | 77.38 %, 38.0 |
+| Data | 80.00 % | 10.00 | 3.8 | 77.38 %, 38.0 |
 | FileExchange | 76.92 % | 6.92 | 3.6 | 76.92 %, 31.8 |
 | Archival | 79.90 % (74.49) | 9.90 | 7.9 | never finished (OOM) |
 | Analyzers | 77.37 % (72.55) | 7.37 | 3.4 | 72.55 %, 5.4 |
