@@ -655,6 +655,12 @@ public sealed class GoldpathJobsAdminService<TContext>
     /// <summary>Creates or replaces a calendar (holiday | weekly | cron), updating riding triggers.</summary>
     public async Task<GoldpathAdminResult> PutCalendarAsync(string fleet, string name, GoldpathCalendarSpec spec, string actor, CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            // The name keys a NOT NULL qrtz_calendars row, and '' is NULL on Oracle (#476); a blank one names nothing anyway.
+            return new GoldpathAdminResult(false, "a calendar needs a name — triggers refer to it by that name");
+        }
+
         Quartz.ICalendar calendar;
         switch (spec.Type.ToUpperInvariant())
         {

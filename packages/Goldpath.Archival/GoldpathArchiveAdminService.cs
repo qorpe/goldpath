@@ -63,7 +63,7 @@ public sealed class GoldpathArchiveAdminService<TContext>
     /// <summary>Places a legal hold — the hold row IS the audit (who/when/case).</summary>
     public async Task<GoldpathAdminResult> PlaceHoldAsync(string definition, string aggregateKey, string caseReference, string actor, CancellationToken ct)
     {
-        if (caseReference.Length == 0)
+        if (string.IsNullOrWhiteSpace(caseReference))
         {
             return new GoldpathAdminResult(false, "a legal hold needs its case reference — that is what justifies it later");
         }
@@ -127,6 +127,13 @@ public sealed class GoldpathArchiveAdminService<TContext>
     /// </summary>
     public async Task<GoldpathAdminResult> EraseAsync(string definition, string aggregateKey, string subjectKey, string actor, string? detail, CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(subjectKey))
+        {
+            // The evidence row is the answer to "whose data was erased"; a blank one answers nothing, and Oracle refuses
+            // '' outright (#476), so the verb refuses it the same on every provider.
+            return new GoldpathAdminResult(false, "an erasure needs the data subject's key — the evidence record names whose data was erased");
+        }
+
         using var scope = _scopeFactory.CreateScope();
         var protector = scope.ServiceProvider.GetService<IGoldpathDataProtector>();
         if (protector is null)

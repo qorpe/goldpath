@@ -59,9 +59,11 @@ public sealed class GoldpathBulkAdminService<TContext>
     /// the validate run immediately — the cron stays the safety net, the operator never
     /// waits for it.
     /// </summary>
+    /// <exception cref="ArgumentException"><paramref name="fileName"/> is null, empty or whitespace (#476).</exception>
     public async Task<GoldpathBulkBatchInfo> UploadAsync(
         string definition, Stream content, string fileName, string? tenant, string actor, CancellationToken ct)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileName);   // #476: the file's name is a NOT NULL column, and '' is NULL on Oracle
         using var scope = _scopeFactory.CreateScope();
         var (batch, created) = await _engine.IngestAsync(scope.ServiceProvider, definition, content, fileName, tenant, ct);
         if (created)
