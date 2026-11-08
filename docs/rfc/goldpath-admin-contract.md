@@ -5,7 +5,11 @@ console is written ONCE against this surface. Any change below this line is a br
 change and needs this document updated in the same PR (and, after NuGet release, a
 versioning note per H7).
 
-## Conventions (all five surfaces)
+## Conventions (all seven surfaces)
+
+Seven admin mappers: jobs, archival, bulk, notification, campaign, approvals and fileexchange.
+The signed callback route is not an admin surface: Revision R5 states it, and these conventions
+apply to it only where R5 says so.
 
 - **Mount**: `Map<Module>Admin<TContext>(prefix, exposeUnsecured)` on the management head;
   default prefix `/goldpath/admin/<module>`. Fail-closed, and the HTTP method decides (R4.1,
@@ -115,10 +119,16 @@ Single-tenant apps are unchanged.
 
 ## Freeze mechanics
 
-- The campaign surface carries a route-freeze test (`RouteContractTests`) — the pattern
-  any surface adopts when the UI starts depending on it. The approvals and fileexchange
-  surfaces freeze through their endpoint tests over real HTTP (`ApprovalAdminEndpointsTests`,
-  `FileExchangeAdminTests`).
+- Every surface carries a route-freeze test since G4 API-9 ([#398](https://github.com/qorpe/goldpath/issues/398)).
+  Each test compares the exact, sorted `METHOD pattern` list of its mapper's default prefix with a frozen array, so a
+  renamed, added or removed route fails in its module's test project and this document changes in the same PR:
+  - jobs: `AdminRouteInventoryTests.The_jobs_surface_matches_the_frozen_contract`, beside that file's refusal facts;
+  - `ArchivalRouteContractTests`, `BulkRouteContractTests`, `NotificationRouteContractTests`,
+    `ApprovalsRouteContractTests` and `FileExchangeRouteContractTests`;
+  - campaign's `RouteContractTests`, which also freezes the signed callback route (R5).
+
+  The approvals and fileexchange endpoint tests over real HTTP (`ApprovalAdminEndpointsTests`, `FileExchangeAdminTests`)
+  still hold those surfaces' behaviour. The console smoke drives the routes the console reads.
 - Breaking fixes applied at freeze time (cheap now, expensive after the UI):
   campaign `/{id}/failed-items` → `/{id}/failures`; `take` clamp made uniform across all
   five modules (was jobs/archival-only).
@@ -654,3 +664,58 @@ row in `open-threads.md` (T50) carries what this revision deliberately leaves ou
   measured against polling.
 - **Exports of item outcomes:** unchanged from Campaign R2. The failures walk and R4.3's counts
   are what an operator reads; a file is the app's own reporting.
+
+## Revision R5 — the signed callback route (2026-11-08; additive, merging the PR that adds this section is its acceptance)
+
+**Finding.** Campaign R2 ([#277](https://github.com/qorpe/goldpath/pull/277)) added a route that a target system,
+not an operator, calls: an accepted item's own word arrives on it. GA readiness §2 names it as part of the frozen
+admin HTTP contract, and this document did not mention it. This revision writes it down as it was built. Nothing
+changes in the code.
+
+### The route
+| Method | Route | Mapper |
+|---|---|---|
+| POST | `/goldpath/campaign/callbacks/{type}/{campaignId:guid}/{correlationId}` | `MapGoldpathCampaignCallbacks<TContext>(prefix = "/goldpath/campaign/callbacks", policy = null)` |
+
+- **Outside `/goldpath/admin`, on purpose:** the caller holds no ops credential. Without a `policy`, the group is
+  `AllowAnonymous`, because the signature is the authentication. With a `policy`, the adopter's policy applies on top
+  of the signature.
+- **The route names the campaign,** so a correlation id is looked up inside one campaign. A target system is handed
+  the whole path by the handler (`GoldpathCampaignItemContext.Type` and `CampaignId`).
+- **A host with no signing campaign type refuses to start** when it maps the route (GP1704 says it at build time).
+  An unsigned callback is not possible.
+
+### Body
+`{ "succeeded": true|false, "errorCode"?: string, "error"?: string, "retryable"?: bool (default true) }`
+(`GoldpathCampaignCallbackRequest`, read with the app's JSON options), at most 16 KiB.
+
+### Signature and staleness (campaign RFC R2.8)
+- `X-Goldpath-Timestamp`: unix seconds.
+- `X-Goldpath-Signature`: `v1=` followed by 64 lowercase hex digits. The digits are the HMAC-SHA256, keyed by the
+  campaign type's secret, over `{timestamp}\n{METHOD}\n{path}\n` and then the raw body bytes. `path` is the request
+  target exactly as sent, without the query string. `GoldpathCampaignCallbackSignature.Sign` produces it for a .NET
+  sender.
+- **Secrets:** a secret is at least 32 bytes. During a rotation two secrets verify (`SignedCallbacks(next,
+  previousSecret: current)`), and every secret is compared in constant time.
+- **Staleness:** a timestamp further than `CallbackTimestampTolerance` from the host's clock, either way, is refused.
+  The tolerance defaults to 5 minutes. Inside the window, a repeat is idempotent.
+
+### Result codes
+Every answer is the verb envelope `GoldpathAdminResult { ok, message }`.
+
+| Status | When |
+|---|---|
+| `202` | the outcome is published (`ok: true`), or the callback arrived before its acceptance landed and is parked until it does (`ok: true`) |
+| `200` | the item already settled: idempotent, nothing published (`ok: true`) |
+| `400` | the body is not a campaign callback |
+| `401` | the signature is missing, malformed, stale or wrong (counted in `goldpath_campaign_callbacks_rejected_total`) |
+| `404` | no signed callback surface for `{type}`, or no item of that campaign carries the correlation id and none is in flight to carry it |
+| `413` | the body is larger than 16 KiB |
+
+### Freeze
+Campaign's `RouteContractTests.The_signed_callback_route_matches_the_frozen_contract` holds the pattern at the default
+prefix. `R2CallbackTests` holds the behaviour above over real HTTP.
+
+### Compatibility — why this is a revision, not a break
+It describes a route that has shipped since the Campaign R2 train. No route, header, body field or status code is
+added, renamed or removed.
