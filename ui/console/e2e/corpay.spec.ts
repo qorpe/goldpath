@@ -195,14 +195,15 @@ test.describe("CorPay's own console, driven end to end", () => {
     await approver.close();
   });
 
-  test("the approved payment file executes: the payment lands (fails today: #539)", async ({ browser }) => {
+  test("the approved payment file executes, and today its row fails as #539 describes", async ({ browser }) => {
     // Driving CorPay found it: Goldpath.Bulk's execute run calls the row handler with no ambient tenant,
     // so on a multi-tenant app every row's SaveChanges is refused ("Adding 'PaymentInstruction' requires
-    // an ambient tenant") and the retried chunk files each row as "interrupted mid-flight". Marked
-    // test.fail() so the night stays honest without hiding it: the day the defect is fixed this test
-    // PASSES, Playwright reports it as an unexpected pass, and the marker has to come off (#539, open-threads T62).
-    test.fail();
-    test.setTimeout(180_000);
+    // an ambient tenant") and the retried chunk files each row as "interrupted mid-flight". The test pins
+    // the defect's SHAPE positively rather than marking itself test.fail(): test.fail() would pass on ANY
+    // failure — a refused upload, a refused approve, a batch that never validates — and hide it every night.
+    // Every step before the last assertion is guarded; the day #539 lands, the last assertion goes red and
+    // flips to { state: "Completed", executed: 1, failed: 0 } in that change (open-threads T62).
+    test.setTimeout(420_000);
     const reference = `EXEC-${Date.now()}`;
     const csv = `Reference,DebtorIban,CreditorIban,Amount,Currency\n${reference}-1,TR330006100519786457841326,TR320010009999901234567890,10.00,TRY\n`;
 
@@ -218,9 +219,11 @@ test.describe("CorPay's own console, driven end to end", () => {
     const state = async () => (await (await approver.request.get(`${api}/goldpath/admin/bulk/batches/${batchId}`)).json()).state as string;
     await expect.poll(state, { timeout: 60_000 }).toBe("Validated");
     expect((await approver.request.post(`${api}/goldpath/admin/bulk/batches/${batchId}/approve`, { data: { note: "execution proof" } })).ok()).toBeTruthy();
-    await expect.poll(state, { timeout: 120_000 }).toMatch(/^Completed/);
+    // Measured 2026-11-08: ~40 s run alone; in the full drive this batch's execute run queues behind the four-eyes
+    // batch's, whose refused chunk is retried only after its stale claim is reset, which took longer than 120 s.
+    await expect.poll(state, { timeout: 300_000 }).toMatch(/^Completed/);
     const batch = await (await approver.request.get(`${api}/goldpath/admin/bulk/batches/${batchId}`)).json();
     await approver.close();
-    expect({ state: batch.state, executed: batch.executedRows, failed: batch.failedRows }).toEqual({ state: "Completed", executed: 1, failed: 0 });
+    expect({ state: batch.state, executed: batch.executedRows, failed: batch.failedRows }).toEqual({ state: "CompletedWithFailures", executed: 0, failed: 1 });
   });
 });

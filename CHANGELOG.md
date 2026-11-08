@@ -16,8 +16,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     back after a reload, and the three crossings on the fleet's audit; a payment file uploaded by `maker`, validated, and
     approved by `approver` in a second context, the batch recording `Approved by approver`, the jobs audit naming `maker`.
   - **Proof:** `CORPAY_EXPECTED_APPROVER=maker` fails the run on the batch's decider.
-  - **Found by driving it:** the approved file's rows never execute on a multi-tenant app (#539; pinned as a `test.fail()`
-    that turns into an unexpected pass when it is fixed, T62); an approval leaves no admin-audit row (T63); a head's console
+  - **Found by driving it:** the approved file's rows never execute on a multi-tenant app (#539; pinned to its failure
+    shape — `CompletedWithFailures`, 0 executed, 1 failed — so every earlier step stays guarded and the assertion goes
+    red when it is fixed, T62); an approval leaves no admin-audit row (T63); a head's console
     asked for another fleet's jobs answers 500 (T64). T1 closes on the job's first green night.
 - **Campaign: a ceiling for outstanding acknowledgements, `MaxAwaitingAck` (campaign RFC R3.4,
   slice R3-S5, #293).**

@@ -5,7 +5,9 @@
 # Keycloak importing the committed realm (ui/console/e2e/corpay-realm/realm.json: maker, approver
 # and a viewer without the ops role). Playwright then drives the console each head SERVES
 # (ui/console/e2e/corpay.spec.ts): the EOD job run, paused and resumed; a payment file through the
-# four-eyes gate by two principals; the admin audit naming both.
+# four-eyes gate by two principals, the batch naming its approver and the jobs admin audit naming the maker
+# (an approval writes no admin-audit row of its own: open-threads T63); and the approved file's execution,
+# pinned to #539's failure shape until that defect lands (open-threads T62).
 #
 #   scripts/corpay-console-smoke.sh [playwright args…]
 #
