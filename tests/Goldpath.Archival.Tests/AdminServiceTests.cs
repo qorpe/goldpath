@@ -205,6 +205,32 @@ public class AdminServiceTests : IDisposable
         Assert.Contains(findings2, f => f.Problem.Contains("no pre-erasure content hash", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// #476: a blank subject key is refused in words before anything is redacted or recorded, the same on every provider
+    /// (Oracle stores '' as NULL, and the NOT NULL column refused it with ORA-01400 as a 500). A blank case reference on a
+    /// legal hold is refused the same way; before, only the empty string was.
+    /// </summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("\t")]
+    [InlineData(null)]
+    public async Task A_blank_subject_key_or_case_reference_is_refused_before_anything_is_written(string? blank)
+    {
+        var key = await ArchiveOneAsync();
+
+        var erase = await _admin.EraseAsync("Claim", key, blank!, "dpo", null, CancellationToken.None);
+        Assert.False(erase.Ok);
+        Assert.Contains("data subject's key", erase.Message, StringComparison.Ordinal);
+        Assert.Equal(0, _fixture.Query(db => db.Set<GoldpathErasureRecord>().Count()));
+        Assert.Null(_fixture.Query(db => db.Set<GoldpathArchiveEntry>().Single()).ErasedAt);   // nothing redacted either
+
+        var hold = await _admin.PlaceHoldAsync("Claim", key, blank!, "counsel", CancellationToken.None);
+        Assert.False(hold.Ok);
+        Assert.Contains("case reference", hold.Message, StringComparison.Ordinal);
+        Assert.Equal(0, _fixture.Query(db => db.Set<GoldpathLegalHold>().Count()));
+    }
+
     [Fact]
     public async Task Erasure_refuses_without_the_dataprotection_module()
     {

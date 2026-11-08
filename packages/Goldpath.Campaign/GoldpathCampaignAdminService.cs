@@ -185,6 +185,13 @@ public sealed class GoldpathCampaignAdminService<TContext>
                 $"No campaign type named '{type}' — registered: {string.Join(", ", _options.TypeMap.Keys)}.");
         }
 
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            // #476: Oracle stores '' as NULL and refuses it on the NOT NULL column; elsewhere it would be an unnamed
+            // campaign. The verb refuses it the same on every provider.
+            return new GoldpathAdminResult(false, "A campaign needs a name — it is how operators and the audit trail tell campaigns apart.");
+        }
+
         var now = _time.GetUtcNow();
         var defaults = _options.Type(type).DefaultPolicy;
         var effective = policy is null ? defaults : Apply(defaults, policy, now);
