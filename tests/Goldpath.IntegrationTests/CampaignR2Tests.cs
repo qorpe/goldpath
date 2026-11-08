@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Testcontainers.PostgreSql;
 using Testcontainers.RabbitMq;
 using Xunit;
 
@@ -24,8 +23,19 @@ namespace Goldpath.Tests.Integration;
 /// second attempt succeeds.
 /// </summary>
 [Collection("quartz-process-globals")]
-public sealed class CampaignR2Tests : IAsyncLifetime
+public class CampaignR2Tests : IAsyncLifetime
 {
+    private readonly CampaignStore _store;
+
+    /// <summary>The suite on PostgreSQL, in the integration lane.</summary>
+    public CampaignR2Tests()
+        : this(CampaignStore.PostgreSql())
+    {
+    }
+
+    /// <summary>The suite on the given store (the Oracle twin, ORA-5 #408).</summary>
+    protected CampaignR2Tests(CampaignStore store) => _store = store;
+
     /// <summary>The type's callback secret — a test value, read from configuration in a real app.</summary>
     private const string Secret = "integration-only-callback-secret-0123456789";
 
@@ -64,7 +74,6 @@ public sealed class CampaignR2Tests : IAsyncLifetime
         }
     }
 
-    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17-alpine").Build();
     private readonly RabbitMqContainer _rabbit = new RabbitMqBuilder("rabbitmq:4-alpine").Build();
     private WebApplication _app = null!;
     private HttpClient _client = null!;
@@ -75,16 +84,12 @@ public sealed class CampaignR2Tests : IAsyncLifetime
         AckHandler.Executions.Clear();
         AckHandler.NeverAnswered.Clear();
         AckHandler.ImmediateStatuses.Clear();
-        await Task.WhenAll(_postgres.StartAsync(), _rabbit.StartAsync());
-        await using (var db = new CampaignTests.CampDb(new DbContextOptionsBuilder<CampaignTests.CampDb>().UseNpgsql(_postgres.GetConnectionString()).Options))
-        {
-            await db.Database.EnsureCreatedAsync();
-        }
+        await Task.WhenAll(_store.StartAsync(), _rabbit.StartAsync());
 
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
-        builder.Configuration["ConnectionStrings:campdb"] = _postgres.GetConnectionString();
-        builder.Services.AddDbContext<CampaignTests.CampDb>(o => o.UseNpgsql(_postgres.GetConnectionString()));
+        builder.Configuration["ConnectionStrings:campdb"] = _store.ConnectionString;
+        builder.Services.AddDbContext<CampaignTests.CampDb>(_store.Use);
         builder.Services.AddScoped<IGoldpathCampaignActionHandler<CampaignTests.CustomerTarget>, AckHandler>();
         builder.AddGoldpathCampaign<WebApplicationBuilder, CampaignTests.CampDb>(campaign =>
         {
@@ -113,6 +118,7 @@ public sealed class CampaignR2Tests : IAsyncLifetime
         builder.AddGoldpathJobs<WebApplicationBuilder, CampaignTests.CampDb>(jobs =>
         {
             jobs.ConnectionName = "campdb";
+            jobs.Provider = _store.JobsProvider;
             jobs.SchedulerName = _fleet;
             jobs.AddGoldpathCampaignJobs<CampaignTests.CampDb>(pacerCron: "0/5 * * * * ?");
         });
@@ -142,7 +148,7 @@ public sealed class CampaignR2Tests : IAsyncLifetime
         await _app.StopAsync();
         await _app.DisposeAsync();
         QuartzProcessGlobals.Pin();
-        await Task.WhenAll(_postgres.DisposeAsync().AsTask(), _rabbit.DisposeAsync().AsTask());
+        await Task.WhenAll(_store.StopAsync(), _rabbit.DisposeAsync().AsTask());
     }
 
     private T Query<T>(Func<CampaignTests.CampDb, T> query)
@@ -284,11 +290,11 @@ public sealed class CampaignR2Tests : IAsyncLifetime
     }
 
     /// <summary>
-    /// R2 review #4 on real PostgreSQL: the CampaignR2 migration's data step stamps every R1
+    /// R2 review #4 on the suite's real database: the CampaignR2 migration's data step stamps every R1
     /// waiting retry with the rung it was waiting on, and leaves everything else alone.
     /// </summary>
     [Fact]
-    public async Task The_R2_backfill_stamps_R1_waiting_retries_on_PostgreSQL()
+    public async Task The_R2_backfill_stamps_R1_waiting_retries()
     {
         var failedAt = DateTimeOffset.UtcNow.AddMinutes(-1);
         var campaignId = Guid.NewGuid();
@@ -316,7 +322,7 @@ public sealed class CampaignR2Tests : IAsyncLifetime
 
             var migration = new Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder(db.Database.ProviderName);
             migration.GoldpathCampaignR2Backfill();
-            Assert.Equal(2, migration.Operations.Count);   // the R2 rung stamp, then R3's ceiling-name step (#384)
+            Assert.Equal(_store.IsOracle ? 1 : 2, migration.Operations.Count);   // the R2 rung stamp, then R3's ceiling-name step (#384) — none on Oracle
             var step = (Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation)migration.Operations[0];
             Assert.Equal(2, await db.Database.ExecuteSqlRawAsync(step.Sql));
             Assert.Equal(0, await db.Database.ExecuteSqlRawAsync(step.Sql));   // idempotent
@@ -329,17 +335,35 @@ public sealed class CampaignR2Tests : IAsyncLifetime
     }
 
     /// <summary>
-    /// #384 on real PostgreSQL: the migration's ceiling step moves a global row an earlier build wrote with the
+    /// #384 on real PostgreSQL (on Oracle: that there is nothing to move): the migration's ceiling step moves a global row an earlier build wrote with the
     /// empty name to <c>"*"</c>, leaves every target system's row alone (an empty-named one included), drops a stale empty-named copy when a <c>"*"</c>
     /// row already exists (the key would collide otherwise), and changes nothing when it runs again.
     /// </summary>
     [Fact]
-    public async Task The_R3_ceiling_step_moves_the_empty_global_name_to_star_on_PostgreSQL()
+    public async Task The_R3_ceiling_step_moves_the_empty_global_name_to_star()
     {
         using var scope = _app.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<CampaignTests.CampDb>();
         var migration = new Microsoft.EntityFrameworkCore.Migrations.MigrationBuilder(db.Database.ProviderName);
         migration.GoldpathCampaignR2Backfill();
+        if (_store.IsOracle)
+        {
+            // Oracle's branch has no ceiling step, because there is nothing to move: '' is NULL there, and the key
+            // column refuses an empty-named global row outright (#384).
+            Assert.Single(migration.Operations);
+            db.Set<GoldpathCampaignCeiling>().Add(new GoldpathCampaignCeiling
+            {
+                Kind = GoldpathCampaignCeilingKind.Global,
+                Name = "",
+                MaxTps = 100,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                UpdatedBy = "old-build",
+            });
+            var refused = await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+            Assert.Contains("ORA-01400", refused.InnerException?.Message, StringComparison.Ordinal);
+            return;
+        }
+
         var step = ((Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation)migration.Operations[1]).Sql;
         var now = DateTimeOffset.UtcNow;
 
@@ -371,3 +395,8 @@ public sealed class CampaignR2Tests : IAsyncLifetime
             rows.Select(c => (c.Kind, c.Name, c.MaxTps)));
     }
 }
+
+/// <summary>Campaign revision R2.1 + R2.8 on Oracle + RabbitMQ + the HTTP callback surface, and the R2 backfill executed on Oracle (G7 ORA-5, #408), in the Oracle lane.</summary>
+[Trait("Category", "Oracle")]
+[Collection(OracleCollection.Name)]
+public sealed class CampaignR2OracleTests(OracleFixture oracle) : CampaignR2Tests(CampaignStore.Oracle(oracle));
