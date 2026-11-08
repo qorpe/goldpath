@@ -94,4 +94,37 @@ public sealed class AdminEndpointsTests : IAsyncDisposable
         using var scope = _app.Services.CreateScope();
         Assert.Equal(1, scope.ServiceProvider.GetRequiredService<BulkTestContext>().Set<GoldpathBulkBatch>().Count(b => b.Definition == "payments"));
     }
+
+    /// <summary>
+    /// #476: a <c>?fileName=</c> that is given but blank is refused with 400 before the body is read, the same on every
+    /// provider. It used to be stored as is — a nameless file on PostgreSQL, ORA-01400 (a 500) on Oracle, where '' is NULL.
+    /// </summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("%20%20")]
+    [InlineData("%09")]
+    public async Task A_blank_file_name_is_refused_with_400_before_anything_is_stored(string blank)
+    {
+        using var body = BulkFixture.Csv(("E2E-1", "DE89370400440532013000", "10.00", null));
+        var response = await _client.PostAsync($"/goldpath/admin/bulk/batches/payments?fileName={blank}", new StreamContent(body));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Contains("fileName", problem.GetProperty("detail").GetString(), StringComparison.Ordinal);
+        using var scope = _app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BulkTestContext>();
+        Assert.Equal(0, db.Set<GoldpathBulkBatch>().Count());
+        Assert.Equal(0, db.Set<GoldpathBulkFile>().Count());
+    }
+
+    [Fact]
+    public async Task An_upload_without_a_file_name_is_stored_as_upload_csv()
+    {
+        using var body = BulkFixture.Csv(("E2E-1", "DE89370400440532013000", "10.00", null));
+        var response = await _client.PostAsync("/goldpath/admin/bulk/batches/payments", new StreamContent(body));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var scope = _app.Services.CreateScope();
+        Assert.Equal(["upload.csv"], scope.ServiceProvider.GetRequiredService<BulkTestContext>().Set<GoldpathBulkFile>().Select(f => f.FileName).ToList());
+    }
 }

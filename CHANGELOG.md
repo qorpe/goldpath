@@ -631,6 +631,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     declared ladder. The role must come from the authenticated delegator's claims, never from a request body.
   - **Schema:** `GoldpathApprovalDelegations` gains a nullable `Role` (max 128). The upgrade guide has the migration
     step and a query for the delegations it leaves without reach.
+- **Admin verbs refuse a blank value before it reaches a NOT NULL column, the same on every provider (#476, G7).**
+  Oracle stores `''` as NULL, so each of these failed there with `ORA-01400` (a 500). On PostgreSQL and SQL Server
+  each stored a meaningless record.
+  - **Campaign `create`:** a null, empty or whitespace `name` is refused in words, and no campaign or audit row is
+    written.
+  - **Bulk upload:** a `?fileName=` that is given but blank answers 400 before the body is read. Omitting the
+    parameter still stores the upload as `upload.csv`. `GoldpathBulkAdminService.UploadAsync` throws
+    `ArgumentException` for a blank name.
+  - **Archive `erase`:** a blank `subjectKey` is refused before anything is redacted or recorded.
+  - **Found by reviewing the other free-text verbs:**
+    - an archive legal hold refused only an empty case reference, and now refuses whitespace too (a null used to throw);
+    - a Jobs calendar's name is refused when blank (it keys a NOT NULL `qrtz_calendars` row).
+  - **Still open:** an actor whose principal name is empty is a separate path, tracked in #544.
 - **[schema]** **Approvals: concurrent decisions no longer both apply (#480, threat model T-APR-06).** A decision read the
   request and its signatures, then wrote them in separate calls with nothing guarding the gap.
   - **What went wrong:**
