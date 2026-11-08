@@ -367,6 +367,13 @@ public class CampaignR2Tests : IAsyncLifetime
         var step = ((Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation)migration.Operations[1]).Sql;
         var now = DateTimeOffset.UtcNow;
 
+        // The suite's leader seeds the "*" row at every slice start (R3-S8, #290), so left alone it races this fact:
+        // a "*" row already there sends the step down its stale-copy branch. One transaction holding the table
+        // EXCLUSIVE (plain reads still pass) keeps the leader out until the fact is done, starting from no global row.
+        await using var exclusive = await db.Database.BeginTransactionAsync();
+        await db.Database.ExecuteSqlRawAsync("""LOCK TABLE "GoldpathCampaignCeilings" IN EXCLUSIVE MODE""");
+        await db.Set<GoldpathCampaignCeiling>().Where(c => c.Kind == GoldpathCampaignCeilingKind.Global).ExecuteDeleteAsync();
+
         db.Set<GoldpathCampaignCeiling>().AddRange(
             new GoldpathCampaignCeiling { Kind = GoldpathCampaignCeilingKind.Global, Name = "", MaxTps = 100, SeedMaxTps = 100, UpdatedAt = now, UpdatedBy = "old-build" },
             new GoldpathCampaignCeiling { Kind = GoldpathCampaignCeilingKind.TargetSystem, Name = "crm", MaxTps = 50, UpdatedAt = now, UpdatedBy = "seed" },
@@ -376,7 +383,7 @@ public class CampaignR2Tests : IAsyncLifetime
 
         Assert.Equal(1, await db.Database.ExecuteSqlRawAsync(step));   // renamed
         Assert.Equal(0, await db.Database.ExecuteSqlRawAsync(step));   // idempotent
-        var rows = Query(d => d.Set<GoldpathCampaignCeiling>().AsNoTracking().OrderBy(c => c.Kind).ThenBy(c => c.Name).ToList());
+        var rows = await db.Set<GoldpathCampaignCeiling>().AsNoTracking().OrderBy(c => c.Kind).ThenBy(c => c.Name).ToListAsync();   // inside the transaction
         Assert.Equal(
             [(GoldpathCampaignCeilingKind.Global, "*", (int?)100), (GoldpathCampaignCeilingKind.TargetSystem, "", (int?)9), (GoldpathCampaignCeilingKind.TargetSystem, "crm", (int?)50)],
             rows.Select(c => (c.Kind, c.Name, c.MaxTps)));
@@ -389,7 +396,7 @@ public class CampaignR2Tests : IAsyncLifetime
 
         Assert.Equal(1, await db.Database.ExecuteSqlRawAsync(step));   // deleted, nothing renamed
         Assert.Equal(0, await db.Database.ExecuteSqlRawAsync(step));
-        rows = Query(d => d.Set<GoldpathCampaignCeiling>().AsNoTracking().OrderBy(c => c.Kind).ThenBy(c => c.Name).ToList());
+        rows = await db.Set<GoldpathCampaignCeiling>().AsNoTracking().OrderBy(c => c.Kind).ThenBy(c => c.Name).ToListAsync();
         Assert.Equal(
             [(GoldpathCampaignCeilingKind.Global, "*", (int?)100), (GoldpathCampaignCeilingKind.TargetSystem, "", (int?)9), (GoldpathCampaignCeilingKind.TargetSystem, "crm", (int?)50)],
             rows.Select(c => (c.Kind, c.Name, c.MaxTps)));
