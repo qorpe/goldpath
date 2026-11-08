@@ -30,8 +30,8 @@
 #   - a navigation: every public property of a mapped entity class (and of a base class declared under packages/)
 #     must be a scalar EF maps to a column, an enum, a collection of either, or a mapped entity — or be converted
 #     (Property(x => x.P)…HasConversion) or ignored (Ignore(x => x.P), [NotMapped]) in that entity's configuration.
-#     A global::-qualified type, an expression-bodied property (EF finds its backing field) and a base class reached
-#     through a primary constructor's arguments are read like any other. A type the gate does not know is refused,
+#     A global::-qualified type, an expression-bodied property (EF finds its backing field), an attribute on an
+#     accessor and a base class reached through a primary constructor's arguments are read like any other. A type the gate does not know is refused,
 #     not guessed, and so is a public property whose type it cannot parse: map it, convert it, ignore it, spell it
 #     plainly, or teach the gate.
 # The other ways to declare a table it knows (IEntityTypeConfiguration, [Table], DbSet, Entity(typeof(…)),
@@ -45,8 +45,8 @@
 # `diagnostic-names-gate.sh --selftest` plants a renamed meter, a renamed span, a renamed table, an
 # un-inventoried instrument, an unreadable name, an un-inventoried factory meter (MeterOptions), an entity
 # mapped without ToTable, a table declared by attribute, a navigation to an unmapped class (plain, global::-qualified,
-# expression-bodied, and on a base class reached through a primary constructor's arguments), a property whose type
-# the gate cannot parse, a HasOne<T> to an unmapped class, a golden table missing from the inventory, a removed external subscription and a name kept
+# expression-bodied, on a base class reached through a primary constructor's arguments, and behind an accessor
+# attribute), a property whose type or accessor attribute the gate cannot parse, a HasOne<T> to an unmapped class, a golden table missing from the inventory, a removed external subscription and a name kept
 # alive only by a comment in a scratch copy, each red, and the unplanted copy green.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -78,10 +78,13 @@ RELATED = re.compile(r'\.(HasOne|HasMany|OwnsOne|OwnsMany)\s*<\s*([\w.]+)\s*>\s*
 CLASS = re.compile(r'\b(?:class|record|struct)\s+(\w+)(?:\s*<[^>{]*>)?(?:\s*\(([^)]*)\))?\s*(?::\s*([^{]+?))?\s*(?:where\b[^{]*)?\{')
 ENUM = re.compile(r'\benum\s+(\w+)')
 PROPERTY = re.compile(r'((?:\[[^\]]*\]\s*)*)\bpublic\s+((?:(?:required|virtual|override|new|sealed|static|abstract)\s+)*)'
-                      r'((?:global::)?[\w.]+(?:\s*<[^{};=]*?>)?(?:\s*\[\s*\])?\??)\s+(\w+)\s*(?:\{\s*(?:get|set|init|private|protected|internal)\b|=>)')
-# Anything that LOOKS like a public property (an accessor block, or an expression body) but that PROPERTY cannot
-# parse — a tuple type, a function pointer, a spelling not foreseen — is refused rather than skipped (fail closed).
-PROPERTY_LIKE = re.compile(r'\bpublic\s+([^;{}=]*?)\s*(?:\{\s*(?:get|set|init|private|protected|internal)\b|=>)')
+                      r'((?:global::)?[\w.]+(?:\s*<[^{};=]*?>)?(?:\s*\[\s*\])?\??)\s+(\w+)\s*(?:\{\s*(?:\[[^\]]*\]\s*)*(?:get|set|init|private|protected|internal)\b|=>)')
+# Anything that LOOKS like a public property but that PROPERTY cannot parse — a tuple type, a function pointer, an
+# accessor attribute it cannot read, a spelling not foreseen — is refused rather than skipped (fail closed). It is
+# found by construction rather than by spelling: any `public … =>`, or any `public … {` whose balanced block holds a
+# get, set or init accessor, whatever precedes that accessor.
+PROPERTY_LIKE = re.compile(r'\bpublic\s+([^;{}=]*?)\s*(\{|=>)')
+ACCESSOR = re.compile(r'\b(?:get|set|init)\s*(?:[;{]|=>)')
 TYPE_DECLARATION = re.compile(r'\b(?:class|record|struct|interface|enum|delegate|event|operator)\b|\(\s*\)\s*$|\w\s*\([^)]*\)\s*$')
 CONVERTED = re.compile(r'\.Property\s*(?:<[^>()]*>)?\s*\(\s*\w+\s*=>\s*\w+\.(\w+)\s*\)[^;]*?\.HasConversion\b')
 IGNORED = re.compile(r'\.Ignore\s*\(\s*\w+\s*=>\s*\w+\.(\w+)\s*\)')
@@ -298,6 +301,8 @@ def scan(root):
                 pending += [base_name(b) for b in re.sub(r"\([^)]*\)", "", bases).split(",") if base_name(b) in classes]
                 parsed = {p.end(1) for p in PROPERTY.finditer(body)}
                 for c in PROPERTY_LIKE.finditer(body):
+                    if c.group(2) == "{" and not ACCESSOR.search(block(body, c.end())):
+                        continue
                     if c.start() not in parsed and not TYPE_DECLARATION.search(c.group(1)):
                         unreadable.append(UNFROZEN + f"{path}: entity {entity} unreadable property 'public {c.group(1).strip()}' — the gate cannot tell "
                                           "whether EF maps it; spell its type plainly, or convert (HasConversion) or ignore it")
@@ -442,6 +447,12 @@ def selftest(root):
         "a property whose type the gate cannot parse": ("packages/Goldpath.Notification/NotificationModel.cs", 'public string Recipient { get; set; } = "";',
                                                         'public string Recipient { get; set; } = ""; public (int, ZzNav4) ZzPair { get; set; }',
                                                         "entity GoldpathNotification unreadable property 'public (int, ZzNav4) ZzPair'"),
+        "a navigation whose accessor carries an attribute": ("packages/Goldpath.Notification/NotificationModel.cs", 'public string Recipient { get; set; } = "";',
+                                                             'public string Recipient { get; set; } = ""; public ZzNav5? ZzAcc { [System.Diagnostics.DebuggerStepThrough] get; set; }',
+                                                             "entity GoldpathNotification property ZzAcc of type ZzNav5?"),
+        "an accessor attribute the gate cannot parse": ("packages/Goldpath.Notification/NotificationModel.cs", 'public string Recipient { get; set; } = "";',
+                                                        'public string Recipient { get; set; } = ""; public ZzNav6? ZzOdd { [System.Obsolete("a]b")] get; set; }',
+                                                        "entity GoldpathNotification unreadable property 'public ZzNav6? ZzOdd'"),
         "a HasOne<T> to a class no ToTable maps": ("packages/Goldpath.Jobs/QuartzStoreModel.cs", "e.HasOne<QrtzJobDetail>().WithMany()",
                                                    "e.HasOne<ZzPrincipal>().WithMany()",
                                                    "HasOne<ZzPrincipal> adds ZzPrincipal as an entity named by convention"),
