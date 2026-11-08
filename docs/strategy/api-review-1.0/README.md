@@ -64,7 +64,8 @@ here and never answers another part's lines.
   already applied. API-4 (#393) adds the lines to the Abstractions table, and API-14 (#403) moves the type.
 - **API-2 (#391), the `ct` parameter name (method Q3), proposed as a policy.** Jobs' admin service names its
   token `ct` on 18 methods, while every other public Jobs signature says `cancellationToken`. The Jobs rows rename
-  them. The same name is on 13 Archival, 9 Campaign, 7 Bulk and 5 Notification lines (measured at 9513a76).
+  them. The same name is on 13 Archival, 10 Campaign, 7 Bulk and 5 Notification live lines, Shipped and Unshipped
+  (measured at 9513a76, unchanged at fd5d37f).
   **Proposed:** every part renames them the same way. The rename is binary-compatible, and it breaks only a caller
   that passes the token by name.
 - **API-2 (#391), a job cannot be unit-tested from outside.** `GoldpathJobContext` and `GoldpathJobChunk` have no
