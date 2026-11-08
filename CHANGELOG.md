@@ -11,6 +11,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   route fails in its module's test project. The admin contract gains Revision R5, which describes the callback route
   as shipped (signature, staleness window, result codes), and its Conventions now count seven surfaces. No route
   changed.
+- **Data: `GoldpathQueryableExtensions.ChunkedContains` (G7 ORA-5, #408; RFC goldpath-oracle §2.5).**
+  - **API (additive):** `ChunkedContains<T, TValue>(this IQueryable<T>, member, values, providerName)` and
+    `OracleInListLimit = 1000`. On Oracle (a provider name containing `Oracle`), a list longer than 1,000 becomes
+    OR-joined chunks of at most 1,000, because Oracle refuses a longer `IN` list (ORA-01795). On every other
+    provider it is the plain `Contains` filter. Each chunk is a query parameter. `Goldpath.Data` still references
+    no Oracle package.
+  - **Campaign uses it** at the three lists `ReleaseBatchSize` bounds: the ripe retries (`due`), the orphaned
+    releases (`orphans`) and the success flush (`seqs`). It is not used at the lists bounded below 1,000: the
+    callback `correlations` and `settled` (a sink batch of 200) and the stale-claim sweep (`Take(100)`).
+  - **Measured:** a 5,000-item batch on Oracle Free 23.26.3 passes with and without the helper. The pinned Oracle
+    EF provider (10.23.26301) already splits a parameterised list into `IN` lists of 1,000. The helper stays,
+    as the RFC decides, so the bound does not depend on one provider build.
+- **Campaign: the R2 backfill has an Oracle branch (G7 ORA-5, #408; RFC goldpath-oracle §2.7).**
+  `GoldpathCampaignR2Backfill()` on Oracle stamps the R1 rung with `SYSTIMESTAMP` and Oracle interval literals,
+  as one statement with no trailing semicolon, schema-qualified when a schema is given. It has no ceiling-name step,
+  because Oracle never stored an empty-named global ceiling row (#384). An unknown provider is still refused.
+- **Campaign on Oracle (G7 ORA-5, #408):** the four Campaign suites (`CampaignTests`, `CampaignR1Tests`,
+  `CampaignR2Tests` and `CampaignR2TakeoverTests`) run in the Oracle lane on Oracle + RabbitMQ, with the
+  clustered Quartz store on Oracle. They are the same files, parameterised by store. `CampaignOracleBatchProof`
+  pushes a 5,000-item batch through all three bounded lists to `Succeeded`. Campaign runbook §13 covers ORA-01795.
+  Each of the three rewritten filters is pinned by a Campaign fact that fails without it; the ripe-retry release's had
+  none (dropping it passed every suite, on `main` too), and `TheRipeRetryRelease_MarksReleasedOnlyTheItemsItPublished`
+  now holds that a not-yet-ripe retry and a ripe one beyond the allowance stay `AwaitingRetry`.
 - **Campaign: a ceiling for outstanding acknowledgements, `MaxAwaitingAck` (campaign RFC R3.4,
   slice R3-S5, #293).**
   - **API (additive, init-only):** `GoldpathCampaignPolicy.MaxAwaitingAck`,
@@ -624,6 +647,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **Admin verbs refuse a blank value before it reaches a NOT NULL column, the same on every provider (#476, G7).**
+  Oracle stores `''` as NULL, so each of these failed there with `ORA-01400` (a 500). On PostgreSQL and SQL Server
+  each stored a meaningless record.
+  - **Campaign `create`:** a null, empty or whitespace `name` is refused in words, and no campaign or audit row is
+    written.
+  - **Bulk upload:** a `?fileName=` that is given but blank answers 400 before the body is read. Omitting the
+    parameter still stores the upload as `upload.csv`. `GoldpathBulkAdminService.UploadAsync` throws
+    `ArgumentException` for a blank name.
+  - **Archive `erase`:** a blank `subjectKey` is refused before anything is redacted or recorded.
+  - **Found by reviewing the other free-text verbs:**
+    - an archive legal hold refused only an empty case reference, and now refuses whitespace too (a null used to throw);
+    - a Jobs calendar's name is refused when blank (it keys a NOT NULL `qrtz_calendars` row).
+  - **Still open:** an actor whose principal name is empty is a separate path, tracked in #544.
 - **[schema]** **Approvals: concurrent decisions no longer both apply (#480, threat model T-APR-06).** A decision read the
   request and its signatures, then wrote them in separate calls with nothing guarding the gap.
   - **What went wrong:**

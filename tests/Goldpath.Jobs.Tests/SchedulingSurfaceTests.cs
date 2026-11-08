@@ -194,6 +194,27 @@ public class SchedulingSurfaceTests
         Assert.Empty((await admin.GetJobsAsync("fleet", default)).Single().Triggers);
     }
 
+    /// <summary>
+    /// #476's review of the other free-text verbs: a calendar's name is the key of its <c>qrtz_calendars</c> row, a NOT NULL
+    /// column, and '' is NULL on Oracle. A blank name is refused in words and nothing reaches the store.
+    /// </summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(null)]
+    public async Task A_blank_calendar_name_is_refused_and_never_reaches_the_store(string? blank)
+    {
+        using var fixture = new RunnerFixture();
+        var scheduler = await InMemorySchedulerAsync();
+        var admin = AdminOver(fixture, scheduler);
+
+        var put = await admin.PutCalendarAsync("fleet", blank!, new GoldpathCalendarSpec("weekly", null, null, [DayOfWeek.Sunday], null), "ops@acme", default);
+
+        Assert.False(put.Ok);
+        Assert.Contains("a calendar needs a name", put.Message, StringComparison.Ordinal);
+        Assert.Empty(await scheduler.GetCalendarNames());
+    }
+
     [Fact]
     public async Task An_unknown_TIMEZONE_is_refused_by_both_scheduling_verbs_never_thrown()
     {
