@@ -3,7 +3,6 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Testcontainers.PostgreSql;
 using Xunit;
 
 namespace Goldpath.Tests.Integration;
@@ -13,11 +12,25 @@ namespace Goldpath.Tests.Integration;
 /// payment file (with seeded poison) → the validate RUN writes the report → the gate →
 /// the execute RUN pays the valid rows, isolates the poisoned ones into the repair queue →
 /// the admin `replay-items` verb heals them → counts reconcile EXACTLY (no row lost, no
-/// row double-executed). Plus content-hash dedup and the gate's refusals, end to end.
+/// row double-executed). Plus content-hash dedup and the gate's refusals, end to end. The same
+/// facts run on Oracle with the clustered Quartz store on Oracle (<see cref="BulkOracleTests"/>,
+/// G7 ORA-6 #409): the claims are conditional updates (RFC goldpath-oracle §2.6), so nothing
+/// changes for that provider.
 /// </summary>
 [Collection("quartz-process-globals")]
-public sealed class BulkTests : IAsyncLifetime
+public class BulkTests : IAsyncLifetime
 {
+    private readonly SuiteStore _store;
+
+    /// <summary>The suite on PostgreSQL, in the integration lane.</summary>
+    public BulkTests()
+        : this(SuiteStore.PostgreSql())
+    {
+    }
+
+    /// <summary>The suite on the given store (the Oracle twin, ORA-6 #409).</summary>
+    protected BulkTests(SuiteStore store) => _store = store;
+
     public sealed class PaymentRow
     {
         public string EndToEndId { get; set; } = "";
@@ -69,20 +82,15 @@ public sealed class BulkTests : IAsyncLifetime
     }
 
     private readonly string _fleet = $"bulk-{Guid.NewGuid():N}"[..16];   // unique per test: Quartz's SchedulerRepository is process-global
-    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17-alpine").Build();
     private IHost _host = null!;
 
     public async Task InitializeAsync()
     {
-        await _postgres.StartAsync();
-        await using (var db = new BulkDb(new DbContextOptionsBuilder<BulkDb>().UseNpgsql(_postgres.GetConnectionString()).Options))
-        {
-            await db.Database.EnsureCreatedAsync();
-        }
+        await _store.StartAsync<BulkDb>(options => new(options));
 
         var builder = Host.CreateApplicationBuilder();
-        builder.Configuration["ConnectionStrings:bulkdb"] = _postgres.GetConnectionString();
-        builder.Services.AddDbContext<BulkDb>(o => o.UseNpgsql(_postgres.GetConnectionString()));
+        builder.Configuration["ConnectionStrings:bulkdb"] = _store.ConnectionString;
+        builder.Services.AddDbContext<BulkDb>(_store.Use);
         builder.Services.AddScoped<IGoldpathBulkRowHandler<PaymentRow>, PaymentHandler>();
         builder.AddGoldpathBulk<HostApplicationBuilder, BulkDb>(bulk =>
         {
@@ -101,6 +109,7 @@ public sealed class BulkTests : IAsyncLifetime
         builder.AddGoldpathJobs<HostApplicationBuilder, BulkDb>(jobs =>
         {
             jobs.ConnectionName = "bulkdb";
+            jobs.Provider = _store.JobsProvider;
             jobs.SchedulerName = _fleet;
             // Far-future crons: the test drives every run through the ADMIN verb, like an operator.
             jobs.AddGoldpathBulkJobs<BulkDb>(validateCron: "0 0 0 1 1 ? 2099", executeCron: "0 0 0 1 1 ? 2099");
@@ -114,7 +123,7 @@ public sealed class BulkTests : IAsyncLifetime
         await _host.StopAsync();
         _host.Dispose();
         QuartzProcessGlobals.Pin();   // the disposed host may own Quartz's global log provider
-        await _postgres.DisposeAsync();
+        await _store.StopAsync();
     }
 
     private static MemoryStream Csv(int rows, params int[] poisoned)
@@ -379,4 +388,36 @@ public sealed class BulkTests : IAsyncLifetime
         var healedSink = Query(db => db.Sink.Single(s => s.RowNumber == 2));
         Assert.Equal(replayRun.TraceId.ToHexString(), healedSink.TraceId);
     }
+
+    /// <summary>
+    /// RFC goldpath-oracle §2.5: the admin listing's repeatable <c>definition</c> filter (contract R3) is bounded only by
+    /// the request line, so a host that raises Kestrel's limit can send more than Oracle's 1,000-element <c>IN</c> list.
+    /// 1,001 distinct values, one of them a real definition, still answer with exactly that definition's batches.
+    /// </summary>
+    [Fact]
+    public async Task A_listing_filtered_by_1001_definitions_returns_the_matching_batches()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        Guid batchId;
+        using (var scope = _host.Services.CreateScope())
+        {
+            var csv = new MemoryStream(Encoding.UTF8.GetBytes("EndToEndId,Iban,Amount,Note\nL1,TR1,10,\n"));
+            batchId = (await Engine.IngestAsync(scope.ServiceProvider, "payments", csv, "listing.csv", null, timeout.Token)).Batch.Id;
+        }
+
+        // The real value LAST, at position 1,001: a filter that lost its tail chunk would miss it.
+        string[] definitions = [.. Enumerable.Range(1, 1_000).Select(i => $"definition-{i:D4}"), "payments"];
+        Assert.Equal(1_001, definitions.Distinct(StringComparer.Ordinal).Count());
+
+        var listed = await BulkAdmin.GetBatchesAsync(null, definitions, null, 100, timeout.Token);
+        Assert.Equal(batchId, Assert.Single(listed).Id);
+
+        // And a filter of 1,001 values naming no definition finds nothing, rather than everything.
+        Assert.Empty(await BulkAdmin.GetBatchesAsync(null, [.. definitions[..^1], "definition-1001"], null, 100, timeout.Token));
+    }
 }
+
+/// <summary>The bulk suite on Oracle, the clustered Quartz store on Oracle (G7 ORA-6, #409; RFC goldpath-oracle §7, Bulk).</summary>
+[Trait("Category", "Oracle")]
+[Collection(OracleCollection.Name)]
+public sealed class BulkOracleTests(OracleFixture oracle) : BulkTests(SuiteStore.Oracle(oracle, "GP_BULK"));

@@ -99,8 +99,11 @@ public sealed class GoldpathArchiveEngine<TContext>
                 break;
             }
 
+            // A page is BatchSize * 2 keys, past Oracle's 1,000-element IN list once BatchSize passes 500 (RFC
+            // goldpath-oracle §2.5).
             var archived = await db.Set<GoldpathArchiveEntry>()
-                .Where(e => e.Definition == definition.Name && keys.Contains(e.AggregateKey))
+                .Where(e => e.Definition == definition.Name)
+                .ChunkedContains(e => e.AggregateKey, keys, db.Database.ProviderName)
                 .Select(e => e.AggregateKey)
                 .ToListAsync(ct);
             fresh.AddRange(keys.Except(archived, StringComparer.Ordinal).Take(batchSize - fresh.Count));
