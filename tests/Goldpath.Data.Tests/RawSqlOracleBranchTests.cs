@@ -49,6 +49,9 @@ public sealed partial class RawSqlOracleBranchTests
     [InlineData("db.Database.SqlQueryRaw<int>(\"SELECT 1\").ToList();")]
     [InlineData("db.Database.SqlQuery<int>($\"SELECT 1\").ToList();")]
     [InlineData("command.CommandText = \"SELECT 1\";")]
+    [InlineData("await using var cmd = new NpgsqlCommand { Connection = c, CommandText = \"DELETE FROM t\" };")]
+    [InlineData("await using var cmd = new NpgsqlCommand { CommandText = \"DELETE FROM t\", Connection = c };")]
+    [InlineData("cmd.CommandText += \"DELETE FROM t\";")]
     [InlineData("db.Database . ExecuteSqlRaw (\"DELETE FROM t\");")]
     public void An_unbranched_raw_sql_call_is_red(string call)
     {
@@ -76,6 +79,7 @@ public sealed partial class RawSqlOracleBranchTests
     [InlineData("if (provider.Contains(\"Oracle\", StringComparison.Ordinal)) { db.Database.ExecuteSqlRaw(\"DELETE FROM t\"); }")]
     [InlineData("var sql = provider.StartsWith(\"Oracle.EntityFrameworkCore\") ? \"a\" : \"b\"; db.Database.ExecuteSqlRaw(sql);")]
     [InlineData("var sql = provider == \"Oracle.EntityFrameworkCore\" ? \"a\" : \"b\"; db.Database.ExecuteSqlRaw(sql);")]
+    [InlineData("if (db.Database.IsOracle()) { db.Database.ExecuteSqlRaw(\"DELETE FROM t\"); }")]
     public void A_raw_sql_call_whose_method_checks_for_Oracle_is_green(string body)
     {
         var (problems, _) = Scan([("packages/Planted/Planted.cs", Method(body))]);
@@ -381,13 +385,16 @@ public sealed partial class RawSqlOracleBranchTests
         return directory!.FullName;
     }
 
-    // EF's raw-SQL entry points (each sync and async form), ADO.NET's CommandText, and MigrationBuilder.Sql — the last
-    // only in a file that names MigrationBuilder (a source scan cannot read the receiver's type).
-    [GeneratedRegex(@"\b(?:ExecuteSql(?:Raw|Interpolated)?(?:Async)?|FromSql(?:Raw|Interpolated)?|SqlQuery(?:Raw)?)\s*(?:<[^>()]*>)?\s*\(|\.\s*CommandText\s*=(?!=)|\.\s*(?<sql>Sql)\s*\(")]
+    // EF's raw-SQL entry points (each sync and async form), ADO.NET's CommandText — assigned (`x.CommandText = …`),
+    // appended (`+=`) or set in an object initializer (`new XCommand { CommandText = … }`) — and MigrationBuilder.Sql,
+    // the last only in a file that names MigrationBuilder (a source scan cannot read the receiver's type). SQL passed
+    // as a command's CONSTRUCTOR argument (`new NpgsqlCommand("…", connection)`) is not matched.
+    [GeneratedRegex(@"\b(?:ExecuteSql(?:Raw|Interpolated)?(?:Async)?|FromSql(?:Raw|Interpolated)?|SqlQuery(?:Raw)?)\s*(?:<[^>()]*>)?\s*\(|(?:\.|[{,])\s*CommandText\s*\+?=(?!=)|\.\s*(?<sql>Sql)\s*\(")]
     private static partial Regex RawSqlCall();
 
-    // "Oracle branch", as the R2 backfill spells it: a provider check against a literal containing Oracle.
-    [GeneratedRegex(@"(?:\.(?:Contains|StartsWith|EndsWith|Equals)\s*\(\s*|==\s*)""[^""]*Oracle[^""]*""")]
+    // "Oracle branch", as the R2 backfill spells it: a provider check against a literal containing Oracle — or the
+    // Oracle EF provider's own idiom, `db.Database.IsOracle()`.
+    [GeneratedRegex(@"(?:\.(?:Contains|StartsWith|EndsWith|Equals)\s*\(\s*|==\s*)""[^""]*Oracle[^""]*""|\.IsOracle\s*\(\s*\)")]
     private static partial Regex OracleBranch();
 
     [GeneratedRegex(@"(?<!\bnew\s+)(?<!\.)\b(?<name>[A-Za-z_]\w*)\s*(?:<[^<>(){};]*>)?\s*\([^;{}]*\)\s*(?:where\b[^{;]*)?(?::\s*(?:base|this)\s*\([^;{}]*\)\s*)?$|\b(?<name>get|set|init)$")]
