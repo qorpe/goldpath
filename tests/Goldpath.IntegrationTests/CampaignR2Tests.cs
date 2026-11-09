@@ -25,16 +25,16 @@ namespace Goldpath.Tests.Integration;
 [Collection("quartz-process-globals")]
 public class CampaignR2Tests : IAsyncLifetime
 {
-    private readonly CampaignStore _store;
+    private readonly SuiteStore _store;
 
     /// <summary>The suite on PostgreSQL, in the integration lane.</summary>
     public CampaignR2Tests()
-        : this(CampaignStore.PostgreSql())
+        : this(SuiteStore.PostgreSql())
     {
     }
 
     /// <summary>The suite on the given store (the Oracle twin, ORA-5 #408).</summary>
-    protected CampaignR2Tests(CampaignStore store) => _store = store;
+    protected CampaignR2Tests(SuiteStore store) => _store = store;
 
     /// <summary>The type's callback secret — a test value, read from configuration in a real app.</summary>
     private const string Secret = "integration-only-callback-secret-0123456789";
@@ -406,4 +406,4 @@ public class CampaignR2Tests : IAsyncLifetime
 /// <summary>Campaign revision R2.1 + R2.8 on Oracle + RabbitMQ + the HTTP callback surface, and the R2 backfill executed on Oracle (G7 ORA-5, #408), in the Oracle lane.</summary>
 [Trait("Category", "Oracle")]
 [Collection(OracleCollection.Name)]
-public sealed class CampaignR2OracleTests(OracleFixture oracle) : CampaignR2Tests(CampaignStore.Oracle(oracle));
+public sealed class CampaignR2OracleTests(OracleFixture oracle) : CampaignR2Tests(SuiteStore.Oracle(oracle));
