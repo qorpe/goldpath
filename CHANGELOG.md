@@ -5,6 +5,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **The surface freeze gate: CLI verbs and flags, template parameters and the manifest schema, additions-only (GA
+  gate G4 API-10, #399).** A gate and its probe; no package, CLI or template changes.
+  - `scripts/surface-freeze-gate.sh` compares the tree with `scripts/surface-freeze-gate.snapshot.txt`, which has one
+    line per CLI verb form (17), verb flag (18), top-level flag (4) and pass-through verb (2), per template parameter (9)
+    and choice (37), and per manifest-schema property JSON pointer (112) and enum value (78). It fails on a removed
+    line, which covers a rename, and on a line the snapshot lacks, with the message telling the author to add it.
+    `$comment`, `description`, `default`, `title` and `examples` are never read. It runs in `gates`, with `--selftest`.
+  - **The CLI half is read from the parser, not grepped:** `scripts/surface-freeze-gate.probe.cs` (a .NET 10
+    file-based app over `tools/Goldpath.Cli`) drives `CliRunner.Run` with every flag literal against every verb form,
+    and keeps the flags the parser does not reject the way it rejects an undeclared one. The CLI has no parse table and
+    no per-verb `--help`, and `goldpath --help` omits `--path` on four verb forms, so neither could be the source.
+  - `--selftest` plants each fault in a scratch copy of the tree and must see it red: a renamed flag and a removed
+    verb in the CLI's source, a flag one verb stops parsing while its literal stays elsewhere in the source, a renamed
+    and a removed template choice, a removed schema property, a removed and an added enum value, and a duplicate
+    snapshot line. The unplanted tree and a `$comment`/`description`/`default` change stay green.
 - **Bulk and Archival on Oracle, and hand-written SQL guarded by a source scan (G7 ORA-6, #409; RFC goldpath-oracle
   §2.5, §2.6, §2.7, §7).**
   - **`ChunkedContains` at the three remaining sites** that can pass Oracle's 1,000-element `IN` list: Archival's
