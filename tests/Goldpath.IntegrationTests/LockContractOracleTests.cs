@@ -134,6 +134,33 @@ public sealed class LockContractOracleTests(OracleFixture oracle)
         Assert.NotNull(longer);
     }
 
+    /// <summary>
+    /// Pins what the runbook's "Cancellation and shutdown" section says: on Oracle a cancelled acquire does not
+    /// return when its token is cancelled. <c>DBMS_LOCK.REQUEST</c> is a server-side wait the library does not
+    /// interrupt, so the token is observed only once that wait ends — up to the acquire timeout. If a library
+    /// upgrade starts honouring cancellation, this fact goes red, and the runbook section is what to revisit.
+    /// </summary>
+    [Fact]
+    public async Task A_cancelled_acquire_on_a_held_lock_waits_out_its_timeout_before_it_observes_the_token()
+    {
+        using var host = BuildHost(await SchemaAsync(grant: true));
+        var locks = host.Services.GetRequiredService<IDistributedLockProvider>();
+        var name = GoldpathLockNames.Global("cancel-oracle");
+        var timeout = TimeSpan.FromSeconds(8);
+
+        await using var held = await locks.TryAcquireLockAsync(name, TimeSpan.FromSeconds(2));
+        Assert.NotNull(held);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => locks.TryAcquireLockAsync(name, timeout, cts.Token).AsTask());
+        watch.Stop();
+
+        // Cancelled at 0.5 s, observed only after the server-side wait: well past the cancellation point.
+        Assert.True(watch.Elapsed >= timeout - TimeSpan.FromSeconds(2), $"returned after {watch.Elapsed}");
+    }
+
     [Fact]
     public void A_provider_left_in_configuration_for_another_store_is_refused()
     {

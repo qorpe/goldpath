@@ -43,6 +43,24 @@ the handler idempotent (the Idempotency module) rather than shortening the timeo
 resource. Before scaling, check the holder's duration (`seconds_in_mode` above): a handler holding
 the lock across a slow dependency call serializes the whole fleet behind that dependency.
 
+## Cancellation and shutdown
+On Oracle, cancelling a waiting acquire does NOT return it early. `DBMS_LOCK.REQUEST` is a
+server-side wait that `DistributedLock.Oracle` does not interrupt, so the cancellation token is
+observed only when that wait ends: a cancelled `TryAcquireLockAsync` / `AcquireLockAsync` on a held
+lock returns (`OperationCanceledException`) only after up to its full acquire timeout. Goldpath passes
+the token down unchanged; this is the library's behaviour, pinned by
+`LockContractOracleTests.A_cancelled_acquire_on_a_held_lock_waits_out_its_timeout_before_it_observes_the_token`
+so an upgrade that changes it is noticed. Redis and Postgres are not affected.
+
+What this means for a host:
+- A host shutting down, or a request whose client went away, stays blocked on a held lock for the
+  remaining acquire timeout. Keep every acquire timeout SHORTER than the host's shutdown timeout
+  (`HostOptions.ShutdownTimeout`) and the pod's `terminationGracePeriodSeconds`, or graceful shutdown
+  overruns and the pod is killed mid-work.
+- A guard that must wait long (minutes, for a nightly job) should loop on `TryAcquireLockAsync` with a
+  short timeout (a few seconds) and check the token between attempts, rather than make one long wait.
+  The cost is bounded by the slice, not by the overall wait.
+
 ## Which database holds the lock
 The lock lives in the database (the PDB) named by `ConnectionName` — the app database by default.
 User locks are scoped to the database instance: two applications that connect to DIFFERENT pluggable

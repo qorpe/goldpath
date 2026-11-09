@@ -25,15 +25,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     any other becomes its leading printable ASCII (at most 40 characters), `#`, and the hex SHA-256 of its
     UTF-8 — at most 105 ASCII bytes, the same on every host and culture. An ASCII name already in that shape
     is hashed too, so it cannot stand in for another lock. The runbook says how to find such a lock.
+  - **Cancellation waits out the acquire timeout (documented, not changed).** `DBMS_LOCK.REQUEST` is a
+    server-side wait the library does not interrupt, so a cancelled acquire on a held lock returns
+    (`OperationCanceledException`) only when its timeout ends. Goldpath passes the token down unchanged. The
+    runbook (§ Cancellation and shutdown) and the README say to keep acquire timeouts shorter than the host's
+    shutdown timeout, or to loop on short `TryAcquireLockAsync` slices while checking the token.
   - **Proof:** on a real Oracle Database Free 23.26.3 container (`LockContractOracleTests`, `Category=Oracle`),
     both lock-contract facts pass through `AddGoldpathOracleLocking`, in a schema granted as the runbook says.
-    Three more facts:
+    More facts:
     - a schema without the grant fails its first acquire with `PLS-00201` naming `DBMS_LOCK`;
     - a 300-character name is one exclusive lock, and a name differing only past Oracle's limit is another;
     - an 87-character, 148-byte Turkish name is one exclusive lock, a name differing in its last character is
       another, and a 300-character multi-byte name is taken (red with ORA-12899 without the mapping);
     - a `Provider` left in configuration for another store is refused in words, rather than describing a lock
       the method does not build.
+    - an acquire on a held lock, cancelled at 0.5 s with an 8 s timeout, observes the token only after the
+      server-side wait (at least 6 s), so a library upgrade that starts honouring cancellation is noticed.
     The facts are red with the grant not run, red with a provider whose lock is not exclusive, and red with the
     configuration check removed. Mutation gate for `Goldpath.Locking`: 91.67 % → 92.00 % (`stryker/README.md`).
     `Goldpath.Locking.Oracle` joins the nightly mutation matrix for its name mapping, scored by

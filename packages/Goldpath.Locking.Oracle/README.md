@@ -31,6 +31,11 @@ GRANT EXECUTE ON SYS.DBMS_LOCK TO <runtime_user>;
 Without it the first acquire fails with `PLS-00201: identifier 'SYS.DBMS_LOCK' must be declared`.
 See [ops/locking-oracle.md](ops/locking-oracle.md).
 
+**Cancellation waits out the acquire timeout.** `DBMS_LOCK` does not interrupt a server-side wait,
+so a cancelled acquire on a held lock returns only when its timeout ends. Keep acquire timeouts shorter
+than the host's shutdown timeout, or loop on short `TryAcquireLockAsync` slices while checking the token.
+See [ops/locking-oracle.md § Cancellation and shutdown](ops/locking-oracle.md#cancellation-and-shutdown).
+
 ## Configuration
 
 See `Goldpath.Locking`. Setting `Provider = Oracle` on `AddGoldpathLocking()` is refused at
