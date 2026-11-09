@@ -18,16 +18,16 @@ namespace Goldpath.Tests.Integration;
 [Collection("quartz-process-globals")]
 public class CampaignTests : IAsyncLifetime
 {
-    private readonly CampaignStore _store;
+    private readonly SuiteStore _store;
 
     /// <summary>The suite on PostgreSQL, in the integration lane.</summary>
     public CampaignTests()
-        : this(CampaignStore.PostgreSql())
+        : this(SuiteStore.PostgreSql())
     {
     }
 
     /// <summary>The suite on the given store (the Oracle twin, ORA-5 #408).</summary>
-    protected CampaignTests(CampaignStore store) => _store = store;
+    protected CampaignTests(SuiteStore store) => _store = store;
 
     public sealed record CustomerTarget(int Id, string Email);
 
@@ -263,4 +263,4 @@ public class CampaignTests : IAsyncLifetime
 /// <summary>The L4 winback story on Oracle + RabbitMQ (G7 ORA-5, #408), in the Oracle lane.</summary>
 [Trait("Category", "Oracle")]
 [Collection(OracleCollection.Name)]
-public sealed class CampaignOracleTests(OracleFixture oracle) : CampaignTests(CampaignStore.Oracle(oracle));
+public sealed class CampaignOracleTests(OracleFixture oracle) : CampaignTests(SuiteStore.Oracle(oracle));
