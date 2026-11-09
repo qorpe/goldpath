@@ -20,6 +20,31 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     shape — `CompletedWithFailures`, 0 executed, 1 failed — so every earlier step stays guarded and the assertion goes
     red when it is fixed, T62); an approval leaves no admin-audit row (T63); a head's console
     asked for another fleet's jobs answers 500 (T64). T1 closes on the job's first green night.
+- **Bulk and Archival on Oracle, and hand-written SQL guarded by a source scan (G7 ORA-6, #409; RFC goldpath-oracle
+  §2.5, §2.6, §2.7, §7).**
+  - **`ChunkedContains` at the three remaining sites** that can pass Oracle's 1,000-element `IN` list: Archival's
+    discovery `keys` (`BatchSize * 2`), and the admin listings' repeatable `definition` (Bulk) and `template`
+    (Notification) filters. On every provider other than Oracle the query is the same `Contains` as before.
+    Measured: the 1,001-value listings already passed on Oracle before the helper, because the pinned provider splits
+    the list (as ORA-5 found for Campaign); the helper is the guarantee for every provider build.
+  - **Bulk on Oracle:** the four `BulkTests` facts run in the Oracle lane (`BulkOracleTests`, `Category=Oracle`),
+    with the clustered Quartz store on Oracle.
+  - **Archival on Oracle is refused (#547).** The hash chain's genesis anchor is the empty hash, and Oracle stores
+    `''` as NULL, so a definition's first archive fails with ORA-01400 on `GoldpathArchiveChainState.PurgedHeadHash`.
+    `ArchivalOracleTests` asserts that refusal until #547 (an owner question) lands. The suite gains a
+    `BatchSize = 600` fact that pages 1,200 keys and archives each due aggregate exactly once, on PostgreSQL today.
+  - **The source scan:** `RawSqlOracleBranchTests` (Goldpath.Data.Tests, no container) fails on any
+    `ExecuteSql*`, `FromSql*`, `SqlQuery*` or `MigrationBuilder.Sql` call, and any `CommandText` assigned, appended
+    (`+=`) or set in an object initializer, in `packages/` whose method has no Oracle provider check (a literal
+    naming Oracle, or the Oracle EF provider's `Database.IsOracle()`). SQL passed as a command's constructor
+    argument is not matched. Its exemptions carry their reasons, and a stale one fails it. The two
+    exempt methods are the Wolverine adapter's outbox relay and inbox claim, which run on PostgreSQL only: the adapter
+    refuses any other EF provider at start.
+  - **Tests:** the Campaign suites' store (`CampaignStore`) is now `SuiteStore`, shared by Campaign, Bulk and
+    Archival. The `oracle` test collection runs with parallelization disabled (after every parallel collection,
+    alone), so its Quartz-hosting twins never share Quartz's process-global state with the PostgreSQL suites in
+    `quartz-process-globals`: in one process, a PostgreSQL scheduler had been handed the Oracle data source
+    (`Unable to cast … OracleConnection to … NpgsqlConnection`). CI's lanes never mixed them; a whole-project run did.
 - **Data: `GoldpathQueryableExtensions.ChunkedContains` (G7 ORA-5, #408; RFC goldpath-oracle §2.5).**
   - **API (additive):** `ChunkedContains<T, TValue>(this IQueryable<T>, member, values, providerName)` and
     `OracleInListLimit = 1000`. On Oracle (a provider name containing `Oracle`), a list longer than 1,000 becomes
