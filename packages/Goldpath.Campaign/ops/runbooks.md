@@ -168,3 +168,16 @@ settle on a forged word.
 - A throttle sent without a version is never refused this way: the last writer wins, and the
   version still moves once per applied throttle. A race with the pacer or a pause is not a policy
   change, so it is re-read and applied; only a race into a terminal state is refused.
+
+## 13. ORA-01795 on an Oracle campaign database
+
+- **The symptom:** the pacer's log or a flush fails with `ORA-01795: maximum number of expressions in a list is
+  1000`. You raised `ReleaseBatchSize` past 1,000 on a build without `ChunkedContains`.
+- **Why:** three lists the engine sends to the database are bounded only by `ReleaseBatchSize`: the ripe
+  retries, the orphaned releases and the settled outcomes. Oracle refuses an `IN` list longer than 1,000.
+- **The fix:** upgrade to a build whose engine filters those lists through `GoldpathQueryableExtensions.ChunkedContains`
+  (RFC goldpath-oracle §2.5). It splits a list above 1,000 into OR-joined chunks on Oracle and changes nothing
+  elsewhere. Until then, keep `ReleaseBatchSize` at 1,000 or below.
+- **Measured:** the Oracle EF provider pinned with this build (10.23.26301) already splits a parameterised list
+  the same way. On that provider, a 5,000-item batch also passes without the helper (#408). The helper is the guarantee
+  for every provider build, not only the one measured.

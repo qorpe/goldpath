@@ -63,6 +63,7 @@ public class AdminServiceTests : IDisposable
         Assert.Equal(2, (await _admin.GetNotificationsAsync(null, null, null, 10, CancellationToken.None)).Count);
         Assert.Single(await _admin.GetNotificationsAsync(["requested"], ["policy-renewal"], "agency-1", 10, CancellationToken.None));
         Assert.Empty(await _admin.GetNotificationsAsync(null, ["no-such-template"], null, 10, CancellationToken.None));
+        Assert.Equal(2, (await _admin.GetNotificationsAsync(null, [], null, 10, CancellationToken.None)).Count);   // an empty filter is no filter
 
         var mine = Assert.Single(await _admin.GetNotificationsAsync(null, null, "agency-1", 10, CancellationToken.None));
         Assert.NotNull(await _admin.GetNotificationAsync(mine.Id, "agency-1", CancellationToken.None));

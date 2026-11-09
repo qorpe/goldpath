@@ -33,9 +33,6 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
     /// </summary>
     private static readonly IReadOnlyDictionary<string, string> MayWriteEmpty = new Dictionary<string, string>(StringComparer.Ordinal)
     {
-        ["GoldpathCampaigns.Name"] = "#476 — campaign create takes a blank name",
-        ["GoldpathBulkFiles.FileName"] = "#476 — an upload's empty ?fileName= is stored as is",
-        ["GoldpathErasureRecords.SubjectKey"] = "#476 — erase takes a blank subject key",
         ["GoldpathNotifications.Culture"] = "#502 — the invariant fallback's culture is the empty name",
         ["GoldpathApprovals.Subject"] = "#503 — the engine takes a blank subject",
         ["GoldpathApprovals.RequestedBy"] = "#503 — the engine takes a blank requester",
@@ -43,6 +40,8 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
         ["GoldpathApprovalDelegations.From"] = "#503 — delegation takes a blank delegator",
         ["GoldpathApprovalDelegations.To"] = "#503 — delegation takes a blank delegate",
         ["GoldpathFileQuarantine.Reason"] = "#503 — a rail may return a blank quarantine reason",
+        ["GoldpathArchiveChainState.PurgedHeadHash"] = "#547 — a chain's genesis anchor is the empty hash",
+        ["GoldpathArchiveEntries.PreviousHash"] = "#547 — a chain's first entry links to the empty genesis hash",
     };
 
     private static string ModelGolden([CallerFilePath] string thisFile = "")

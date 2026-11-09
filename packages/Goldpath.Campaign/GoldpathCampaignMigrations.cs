@@ -20,7 +20,12 @@ public static class GoldpathCampaignMigrations
     /// It also carries revision R3's one data step (#384): a global ceiling row that an earlier
     /// build wrote with the empty name moves to <see cref="GoldpathCampaignCeiling.GlobalName"/>;
     /// when a <c>"*"</c> row already exists, the empty-named one is the stale copy and is deleted
-    /// instead. It matches only an empty-named global row, so a second run changes nothing.
+    /// instead. It matches only an empty-named global row, so a second run changes nothing. On Oracle there is no
+    /// such step: Oracle stores <c>''</c> as NULL, so its key column never held an empty name.
+    /// </para>
+    /// <para>
+    /// PostgreSQL, SQL Server and Oracle are supported (the provider is read from
+    /// <see cref="MigrationBuilder.ActiveProvider"/>); any other provider is refused with the stamp to write by hand.
     /// </para>
     /// </summary>
     /// <param name="migrationBuilder">The generated migration's builder.</param>
@@ -66,6 +71,21 @@ public static class GoldpathCampaignMigrations
                 SET [NextAttemptAt] = DATEADD(second, CASE WHEN [Attempts] <= 1 THEN 30 ELSE 120 END, COALESCE([CompletedAt], SYSDATETIMEOFFSET()))
                 WHERE [State] = {awaitingRetry} AND [NextAttemptAt] IS NULL;
                 """;
+        }
+        else if (provider.Contains("Oracle", StringComparison.Ordinal))
+        {
+            // RFC goldpath-oracle §2.7. ODP.NET runs one statement per command and refuses a trailing ';'.
+            var table = schema is null ? "\"GoldpathCampaignItems\"" : $"\"{schema}\".\"GoldpathCampaignItems\"";
+            migrationBuilder.Sql($"""
+                UPDATE {table}
+                SET "NextAttemptAt" = COALESCE("CompletedAt", SYSTIMESTAMP)
+                    + CASE WHEN "Attempts" <= 1 THEN INTERVAL '30' SECOND ELSE INTERVAL '2' MINUTE END
+                WHERE "State" = {awaitingRetry} AND "NextAttemptAt" IS NULL
+                """);
+
+            // No ceiling step: Oracle stores '' as NULL, so no build ever wrote an empty-named global row there —
+            // the key column refused it (#384). There is nothing to move.
+            return migrationBuilder;
         }
         else
         {

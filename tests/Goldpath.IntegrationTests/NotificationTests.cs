@@ -250,6 +250,36 @@ public abstract class NotificationFacts : IAsyncLifetime
         Assert.Contains("disk full", await received.Task.WaitAsync(timeout.Token), StringComparison.Ordinal);   // the hook really got it
     }
 
+    /// <summary>
+    /// RFC goldpath-oracle §2.5 (G7 ORA-6, #409): the admin listing's repeatable <c>template</c> filter (contract R3) is
+    /// bounded only by the request line, so a host that raises Kestrel's limit can send more than Oracle's 1,000-element
+    /// <c>IN</c> list. 1,001 distinct values, one of them a real template, answer with exactly that template's rows.
+    /// </summary>
+    [Fact]
+    public async Task A_listing_filtered_by_1001_templates_returns_the_matching_notifications()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        Guid id;
+        using (var scope = _host.Services.CreateScope())
+        {
+            id = (await scope.ServiceProvider.GetRequiredService<IGoldpathNotifier>().RequestAsync(new GoldpathNotificationRequest(
+                "policy-renewal", "email", "listing@example.test", "tr",
+                new Dictionary<string, string> { ["Name"] = "Ada", ["PolicyNo"] = "P-1001", ["RenewalDate"] = "2026-12-01" },
+                dedupKey: "listing:P-1001"), timeout.Token)).Id;
+        }
+
+        // The real value LAST, at position 1,001: a filter that lost its tail chunk would miss it.
+        string[] templates = [.. Enumerable.Range(1, 1_000).Select(i => $"template-{i:D4}"), "policy-renewal"];
+        Assert.Equal(1_001, templates.Distinct(StringComparer.Ordinal).Count());
+        var admin = _host.Services.GetRequiredService<GoldpathNotificationAdminService<NotifyDb>>();
+
+        var listed = await admin.GetNotificationsAsync(null, templates, null, 100, timeout.Token);
+        Assert.Equal(id, Assert.Single(listed).Id);
+
+        // And a filter of 1,001 values naming no template finds nothing, rather than everything.
+        Assert.Empty(await admin.GetNotificationsAsync(null, [.. templates[..^1], "template-1001"], null, 100, timeout.Token));
+    }
+
     private static int FreeTcpPort()
     {
         using var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);

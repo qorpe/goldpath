@@ -1,1 +1,537 @@
 line	verdict	target	reason
+Goldpath.GoldpathAdminResult	remove		P2 (record §4): GoldpathAdminResult moves to Goldpath.Abstractions as this same line — same name, same namespace — so source compiles unchanged and no module needs Jobs to answer a verb; API-4 (#393) adds it to the Abstractions table, API-14 (#403) moves it
+Goldpath.GoldpathAdminResult.GoldpathAdminResult(bool Ok, string! Message) -> void	remove		P2 (record §4): GoldpathAdminResult moves to Goldpath.Abstractions as this same line — same name, same namespace — so source compiles unchanged and no module needs Jobs to answer a verb; API-4 (#393) adds it to the Abstractions table, API-14 (#403) moves it
+Goldpath.GoldpathAdminResult.Message.get -> string!	remove		P2 (record §4): GoldpathAdminResult moves to Goldpath.Abstractions as this same line — same name, same namespace — so source compiles unchanged and no module needs Jobs to answer a verb; API-4 (#393) adds it to the Abstractions table, API-14 (#403) moves it
+Goldpath.GoldpathAdminResult.Message.init -> void	remove		P2 (record §4): GoldpathAdminResult moves to Goldpath.Abstractions as this same line — same name, same namespace — so source compiles unchanged and no module needs Jobs to answer a verb; API-4 (#393) adds it to the Abstractions table, API-14 (#403) moves it
+Goldpath.GoldpathAdminResult.Ok.get -> bool	remove		P2 (record §4): GoldpathAdminResult moves to Goldpath.Abstractions as this same line — same name, same namespace — so source compiles unchanged and no module needs Jobs to answer a verb; API-4 (#393) adds it to the Abstractions table, API-14 (#403) moves it
+Goldpath.GoldpathAdminResult.Ok.init -> void	remove		P2 (record §4): GoldpathAdminResult moves to Goldpath.Abstractions as this same line — same name, same namespace — so source compiles unchanged and no module needs Jobs to answer a verb; API-4 (#393) adds it to the Abstractions table, API-14 (#403) moves it
+Goldpath.GoldpathCalendarInfo	keep		
+Goldpath.GoldpathCalendarInfo.Description.get -> string?	keep		
+Goldpath.GoldpathCalendarInfo.Description.init -> void	keep		
+Goldpath.GoldpathCalendarInfo.GoldpathCalendarInfo(string! Name, string? Description, System.Collections.Generic.IReadOnlyList<string!>! UsedByTriggers) -> void	keep		
+Goldpath.GoldpathCalendarInfo.Name.get -> string!	keep		
+Goldpath.GoldpathCalendarInfo.Name.init -> void	keep		
+Goldpath.GoldpathCalendarInfo.UsedByTriggers.get -> System.Collections.Generic.IReadOnlyList<string!>!	keep		
+Goldpath.GoldpathCalendarInfo.UsedByTriggers.init -> void	keep		
+Goldpath.GoldpathCalendarSpec	keep		
+Goldpath.GoldpathCalendarSpec.CronExpression.get -> string?	keep		
+Goldpath.GoldpathCalendarSpec.CronExpression.init -> void	keep		
+Goldpath.GoldpathCalendarSpec.Description.get -> string?	keep		
+Goldpath.GoldpathCalendarSpec.Description.init -> void	keep		
+Goldpath.GoldpathCalendarSpec.GoldpathCalendarSpec(string! Type, string? Description, System.Collections.Generic.IReadOnlyList<System.DateTime>? ExcludedDates, System.Collections.Generic.IReadOnlyList<System.DayOfWeek>? ExcludedDays, string? CronExpression) -> void	keep		
+Goldpath.GoldpathCalendarSpec.ExcludedDates.get -> System.Collections.Generic.IReadOnlyList<System.DateTime>?	keep		
+Goldpath.GoldpathCalendarSpec.ExcludedDates.init -> void	keep		
+Goldpath.GoldpathCalendarSpec.ExcludedDays.get -> System.Collections.Generic.IReadOnlyList<System.DayOfWeek>?	keep		
+Goldpath.GoldpathCalendarSpec.ExcludedDays.init -> void	keep		
+Goldpath.GoldpathCalendarSpec.Type.get -> string!	keep		
+Goldpath.GoldpathCalendarSpec.Type.init -> void	keep		
+Goldpath.GoldpathCalendars	keep		
+Goldpath.GoldpathFireFacts	keep		public on purpose: a module's or an adopter's test runs a job through the runner deterministically, as the Approvals and Archival tests do
+Goldpath.GoldpathFireFacts.TraceParent.get -> string?	keep		
+Goldpath.GoldpathFireFacts.TraceParent.init -> void	keep		
+Goldpath.GoldpathFireFacts.FireInstanceId.get -> string!	keep		
+Goldpath.GoldpathFireFacts.FireInstanceId.init -> void	keep		
+Goldpath.GoldpathFireFacts.InstanceName.get -> string!	keep		
+Goldpath.GoldpathFireFacts.InstanceName.init -> void	keep		
+Goldpath.GoldpathFireFacts.Recovering.get -> bool	keep		
+Goldpath.GoldpathFireFacts.Recovering.init -> void	keep		
+Goldpath.GoldpathFireFacts.SchedulerName.get -> string!	keep		
+Goldpath.GoldpathFireFacts.SchedulerName.init -> void	keep		
+Goldpath.GoldpathFleetInfo	keep		
+Goldpath.GoldpathFleetInfo.GoldpathFleetInfo(string! SchedulerName, int JobCount, System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathFleetNode!>! Nodes) -> void	keep		
+Goldpath.GoldpathFleetInfo.JobCount.get -> int	keep		
+Goldpath.GoldpathFleetInfo.JobCount.init -> void	keep		
+Goldpath.GoldpathFleetInfo.Nodes.get -> System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathFleetNode!>!	keep		
+Goldpath.GoldpathFleetInfo.Nodes.init -> void	keep		
+Goldpath.GoldpathFleetInfo.SchedulerName.get -> string!	keep		
+Goldpath.GoldpathFleetInfo.SchedulerName.init -> void	keep		
+Goldpath.GoldpathFleetNode	keep		
+Goldpath.GoldpathFleetNode.CheckinInterval.get -> System.TimeSpan	keep		
+Goldpath.GoldpathFleetNode.CheckinInterval.init -> void	keep		
+Goldpath.GoldpathFleetNode.GoldpathFleetNode(string! InstanceName, System.DateTimeOffset LastCheckin, System.TimeSpan CheckinInterval) -> void	keep		
+Goldpath.GoldpathFleetNode.InstanceName.get -> string!	keep		
+Goldpath.GoldpathFleetNode.InstanceName.init -> void	keep		
+Goldpath.GoldpathFleetNode.LastCheckin.get -> System.DateTimeOffset	keep		
+Goldpath.GoldpathFleetNode.LastCheckin.init -> void	keep		
+Goldpath.GoldpathJobAdminAudit	keep		
+Goldpath.GoldpathJobAdminAudit.Action.get -> string!	keep		
+Goldpath.GoldpathJobAdminAudit.Action.set -> void	keep		
+Goldpath.GoldpathJobAdminAudit.Actor.get -> string!	keep		
+Goldpath.GoldpathJobAdminAudit.Actor.set -> void	keep		
+Goldpath.GoldpathJobAdminAudit.At.get -> System.DateTimeOffset	keep		
+Goldpath.GoldpathJobAdminAudit.At.set -> void	keep		
+Goldpath.GoldpathJobAdminAudit.Detail.get -> string?	keep		
+Goldpath.GoldpathJobAdminAudit.Detail.set -> void	keep		
+Goldpath.GoldpathJobAdminAudit.GoldpathJobAdminAudit() -> void	keep		
+Goldpath.GoldpathJobAdminAudit.Fleet.get -> string!	keep		
+Goldpath.GoldpathJobAdminAudit.Fleet.set -> void	keep		
+Goldpath.GoldpathJobAdminAudit.Id.get -> long	keep		
+Goldpath.GoldpathJobAdminAudit.Id.set -> void	keep		
+Goldpath.GoldpathJobAdminAudit.Target.get -> string!	keep		
+Goldpath.GoldpathJobAdminAudit.Target.set -> void	keep		
+Goldpath.GoldpathJobBuilder<TJob>	keep		
+Goldpath.GoldpathJobBuilder<TJob>.Calendar.get -> string?	keep		
+Goldpath.GoldpathJobBuilder<TJob>.Calendar.set -> void	keep		
+Goldpath.GoldpathJobBuilder<TJob>.Cron.get -> string?	keep		
+Goldpath.GoldpathJobBuilder<TJob>.Cron.set -> void	keep		
+Goldpath.GoldpathJobBuilder<TJob>.Deadline.get -> System.TimeSpan?	keep		
+Goldpath.GoldpathJobBuilder<TJob>.Deadline.set -> void	keep		
+Goldpath.GoldpathJobBuilder<TJob>.GoldpathJobBuilder() -> void	keep		
+Goldpath.GoldpathJobBuilder<TJob>.InterChunkDelay.get -> System.TimeSpan?	keep		
+Goldpath.GoldpathJobBuilder<TJob>.InterChunkDelay.set -> void	keep		
+Goldpath.GoldpathJobBuilder<TJob>.MaxChunkAttempts.get -> int	keep		
+Goldpath.GoldpathJobBuilder<TJob>.MaxChunkAttempts.set -> void	keep		
+Goldpath.GoldpathJobBuilder<TJob>.MaxParallelChunks.get -> int	keep		
+Goldpath.GoldpathJobBuilder<TJob>.MaxParallelChunks.set -> void	keep		
+Goldpath.GoldpathJobBuilder<TJob>.PinInput(System.Func<System.IServiceProvider!, string!>! versionFactory) -> Goldpath.GoldpathJobBuilder<TJob!>!	keep		
+Goldpath.GoldpathJobBuilder<TJob>.StartAfter<TPredecessor>() -> Goldpath.GoldpathJobBuilder<TJob!>!	keep		
+Goldpath.GoldpathJobBuilder<TJob>.TimeZoneId.get -> string?	keep		
+Goldpath.GoldpathJobBuilder<TJob>.TimeZoneId.set -> void	keep		
+Goldpath.GoldpathJobChunk	keep		same finding as GoldpathJobContext: no public constructor for an adopter's test (API-13)
+Goldpath.GoldpathJobChunk.Index.get -> int	keep		
+Goldpath.GoldpathJobChunk.Payload.get -> string!	keep		
+Goldpath.GoldpathJobChunk.ReportItemFailure(string! itemKey, string! reason) -> void	keep		
+Goldpath.GoldpathJobChunkStatus	keep		
+Goldpath.GoldpathJobContext	keep		finding for API-13 (#402): no public constructor, so an adopter's unit test of ExecuteChunkAsync cannot build a context (Goldpath's own Campaign tests use reflection); a test factory would be new API, out of scope for this part
+Goldpath.GoldpathJobContext.InputVersion.get -> string?	keep		
+Goldpath.GoldpathJobContext.InstanceName.get -> string!	keep		
+Goldpath.GoldpathJobContext.JobName.get -> string!	keep		
+Goldpath.GoldpathJobContext.Resumed.get -> bool	keep		
+Goldpath.GoldpathJobContext.RunId.get -> System.Guid	keep		
+Goldpath.GoldpathJobContext.SchedulerName.get -> string!	keep		
+Goldpath.GoldpathJobContext.Services.get -> System.IServiceProvider!	keep		
+Goldpath.GoldpathJobDefinition	keep		
+Goldpath.GoldpathJobDefinition.CalendarName.get -> string?	keep		
+Goldpath.GoldpathJobDefinition.Cron.get -> string?	keep		
+Goldpath.GoldpathJobDefinition.Deadline.get -> System.TimeSpan?	keep		
+Goldpath.GoldpathJobDefinition.InputVersionFactory.get -> System.Func<System.IServiceProvider!, string!>?	keep		
+Goldpath.GoldpathJobDefinition.InterChunkDelay.get -> System.TimeSpan?	keep		
+Goldpath.GoldpathJobDefinition.JobType.get -> System.Type!	keep		
+Goldpath.GoldpathJobDefinition.MaxChunkAttempts.get -> int	keep		
+Goldpath.GoldpathJobDefinition.MaxParallelChunks.get -> int	keep		
+Goldpath.GoldpathJobDefinition.Name.get -> string!	keep		
+Goldpath.GoldpathJobDefinition.StartAfterJobs.get -> System.Collections.Generic.List<string!>!	rename	Goldpath.GoldpathJobDefinition.StartAfterJobs.get -> System.Collections.Generic.IReadOnlyList<string!>!	method Q4/Q6: a definition is read-only everywhere else, but this hands out the mutable List the builder fills; StartAfter<T>() stays the only way to add a predecessor
+Goldpath.GoldpathJobDefinition.TimeZoneId.get -> string?	keep		
+Goldpath.GoldpathJobExecution	keep		
+Goldpath.GoldpathJobExecution.GoldpathJobExecution() -> void	keep		
+Goldpath.GoldpathJobExecution.DurationMs.get -> long	keep		
+Goldpath.GoldpathJobExecution.DurationMs.set -> void	keep		
+Goldpath.GoldpathJobExecution.Error.get -> string?	keep		
+Goldpath.GoldpathJobExecution.Error.set -> void	keep		
+Goldpath.GoldpathJobExecution.FinishedAt.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathJobExecution.FinishedAt.set -> void	keep		
+Goldpath.GoldpathJobExecution.FiredAt.get -> System.DateTimeOffset	keep		
+Goldpath.GoldpathJobExecution.FiredAt.set -> void	keep		
+Goldpath.GoldpathJobExecution.Id.get -> long	keep		
+Goldpath.GoldpathJobExecution.Id.set -> void	keep		
+Goldpath.GoldpathJobExecution.InstanceName.get -> string!	keep		
+Goldpath.GoldpathJobExecution.InstanceName.set -> void	keep		
+Goldpath.GoldpathJobExecution.JobName.get -> string!	keep		
+Goldpath.GoldpathJobExecution.JobName.set -> void	keep		
+Goldpath.GoldpathJobExecution.Outcome.get -> string!	keep		
+Goldpath.GoldpathJobExecution.Outcome.set -> void	keep		
+Goldpath.GoldpathJobExecution.RunId.get -> System.Guid?	keep		
+Goldpath.GoldpathJobExecution.RunId.set -> void	keep		
+Goldpath.GoldpathJobExecution.SchedulerName.get -> string!	keep		
+Goldpath.GoldpathJobExecution.SchedulerName.set -> void	keep		
+Goldpath.GoldpathJobInfo	keep		
+Goldpath.GoldpathJobInfo.Description.get -> string?	keep		
+Goldpath.GoldpathJobInfo.Description.init -> void	keep		
+Goldpath.GoldpathJobInfo.Name.get -> string!	keep		
+Goldpath.GoldpathJobInfo.Name.init -> void	keep		
+Goldpath.GoldpathJobInfo.RequestsRecovery.get -> bool	keep		
+Goldpath.GoldpathJobInfo.RequestsRecovery.init -> void	keep		
+Goldpath.GoldpathJobInfo.Triggers.get -> System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathTriggerInfo!>!	keep		
+Goldpath.GoldpathJobInfo.Triggers.init -> void	keep		
+Goldpath.GoldpathJobItemFailure	keep		
+Goldpath.GoldpathJobItemFailure.ChunkIndex.get -> int	keep		
+Goldpath.GoldpathJobItemFailure.ChunkIndex.set -> void	keep		
+Goldpath.GoldpathJobItemFailure.GoldpathJobItemFailure() -> void	keep		
+Goldpath.GoldpathJobItemFailure.FailedAt.get -> System.DateTimeOffset	keep		
+Goldpath.GoldpathJobItemFailure.FailedAt.set -> void	keep		
+Goldpath.GoldpathJobItemFailure.Id.get -> long	keep		
+Goldpath.GoldpathJobItemFailure.Id.set -> void	keep		
+Goldpath.GoldpathJobItemFailure.ItemKey.get -> string!	keep		
+Goldpath.GoldpathJobItemFailure.ItemKey.set -> void	keep		
+Goldpath.GoldpathJobItemFailure.Reason.get -> string!	keep		
+Goldpath.GoldpathJobItemFailure.Reason.set -> void	keep		
+Goldpath.GoldpathJobItemFailure.RedrivenAt.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathJobItemFailure.RedrivenAt.set -> void	keep		
+Goldpath.GoldpathJobItemFailure.RunId.get -> System.Guid	keep		
+Goldpath.GoldpathJobItemFailure.RunId.set -> void	keep		
+Goldpath.GoldpathJobPlan	keep		
+Goldpath.GoldpathJobPlan.ChunkPayloads.get -> System.Collections.Generic.IReadOnlyList<string!>!	keep		
+Goldpath.GoldpathJobPlan.GoldpathJobPlan(System.Collections.Generic.IReadOnlyList<string!>! chunkPayloads, long? totalItems = null) -> void	keep		
+Goldpath.GoldpathJobPlan.TotalItems.get -> long?	keep		
+Goldpath.GoldpathJobPlanner	keep		
+Goldpath.GoldpathJobRun	keep		
+Goldpath.GoldpathJobRun.CompletedChunks.get -> int	keep		
+Goldpath.GoldpathJobRun.CompletedChunks.set -> void	keep		
+Goldpath.GoldpathJobRun.DeadlineAt.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathJobRun.DeadlineAt.set -> void	keep		
+Goldpath.GoldpathJobRun.GoldpathJobRun() -> void	keep		
+Goldpath.GoldpathJobRun.Executions.get -> int	keep		
+Goldpath.GoldpathJobRun.Executions.set -> void	keep		
+Goldpath.GoldpathJobRun.FailedChunks.get -> int	keep		
+Goldpath.GoldpathJobRun.FailedChunks.set -> void	keep		
+Goldpath.GoldpathJobRun.FinishedAt.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathJobRun.FinishedAt.set -> void	keep		
+Goldpath.GoldpathJobRun.Id.get -> System.Guid	keep		
+Goldpath.GoldpathJobRun.Id.set -> void	keep		
+Goldpath.GoldpathJobRun.InputVersion.get -> string?	keep		
+Goldpath.GoldpathJobRun.InputVersion.set -> void	keep		
+Goldpath.GoldpathJobRun.ItemFailures.get -> int	keep		
+Goldpath.GoldpathJobRun.ItemFailures.set -> void	keep		
+Goldpath.GoldpathJobRun.JobName.get -> string!	keep		
+Goldpath.GoldpathJobRun.JobName.set -> void	keep		
+Goldpath.GoldpathJobRun.PredictedFinishAt.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathJobRun.PredictedFinishAt.set -> void	keep		
+Goldpath.GoldpathJobRun.SchedulerName.get -> string!	keep		
+Goldpath.GoldpathJobRun.SchedulerName.set -> void	keep		
+Goldpath.GoldpathJobRun.StartedAt.get -> System.DateTimeOffset	keep		
+Goldpath.GoldpathJobRun.StartedAt.set -> void	keep		
+Goldpath.GoldpathJobRun.StartedBy.get -> string?	keep		
+Goldpath.GoldpathJobRun.StartedBy.set -> void	keep		
+Goldpath.GoldpathJobRun.Status.get -> string!	keep		
+Goldpath.GoldpathJobRun.Status.set -> void	keep		
+Goldpath.GoldpathJobRun.TotalChunks.get -> int	keep		
+Goldpath.GoldpathJobRun.TotalChunks.set -> void	keep		
+Goldpath.GoldpathJobRun.TotalItems.get -> long?	keep		
+Goldpath.GoldpathJobRun.TotalItems.set -> void	keep		
+Goldpath.GoldpathJobRunChunk	keep		
+Goldpath.GoldpathJobRunChunk.Attempts.get -> int	keep		
+Goldpath.GoldpathJobRunChunk.Attempts.set -> void	keep		
+Goldpath.GoldpathJobRunChunk.ClaimedAt.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathJobRunChunk.ClaimedAt.set -> void	keep		
+Goldpath.GoldpathJobRunChunk.ClaimedBy.get -> string?	keep		
+Goldpath.GoldpathJobRunChunk.ClaimedBy.set -> void	keep		
+Goldpath.GoldpathJobRunChunk.CompletedAt.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathJobRunChunk.CompletedAt.set -> void	keep		
+Goldpath.GoldpathJobRunChunk.GoldpathJobRunChunk() -> void	keep		
+Goldpath.GoldpathJobRunChunk.FireInstanceId.get -> string?	keep		
+Goldpath.GoldpathJobRunChunk.FireInstanceId.set -> void	keep		
+Goldpath.GoldpathJobRunChunk.Id.get -> long	keep		
+Goldpath.GoldpathJobRunChunk.Id.set -> void	keep		
+Goldpath.GoldpathJobRunChunk.Index.get -> int	keep		
+Goldpath.GoldpathJobRunChunk.Index.set -> void	keep		
+Goldpath.GoldpathJobRunChunk.LastError.get -> string?	keep		
+Goldpath.GoldpathJobRunChunk.LastError.set -> void	keep		
+Goldpath.GoldpathJobRunChunk.Payload.get -> string!	keep		
+Goldpath.GoldpathJobRunChunk.Payload.set -> void	keep		
+Goldpath.GoldpathJobRunChunk.RunId.get -> System.Guid	keep		
+Goldpath.GoldpathJobRunChunk.RunId.set -> void	keep		
+Goldpath.GoldpathJobRunChunk.Status.get -> string!	keep		
+Goldpath.GoldpathJobRunChunk.Status.set -> void	keep		
+Goldpath.GoldpathJobRunStatus	keep		
+Goldpath.GoldpathJobRunner<TContext>	keep		public on purpose: a module's or an adopter's test runs a job through the runner deterministically, as the Approvals and Archival tests do
+Goldpath.GoldpathJobRunner<TContext>.GoldpathJobRunner(Microsoft.Extensions.DependencyInjection.IServiceScopeFactory! scopeFactory, System.TimeProvider! time, Microsoft.Extensions.Logging.ILogger<Goldpath.GoldpathJobRunner<TContext!>!>! logger) -> void	keep		
+Goldpath.GoldpathJobRunner<TContext>.ReplayAsync(Goldpath.IGoldpathJob! job, System.Guid runId, Goldpath.GoldpathFireFacts! fire, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<int>!	keep		
+Goldpath.GoldpathJobRunner<TContext>.RunAsync(Goldpath.IGoldpathJob! job, Goldpath.GoldpathJobDefinition! definition, Goldpath.GoldpathFireFacts! fire, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<string!>!	keep		
+Goldpath.GoldpathJobStoreProvider	keep		
+Goldpath.GoldpathJobStoreProvider.Postgres = 0 -> Goldpath.GoldpathJobStoreProvider	keep		
+Goldpath.GoldpathJobStoreProvider.SqlServer = 1 -> Goldpath.GoldpathJobStoreProvider	keep		
+Goldpath.GoldpathJobsAdminEndpoints	keep		
+Goldpath.GoldpathJobsAdminService<TContext>	keep		
+Goldpath.GoldpathJobsAdminService<TContext>.DeleteCalendarAsync(string! fleet, string! name, string! actor, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	rename	Goldpath.GoldpathJobsAdminService<TContext>.DeleteCalendarAsync(string! fleet, string! name, string! actor, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Jobs signature names it cancellationToken. Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathJobsAdminService<TContext>.GoldpathJobsAdminService(Goldpath.IGoldpathJobsFleetRegistry! registry, Microsoft.Extensions.DependencyInjection.IServiceScopeFactory! scopeFactory, System.TimeProvider! time) -> void	keep		
+Goldpath.GoldpathJobsAdminService<TContext>.GetAuditAsync(int take, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathJobAdminAudit!>!>!	rename	Goldpath.GoldpathJobsAdminService<TContext>.GetAuditAsync(int take, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathJobAdminAudit!>!>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Jobs signature names it cancellationToken. Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathJobsAdminService<TContext>.GetCalendarsAsync(string! fleet, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathCalendarInfo!>!>!	rename	Goldpath.GoldpathJobsAdminService<TContext>.GetCalendarsAsync(string! fleet, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathCalendarInfo!>!>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Jobs signature names it cancellationToken. Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathJobsAdminService<TContext>.GetFleetsAsync(System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathFleetInfo!>!>!	rename	Goldpath.GoldpathJobsAdminService<TContext>.GetFleetsAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathFleetInfo!>!>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Jobs signature names it cancellationToken. Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathJobsAdminService<TContext>.GetJobsAsync(string! fleet, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathJobInfo!>!>!	rename	Goldpath.GoldpathJobsAdminService<TContext>.GetJobsAsync(string! fleet, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathJobInfo!>!>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Jobs signature names it cancellationToken. Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathJobsAdminService<TContext>.GetRunAsync(System.Guid runId, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathRunDetail?>!	rename	Goldpath.GoldpathJobsAdminService<TContext>.GetRunAsync(System.Guid runId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathRunDetail?>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Jobs signature names it cancellationToken. Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathJobsAdminService<TContext>.PauseJobAsync(string! fleet, string! job, string! actor, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	rename	Goldpath.GoldpathJobsAdminService<TContext>.PauseJobAsync(string! fleet, string! job, string! actor, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Jobs signature names it cancellationToken. Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathJobsAdminService<TContext>.PutCalendarAsync(string! fleet, string! name, Goldpath.GoldpathCalendarSpec! spec, string! actor, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	rename	Goldpath.GoldpathJobsAdminService<TContext>.PutCalendarAsync(string! fleet, string! name, Goldpath.GoldpathCalendarSpec! spec, string! actor, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Jobs signature names it cancellationToken. Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathJobsAdminService<TContext>.ReplayItemsAsync(System.Guid runId, string! actor, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	rename	Goldpath.GoldpathJobsAdminService<TContext>.ReplayItemsAsync(System.Guid runId, string! actor, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Jobs signature names it cancellationToken. Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathJobsAdminService<TContext>.RerunAsync(System.Guid runId, string! actor, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	rename	Goldpath.GoldpathJobsAdminService<TContext>.RerunAsync(System.Guid runId, string! actor, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Jobs signature names it cancellationToken. Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathJobsAdminService<TContext>.RescheduleAsync(string! fleet, string! job, string! cron, string? timeZoneId, string! actor, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	rename	Goldpath.GoldpathJobsAdminService<TContext>.RescheduleAsync(string! fleet, string! job, string! cron, string? timeZoneId, string! actor, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Jobs signature names it cancellationToken. Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathJobsAdminService<TContext>.ResumeJobAsync(string! fleet, string! job, string! actor, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	rename	Goldpath.GoldpathJobsAdminService<TContext>.ResumeJobAsync(string! fleet, string! job, string! actor, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Jobs signature names it cancellationToken. Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathJobsAdminService<TContext>.SetFleetPausedAsync(string! fleet, bool paused, string! actor, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	rename	Goldpath.GoldpathJobsAdminService<TContext>.SetFleetPausedAsync(string! fleet, bool paused, string! actor, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Jobs signature names it cancellationToken. Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathJobsAdminService<TContext>.TriggerAsync(string! fleet, string! job, bool dryRun, string! actor, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	rename	Goldpath.GoldpathJobsAdminService<TContext>.TriggerAsync(string! fleet, string! job, bool dryRun, string! actor, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Jobs signature names it cancellationToken. Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathJobsExtensions	keep		
+Goldpath.GoldpathJobsFleetRegistry<TContext>	remove		the concrete registry is built only by AddGoldpathJobsManagement's factory and resolved through IGoldpathJobsFleetRegistry, which stays public (GoldpathJobsAdminService's constructor takes it); no adopter, module or test outside Jobs names the class — internal
+Goldpath.GoldpathJobsFleetRegistry<TContext>.GoldpathJobsFleetRegistry(Microsoft.Extensions.DependencyInjection.IServiceScopeFactory! scopeFactory, string! connectionString, Goldpath.GoldpathJobStoreProvider provider) -> void	remove		the concrete registry is built only by AddGoldpathJobsManagement's factory and resolved through IGoldpathJobsFleetRegistry, which stays public (GoldpathJobsAdminService's constructor takes it); no adopter, module or test outside Jobs names the class — internal
+Goldpath.GoldpathJobsFleetRegistry<TContext>.GetFleetsAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathFleetInfo!>!>!	remove		the concrete registry is built only by AddGoldpathJobsManagement's factory and resolved through IGoldpathJobsFleetRegistry, which stays public (GoldpathJobsAdminService's constructor takes it); no adopter, module or test outside Jobs names the class — internal
+Goldpath.GoldpathJobsFleetRegistry<TContext>.GetSchedulerAsync(string! schedulerName, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Quartz.IScheduler!>!	remove		the concrete registry is built only by AddGoldpathJobsManagement's factory and resolved through IGoldpathJobsFleetRegistry, which stays public (GoldpathJobsAdminService's constructor takes it); no adopter, module or test outside Jobs names the class — internal
+Goldpath.GoldpathJobsModelExtensions	keep		
+Goldpath.GoldpathJobsOptions	keep		
+Goldpath.GoldpathJobsOptions.AddCalendar(string! name, Quartz.ICalendar! calendar) -> Goldpath.GoldpathJobsOptions!	keep		
+Goldpath.GoldpathJobsOptions.AddJob<TJob>(System.Action<Goldpath.GoldpathJobBuilder<TJob!>!>? configure = null) -> Goldpath.GoldpathJobsOptions!	keep		
+Goldpath.GoldpathJobsOptions.Calendars.get -> System.Collections.Generic.IReadOnlyDictionary<string!, Quartz.ICalendar!>!	keep		
+Goldpath.GoldpathJobsOptions.CheckinInterval.get -> System.TimeSpan	keep		
+Goldpath.GoldpathJobsOptions.CheckinInterval.set -> void	keep		
+Goldpath.GoldpathJobsOptions.CheckinMisfireThreshold.get -> System.TimeSpan	keep		
+Goldpath.GoldpathJobsOptions.CheckinMisfireThreshold.set -> void	keep		
+Goldpath.GoldpathJobsOptions.ConnectionName.get -> string!	keep		
+Goldpath.GoldpathJobsOptions.ConnectionName.set -> void	keep		
+Goldpath.GoldpathJobsOptions.GoldpathJobsOptions() -> void	keep		
+Goldpath.GoldpathJobsOptions.Jobs.get -> System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathJobDefinition!>!	keep		
+Goldpath.GoldpathJobsOptions.MaxConcurrency.get -> int	keep		
+Goldpath.GoldpathJobsOptions.MaxConcurrency.set -> void	keep		
+Goldpath.GoldpathJobsOptions.MisfireThreshold.get -> System.TimeSpan	keep		
+Goldpath.GoldpathJobsOptions.MisfireThreshold.set -> void	keep		
+Goldpath.GoldpathJobsOptions.Provider.get -> Goldpath.GoldpathJobStoreProvider	keep		
+Goldpath.GoldpathJobsOptions.Provider.set -> void	keep		
+Goldpath.GoldpathJobsOptions.SchedulerName.get -> string!	keep		
+Goldpath.GoldpathJobsOptions.SchedulerName.set -> void	keep		
+Goldpath.GoldpathRescheduleRequest	keep		
+Goldpath.GoldpathRescheduleRequest.Cron.get -> string!	keep		
+Goldpath.GoldpathRescheduleRequest.Cron.init -> void	keep		
+Goldpath.GoldpathRescheduleRequest.GoldpathRescheduleRequest(string! Cron, string? TimeZoneId) -> void	keep		
+Goldpath.GoldpathRescheduleRequest.TimeZoneId.get -> string?	keep		
+Goldpath.GoldpathRescheduleRequest.TimeZoneId.init -> void	keep		
+Goldpath.GoldpathRunDetail	keep		
+Goldpath.GoldpathRunDetail.ChunksByStatus.get -> System.Collections.Generic.IReadOnlyDictionary<string!, int>!	keep		
+Goldpath.GoldpathRunDetail.ChunksByStatus.init -> void	keep		
+Goldpath.GoldpathRunDetail.GoldpathRunDetail(Goldpath.GoldpathJobRun! Run, System.Collections.Generic.IReadOnlyDictionary<string!, int>! ChunksByStatus, System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathJobItemFailure!>! OpenFailures) -> void	keep		
+Goldpath.GoldpathRunDetail.OpenFailures.get -> System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathJobItemFailure!>!	keep		
+Goldpath.GoldpathRunDetail.OpenFailures.init -> void	keep		
+Goldpath.GoldpathRunDetail.Run.get -> Goldpath.GoldpathJobRun!	keep		
+Goldpath.GoldpathRunDetail.Run.init -> void	keep		
+Goldpath.GoldpathTriggerInfo	keep		
+Goldpath.GoldpathTriggerInfo.CalendarName.get -> string?	keep		
+Goldpath.GoldpathTriggerInfo.CalendarName.init -> void	keep		
+Goldpath.GoldpathTriggerInfo.CronExpression.get -> string?	keep		
+Goldpath.GoldpathTriggerInfo.CronExpression.init -> void	keep		
+Goldpath.GoldpathTriggerInfo.Name.get -> string!	keep		
+Goldpath.GoldpathTriggerInfo.Name.init -> void	keep		
+Goldpath.GoldpathTriggerInfo.NextFireAt.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathTriggerInfo.NextFireAt.init -> void	keep		
+Goldpath.GoldpathTriggerInfo.PreviousFireAt.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathTriggerInfo.PreviousFireAt.init -> void	keep		
+Goldpath.GoldpathTriggerInfo.State.get -> string!	keep		
+Goldpath.GoldpathTriggerInfo.State.init -> void	keep		
+Goldpath.IGoldpathItemReplay	keep		
+Goldpath.IGoldpathItemReplay.ReplayItemAsync(string! itemKey, Goldpath.GoldpathJobContext! context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!	keep		
+Goldpath.IGoldpathJob	keep		
+Goldpath.IGoldpathJob.ExecuteChunkAsync(Goldpath.GoldpathJobChunk! chunk, Goldpath.GoldpathJobContext! context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!	keep		
+Goldpath.IGoldpathJob.PlanAsync(Goldpath.GoldpathJobContext! context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathJobPlan!>!	keep		
+Goldpath.IGoldpathJobRunner	keep		public on purpose: a module's or an adopter's test runs a job through the runner deterministically, as the Approvals and Archival tests do
+Goldpath.IGoldpathJobRunner.ReplayAsync(Goldpath.IGoldpathJob! job, System.Guid runId, Goldpath.GoldpathFireFacts! fire, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<int>!	keep		
+Goldpath.IGoldpathJobRunner.RunAsync(Goldpath.IGoldpathJob! job, Goldpath.GoldpathJobDefinition! definition, Goldpath.GoldpathFireFacts! fire, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<string!>!	keep		
+Goldpath.IGoldpathJobsFleetRegistry	keep		stays public: GoldpathJobsAdminService's public constructor takes it; the concrete class goes internal (remove row)
+Goldpath.IGoldpathJobsFleetRegistry.GetFleetsAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathFleetInfo!>!>!	keep		
+Goldpath.IGoldpathJobsFleetRegistry.GetSchedulerAsync(string! schedulerName, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Quartz.IScheduler!>!	keep		
+const Goldpath.GoldpathJobChunkStatus.Claimed = "Claimed" -> string!	keep		
+const Goldpath.GoldpathJobChunkStatus.Completed = "Completed" -> string!	keep		
+const Goldpath.GoldpathJobChunkStatus.Failed = "Failed" -> string!	keep		
+const Goldpath.GoldpathJobChunkStatus.Pending = "Pending" -> string!	keep		
+const Goldpath.GoldpathJobRunStatus.Completed = "Completed" -> string!	keep		
+const Goldpath.GoldpathJobRunStatus.Failed = "Failed" -> string!	keep		
+const Goldpath.GoldpathJobRunStatus.Running = "Running" -> string!	keep		
+const Goldpath.GoldpathJobsExtensions.JobGroup = "goldpath" -> string!	keep		kept unlike the three data-map keys: it is the Quartz group an operator's script or test needs to address a job by JobKey (the Jobs test host does)
+const Goldpath.GoldpathJobsExtensions.ReplayRunKey = "goldpath:replay-run" -> string!	remove		a Quartz data-map key between Goldpath's own admin verbs and its internal Quartz adapter; no adopter or other module reads or writes it, and a fire stamped by hand would forge the run's provenance (R2.3) — internal const
+const Goldpath.GoldpathJobsExtensions.TraceParentKey = "goldpath:traceparent" -> string!	remove		a Quartz data-map key between Goldpath's own admin verbs and its internal Quartz adapter; no adopter or other module reads or writes it, and a fire stamped by hand would forge the run's provenance (R2.3) — internal const
+static Goldpath.GoldpathCalendars.BusinessDays() -> Quartz.ICalendar!	keep		
+static Goldpath.GoldpathCalendars.BusinessDays(System.Collections.Generic.IEnumerable<System.DateTime>! holidays) -> Quartz.ICalendar!	keep		
+static Goldpath.GoldpathJobPlanner.ByRange(long totalItems, int chunkSize) -> Goldpath.GoldpathJobPlan!	keep		
+static Goldpath.GoldpathJobPlanner.ParseRange(string! payload) -> (long Start, long EndExclusive)	keep		
+static Goldpath.GoldpathJobsAdminEndpoints.MapGoldpathJobsAdmin<TContext>(this Microsoft.AspNetCore.Routing.IEndpointRouteBuilder! endpoints, string! prefix = "/goldpath/admin/jobs", bool exposeUnsecured = false) -> Microsoft.AspNetCore.Routing.IEndpointRouteBuilder!	keep		
+static Goldpath.GoldpathJobsExtensions.AddGoldpathJobs<TBuilder, TContext>(this TBuilder builder, System.Action<Goldpath.GoldpathJobsOptions!>? configure = null) -> TBuilder	keep		
+static Goldpath.GoldpathJobsExtensions.AddGoldpathJobsManagement<TBuilder, TContext>(this TBuilder builder, System.Action<Goldpath.GoldpathJobsOptions!>? configure = null) -> TBuilder	keep		
+static Goldpath.GoldpathJobsModelExtensions.AddGoldpathJobs(this Microsoft.EntityFrameworkCore.ModelBuilder! modelBuilder, bool excludeFromMigrations = false) -> Microsoft.EntityFrameworkCore.ModelBuilder!	keep		
+Goldpath.GoldpathAddTriggerRequest	keep		
+Goldpath.GoldpathAddTriggerRequest.CalendarName.get -> string?	keep		
+Goldpath.GoldpathAddTriggerRequest.CalendarName.init -> void	keep		
+Goldpath.GoldpathAddTriggerRequest.Cron.get -> string?	keep		
+Goldpath.GoldpathAddTriggerRequest.Cron.init -> void	keep		
+Goldpath.GoldpathAddTriggerRequest.GoldpathAddTriggerRequest(string! Name, string? Cron = null, string? TimeZoneId = null, System.TimeSpan? Interval = null, int? RepeatCount = null, string? CalendarName = null, int? Priority = null) -> void	keep		
+Goldpath.GoldpathAddTriggerRequest.Interval.get -> System.TimeSpan?	keep		
+Goldpath.GoldpathAddTriggerRequest.Interval.init -> void	keep		
+Goldpath.GoldpathAddTriggerRequest.Name.get -> string!	keep		
+Goldpath.GoldpathAddTriggerRequest.Name.init -> void	keep		
+Goldpath.GoldpathAddTriggerRequest.Priority.get -> int?	keep		
+Goldpath.GoldpathAddTriggerRequest.Priority.init -> void	keep		
+Goldpath.GoldpathAddTriggerRequest.RepeatCount.get -> int?	keep		
+Goldpath.GoldpathAddTriggerRequest.RepeatCount.init -> void	keep		
+Goldpath.GoldpathAddTriggerRequest.TimeZoneId.get -> string?	keep		
+Goldpath.GoldpathAddTriggerRequest.TimeZoneId.init -> void	keep		
+Goldpath.GoldpathJobInfo.DataMap.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>?	keep		
+Goldpath.GoldpathJobInfo.DataMap.init -> void	keep		
+Goldpath.GoldpathJobInfo.GoldpathJobInfo(string! Name, string? Description, bool RequestsRecovery, System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathTriggerInfo!>! Triggers, System.Collections.Generic.IReadOnlyDictionary<string!, string!>? DataMap = null) -> void	keep		
+Goldpath.GoldpathJobRun.TriggeredBy.get -> string?	keep		
+Goldpath.GoldpathJobRun.TriggeredBy.set -> void	keep		
+Goldpath.GoldpathJobTriggeredBy	keep		
+const Goldpath.GoldpathJobTriggeredBy.Manual = "Manual" -> string!	keep		
+const Goldpath.GoldpathJobTriggeredBy.Replay = "Replay" -> string!	keep		
+const Goldpath.GoldpathJobTriggeredBy.Rerun = "Rerun" -> string!	keep		
+const Goldpath.GoldpathJobTriggeredBy.Scheduled = "Scheduled" -> string!	keep		
+Goldpath.GoldpathTriggerInfo.EndAt.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathTriggerInfo.EndAt.init -> void	keep		
+Goldpath.GoldpathTriggerInfo.GoldpathTriggerInfo(string! Name, string! State, string? CronExpression, string? CalendarName, System.DateTimeOffset? NextFireAt, System.DateTimeOffset? PreviousFireAt, string! Type = "unknown", int Priority = 0, int MisfireInstruction = 0, string? TimeZoneId = null, System.DateTimeOffset? StartAt = null, System.DateTimeOffset? EndAt = null, int? TimesTriggered = null, System.TimeSpan? RepeatInterval = null, int? RepeatCount = null) -> void	keep		
+Goldpath.GoldpathTriggerInfo.MisfireInstruction.get -> int	keep		
+Goldpath.GoldpathTriggerInfo.MisfireInstruction.init -> void	keep		
+Goldpath.GoldpathTriggerInfo.Priority.get -> int	keep		
+Goldpath.GoldpathTriggerInfo.Priority.init -> void	keep		
+Goldpath.GoldpathTriggerInfo.RepeatCount.get -> int?	keep		
+Goldpath.GoldpathTriggerInfo.RepeatCount.init -> void	keep		
+Goldpath.GoldpathTriggerInfo.RepeatInterval.get -> System.TimeSpan?	keep		
+Goldpath.GoldpathTriggerInfo.RepeatInterval.init -> void	keep		
+Goldpath.GoldpathTriggerInfo.StartAt.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathTriggerInfo.StartAt.init -> void	keep		
+Goldpath.GoldpathTriggerInfo.TimeZoneId.get -> string?	keep		
+Goldpath.GoldpathTriggerInfo.TimeZoneId.init -> void	keep		
+Goldpath.GoldpathTriggerInfo.TimesTriggered.get -> int?	keep		
+Goldpath.GoldpathTriggerInfo.TimesTriggered.init -> void	keep		
+Goldpath.GoldpathTriggerInfo.Type.get -> string!	keep		
+Goldpath.GoldpathTriggerInfo.Type.init -> void	keep		
+Goldpath.GoldpathTriggerSpec	keep		
+Goldpath.GoldpathTriggerSpec.CalendarName.get -> string?	keep		
+Goldpath.GoldpathTriggerSpec.CalendarName.init -> void	keep		
+Goldpath.GoldpathTriggerSpec.Cron.get -> string?	keep		
+Goldpath.GoldpathTriggerSpec.Cron.init -> void	keep		
+Goldpath.GoldpathTriggerSpec.GoldpathTriggerSpec(string? Cron, string? TimeZoneId, System.TimeSpan? Interval, int? RepeatCount, string? CalendarName, int Priority = 5) -> void	keep		
+Goldpath.GoldpathTriggerSpec.Interval.get -> System.TimeSpan?	keep		
+Goldpath.GoldpathTriggerSpec.Interval.init -> void	keep		
+Goldpath.GoldpathTriggerSpec.Priority.get -> int	keep		
+Goldpath.GoldpathTriggerSpec.Priority.init -> void	keep		
+Goldpath.GoldpathTriggerSpec.RepeatCount.get -> int?	keep		
+Goldpath.GoldpathTriggerSpec.RepeatCount.init -> void	keep		
+Goldpath.GoldpathTriggerSpec.TimeZoneId.get -> string?	keep		
+Goldpath.GoldpathTriggerSpec.TimeZoneId.init -> void	keep		
+Goldpath.GoldpathFireFacts.TriggeredBy.get -> string?	keep		
+Goldpath.GoldpathFireFacts.TriggeredBy.init -> void	keep		
+Goldpath.GoldpathFireFacts.GoldpathFireFacts(string! SchedulerName, string! InstanceName, string! FireInstanceId, bool Recovering, string? TraceParent = null, string? TriggeredBy = null) -> void	keep		
+const Goldpath.GoldpathJobsExtensions.TriggeredByKey = "goldpath:triggered-by" -> string!	remove		a Quartz data-map key between Goldpath's own admin verbs and its internal Quartz adapter; no adopter or other module reads or writes it, and a fire stamped by hand would forge the run's provenance (R2.3) — internal const
+Goldpath.GoldpathJobsAdminService<TContext>.AddTriggerAsync(string! fleet, string! job, string! name, Goldpath.GoldpathTriggerSpec! spec, string! actor, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	rename	Goldpath.GoldpathJobsAdminService<TContext>.AddTriggerAsync(string! fleet, string! job, string! name, Goldpath.GoldpathTriggerSpec! spec, string! actor, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Jobs signature names it cancellationToken. Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathJobsAdminService<TContext>.RemoveTriggerAsync(string! fleet, string! job, string! name, string! actor, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	rename	Goldpath.GoldpathJobsAdminService<TContext>.RemoveTriggerAsync(string! fleet, string! job, string! name, string! actor, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Jobs signature names it cancellationToken. Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathFleetConnection	keep		
+Goldpath.GoldpathFleetConnection.GoldpathFleetConnection(string! InstanceId, System.DateTimeOffset? RunningSince, int ThreadPoolSize, int JobsExecuted, bool IsShutdown, bool InStandbyMode) -> void	keep		
+Goldpath.GoldpathFleetConnection.InStandbyMode.get -> bool	keep		
+Goldpath.GoldpathFleetConnection.InStandbyMode.init -> void	keep		
+Goldpath.GoldpathFleetConnection.InstanceId.get -> string!	keep		
+Goldpath.GoldpathFleetConnection.InstanceId.init -> void	keep		
+Goldpath.GoldpathFleetConnection.IsShutdown.get -> bool	keep		
+Goldpath.GoldpathFleetConnection.IsShutdown.init -> void	keep		
+Goldpath.GoldpathFleetConnection.JobsExecuted.get -> int	keep		
+Goldpath.GoldpathFleetConnection.JobsExecuted.init -> void	keep		
+Goldpath.GoldpathFleetConnection.RunningSince.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathFleetConnection.RunningSince.init -> void	keep		
+Goldpath.GoldpathFleetConnection.ThreadPoolSize.get -> int	keep		
+Goldpath.GoldpathFleetConnection.ThreadPoolSize.init -> void	keep		
+Goldpath.GoldpathFleetStatus	keep		
+Goldpath.GoldpathFleetStatus.Connection.get -> Goldpath.GoldpathFleetConnection!	keep		
+Goldpath.GoldpathFleetStatus.Connection.init -> void	keep		
+Goldpath.GoldpathFleetStatus.GoldpathFleetStatus(string! SchedulerName, int JobCount, bool IsPaused, System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathFleetNode!>! Nodes, Goldpath.GoldpathFleetConnection! Connection) -> void	keep		
+Goldpath.GoldpathFleetStatus.IsPaused.get -> bool	keep		
+Goldpath.GoldpathFleetStatus.IsPaused.init -> void	keep		
+Goldpath.GoldpathFleetStatus.JobCount.get -> int	keep		
+Goldpath.GoldpathFleetStatus.JobCount.init -> void	keep		
+Goldpath.GoldpathFleetStatus.Nodes.get -> System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathFleetNode!>!	keep		
+Goldpath.GoldpathFleetStatus.Nodes.init -> void	keep		
+Goldpath.GoldpathFleetStatus.SchedulerName.get -> string!	keep		
+Goldpath.GoldpathFleetStatus.SchedulerName.init -> void	keep		
+Goldpath.GoldpathJobsAdminService<TContext>.GetFleetStatusAsync(string! fleet, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathFleetStatus?>!	rename	Goldpath.GoldpathJobsAdminService<TContext>.GetFleetStatusAsync(string! fleet, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathFleetStatus?>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Jobs signature names it cancellationToken. Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathJobsAdminService<TContext>.GetRunsAsync(string! fleet, string? job, int take, System.Threading.CancellationToken ct, string![]? status = null, System.DateTimeOffset? from = null, System.DateTimeOffset? to = null, System.Guid? afterId = null) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathJobRun!>!>!	rename	Goldpath.GoldpathJobsAdminService<TContext>.GetRunsAsync(string! fleet, string? job, int take, System.Threading.CancellationToken cancellationToken, string![]? status = null, System.DateTimeOffset? from = null, System.DateTimeOffset? to = null, System.Guid? afterId = null) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathJobRun!>!>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Jobs signature names it cancellationToken. Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathAddTriggerRequest.<Clone>$() -> Goldpath.GoldpathAddTriggerRequest!	keep		
+Goldpath.GoldpathAddTriggerRequest.Deconstruct(out string! Name, out string? Cron, out string? TimeZoneId, out System.TimeSpan? Interval, out int? RepeatCount, out string? CalendarName, out int? Priority) -> void	keep		
+Goldpath.GoldpathAddTriggerRequest.Equals(Goldpath.GoldpathAddTriggerRequest? other) -> bool	keep		
+Goldpath.GoldpathAdminResult.<Clone>$() -> Goldpath.GoldpathAdminResult!	remove		P2 (record §4): GoldpathAdminResult moves to Goldpath.Abstractions as this same line — same name, same namespace — so source compiles unchanged and no module needs Jobs to answer a verb; API-4 (#393) adds it to the Abstractions table, API-14 (#403) moves it
+Goldpath.GoldpathAdminResult.Deconstruct(out bool Ok, out string! Message) -> void	remove		P2 (record §4): GoldpathAdminResult moves to Goldpath.Abstractions as this same line — same name, same namespace — so source compiles unchanged and no module needs Jobs to answer a verb; API-4 (#393) adds it to the Abstractions table, API-14 (#403) moves it
+Goldpath.GoldpathAdminResult.Equals(Goldpath.GoldpathAdminResult? other) -> bool	remove		P2 (record §4): GoldpathAdminResult moves to Goldpath.Abstractions as this same line — same name, same namespace — so source compiles unchanged and no module needs Jobs to answer a verb; API-4 (#393) adds it to the Abstractions table, API-14 (#403) moves it
+Goldpath.GoldpathCalendarInfo.<Clone>$() -> Goldpath.GoldpathCalendarInfo!	keep		
+Goldpath.GoldpathCalendarInfo.Deconstruct(out string! Name, out string? Description, out System.Collections.Generic.IReadOnlyList<string!>! UsedByTriggers) -> void	keep		
+Goldpath.GoldpathCalendarInfo.Equals(Goldpath.GoldpathCalendarInfo? other) -> bool	keep		
+Goldpath.GoldpathCalendarSpec.<Clone>$() -> Goldpath.GoldpathCalendarSpec!	keep		
+Goldpath.GoldpathCalendarSpec.Deconstruct(out string! Type, out string? Description, out System.Collections.Generic.IReadOnlyList<System.DateTime>? ExcludedDates, out System.Collections.Generic.IReadOnlyList<System.DayOfWeek>? ExcludedDays, out string? CronExpression) -> void	keep		
+Goldpath.GoldpathCalendarSpec.Equals(Goldpath.GoldpathCalendarSpec? other) -> bool	keep		
+Goldpath.GoldpathFireFacts.<Clone>$() -> Goldpath.GoldpathFireFacts!	keep		
+Goldpath.GoldpathFireFacts.Deconstruct(out string! SchedulerName, out string! InstanceName, out string! FireInstanceId, out bool Recovering, out string? TraceParent, out string? TriggeredBy) -> void	keep		
+Goldpath.GoldpathFireFacts.Equals(Goldpath.GoldpathFireFacts? other) -> bool	keep		
+Goldpath.GoldpathFleetConnection.<Clone>$() -> Goldpath.GoldpathFleetConnection!	keep		
+Goldpath.GoldpathFleetConnection.Deconstruct(out string! InstanceId, out System.DateTimeOffset? RunningSince, out int ThreadPoolSize, out int JobsExecuted, out bool IsShutdown, out bool InStandbyMode) -> void	keep		
+Goldpath.GoldpathFleetConnection.Equals(Goldpath.GoldpathFleetConnection? other) -> bool	keep		
+Goldpath.GoldpathFleetInfo.<Clone>$() -> Goldpath.GoldpathFleetInfo!	keep		
+Goldpath.GoldpathFleetInfo.Deconstruct(out string! SchedulerName, out int JobCount, out System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathFleetNode!>! Nodes) -> void	keep		
+Goldpath.GoldpathFleetInfo.Equals(Goldpath.GoldpathFleetInfo? other) -> bool	keep		
+Goldpath.GoldpathFleetNode.<Clone>$() -> Goldpath.GoldpathFleetNode!	keep		
+Goldpath.GoldpathFleetNode.Deconstruct(out string! InstanceName, out System.DateTimeOffset LastCheckin, out System.TimeSpan CheckinInterval) -> void	keep		
+Goldpath.GoldpathFleetNode.Equals(Goldpath.GoldpathFleetNode? other) -> bool	keep		
+Goldpath.GoldpathFleetStatus.<Clone>$() -> Goldpath.GoldpathFleetStatus!	keep		
+Goldpath.GoldpathFleetStatus.Deconstruct(out string! SchedulerName, out int JobCount, out bool IsPaused, out System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathFleetNode!>! Nodes, out Goldpath.GoldpathFleetConnection! Connection) -> void	keep		
+Goldpath.GoldpathFleetStatus.Equals(Goldpath.GoldpathFleetStatus? other) -> bool	keep		
+Goldpath.GoldpathJobInfo.<Clone>$() -> Goldpath.GoldpathJobInfo!	keep		
+Goldpath.GoldpathJobInfo.Deconstruct(out string! Name, out string? Description, out bool RequestsRecovery, out System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathTriggerInfo!>! Triggers, out System.Collections.Generic.IReadOnlyDictionary<string!, string!>? DataMap) -> void	keep		
+Goldpath.GoldpathJobInfo.Equals(Goldpath.GoldpathJobInfo? other) -> bool	keep		
+Goldpath.GoldpathRescheduleRequest.<Clone>$() -> Goldpath.GoldpathRescheduleRequest!	keep		
+Goldpath.GoldpathRescheduleRequest.Deconstruct(out string! Cron, out string? TimeZoneId) -> void	keep		
+Goldpath.GoldpathRescheduleRequest.Equals(Goldpath.GoldpathRescheduleRequest? other) -> bool	keep		
+Goldpath.GoldpathRunDetail.<Clone>$() -> Goldpath.GoldpathRunDetail!	keep		
+Goldpath.GoldpathRunDetail.Deconstruct(out Goldpath.GoldpathJobRun! Run, out System.Collections.Generic.IReadOnlyDictionary<string!, int>! ChunksByStatus, out System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathJobItemFailure!>! OpenFailures) -> void	keep		
+Goldpath.GoldpathRunDetail.Equals(Goldpath.GoldpathRunDetail? other) -> bool	keep		
+Goldpath.GoldpathTriggerInfo.<Clone>$() -> Goldpath.GoldpathTriggerInfo!	keep		
+Goldpath.GoldpathTriggerInfo.Deconstruct(out string! Name, out string! State, out string? CronExpression, out string? CalendarName, out System.DateTimeOffset? NextFireAt, out System.DateTimeOffset? PreviousFireAt, out string! Type, out int Priority, out int MisfireInstruction, out string? TimeZoneId, out System.DateTimeOffset? StartAt, out System.DateTimeOffset? EndAt, out int? TimesTriggered, out System.TimeSpan? RepeatInterval, out int? RepeatCount) -> void	keep		
+Goldpath.GoldpathTriggerInfo.Equals(Goldpath.GoldpathTriggerInfo? other) -> bool	keep		
+Goldpath.GoldpathTriggerSpec.<Clone>$() -> Goldpath.GoldpathTriggerSpec!	keep		
+Goldpath.GoldpathTriggerSpec.Deconstruct(out string? Cron, out string? TimeZoneId, out System.TimeSpan? Interval, out int? RepeatCount, out string? CalendarName, out int Priority) -> void	keep		
+Goldpath.GoldpathTriggerSpec.Equals(Goldpath.GoldpathTriggerSpec? other) -> bool	keep		
+override Goldpath.GoldpathAddTriggerRequest.Equals(object? obj) -> bool	keep		
+override Goldpath.GoldpathAddTriggerRequest.GetHashCode() -> int	keep		
+override Goldpath.GoldpathAddTriggerRequest.ToString() -> string!	keep		
+override Goldpath.GoldpathAdminResult.Equals(object? obj) -> bool	remove		P2 (record §4): GoldpathAdminResult moves to Goldpath.Abstractions as this same line — same name, same namespace — so source compiles unchanged and no module needs Jobs to answer a verb; API-4 (#393) adds it to the Abstractions table, API-14 (#403) moves it
+override Goldpath.GoldpathAdminResult.GetHashCode() -> int	remove		P2 (record §4): GoldpathAdminResult moves to Goldpath.Abstractions as this same line — same name, same namespace — so source compiles unchanged and no module needs Jobs to answer a verb; API-4 (#393) adds it to the Abstractions table, API-14 (#403) moves it
+override Goldpath.GoldpathAdminResult.ToString() -> string!	remove		P2 (record §4): GoldpathAdminResult moves to Goldpath.Abstractions as this same line — same name, same namespace — so source compiles unchanged and no module needs Jobs to answer a verb; API-4 (#393) adds it to the Abstractions table, API-14 (#403) moves it
+override Goldpath.GoldpathCalendarInfo.Equals(object? obj) -> bool	keep		
+override Goldpath.GoldpathCalendarInfo.GetHashCode() -> int	keep		
+override Goldpath.GoldpathCalendarInfo.ToString() -> string!	keep		
+override Goldpath.GoldpathCalendarSpec.Equals(object? obj) -> bool	keep		
+override Goldpath.GoldpathCalendarSpec.GetHashCode() -> int	keep		
+override Goldpath.GoldpathCalendarSpec.ToString() -> string!	keep		
+override Goldpath.GoldpathFireFacts.Equals(object? obj) -> bool	keep		
+override Goldpath.GoldpathFireFacts.GetHashCode() -> int	keep		
+override Goldpath.GoldpathFireFacts.ToString() -> string!	keep		
+override Goldpath.GoldpathFleetConnection.Equals(object? obj) -> bool	keep		
+override Goldpath.GoldpathFleetConnection.GetHashCode() -> int	keep		
+override Goldpath.GoldpathFleetConnection.ToString() -> string!	keep		
+override Goldpath.GoldpathFleetInfo.Equals(object? obj) -> bool	keep		
+override Goldpath.GoldpathFleetInfo.GetHashCode() -> int	keep		
+override Goldpath.GoldpathFleetInfo.ToString() -> string!	keep		
+override Goldpath.GoldpathFleetNode.Equals(object? obj) -> bool	keep		
+override Goldpath.GoldpathFleetNode.GetHashCode() -> int	keep		
+override Goldpath.GoldpathFleetNode.ToString() -> string!	keep		
+override Goldpath.GoldpathFleetStatus.Equals(object? obj) -> bool	keep		
+override Goldpath.GoldpathFleetStatus.GetHashCode() -> int	keep		
+override Goldpath.GoldpathFleetStatus.ToString() -> string!	keep		
+override Goldpath.GoldpathJobInfo.Equals(object? obj) -> bool	keep		
+override Goldpath.GoldpathJobInfo.GetHashCode() -> int	keep		
+override Goldpath.GoldpathJobInfo.ToString() -> string!	keep		
+override Goldpath.GoldpathRescheduleRequest.Equals(object? obj) -> bool	keep		
+override Goldpath.GoldpathRescheduleRequest.GetHashCode() -> int	keep		
+override Goldpath.GoldpathRescheduleRequest.ToString() -> string!	keep		
+override Goldpath.GoldpathRunDetail.Equals(object? obj) -> bool	keep		
+override Goldpath.GoldpathRunDetail.GetHashCode() -> int	keep		
+override Goldpath.GoldpathRunDetail.ToString() -> string!	keep		
+override Goldpath.GoldpathTriggerInfo.Equals(object? obj) -> bool	keep		
+override Goldpath.GoldpathTriggerInfo.GetHashCode() -> int	keep		
+override Goldpath.GoldpathTriggerInfo.ToString() -> string!	keep		
+override Goldpath.GoldpathTriggerSpec.Equals(object? obj) -> bool	keep		
+override Goldpath.GoldpathTriggerSpec.GetHashCode() -> int	keep		
+override Goldpath.GoldpathTriggerSpec.ToString() -> string!	keep		
+static Goldpath.GoldpathAddTriggerRequest.operator !=(Goldpath.GoldpathAddTriggerRequest? left, Goldpath.GoldpathAddTriggerRequest? right) -> bool	keep		
+static Goldpath.GoldpathAddTriggerRequest.operator ==(Goldpath.GoldpathAddTriggerRequest? left, Goldpath.GoldpathAddTriggerRequest? right) -> bool	keep		
+static Goldpath.GoldpathAdminResult.operator !=(Goldpath.GoldpathAdminResult? left, Goldpath.GoldpathAdminResult? right) -> bool	remove		P2 (record §4): GoldpathAdminResult moves to Goldpath.Abstractions as this same line — same name, same namespace — so source compiles unchanged and no module needs Jobs to answer a verb; API-4 (#393) adds it to the Abstractions table, API-14 (#403) moves it
+static Goldpath.GoldpathAdminResult.operator ==(Goldpath.GoldpathAdminResult? left, Goldpath.GoldpathAdminResult? right) -> bool	remove		P2 (record §4): GoldpathAdminResult moves to Goldpath.Abstractions as this same line — same name, same namespace — so source compiles unchanged and no module needs Jobs to answer a verb; API-4 (#393) adds it to the Abstractions table, API-14 (#403) moves it
+static Goldpath.GoldpathCalendarInfo.operator !=(Goldpath.GoldpathCalendarInfo? left, Goldpath.GoldpathCalendarInfo? right) -> bool	keep		
+static Goldpath.GoldpathCalendarInfo.operator ==(Goldpath.GoldpathCalendarInfo? left, Goldpath.GoldpathCalendarInfo? right) -> bool	keep		
+static Goldpath.GoldpathCalendarSpec.operator !=(Goldpath.GoldpathCalendarSpec? left, Goldpath.GoldpathCalendarSpec? right) -> bool	keep		
+static Goldpath.GoldpathCalendarSpec.operator ==(Goldpath.GoldpathCalendarSpec? left, Goldpath.GoldpathCalendarSpec? right) -> bool	keep		
+static Goldpath.GoldpathFireFacts.operator !=(Goldpath.GoldpathFireFacts? left, Goldpath.GoldpathFireFacts? right) -> bool	keep		
+static Goldpath.GoldpathFireFacts.operator ==(Goldpath.GoldpathFireFacts? left, Goldpath.GoldpathFireFacts? right) -> bool	keep		
+static Goldpath.GoldpathFleetConnection.operator !=(Goldpath.GoldpathFleetConnection? left, Goldpath.GoldpathFleetConnection? right) -> bool	keep		
+static Goldpath.GoldpathFleetConnection.operator ==(Goldpath.GoldpathFleetConnection? left, Goldpath.GoldpathFleetConnection? right) -> bool	keep		
+static Goldpath.GoldpathFleetInfo.operator !=(Goldpath.GoldpathFleetInfo? left, Goldpath.GoldpathFleetInfo? right) -> bool	keep		
+static Goldpath.GoldpathFleetInfo.operator ==(Goldpath.GoldpathFleetInfo? left, Goldpath.GoldpathFleetInfo? right) -> bool	keep		
+static Goldpath.GoldpathFleetNode.operator !=(Goldpath.GoldpathFleetNode? left, Goldpath.GoldpathFleetNode? right) -> bool	keep		
+static Goldpath.GoldpathFleetNode.operator ==(Goldpath.GoldpathFleetNode? left, Goldpath.GoldpathFleetNode? right) -> bool	keep		
+static Goldpath.GoldpathFleetStatus.operator !=(Goldpath.GoldpathFleetStatus? left, Goldpath.GoldpathFleetStatus? right) -> bool	keep		
+static Goldpath.GoldpathFleetStatus.operator ==(Goldpath.GoldpathFleetStatus? left, Goldpath.GoldpathFleetStatus? right) -> bool	keep		
+static Goldpath.GoldpathJobInfo.operator !=(Goldpath.GoldpathJobInfo? left, Goldpath.GoldpathJobInfo? right) -> bool	keep		
+static Goldpath.GoldpathJobInfo.operator ==(Goldpath.GoldpathJobInfo? left, Goldpath.GoldpathJobInfo? right) -> bool	keep		
+static Goldpath.GoldpathRescheduleRequest.operator !=(Goldpath.GoldpathRescheduleRequest? left, Goldpath.GoldpathRescheduleRequest? right) -> bool	keep		
+static Goldpath.GoldpathRescheduleRequest.operator ==(Goldpath.GoldpathRescheduleRequest? left, Goldpath.GoldpathRescheduleRequest? right) -> bool	keep		
+static Goldpath.GoldpathRunDetail.operator !=(Goldpath.GoldpathRunDetail? left, Goldpath.GoldpathRunDetail? right) -> bool	keep		
+static Goldpath.GoldpathRunDetail.operator ==(Goldpath.GoldpathRunDetail? left, Goldpath.GoldpathRunDetail? right) -> bool	keep		
+static Goldpath.GoldpathTriggerInfo.operator !=(Goldpath.GoldpathTriggerInfo? left, Goldpath.GoldpathTriggerInfo? right) -> bool	keep		
+static Goldpath.GoldpathTriggerInfo.operator ==(Goldpath.GoldpathTriggerInfo? left, Goldpath.GoldpathTriggerInfo? right) -> bool	keep		
+static Goldpath.GoldpathTriggerSpec.operator !=(Goldpath.GoldpathTriggerSpec? left, Goldpath.GoldpathTriggerSpec? right) -> bool	keep		
+static Goldpath.GoldpathTriggerSpec.operator ==(Goldpath.GoldpathTriggerSpec? left, Goldpath.GoldpathTriggerSpec? right) -> bool	keep		
+Goldpath.GoldpathJobStoreProvider.Oracle = 2 -> Goldpath.GoldpathJobStoreProvider	keep		
