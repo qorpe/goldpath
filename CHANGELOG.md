@@ -5,6 +5,44 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **Gates: the diagnostic contract and the owned table names, frozen by one inventory (GA gate G4, API-8, #397).** No
+  package change.
+  - **The inventory:** `scripts/diagnostic-names-gate.inventory.txt` holds every meter (10), activity source (3),
+    instrument with its meter (69), span name with its source (8) and Goldpath-owned table with its package (39, the 11
+    `qrtz_*` included). It also lists the three names ServiceDefaults subscribes to that Goldpath does not own, marked
+    `external` (MassTransit, engine-owned per ADR-0015; EF Core; Npgsql).
+  - **The gate:** `scripts/diagnostic-names-gate.sh` scans `packages/**/*.cs` with comments stripped, and runs in
+    `gates`. It fails on five things:
+    - an inventory name gone from the code: a rename or removal, breaking under Versioning D2;
+    - a name in the code the inventory lacks;
+    - a name it cannot read: neither a literal nor a const string in its file;
+    - a table nothing freezes, which EF would name after its class, outside the inventory. The gate reads the three
+      ways EF adds an entity: an `Entity<T>(…)` without `ToTable`; a `HasOne<T>`/`HasMany<T>`/`OwnsMany<T>` to a type
+      the package does not map with `ToTable`; and a navigation, meaning a public property of a mapped entity (or of
+      its base class) that is not a column type, an enum, a collection of either or a mapped entity, unless it is
+      converted or ignored in that entity's configuration. A `global::`-qualified type, an expression-bodied property,
+      an attribute on an accessor and a base class reached through a primary constructor's arguments are read like
+      any other. A type it does not know is refused, not guessed, and so is a public property it cannot parse (a
+      tuple, say, or an accessor attribute it cannot read): any `public … =>`, and any `public … {` whose block holds
+      a `get`, `set` or `init` accessor, is treated as a property whatever precedes the accessor. The other
+      declaration forms it knows (`IEntityTypeConfiguration`, `[Table]`, `DbSet`, `Entity(typeof(…))`,
+      `Entity("…")`, `AddEntityType`, `ApplyConfigurationsFromAssembly`, a relationship naming its type by string or
+      `typeof`) are refused;
+    - a table in EF's own model that the inventory lacks. Reading source is not reading the model, so every table in
+      the Oracle composed-model golden, which `OracleDataTests` compares with the model EF builds (red in the
+      `oracle` job, not a required check, when they differ), must be inventoried, apart from the two it names as not Goldpath-owned (the golden's test entity, and Mediant's audit
+      table). The `qrtz_*` tables are not in that golden; the source rules hold them.
+  - **Measured:** every one of today's names is a literal. Five spans looked non-literal to a grep because their name
+    is on the next line; the adapter's `{endpoint} consume` is kept as written.
+  - **Proof:** `--selftest` plants a renamed meter, span and table, an un-inventoried instrument, an unreadable name,
+    an un-inventoried factory meter (`MeterOptions`), an entity mapped without `ToTable`, a table declared by
+    attribute, a navigation to an unmapped class (plain, `global::`-qualified, expression-bodied, and on a base class
+    reached through a primary constructor's arguments, and behind an accessor attribute), a property whose type or
+    accessor attribute the gate cannot parse, a `HasOne<T>` to
+    an unmapped class, a golden table missing from the inventory, a dropped external subscription, and a name kept alive only by a comment. Each one is red; the unplanted
+    copy is green.
+  - **The record:** §2 of the 1.0 API review gets the "Diagnostic contract" and "Goldpath-owned tables" rows. The
+    question whether 1.0 needs Goldpath-named messaging instruments is recorded there for the owner (API-13, #402).
 - **Bulk and Archival on Oracle, and hand-written SQL guarded by a source scan (G7 ORA-6, #409; RFC goldpath-oracle
   §2.5, §2.6, §2.7, §7).**
   - **`ChunkedContains` at the three remaining sites** that can pass Oracle's 1,000-element `IN` list: Archival's
