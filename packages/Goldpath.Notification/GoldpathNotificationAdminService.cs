@@ -108,7 +108,8 @@ public sealed class GoldpathNotificationAdminService<TContext>
 
         if (template is { Length: > 0 })
         {
-            query = query.Where(n => template.Contains(n.Template));
+            // Bounded only by the request line, so it can pass Oracle's 1,000-element IN list (RFC goldpath-oracle §2.5).
+            query = query.ChunkedContains(n => n.Template, template, db.Database.ProviderName);
         }
 
         if (tenant is not null)
