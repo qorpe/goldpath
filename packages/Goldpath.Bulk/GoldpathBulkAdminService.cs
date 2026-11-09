@@ -137,7 +137,8 @@ public sealed class GoldpathBulkAdminService<TContext>
 
         if (definition is { Length: > 0 })
         {
-            query = query.Where(b => definition.Contains(b.Definition));
+            // Bounded only by the request line, so it can pass Oracle's 1,000-element IN list (RFC goldpath-oracle §2.5).
+            query = query.ChunkedContains(b => b.Definition, definition, db.Database.ProviderName);
         }
 
         if (tenant is not null)
