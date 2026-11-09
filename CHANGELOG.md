@@ -5,6 +5,54 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **Bulk and Archival on Oracle, and hand-written SQL guarded by a source scan (G7 ORA-6, #409; RFC goldpath-oracle
+  §2.5, §2.6, §2.7, §7).**
+  - **`ChunkedContains` at the three remaining sites** that can pass Oracle's 1,000-element `IN` list: Archival's
+    discovery `keys` (`BatchSize * 2`), and the admin listings' repeatable `definition` (Bulk) and `template`
+    (Notification) filters. On every provider other than Oracle the query is the same `Contains` as before.
+    Measured: the 1,001-value listings already passed on Oracle before the helper, because the pinned provider splits
+    the list (as ORA-5 found for Campaign); the helper is the guarantee for every provider build.
+  - **Bulk on Oracle:** the four `BulkTests` facts run in the Oracle lane (`BulkOracleTests`, `Category=Oracle`),
+    with the clustered Quartz store on Oracle.
+  - **Archival on Oracle is refused (#547).** The hash chain's genesis anchor is the empty hash, and Oracle stores
+    `''` as NULL, so a definition's first archive fails with ORA-01400 on `GoldpathArchiveChainState.PurgedHeadHash`.
+    `ArchivalOracleTests` asserts that refusal until #547 (an owner question) lands. The suite gains a
+    `BatchSize = 600` fact that pages 1,200 keys and archives each due aggregate exactly once, on PostgreSQL today.
+  - **The source scan:** `RawSqlOracleBranchTests` (Goldpath.Data.Tests, no container) fails on any
+    `ExecuteSql*`, `FromSql*`, `SqlQuery*` or `MigrationBuilder.Sql` call, and any `CommandText` assigned, appended
+    (`+=`) or set in an object initializer, in `packages/` whose method has no Oracle provider check (a literal
+    naming Oracle, or the Oracle EF provider's `Database.IsOracle()`). SQL passed as a command's constructor
+    argument is not matched. Its exemptions carry their reasons, and a stale one fails it. The two
+    exempt methods are the Wolverine adapter's outbox relay and inbox claim, which run on PostgreSQL only: the adapter
+    refuses any other EF provider at start.
+  - **Tests:** the Campaign suites' store (`CampaignStore`) is now `SuiteStore`, shared by Campaign, Bulk and
+    Archival. The `oracle` test collection runs with parallelization disabled (after every parallel collection,
+    alone), so its Quartz-hosting twins never share Quartz's process-global state with the PostgreSQL suites in
+    `quartz-process-globals`: in one process, a PostgreSQL scheduler had been handed the Oracle data source
+    (`Unable to cast … OracleConnection to … NpgsqlConnection`). CI's lanes never mixed them; a whole-project run did.
+- **Data: `GoldpathQueryableExtensions.ChunkedContains` (G7 ORA-5, #408; RFC goldpath-oracle §2.5).**
+  - **API (additive):** `ChunkedContains<T, TValue>(this IQueryable<T>, member, values, providerName)` and
+    `OracleInListLimit = 1000`. On Oracle (a provider name containing `Oracle`), a list longer than 1,000 becomes
+    OR-joined chunks of at most 1,000, because Oracle refuses a longer `IN` list (ORA-01795). On every other
+    provider it is the plain `Contains` filter. Each chunk is a query parameter. `Goldpath.Data` still references
+    no Oracle package.
+  - **Campaign uses it** at the three lists `ReleaseBatchSize` bounds: the ripe retries (`due`), the orphaned
+    releases (`orphans`) and the success flush (`seqs`). It is not used at the lists bounded below 1,000: the
+    callback `correlations` and `settled` (a sink batch of 200) and the stale-claim sweep (`Take(100)`).
+  - **Measured:** a 5,000-item batch on Oracle Free 23.26.3 passes with and without the helper. The pinned Oracle
+    EF provider (10.23.26301) already splits a parameterised list into `IN` lists of 1,000. The helper stays,
+    as the RFC decides, so the bound does not depend on one provider build.
+- **Campaign: the R2 backfill has an Oracle branch (G7 ORA-5, #408; RFC goldpath-oracle §2.7).**
+  `GoldpathCampaignR2Backfill()` on Oracle stamps the R1 rung with `SYSTIMESTAMP` and Oracle interval literals,
+  as one statement with no trailing semicolon, schema-qualified when a schema is given. It has no ceiling-name step,
+  because Oracle never stored an empty-named global ceiling row (#384). An unknown provider is still refused.
+- **Campaign on Oracle (G7 ORA-5, #408):** the four Campaign suites (`CampaignTests`, `CampaignR1Tests`,
+  `CampaignR2Tests` and `CampaignR2TakeoverTests`) run in the Oracle lane on Oracle + RabbitMQ, with the
+  clustered Quartz store on Oracle. They are the same files, parameterised by store. `CampaignOracleBatchProof`
+  pushes a 5,000-item batch through all three bounded lists to `Succeeded`. Campaign runbook §13 covers ORA-01795.
+  Each of the three rewritten filters is pinned by a Campaign fact that fails without it; the ripe-retry release's had
+  none (dropping it passed every suite, on `main` too), and `TheRipeRetryRelease_MarksReleasedOnlyTheItemsItPublished`
+  now holds that a not-yet-ripe retry and a ripe one beyond the allowance stay `AwaitingRetry`.
 - **Campaign: a ceiling for outstanding acknowledgements, `MaxAwaitingAck` (campaign RFC R3.4,
   slice R3-S5, #293).**
   - **API (additive, init-only):** `GoldpathCampaignPolicy.MaxAwaitingAck`,
@@ -475,6 +523,31 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   - Three accepted risks (A7–A9), signed by the owner 2026-11-04: counterparty authenticity is the
     transport's job, quarantine reasons are shown as written, and a rail has no size ceiling of its
     own.
+- **The threat model's surfaces 7 and 8: Notification channels and DataProtection (GA gate G15
+  Part 2/2, 3/4, part of #340).** No package code changes. `docs/security/threat-model.md` now models
+  8 of 10 surfaces: T-NTF-01..16 and T-DPK-01..11. Every threat names a test (34 references, each
+  checked to resolve to a method and its suite run green), an issue, or an accepted risk.
+  - **Five tests pin defences that held but were proven by nothing.** Each is red with its fault
+    planted:
+    - a token value is never rendered again (planted: the renderer re-expands values);
+    - a line break in a subject never becomes a header (planted: subject lines written as headers);
+    - a recipient list is refused (planted: `InternetAddressList.Parse`);
+    - without `EnableRedaction()`, a classified log property is dropped, never written in clear
+      (planted: `[GoldpathPersonalData]` no longer a `DataClassificationAttribute`);
+    - a short or non-Base64 HMAC key is refused (planted: the module stretches any key to 44
+      characters).
+  - **Three threats had no holder, and each is now an issue:**
+    - #531: the notification dedup key is unique across tenants. A second tenant's notice is never
+      stored, and its caller gets the first tenant's row (measured);
+    - #532: a failure's `Detail` is the channel's exception text verbatim, so a provider reply that
+      names the address walks around recipient masking;
+    - #533: the webhook channel posts to a plaintext `http://` URL without an opt-in, which the email
+      channel refuses.
+  - **Four accepted risks (A10–A13) await the owner's signature:**
+    - secrets are only as safe as the configuration they come from;
+    - the webhook is unsigned;
+    - the app's own words on the notification surface;
+    - classified values written into free text.
 - **`goldpath check` warns a manifest that selects a roadmap-only value (GA gate G3, #336).**
   After `specdrift validate` passes, every value the schema accepts but no code runs
   (`broker: kafka|inmemory`, `exporters: prometheus`, `auditTrail.store: eventstream`, and
@@ -641,6 +714,46 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **Messaging: an outbox event above the broker's size limit no longer stops every later event, on either engine (#458).**
+  - **What went wrong:** RabbitMQ refuses a body above `max_message_size` (16 MiB by default) on every attempt. Both
+    adapters' delivery loops retry the oldest undelivered outbox first, so one such row held back every row committed
+    after it, for ever (the verifier's probe P1 on #457: the small row behind it undelivered after 45 s, on both).
+  - **Now:** `GoldpathMessagingOptions.MaxMessageBytes` (`Goldpath:Messaging:MaxMessageBytes`, default 16777216, must be
+    positive; the only public addition) is enforced in the floor, once for every engine:
+    - **A publish above it is refused at the seam:** `PublishAsync` throws `InvalidOperationException` (the event, its
+      size and the limit, never the payload), and the row leaves the unit of work, so nothing commits it.
+    - **A committed row above it is marked failed in place:** an outbox sweep (its first pass at start, before the
+      bus; then every delivery poll) keeps the row and its body, detaches it from its outbox or inbox, writes
+      `Goldpath-Outbox-Failed*` headers with the reason and where it came from, and logs id, type and size at Error.
+      The rows behind it are delivered. The outbox schema is unchanged. The sweep's database pre-filter is a QUARTER
+      of the limit, because PostgreSQL's, Oracle's and SQLite's `length()` count code points, which are up to four
+      bytes each; a third would skip a body made mostly of four-byte characters. A row whose headers are not a JSON
+      object is marked too, its headers kept as text in `Goldpath-Outbox-Failed-OriginalHeaders`, so one corrupt row
+      cannot stop the pass. The publish guard judges only the row its own publish added.
+    - Both count in a new counter, `goldpath.messaging.outbox.oversized{stage=publish|outbox}` (meter `Goldpath.Messaging`).
+  - **Proof:** conformance S2.20 (a committed oversized row, then a small one; the small one is delivered, the large one
+    is kept and marked) and S2.21 (the refusal commits nothing; the next publish goes through), both on MassTransit
+    8.5.12 and Wolverine on real RabbitMQ 4 and PostgreSQL 17. Both are red on `main`, and red again with the detach or
+    the refusal planted out. S2.20b, on PostgreSQL 17 and both engines: a committed row of 80 × U+1F600 (80 code
+    points, 320 bytes) is marked under a 300-byte limit; red with the pre-filter at a third. Boundaries in UTF-8 bytes
+    (ASCII, `İ`, `€`, a surrogate pair; at the publish and, for four-byte code points, at the sweep), corrupt headers,
+    a row added outside the guarded publish and the sweep's page walk are `MessageSizeTests`.
+  - **Docs:** the package README's "Message size", and the runbook's "An outbox row marked failed" (how to recover one).
+  - **Upgrade note:** none required. A publish above 16 MiB now throws where it used to commit a row that never left. To
+    publish larger bodies, raise the broker's `max_message_size` and this option together.
+- **Admin verbs refuse a blank value before it reaches a NOT NULL column, the same on every provider (#476, G7).**
+  Oracle stores `''` as NULL, so each of these failed there with `ORA-01400` (a 500). On PostgreSQL and SQL Server
+  each stored a meaningless record.
+  - **Campaign `create`:** a null, empty or whitespace `name` is refused in words, and no campaign or audit row is
+    written.
+  - **Bulk upload:** a `?fileName=` that is given but blank answers 400 before the body is read. Omitting the
+    parameter still stores the upload as `upload.csv`. `GoldpathBulkAdminService.UploadAsync` throws
+    `ArgumentException` for a blank name.
+  - **Archive `erase`:** a blank `subjectKey` is refused before anything is redacted or recorded.
+  - **Found by reviewing the other free-text verbs:**
+    - an archive legal hold refused only an empty case reference, and now refuses whitespace too (a null used to throw);
+    - a Jobs calendar's name is refused when blank (it keys a NOT NULL `qrtz_calendars` row).
+  - **Still open:** an actor whose principal name is empty is a separate path, tracked in #544.
 - **[schema]** **Approvals: concurrent decisions no longer both apply (#480, threat model T-APR-06).** A decision read the
   request and its signatures, then wrote them in separate calls with nothing guarding the gap.
   - **What went wrong:**

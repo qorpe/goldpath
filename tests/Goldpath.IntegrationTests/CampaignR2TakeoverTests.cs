@@ -4,7 +4,6 @@ using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Testcontainers.PostgreSql;
 using Testcontainers.RabbitMq;
 using Xunit;
 
@@ -18,8 +17,19 @@ namespace Goldpath.Tests.Integration;
 /// and every customer executes exactly once.
 /// </summary>
 [Collection("quartz-process-globals")]
-public sealed class CampaignR2TakeoverTests : IAsyncLifetime
+public class CampaignR2TakeoverTests : IAsyncLifetime
 {
+    private readonly SuiteStore _store;
+
+    /// <summary>The suite on PostgreSQL, in the integration lane.</summary>
+    public CampaignR2TakeoverTests()
+        : this(SuiteStore.PostgreSql())
+    {
+    }
+
+    /// <summary>The suite on the given store (the Oracle twin, ORA-5 #408).</summary>
+    protected CampaignR2TakeoverTests(SuiteStore store) => _store = store;
+
     public sealed class CountingHandler : IGoldpathCampaignItemHandler<CampaignTests.CustomerTarget>
     {
         public static ConcurrentDictionary<int, int> Executions { get; } = new();
@@ -34,7 +44,6 @@ public sealed class CampaignR2TakeoverTests : IAsyncLifetime
     /// <summary>Every key the selector was opened after (null = a fresh start).</summary>
     public static ConcurrentQueue<string?> Openings { get; } = new();
 
-    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17-alpine").Build();
     private readonly RabbitMqContainer _rabbit = new RabbitMqBuilder("rabbitmq:4-alpine").Build();
     private readonly List<IHost> _hosts = [];
 
@@ -42,9 +51,7 @@ public sealed class CampaignR2TakeoverTests : IAsyncLifetime
     {
         CountingHandler.Executions.Clear();
         Openings.Clear();
-        await Task.WhenAll(_postgres.StartAsync(), _rabbit.StartAsync());
-        await using var db = new CampaignTests.CampDb(new DbContextOptionsBuilder<CampaignTests.CampDb>().UseNpgsql(_postgres.GetConnectionString()).Options);
-        await db.Database.EnsureCreatedAsync();
+        await Task.WhenAll(_store.StartAsync(), _rabbit.StartAsync());
     }
 
     public async Task DisposeAsync()
@@ -64,14 +71,14 @@ public sealed class CampaignR2TakeoverTests : IAsyncLifetime
         }
 
         QuartzProcessGlobals.Pin();
-        await Task.WhenAll(_postgres.DisposeAsync().AsTask(), _rabbit.DisposeAsync().AsTask());
+        await Task.WhenAll(_store.StopAsync(), _rabbit.DisposeAsync().AsTask());
     }
 
     private IHost BuildHost(string fleet)
     {
         var builder = Host.CreateApplicationBuilder();
-        builder.Configuration["ConnectionStrings:campdb"] = _postgres.GetConnectionString();
-        builder.Services.AddDbContext<CampaignTests.CampDb>(o => o.UseNpgsql(_postgres.GetConnectionString()));
+        builder.Configuration["ConnectionStrings:campdb"] = _store.ConnectionString;
+        builder.Services.AddDbContext<CampaignTests.CampDb>(_store.Use);
         builder.Services.AddScoped<IGoldpathCampaignItemHandler<CampaignTests.CustomerTarget>, CountingHandler>();
         builder.AddGoldpathCampaign<HostApplicationBuilder, CampaignTests.CampDb>(campaign =>
         {
@@ -104,6 +111,7 @@ public sealed class CampaignR2TakeoverTests : IAsyncLifetime
         builder.AddGoldpathJobs<HostApplicationBuilder, CampaignTests.CampDb>(jobs =>
         {
             jobs.ConnectionName = "campdb";
+            jobs.Provider = _store.JobsProvider;
             jobs.SchedulerName = fleet;
             jobs.AddGoldpathCampaignJobs<CampaignTests.CampDb>(pacerCron: "0/5 * * * * ?");
         });
@@ -229,3 +237,8 @@ public sealed class CampaignR2TakeoverTests : IAsyncLifetime
             $"the last opening was after key {openings[^1]}, but the row already carried {atStop.EnumeratedThrough} at the stop");
     }
 }
+
+/// <summary>Campaign revision R2.7 on Oracle + RabbitMQ (G7 ORA-5, #408), in the Oracle lane.</summary>
+[Trait("Category", "Oracle")]
+[Collection(OracleCollection.Name)]
+public sealed class CampaignR2TakeoverOracleTests(OracleFixture oracle) : CampaignR2TakeoverTests(SuiteStore.Oracle(oracle));

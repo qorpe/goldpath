@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Testcontainers.PostgreSql;
 using Testcontainers.RabbitMq;
 using Xunit;
 
@@ -17,8 +16,19 @@ namespace Goldpath.Tests.Integration;
 /// replay-items verb heals them once the world is fixed.
 /// </summary>
 [Collection("quartz-process-globals")]
-public sealed class CampaignTests : IAsyncLifetime
+public class CampaignTests : IAsyncLifetime
 {
+    private readonly SuiteStore _store;
+
+    /// <summary>The suite on PostgreSQL, in the integration lane.</summary>
+    public CampaignTests()
+        : this(SuiteStore.PostgreSql())
+    {
+    }
+
+    /// <summary>The suite on the given store (the Oracle twin, ORA-5 #408).</summary>
+    protected CampaignTests(SuiteStore store) => _store = store;
+
     public sealed record CustomerTarget(int Id, string Email);
 
     public sealed class Customer
@@ -58,7 +68,6 @@ public sealed class CampaignTests : IAsyncLifetime
         }
     }
 
-    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17-alpine").Build();
     private readonly RabbitMqContainer _rabbit = new RabbitMqBuilder("rabbitmq:4-alpine").Build();
     private IHost _host = null!;
     private readonly string _fleet = $"camp-{Guid.NewGuid():N}"[..16];   // unique per test: Quartz's SchedulerRepository is process-global
@@ -67,15 +76,11 @@ public sealed class CampaignTests : IAsyncLifetime
     {
         WinbackHandler.Executions.Clear();
         WinbackHandler.Poisoned.Clear();
-        await Task.WhenAll(_postgres.StartAsync(), _rabbit.StartAsync());
-        await using (var db = new CampDb(new DbContextOptionsBuilder<CampDb>().UseNpgsql(_postgres.GetConnectionString()).Options))
-        {
-            await db.Database.EnsureCreatedAsync();
-        }
+        await Task.WhenAll(_store.StartAsync(), _rabbit.StartAsync());
 
         var builder = Host.CreateApplicationBuilder();
-        builder.Configuration["ConnectionStrings:campdb"] = _postgres.GetConnectionString();
-        builder.Services.AddDbContext<CampDb>(o => o.UseNpgsql(_postgres.GetConnectionString()));
+        builder.Configuration["ConnectionStrings:campdb"] = _store.ConnectionString;
+        builder.Services.AddDbContext<CampDb>(_store.Use);
         builder.Services.AddScoped<IGoldpathCampaignItemHandler<CustomerTarget>, WinbackHandler>();
         builder.AddGoldpathCampaign<HostApplicationBuilder, CampDb>(campaign =>
         {
@@ -103,6 +108,7 @@ public sealed class CampaignTests : IAsyncLifetime
         builder.AddGoldpathJobs<HostApplicationBuilder, CampDb>(jobs =>
         {
             jobs.ConnectionName = "campdb";
+            jobs.Provider = _store.JobsProvider;
             jobs.SchedulerName = _fleet;
             jobs.AddGoldpathCampaignJobs<CampDb>(pacerCron: "0/5 * * * * ?");   // leadership re-guaranteed every 5s
         });
@@ -115,7 +121,7 @@ public sealed class CampaignTests : IAsyncLifetime
         await _host.StopAsync();
         _host.Dispose();
         QuartzProcessGlobals.Pin();
-        await Task.WhenAll(_postgres.DisposeAsync().AsTask(), _rabbit.DisposeAsync().AsTask());
+        await Task.WhenAll(_store.StopAsync(), _rabbit.DisposeAsync().AsTask());
     }
 
     private T Query<T>(Func<CampDb, T> query)
@@ -253,3 +259,8 @@ public sealed class CampaignTests : IAsyncLifetime
         Assert.Equal(1, WinbackHandler.Executions[13]);   // the replay executed it — once
     }
 }
+
+/// <summary>The L4 winback story on Oracle + RabbitMQ (G7 ORA-5, #408), in the Oracle lane.</summary>
+[Trait("Category", "Oracle")]
+[Collection(OracleCollection.Name)]
+public sealed class CampaignOracleTests(OracleFixture oracle) : CampaignTests(SuiteStore.Oracle(oracle));

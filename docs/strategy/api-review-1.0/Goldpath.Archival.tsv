@@ -1,1 +1,238 @@
 line	verdict	target	reason
+Goldpath.GoldpathArchivalAdminEndpoints	keep		
+Goldpath.GoldpathArchivalExtensions	keep		
+Goldpath.GoldpathArchivalOptions	keep		
+Goldpath.GoldpathArchivalOptions.AddArchive<TRoot>(System.Action<Goldpath.GoldpathArchiveBuilder<TRoot!>!>! configure) -> Goldpath.GoldpathArchivalOptions!	keep		
+Goldpath.GoldpathArchivalOptions.AddRowRetention<TRow>(System.Action<Goldpath.GoldpathRowRetentionBuilder<TRow!>!>! configure) -> Goldpath.GoldpathArchivalOptions!	keep		
+Goldpath.GoldpathArchivalOptions.Archives.get -> System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathArchiveDefinition!>!	keep		
+Goldpath.GoldpathArchivalOptions.BatchSize.get -> int	keep		
+Goldpath.GoldpathArchivalOptions.BatchSize.set -> void	keep		
+Goldpath.GoldpathArchivalOptions.GoldpathArchivalOptions() -> void	keep		
+Goldpath.GoldpathArchivalOptions.RowRetentions.get -> System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathRowRetentionDefinition!>!	keep		
+Goldpath.GoldpathArchiveAdminService<TContext>	rename	Goldpath.GoldpathArchivalAdminService<TContext>	Archive/Archival naming (Findings for API-13): the module's entry points say Archival (AddGoldpathArchival, GoldpathArchivalOptions, MapGoldpathArchivalAdmin) and its admin service is the one module-level type that says Archive, while every sibling pairs Goldpath<Module>AdminService with MapGoldpath<Module>Admin (method Q2). No operator-visible name changes: the type is not a job key
+Goldpath.GoldpathArchiveAdminService<TContext>.GoldpathArchiveAdminService(Goldpath.GoldpathArchiveEngine<TContext!>! engine, Goldpath.GoldpathArchivalOptions! options, Microsoft.Extensions.DependencyInjection.IServiceScopeFactory! scopeFactory, System.TimeProvider! time) -> void	rename	Goldpath.GoldpathArchivalAdminService<TContext>.GoldpathArchivalAdminService(Goldpath.GoldpathArchiveEngine<TContext!>! engine, Goldpath.GoldpathArchivalOptions! options, Microsoft.Extensions.DependencyInjection.IServiceScopeFactory! scopeFactory, System.TimeProvider! time) -> void	Archive/Archival naming (Findings for API-13): the module's entry points say Archival (AddGoldpathArchival, GoldpathArchivalOptions, MapGoldpathArchivalAdmin) and its admin service is the one module-level type that says Archive, while every sibling pairs Goldpath<Module>AdminService with MapGoldpath<Module>Admin (method Q2). No operator-visible name changes: the type is not a job key
+Goldpath.GoldpathArchiveAdminService<TContext>.EraseAsync(string! definition, string! aggregateKey, string! subjectKey, string! actor, string? detail, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	rename	Goldpath.GoldpathArchivalAdminService<TContext>.EraseAsync(string! definition, string! aggregateKey, string! subjectKey, string! actor, string? detail, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	Archive/Archival naming (Findings for API-13): the module's entry points say Archival (AddGoldpathArchival, GoldpathArchivalOptions, MapGoldpathArchivalAdmin) and its admin service is the one module-level type that says Archive, while every sibling pairs Goldpath<Module>AdminService with MapGoldpath<Module>Admin (method Q2). No operator-visible name changes: the type is not a job key; and method Q3: the token is the last parameter but named ct; every other public Goldpath.Archival signature this review keeps names it cancellationToken (the Findings' ct policy, API-2). Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathArchiveAdminService<TContext>.GetDefinitionsAsync(System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathArchiveDefinitionStatus!>!>!	rename	Goldpath.GoldpathArchivalAdminService<TContext>.GetDefinitionsAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathArchiveDefinitionStatus!>!>!	Archive/Archival naming (Findings for API-13): the module's entry points say Archival (AddGoldpathArchival, GoldpathArchivalOptions, MapGoldpathArchivalAdmin) and its admin service is the one module-level type that says Archive, while every sibling pairs Goldpath<Module>AdminService with MapGoldpath<Module>Admin (method Q2). No operator-visible name changes: the type is not a job key; and method Q3: the token is the last parameter but named ct; every other public Goldpath.Archival signature this review keeps names it cancellationToken (the Findings' ct policy, API-2). Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathArchiveAdminService<TContext>.GetErasuresAsync(int take, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathErasureRecord!>!>!	rename	Goldpath.GoldpathArchivalAdminService<TContext>.GetErasuresAsync(int take, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathErasureRecord!>!>!	Archive/Archival naming (Findings for API-13): the module's entry points say Archival (AddGoldpathArchival, GoldpathArchivalOptions, MapGoldpathArchivalAdmin) and its admin service is the one module-level type that says Archive, while every sibling pairs Goldpath<Module>AdminService with MapGoldpath<Module>Admin (method Q2). No operator-visible name changes: the type is not a job key; and method Q3: the token is the last parameter but named ct; every other public Goldpath.Archival signature this review keeps names it cancellationToken (the Findings' ct policy, API-2). Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathArchiveAdminService<TContext>.GetHoldsAsync(bool includeLifted, int take, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathLegalHold!>!>!	rename	Goldpath.GoldpathArchivalAdminService<TContext>.GetHoldsAsync(bool includeLifted, int take, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathLegalHold!>!>!	Archive/Archival naming (Findings for API-13): the module's entry points say Archival (AddGoldpathArchival, GoldpathArchivalOptions, MapGoldpathArchivalAdmin) and its admin service is the one module-level type that says Archive, while every sibling pairs Goldpath<Module>AdminService with MapGoldpath<Module>Admin (method Q2). No operator-visible name changes: the type is not a job key; and method Q3: the token is the last parameter but named ct; every other public Goldpath.Archival signature this review keeps names it cancellationToken (the Findings' ct policy, API-2). Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathArchiveAdminService<TContext>.LiftHoldAsync(string! definition, string! aggregateKey, string! actor, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	rename	Goldpath.GoldpathArchivalAdminService<TContext>.LiftHoldAsync(string! definition, string! aggregateKey, string! actor, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	Archive/Archival naming (Findings for API-13): the module's entry points say Archival (AddGoldpathArchival, GoldpathArchivalOptions, MapGoldpathArchivalAdmin) and its admin service is the one module-level type that says Archive, while every sibling pairs Goldpath<Module>AdminService with MapGoldpath<Module>Admin (method Q2). No operator-visible name changes: the type is not a job key; and method Q3: the token is the last parameter but named ct; every other public Goldpath.Archival signature this review keeps names it cancellationToken (the Findings' ct policy, API-2). Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathArchiveAdminService<TContext>.PlaceHoldAsync(string! definition, string! aggregateKey, string! caseReference, string! actor, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	rename	Goldpath.GoldpathArchivalAdminService<TContext>.PlaceHoldAsync(string! definition, string! aggregateKey, string! caseReference, string! actor, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	Archive/Archival naming (Findings for API-13): the module's entry points say Archival (AddGoldpathArchival, GoldpathArchivalOptions, MapGoldpathArchivalAdmin) and its admin service is the one module-level type that says Archive, while every sibling pairs Goldpath<Module>AdminService with MapGoldpath<Module>Admin (method Q2). No operator-visible name changes: the type is not a job key; and method Q3: the token is the last parameter but named ct; every other public Goldpath.Archival signature this review keeps names it cancellationToken (the Findings' ct policy, API-2). Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathArchiveAdminService<TContext>.RetrieveAsync(string! definition, string! aggregateKey, string? tenant, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathArchiveEntry?>!	rename	Goldpath.GoldpathArchivalAdminService<TContext>.RetrieveAsync(string! definition, string! aggregateKey, string? tenant, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathArchiveEntry?>!	Archive/Archival naming (Findings for API-13): the module's entry points say Archival (AddGoldpathArchival, GoldpathArchivalOptions, MapGoldpathArchivalAdmin) and its admin service is the one module-level type that says Archive, while every sibling pairs Goldpath<Module>AdminService with MapGoldpath<Module>Admin (method Q2). No operator-visible name changes: the type is not a job key; and method Q3: the token is the last parameter but named ct; every other public Goldpath.Archival signature this review keeps names it cancellationToken (the Findings' ct policy, API-2). Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathArchiveAdminService<TContext>.VerifyAsync(string! definition, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathChainFinding!>!>!	rename	Goldpath.GoldpathArchivalAdminService<TContext>.VerifyAsync(string! definition, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathChainFinding!>!>!	Archive/Archival naming (Findings for API-13): the module's entry points say Archival (AddGoldpathArchival, GoldpathArchivalOptions, MapGoldpathArchivalAdmin) and its admin service is the one module-level type that says Archive, while every sibling pairs Goldpath<Module>AdminService with MapGoldpath<Module>Admin (method Q2). No operator-visible name changes: the type is not a job key; and method Q3: the token is the last parameter but named ct; every other public Goldpath.Archival signature this review keeps names it cancellationToken (the Findings' ct policy, API-2). Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathArchiveBuilder<TRoot>	keep		
+Goldpath.GoldpathArchiveBuilder<TRoot>.ArchiveAfter(System.TimeSpan period) -> Goldpath.GoldpathArchiveBuilder<TRoot!>!	keep		
+Goldpath.GoldpathArchiveBuilder<TRoot>.DeleteHotRowsAfterArchive() -> Goldpath.GoldpathArchiveBuilder<TRoot!>!	keep		
+Goldpath.GoldpathArchiveBuilder<TRoot>.GoldpathArchiveBuilder() -> void	keep		
+Goldpath.GoldpathArchiveBuilder<TRoot>.DueWhen(System.Linq.Expressions.Expression<System.Func<TRoot!, bool>!>! due, System.Linq.Expressions.Expression<System.Func<TRoot!, System.DateTimeOffset>!>! dueAt) -> Goldpath.GoldpathArchiveBuilder<TRoot!>!	keep		
+Goldpath.GoldpathArchiveBuilder<TRoot>.Graph(params System.Linq.Expressions.Expression<System.Func<TRoot!, object?>!>![]! navigations) -> Goldpath.GoldpathArchiveBuilder<TRoot!>!	keep		
+Goldpath.GoldpathArchiveBuilder<TRoot>.GraphPath(params string![]! paths) -> Goldpath.GoldpathArchiveBuilder<TRoot!>!	keep		
+Goldpath.GoldpathArchiveBuilder<TRoot>.Key<TKey>(System.Linq.Expressions.Expression<System.Func<TRoot!, TKey>!>! key) -> Goldpath.GoldpathArchiveBuilder<TRoot!>!	keep		
+Goldpath.GoldpathArchiveBuilder<TRoot>.Named(string! name) -> Goldpath.GoldpathArchiveBuilder<TRoot!>!	keep		
+Goldpath.GoldpathArchiveBuilder<TRoot>.RetainFor(int years) -> Goldpath.GoldpathArchiveBuilder<TRoot!>!	keep		
+Goldpath.GoldpathArchiveBuilder<TRoot>.Tenant(System.Func<TRoot!, string?>! tenant) -> Goldpath.GoldpathArchiveBuilder<TRoot!>!	keep		
+Goldpath.GoldpathArchiveCandidate	remove		only the internal LoadAsync delegate of GoldpathArchiveDefinition produces and consumes it, and no other public line names it, so no adopter can obtain or pass one (method Q1); internal, record members with it
+Goldpath.GoldpathArchiveCandidate.GoldpathArchiveCandidate(string! Key, object! Root, System.DateTimeOffset DueAt, string? Tenant) -> void	remove		only the internal LoadAsync delegate of GoldpathArchiveDefinition produces and consumes it, and no other public line names it, so no adopter can obtain or pass one (method Q1); internal, record members with it
+Goldpath.GoldpathArchiveCandidate.DueAt.get -> System.DateTimeOffset	remove		only the internal LoadAsync delegate of GoldpathArchiveDefinition produces and consumes it, and no other public line names it, so no adopter can obtain or pass one (method Q1); internal, record members with it
+Goldpath.GoldpathArchiveCandidate.DueAt.init -> void	remove		only the internal LoadAsync delegate of GoldpathArchiveDefinition produces and consumes it, and no other public line names it, so no adopter can obtain or pass one (method Q1); internal, record members with it
+Goldpath.GoldpathArchiveCandidate.Key.get -> string!	remove		only the internal LoadAsync delegate of GoldpathArchiveDefinition produces and consumes it, and no other public line names it, so no adopter can obtain or pass one (method Q1); internal, record members with it
+Goldpath.GoldpathArchiveCandidate.Key.init -> void	remove		only the internal LoadAsync delegate of GoldpathArchiveDefinition produces and consumes it, and no other public line names it, so no adopter can obtain or pass one (method Q1); internal, record members with it
+Goldpath.GoldpathArchiveCandidate.Root.get -> object!	remove		only the internal LoadAsync delegate of GoldpathArchiveDefinition produces and consumes it, and no other public line names it, so no adopter can obtain or pass one (method Q1); internal, record members with it
+Goldpath.GoldpathArchiveCandidate.Root.init -> void	remove		only the internal LoadAsync delegate of GoldpathArchiveDefinition produces and consumes it, and no other public line names it, so no adopter can obtain or pass one (method Q1); internal, record members with it
+Goldpath.GoldpathArchiveCandidate.Tenant.get -> string?	remove		only the internal LoadAsync delegate of GoldpathArchiveDefinition produces and consumes it, and no other public line names it, so no adopter can obtain or pass one (method Q1); internal, record members with it
+Goldpath.GoldpathArchiveCandidate.Tenant.init -> void	remove		only the internal LoadAsync delegate of GoldpathArchiveDefinition produces and consumes it, and no other public line names it, so no adopter can obtain or pass one (method Q1); internal, record members with it
+Goldpath.GoldpathArchiveChainState	keep		an EF entity of AddGoldpathArchiveModel's model: the adopter's migrations name it; set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathArchiveChainState.Definition.get -> string!	keep		
+Goldpath.GoldpathArchiveChainState.Definition.set -> void	keep		
+Goldpath.GoldpathArchiveChainState.GoldpathArchiveChainState() -> void	keep		
+Goldpath.GoldpathArchiveChainState.LastHash.get -> string!	keep		
+Goldpath.GoldpathArchiveChainState.LastHash.set -> void	keep		
+Goldpath.GoldpathArchiveChainState.LastIndex.get -> long	keep		
+Goldpath.GoldpathArchiveChainState.LastIndex.set -> void	keep		
+Goldpath.GoldpathArchiveChainState.PurgedHeadHash.get -> string!	keep		
+Goldpath.GoldpathArchiveChainState.PurgedHeadHash.set -> void	keep		
+Goldpath.GoldpathArchiveChainState.PurgedThroughIndex.get -> long	keep		
+Goldpath.GoldpathArchiveChainState.PurgedThroughIndex.set -> void	keep		
+Goldpath.GoldpathArchiveDefinition	keep		
+Goldpath.GoldpathArchiveDefinition.ArchiveAfter.get -> System.TimeSpan	keep		
+Goldpath.GoldpathArchiveDefinition.DeleteHotRows.get -> bool	keep		
+Goldpath.GoldpathArchiveDefinition.GraphPaths.get -> System.Collections.Generic.IReadOnlyList<string!>!	keep		
+Goldpath.GoldpathArchiveDefinition.Name.get -> string!	keep		
+Goldpath.GoldpathArchiveDefinition.RetainFor.get -> System.TimeSpan?	keep		
+Goldpath.GoldpathArchiveDefinition.RootType.get -> System.Type!	keep		
+Goldpath.GoldpathArchiveDefinitionStatus	keep		
+Goldpath.GoldpathArchiveDefinitionStatus.ActiveHolds.get -> int	keep		
+Goldpath.GoldpathArchiveDefinitionStatus.ActiveHolds.init -> void	keep		
+Goldpath.GoldpathArchiveDefinitionStatus.ChainHead.get -> long	keep		
+Goldpath.GoldpathArchiveDefinitionStatus.ChainHead.init -> void	keep		
+Goldpath.GoldpathArchiveDefinitionStatus.GoldpathArchiveDefinitionStatus(string! Name, long Entries, int DueBacklog, int ActiveHolds, long ChainHead, long PurgedThrough) -> void	keep		
+Goldpath.GoldpathArchiveDefinitionStatus.DueBacklog.get -> int	keep		
+Goldpath.GoldpathArchiveDefinitionStatus.DueBacklog.init -> void	keep		
+Goldpath.GoldpathArchiveDefinitionStatus.Entries.get -> long	keep		
+Goldpath.GoldpathArchiveDefinitionStatus.Entries.init -> void	keep		
+Goldpath.GoldpathArchiveDefinitionStatus.Name.get -> string!	keep		
+Goldpath.GoldpathArchiveDefinitionStatus.Name.init -> void	keep		
+Goldpath.GoldpathArchiveDefinitionStatus.PurgedThrough.get -> long	keep		
+Goldpath.GoldpathArchiveDefinitionStatus.PurgedThrough.init -> void	keep		
+Goldpath.GoldpathArchiveEngine<TContext>	keep		stays public by construction: DI builds it by type (TryAddSingleton) and the public constructors of the admin service and the three jobs take it (CS0051 otherwise); named Archive because it runs archives, not row retention; its methods go internal (remove rows)
+Goldpath.GoldpathArchiveEngine<TContext>.ArchiveNextBatchAsync(System.IServiceProvider! services, Goldpath.GoldpathArchiveDefinition! definition, int batchSize, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<int>!	remove		engine plumbing (method Q1): RetrieveAsync here has no tenant scope and records no retrieval metric, both of which GoldpathArchivalAdminService.RetrieveAsync adds; VerifyAsync and GetDefinitionsAsync there cover VerifySliceAsync and CountDueAsync; ArchiveNextBatchAsync and PurgeExpiredEntriesAsync are the archive and purge jobs' own steps. Internal, with InternalsVisibleTo for Goldpath.Archival.Tests and Goldpath.IntegrationTests added by API-14 (#403); the ct name goes with the removal
+Goldpath.GoldpathArchiveEngine<TContext>.CountDueAsync(TContext! db, Goldpath.GoldpathArchiveDefinition! definition, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<int>!	remove		engine plumbing (method Q1): RetrieveAsync here has no tenant scope and records no retrieval metric, both of which GoldpathArchivalAdminService.RetrieveAsync adds; VerifyAsync and GetDefinitionsAsync there cover VerifySliceAsync and CountDueAsync; ArchiveNextBatchAsync and PurgeExpiredEntriesAsync are the archive and purge jobs' own steps. Internal, with InternalsVisibleTo for Goldpath.Archival.Tests and Goldpath.IntegrationTests added by API-14 (#403); the ct name goes with the removal
+Goldpath.GoldpathArchiveEngine<TContext>.GoldpathArchiveEngine(System.TimeProvider! time, Microsoft.Extensions.Logging.ILogger<Goldpath.GoldpathArchiveEngine<TContext!>!>! logger) -> void	keep		DI's activator binds public constructors only, and the engine is registered by type (TryAddSingleton)
+Goldpath.GoldpathArchiveEngine<TContext>.PurgeExpiredEntriesAsync(System.IServiceProvider! services, Goldpath.GoldpathArchiveDefinition! definition, int batchSize, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<int>!	remove		engine plumbing (method Q1): RetrieveAsync here has no tenant scope and records no retrieval metric, both of which GoldpathArchivalAdminService.RetrieveAsync adds; VerifyAsync and GetDefinitionsAsync there cover VerifySliceAsync and CountDueAsync; ArchiveNextBatchAsync and PurgeExpiredEntriesAsync are the archive and purge jobs' own steps. Internal, with InternalsVisibleTo for Goldpath.Archival.Tests and Goldpath.IntegrationTests added by API-14 (#403); the ct name goes with the removal
+Goldpath.GoldpathArchiveEngine<TContext>.RetrieveAsync(System.IServiceProvider! services, string! definition, string! aggregateKey, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathArchiveEntry?>!	remove		engine plumbing (method Q1): RetrieveAsync here has no tenant scope and records no retrieval metric, both of which GoldpathArchivalAdminService.RetrieveAsync adds; VerifyAsync and GetDefinitionsAsync there cover VerifySliceAsync and CountDueAsync; ArchiveNextBatchAsync and PurgeExpiredEntriesAsync are the archive and purge jobs' own steps. Internal, with InternalsVisibleTo for Goldpath.Archival.Tests and Goldpath.IntegrationTests added by API-14 (#403); the ct name goes with the removal
+Goldpath.GoldpathArchiveEngine<TContext>.VerifySliceAsync(System.IServiceProvider! services, Goldpath.GoldpathArchiveDefinition! definition, long fromIndex, long toIndex, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.List<Goldpath.GoldpathChainFinding!>!>!	remove		engine plumbing (method Q1): RetrieveAsync here has no tenant scope and records no retrieval metric, both of which GoldpathArchivalAdminService.RetrieveAsync adds; VerifyAsync and GetDefinitionsAsync there cover VerifySliceAsync and CountDueAsync; ArchiveNextBatchAsync and PurgeExpiredEntriesAsync are the archive and purge jobs' own steps. Internal, with InternalsVisibleTo for Goldpath.Archival.Tests and Goldpath.IntegrationTests added by API-14 (#403); the ct name goes with the removal
+Goldpath.GoldpathArchiveEntry	keep		an EF entity of AddGoldpathArchiveModel's model: the adopter's migrations name it; the admin service's RetrieveAsync returns it; set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathArchiveEntry.AggregateKey.get -> string!	keep		
+Goldpath.GoldpathArchiveEntry.AggregateKey.set -> void	keep		
+Goldpath.GoldpathArchiveEntry.ArchivedAt.get -> System.DateTimeOffset	keep		
+Goldpath.GoldpathArchiveEntry.ArchivedAt.set -> void	keep		
+Goldpath.GoldpathArchiveEntry.ChainHash.get -> string!	keep		
+Goldpath.GoldpathArchiveEntry.ChainHash.set -> void	keep		
+Goldpath.GoldpathArchiveEntry.ChainIndex.get -> long	keep		
+Goldpath.GoldpathArchiveEntry.ChainIndex.set -> void	keep		
+Goldpath.GoldpathArchiveEntry.ContentHash.get -> string!	keep		
+Goldpath.GoldpathArchiveEntry.ContentHash.set -> void	keep		
+Goldpath.GoldpathArchiveEntry.Definition.get -> string!	keep		
+Goldpath.GoldpathArchiveEntry.Definition.set -> void	keep		
+Goldpath.GoldpathArchiveEntry.GoldpathArchiveEntry() -> void	keep		
+Goldpath.GoldpathArchiveEntry.Document.get -> string!	keep		
+Goldpath.GoldpathArchiveEntry.Document.set -> void	keep		
+Goldpath.GoldpathArchiveEntry.DueAt.get -> System.DateTimeOffset	keep		
+Goldpath.GoldpathArchiveEntry.DueAt.set -> void	keep		
+Goldpath.GoldpathArchiveEntry.ErasedAt.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathArchiveEntry.ErasedAt.set -> void	keep		
+Goldpath.GoldpathArchiveEntry.Id.get -> long	keep		
+Goldpath.GoldpathArchiveEntry.Id.set -> void	keep		
+Goldpath.GoldpathArchiveEntry.PreviousHash.get -> string!	keep		
+Goldpath.GoldpathArchiveEntry.PreviousHash.set -> void	keep		
+Goldpath.GoldpathArchiveEntry.SchemaVersion.get -> int	keep		
+Goldpath.GoldpathArchiveEntry.SchemaVersion.set -> void	keep		
+Goldpath.GoldpathArchiveEntry.Tenant.get -> string?	keep		
+Goldpath.GoldpathArchiveEntry.Tenant.set -> void	keep		
+Goldpath.GoldpathArchiveEnvelope	keep		the hash chain's formula, public on purpose: anyone holding an entry (from the retrieve verb or the table) can recompute ContentHash and ChainHash without the engine, and the SchemaVersion constant says which formula an entry used
+Goldpath.GoldpathArchiveJob<TContext>	keep		public and named as written on purpose (Archive/Archival finding): the job's key is its type name (GoldpathJobDefinition.Name = jobType.Name), which operators trigger by, the run history stores and the goldpath.job span tag carries (GoldpathJobExecution.JobName holds it), so a rename would orphan schedules and history; DI builds it by type, and a test constructs it and runs it through IGoldpathJobRunner.RunAsync, as RetentionAndJobsTests does
+Goldpath.GoldpathArchiveJob<TContext>.GoldpathArchiveJob(Goldpath.GoldpathArchiveEngine<TContext!>! engine, Goldpath.GoldpathArchivalOptions! options) -> void	keep		
+Goldpath.GoldpathArchiveJob<TContext>.ExecuteChunkAsync(Goldpath.GoldpathJobChunk! chunk, Goldpath.GoldpathJobContext! context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!	keep		
+Goldpath.GoldpathArchiveJob<TContext>.PlanAsync(Goldpath.GoldpathJobContext! context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathJobPlan!>!	keep		
+Goldpath.GoldpathArchiveModelExtensions	keep		the ModelBuilder-extension spelling question is cross-package (Findings for API-13); by this part's Archive/Archival rule it would say Archival, but every generated DbContext calls AddGoldpathArchiveModel and the migrations analyzer (MigrationsAnalyzers.cs) names it, so it follows whatever single spelling the owner picks
+Goldpath.GoldpathArchiveVerifyJob<TContext>	keep		public and named as written on purpose (Archive/Archival finding): the job's key is its type name (GoldpathJobDefinition.Name = jobType.Name), which operators trigger by, the run history stores and the goldpath.job span tag carries (GoldpathJobExecution.JobName holds it), so a rename would orphan schedules and history; DI builds it by type, and a test constructs it and runs it through IGoldpathJobRunner.RunAsync, as RetentionAndJobsTests does
+Goldpath.GoldpathArchiveVerifyJob<TContext>.GoldpathArchiveVerifyJob(Goldpath.GoldpathArchiveEngine<TContext!>! engine, Goldpath.GoldpathArchivalOptions! options) -> void	keep		
+Goldpath.GoldpathArchiveVerifyJob<TContext>.ExecuteChunkAsync(Goldpath.GoldpathJobChunk! chunk, Goldpath.GoldpathJobContext! context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!	keep		
+Goldpath.GoldpathArchiveVerifyJob<TContext>.PlanAsync(Goldpath.GoldpathJobContext! context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathJobPlan!>!	keep		
+Goldpath.GoldpathChainFinding	keep		
+Goldpath.GoldpathChainFinding.AggregateKey.get -> string!	keep		
+Goldpath.GoldpathChainFinding.AggregateKey.init -> void	keep		
+Goldpath.GoldpathChainFinding.ChainIndex.get -> long	keep		
+Goldpath.GoldpathChainFinding.ChainIndex.init -> void	keep		
+Goldpath.GoldpathChainFinding.Definition.get -> string!	keep		
+Goldpath.GoldpathChainFinding.Definition.init -> void	keep		
+Goldpath.GoldpathChainFinding.GoldpathChainFinding(string! Definition, long ChainIndex, string! AggregateKey, string! Problem) -> void	keep		
+Goldpath.GoldpathChainFinding.Problem.get -> string!	keep		
+Goldpath.GoldpathChainFinding.Problem.init -> void	keep		
+Goldpath.GoldpathDocumentRedactor	remove		method Q1: Archival's erasure step (GoldpathArchiveAdminService.EraseAsync is its only caller), and the threat model states it runs only from erasure (T-ADM-13); a classified field's masking for any other sink is Goldpath.DataProtection's. Internal; Goldpath.Archival.Tests' RedactorTests reach it through the InternalsVisibleTo API-14 (#403) adds
+Goldpath.GoldpathErasureRecord	keep		an EF entity of AddGoldpathArchiveModel's model: the adopter's migrations name it; the admin service's GetErasuresAsync returns it (the erasure evidence); set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathErasureRecord.Detail.get -> string?	keep		
+Goldpath.GoldpathErasureRecord.Detail.set -> void	keep		
+Goldpath.GoldpathErasureRecord.GoldpathErasureRecord() -> void	keep		
+Goldpath.GoldpathErasureRecord.EntriesAffected.get -> int	keep		
+Goldpath.GoldpathErasureRecord.EntriesAffected.set -> void	keep		
+Goldpath.GoldpathErasureRecord.Id.get -> long	keep		
+Goldpath.GoldpathErasureRecord.Id.set -> void	keep		
+Goldpath.GoldpathErasureRecord.RequestedAt.get -> System.DateTimeOffset	keep		
+Goldpath.GoldpathErasureRecord.RequestedAt.set -> void	keep		
+Goldpath.GoldpathErasureRecord.RequestedBy.get -> string!	keep		
+Goldpath.GoldpathErasureRecord.RequestedBy.set -> void	keep		
+Goldpath.GoldpathErasureRecord.SubjectKey.get -> string!	keep		
+Goldpath.GoldpathErasureRecord.SubjectKey.set -> void	keep		
+Goldpath.GoldpathErasureRequest	keep		
+Goldpath.GoldpathErasureRequest.Detail.get -> string?	keep		
+Goldpath.GoldpathErasureRequest.Detail.init -> void	keep		
+Goldpath.GoldpathErasureRequest.GoldpathErasureRequest(string! SubjectKey, string? Detail) -> void	keep		
+Goldpath.GoldpathErasureRequest.SubjectKey.get -> string!	keep		
+Goldpath.GoldpathErasureRequest.SubjectKey.init -> void	keep		
+Goldpath.GoldpathHoldRequest	keep		
+Goldpath.GoldpathHoldRequest.CaseReference.get -> string!	keep		
+Goldpath.GoldpathHoldRequest.CaseReference.init -> void	keep		
+Goldpath.GoldpathHoldRequest.GoldpathHoldRequest(string! CaseReference) -> void	keep		
+Goldpath.GoldpathLegalHold	keep		an EF entity of AddGoldpathArchiveModel's model: the adopter's migrations name it; the admin service's GetHoldsAsync returns it; set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathLegalHold.AggregateKey.get -> string!	keep		
+Goldpath.GoldpathLegalHold.AggregateKey.set -> void	keep		
+Goldpath.GoldpathLegalHold.CaseReference.get -> string!	keep		
+Goldpath.GoldpathLegalHold.CaseReference.set -> void	keep		
+Goldpath.GoldpathLegalHold.Definition.get -> string!	keep		
+Goldpath.GoldpathLegalHold.Definition.set -> void	keep		
+Goldpath.GoldpathLegalHold.GoldpathLegalHold() -> void	keep		
+Goldpath.GoldpathLegalHold.Id.get -> long	keep		
+Goldpath.GoldpathLegalHold.Id.set -> void	keep		
+Goldpath.GoldpathLegalHold.LiftedAt.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathLegalHold.LiftedAt.set -> void	keep		
+Goldpath.GoldpathLegalHold.LiftedBy.get -> string?	keep		
+Goldpath.GoldpathLegalHold.LiftedBy.set -> void	keep		
+Goldpath.GoldpathLegalHold.PlacedAt.get -> System.DateTimeOffset	keep		
+Goldpath.GoldpathLegalHold.PlacedAt.set -> void	keep		
+Goldpath.GoldpathLegalHold.PlacedBy.get -> string!	keep		
+Goldpath.GoldpathLegalHold.PlacedBy.set -> void	keep		
+Goldpath.GoldpathRetentionPurgeJob<TContext>	keep		public and named as written on purpose (Archive/Archival finding): the job's key is its type name (GoldpathJobDefinition.Name = jobType.Name), which operators trigger by, the run history stores and the goldpath.job span tag carries (GoldpathJobExecution.JobName holds it), so a rename would orphan schedules and history; DI builds it by type, and a test constructs it and runs it through IGoldpathJobRunner.RunAsync, as RetentionAndJobsTests does
+Goldpath.GoldpathRetentionPurgeJob<TContext>.GoldpathRetentionPurgeJob(Goldpath.GoldpathArchiveEngine<TContext!>! engine, Goldpath.GoldpathArchivalOptions! options, System.TimeProvider! time) -> void	keep		
+Goldpath.GoldpathRetentionPurgeJob<TContext>.ExecuteChunkAsync(Goldpath.GoldpathJobChunk! chunk, Goldpath.GoldpathJobContext! context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!	keep		
+Goldpath.GoldpathRetentionPurgeJob<TContext>.PlanAsync(Goldpath.GoldpathJobContext! context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathJobPlan!>!	keep		
+Goldpath.GoldpathRowRetentionBuilder<TRow>	keep		
+Goldpath.GoldpathRowRetentionBuilder<TRow>.After(System.TimeSpan period, System.Linq.Expressions.Expression<System.Func<TRow!, System.DateTimeOffset>!>! age) -> Goldpath.GoldpathRowRetentionBuilder<TRow!>!	keep		
+Goldpath.GoldpathRowRetentionBuilder<TRow>.GoldpathRowRetentionBuilder() -> void	keep		
+Goldpath.GoldpathRowRetentionBuilder<TRow>.Where(System.Linq.Expressions.Expression<System.Func<TRow!, bool>!>! guard) -> Goldpath.GoldpathRowRetentionBuilder<TRow!>!	keep		
+Goldpath.GoldpathRowRetentionDefinition	keep		
+Goldpath.GoldpathRowRetentionDefinition.After.get -> System.TimeSpan	keep		
+Goldpath.GoldpathRowRetentionDefinition.CountDueAsync(Microsoft.EntityFrameworkCore.DbContext! db, System.DateTimeOffset now, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<int>!	keep		kept, read-only: the admin surface reports archive backlogs only (GetDefinitionsAsync), so this is the one way an adopter's health check sees a row retention's backlog; unlike PurgeBatchAsync it changes nothing
+Goldpath.GoldpathRowRetentionDefinition.HasGuard.get -> bool	keep		
+Goldpath.GoldpathRowRetentionDefinition.Name.get -> string!	keep		
+Goldpath.GoldpathRowRetentionDefinition.PurgeBatchAsync(Microsoft.EntityFrameworkCore.DbContext! db, System.DateTimeOffset now, int batchSize, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<int>!	remove		method Q1: a public delete with a caller-chosen now, so any caller can purge rows before their retention ends, with no actor recorded; Goldpath's own GoldpathRetentionPurgeJob does not call it (it calls the internal PurgeBatchCore). The purge is the job, on its schedule or triggered through the Jobs admin verbs with the actor recorded; internal for Goldpath's tests (API-14 adds InternalsVisibleTo)
+Goldpath.GoldpathRowRetentionDefinition.RowType.get -> System.Type!	keep		
+const Goldpath.GoldpathArchiveEnvelope.SchemaVersion = 1 -> int	keep		
+static Goldpath.GoldpathArchivalAdminEndpoints.MapGoldpathArchivalAdmin<TContext>(this Microsoft.AspNetCore.Routing.IEndpointRouteBuilder! endpoints, string! prefix = "/goldpath/admin/archival", bool exposeUnsecured = false) -> Microsoft.AspNetCore.Routing.IEndpointRouteBuilder!	keep		
+static Goldpath.GoldpathArchivalExtensions.AddGoldpathArchival<TBuilder, TContext>(this TBuilder builder, System.Action<Goldpath.GoldpathArchivalOptions!>! configure) -> TBuilder	keep		
+static Goldpath.GoldpathArchivalExtensions.AddGoldpathArchivalJobs<TContext>(this Goldpath.GoldpathJobsOptions! jobs, string! archiveCron = "0 0 2 * * ?", string! verifyCron = "0 0 5 ? * SUN", System.TimeSpan? deadline = null) -> Goldpath.GoldpathJobsOptions!	keep		
+static Goldpath.GoldpathArchiveEnvelope.ChainHash(string! contentHashAtAppend, string! previousChainHash, long chainIndex) -> string!	keep		
+static Goldpath.GoldpathArchiveEnvelope.ContentHash(int schemaVersion, string! definition, string! key, string? tenant, System.DateTimeOffset dueAt, string! document) -> string!	keep		
+static Goldpath.GoldpathArchiveModelExtensions.AddGoldpathArchiveModel(this Microsoft.EntityFrameworkCore.ModelBuilder! modelBuilder) -> Microsoft.EntityFrameworkCore.ModelBuilder!	keep		
+static Goldpath.GoldpathDocumentRedactor.Redact(object! root, Goldpath.IGoldpathDataProtector! protector) -> int	remove		method Q1: Archival's erasure step (GoldpathArchiveAdminService.EraseAsync is its only caller), and the threat model states it runs only from erasure (T-ADM-13); a classified field's masking for any other sink is Goldpath.DataProtection's. Internal; Goldpath.Archival.Tests' RedactorTests reach it through the InternalsVisibleTo API-14 (#403) adds
+Goldpath.GoldpathArchiveEntry.PreErasureContentHash.get -> string?	keep		
+Goldpath.GoldpathArchiveEntry.PreErasureContentHash.set -> void	keep		
+Goldpath.GoldpathArchiveCandidate.<Clone>$() -> Goldpath.GoldpathArchiveCandidate!	remove		only the internal LoadAsync delegate of GoldpathArchiveDefinition produces and consumes it, and no other public line names it, so no adopter can obtain or pass one (method Q1); internal, record members with it
+Goldpath.GoldpathArchiveCandidate.Deconstruct(out string! Key, out object! Root, out System.DateTimeOffset DueAt, out string? Tenant) -> void	remove		only the internal LoadAsync delegate of GoldpathArchiveDefinition produces and consumes it, and no other public line names it, so no adopter can obtain or pass one (method Q1); internal, record members with it
+Goldpath.GoldpathArchiveCandidate.Equals(Goldpath.GoldpathArchiveCandidate? other) -> bool	remove		only the internal LoadAsync delegate of GoldpathArchiveDefinition produces and consumes it, and no other public line names it, so no adopter can obtain or pass one (method Q1); internal, record members with it
+Goldpath.GoldpathArchiveDefinitionStatus.<Clone>$() -> Goldpath.GoldpathArchiveDefinitionStatus!	keep		
+Goldpath.GoldpathArchiveDefinitionStatus.Deconstruct(out string! Name, out long Entries, out int DueBacklog, out int ActiveHolds, out long ChainHead, out long PurgedThrough) -> void	keep		
+Goldpath.GoldpathArchiveDefinitionStatus.Equals(Goldpath.GoldpathArchiveDefinitionStatus? other) -> bool	keep		
+Goldpath.GoldpathChainFinding.<Clone>$() -> Goldpath.GoldpathChainFinding!	keep		
+Goldpath.GoldpathChainFinding.Deconstruct(out string! Definition, out long ChainIndex, out string! AggregateKey, out string! Problem) -> void	keep		
+Goldpath.GoldpathChainFinding.Equals(Goldpath.GoldpathChainFinding? other) -> bool	keep		
+Goldpath.GoldpathErasureRequest.<Clone>$() -> Goldpath.GoldpathErasureRequest!	keep		
+Goldpath.GoldpathErasureRequest.Deconstruct(out string! SubjectKey, out string? Detail) -> void	keep		
+Goldpath.GoldpathErasureRequest.Equals(Goldpath.GoldpathErasureRequest? other) -> bool	keep		
+Goldpath.GoldpathHoldRequest.<Clone>$() -> Goldpath.GoldpathHoldRequest!	keep		
+Goldpath.GoldpathHoldRequest.Deconstruct(out string! CaseReference) -> void	keep		
+Goldpath.GoldpathHoldRequest.Equals(Goldpath.GoldpathHoldRequest? other) -> bool	keep		
+override Goldpath.GoldpathArchiveCandidate.Equals(object? obj) -> bool	remove		only the internal LoadAsync delegate of GoldpathArchiveDefinition produces and consumes it, and no other public line names it, so no adopter can obtain or pass one (method Q1); internal, record members with it
+override Goldpath.GoldpathArchiveCandidate.GetHashCode() -> int	remove		only the internal LoadAsync delegate of GoldpathArchiveDefinition produces and consumes it, and no other public line names it, so no adopter can obtain or pass one (method Q1); internal, record members with it
+override Goldpath.GoldpathArchiveCandidate.ToString() -> string!	remove		only the internal LoadAsync delegate of GoldpathArchiveDefinition produces and consumes it, and no other public line names it, so no adopter can obtain or pass one (method Q1); internal, record members with it
+override Goldpath.GoldpathArchiveDefinitionStatus.Equals(object? obj) -> bool	keep		
+override Goldpath.GoldpathArchiveDefinitionStatus.GetHashCode() -> int	keep		
+override Goldpath.GoldpathArchiveDefinitionStatus.ToString() -> string!	keep		
+override Goldpath.GoldpathChainFinding.Equals(object? obj) -> bool	keep		
+override Goldpath.GoldpathChainFinding.GetHashCode() -> int	keep		
+override Goldpath.GoldpathChainFinding.ToString() -> string!	keep		
+override Goldpath.GoldpathErasureRequest.Equals(object? obj) -> bool	keep		
+override Goldpath.GoldpathErasureRequest.GetHashCode() -> int	keep		
+override Goldpath.GoldpathErasureRequest.ToString() -> string!	keep		
+override Goldpath.GoldpathHoldRequest.Equals(object? obj) -> bool	keep		
+override Goldpath.GoldpathHoldRequest.GetHashCode() -> int	keep		
+override Goldpath.GoldpathHoldRequest.ToString() -> string!	keep		
+static Goldpath.GoldpathArchiveCandidate.operator !=(Goldpath.GoldpathArchiveCandidate? left, Goldpath.GoldpathArchiveCandidate? right) -> bool	remove		only the internal LoadAsync delegate of GoldpathArchiveDefinition produces and consumes it, and no other public line names it, so no adopter can obtain or pass one (method Q1); internal, record members with it
+static Goldpath.GoldpathArchiveCandidate.operator ==(Goldpath.GoldpathArchiveCandidate? left, Goldpath.GoldpathArchiveCandidate? right) -> bool	remove		only the internal LoadAsync delegate of GoldpathArchiveDefinition produces and consumes it, and no other public line names it, so no adopter can obtain or pass one (method Q1); internal, record members with it
+static Goldpath.GoldpathArchiveDefinitionStatus.operator !=(Goldpath.GoldpathArchiveDefinitionStatus? left, Goldpath.GoldpathArchiveDefinitionStatus? right) -> bool	keep		
+static Goldpath.GoldpathArchiveDefinitionStatus.operator ==(Goldpath.GoldpathArchiveDefinitionStatus? left, Goldpath.GoldpathArchiveDefinitionStatus? right) -> bool	keep		
+static Goldpath.GoldpathChainFinding.operator !=(Goldpath.GoldpathChainFinding? left, Goldpath.GoldpathChainFinding? right) -> bool	keep		
+static Goldpath.GoldpathChainFinding.operator ==(Goldpath.GoldpathChainFinding? left, Goldpath.GoldpathChainFinding? right) -> bool	keep		
+static Goldpath.GoldpathErasureRequest.operator !=(Goldpath.GoldpathErasureRequest? left, Goldpath.GoldpathErasureRequest? right) -> bool	keep		
+static Goldpath.GoldpathErasureRequest.operator ==(Goldpath.GoldpathErasureRequest? left, Goldpath.GoldpathErasureRequest? right) -> bool	keep		
+static Goldpath.GoldpathHoldRequest.operator !=(Goldpath.GoldpathHoldRequest? left, Goldpath.GoldpathHoldRequest? right) -> bool	keep		
+static Goldpath.GoldpathHoldRequest.operator ==(Goldpath.GoldpathHoldRequest? left, Goldpath.GoldpathHoldRequest? right) -> bool	keep		
