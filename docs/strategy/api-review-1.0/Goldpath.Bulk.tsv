@@ -1,1 +1,294 @@
 line	verdict	target	reason
+Goldpath.GoldpathBulkBatch	keep		an EF entity of AddGoldpathBulk's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathBulkBatch.CompletedAt.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathBulkBatch.CompletedAt.set -> void	keep		
+Goldpath.GoldpathBulkBatch.DecidedAt.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathBulkBatch.DecidedAt.set -> void	keep		
+Goldpath.GoldpathBulkBatch.DecidedBy.get -> string?	keep		
+Goldpath.GoldpathBulkBatch.DecidedBy.set -> void	keep		
+Goldpath.GoldpathBulkBatch.DecisionNote.get -> string?	keep		
+Goldpath.GoldpathBulkBatch.DecisionNote.set -> void	keep		
+Goldpath.GoldpathBulkBatch.Definition.get -> string!	keep		
+Goldpath.GoldpathBulkBatch.Definition.set -> void	keep		
+Goldpath.GoldpathBulkBatch.GoldpathBulkBatch() -> void	keep		
+Goldpath.GoldpathBulkBatch.ExecutedRows.get -> int	keep		
+Goldpath.GoldpathBulkBatch.ExecutedRows.set -> void	keep		
+Goldpath.GoldpathBulkBatch.FailedRows.get -> int	keep		
+Goldpath.GoldpathBulkBatch.FailedRows.set -> void	keep		
+Goldpath.GoldpathBulkBatch.FileId.get -> System.Guid	keep		
+Goldpath.GoldpathBulkBatch.FileId.set -> void	keep		
+Goldpath.GoldpathBulkBatch.Id.get -> System.Guid	keep		
+Goldpath.GoldpathBulkBatch.Id.set -> void	keep		
+Goldpath.GoldpathBulkBatch.InvalidRows.get -> int	keep		
+Goldpath.GoldpathBulkBatch.InvalidRows.set -> void	keep		
+Goldpath.GoldpathBulkBatch.ReceivedAt.get -> System.DateTimeOffset	keep		
+Goldpath.GoldpathBulkBatch.ReceivedAt.set -> void	keep		
+Goldpath.GoldpathBulkBatch.RunId.get -> System.Guid?	keep		
+Goldpath.GoldpathBulkBatch.RunId.set -> void	keep		
+Goldpath.GoldpathBulkBatch.State.get -> Goldpath.GoldpathBulkBatchState	keep		
+Goldpath.GoldpathBulkBatch.State.set -> void	keep		
+Goldpath.GoldpathBulkBatch.TraceParent.get -> string?	keep		
+Goldpath.GoldpathBulkBatch.TraceParent.set -> void	keep		
+Goldpath.GoldpathBulkBatch.Tenant.get -> string?	keep		
+Goldpath.GoldpathBulkBatch.Tenant.set -> void	keep		
+Goldpath.GoldpathBulkBatch.TotalRows.get -> int	keep		
+Goldpath.GoldpathBulkBatch.TotalRows.set -> void	keep		
+Goldpath.GoldpathBulkBatch.ValidatedAt.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathBulkBatch.ValidatedAt.set -> void	keep		
+Goldpath.GoldpathBulkBatch.ValidRows.get -> int	keep		
+Goldpath.GoldpathBulkBatch.ValidRows.set -> void	keep		
+Goldpath.GoldpathBulkBatchBuilder<TRow>	keep		
+Goldpath.GoldpathBulkBatchBuilder<TRow>.AutoApprove() -> Goldpath.GoldpathBulkBatchBuilder<TRow!>!	keep		
+Goldpath.GoldpathBulkBatchBuilder<TRow>.Csv(System.Action<Goldpath.GoldpathCsvOptions!>? configure = null) -> Goldpath.GoldpathBulkBatchBuilder<TRow!>!	keep		
+Goldpath.GoldpathBulkBatchBuilder<TRow>.DeleteFileAfter(System.TimeSpan period) -> Goldpath.GoldpathBulkBatchBuilder<TRow!>!	keep		
+Goldpath.GoldpathBulkBatchBuilder<TRow>.MaxRows(int maxRows) -> Goldpath.GoldpathBulkBatchBuilder<TRow!>!	keep		
+Goldpath.GoldpathBulkBatchBuilder<TRow>.RowKey(System.Func<TRow!, string?>! key) -> Goldpath.GoldpathBulkBatchBuilder<TRow!>!	keep		
+Goldpath.GoldpathBulkBatchBuilder<TRow>.TolerateInvalidRows() -> Goldpath.GoldpathBulkBatchBuilder<TRow!>!	keep		
+Goldpath.GoldpathBulkBatchBuilder<TRow>.Validate(System.Action<TRow!, Goldpath.GoldpathBulkRowValidationContext!>! validate) -> Goldpath.GoldpathBulkBatchBuilder<TRow!>!	keep		
+Goldpath.GoldpathBulkBatchState	keep		
+Goldpath.GoldpathBulkBatchState.Approved = 3 -> Goldpath.GoldpathBulkBatchState	keep		
+Goldpath.GoldpathBulkBatchState.Completed = 6 -> Goldpath.GoldpathBulkBatchState	keep		
+Goldpath.GoldpathBulkBatchState.CompletedWithFailures = 7 -> Goldpath.GoldpathBulkBatchState	keep		
+Goldpath.GoldpathBulkBatchState.Executing = 5 -> Goldpath.GoldpathBulkBatchState	keep		
+Goldpath.GoldpathBulkBatchState.Received = 0 -> Goldpath.GoldpathBulkBatchState	keep		
+Goldpath.GoldpathBulkBatchState.Rejected = 4 -> Goldpath.GoldpathBulkBatchState	keep		
+Goldpath.GoldpathBulkBatchState.Validated = 2 -> Goldpath.GoldpathBulkBatchState	keep		
+Goldpath.GoldpathBulkBatchState.Validating = 1 -> Goldpath.GoldpathBulkBatchState	keep		
+Goldpath.GoldpathBulkDefinition	keep		
+Goldpath.GoldpathBulkDefinition.AutoApprove.get -> bool	keep		
+Goldpath.GoldpathBulkDefinition.DeleteFileAfter.get -> System.TimeSpan?	keep		
+Goldpath.GoldpathBulkDefinition.Format.get -> Goldpath.IGoldpathBulkFormat!	keep		
+Goldpath.GoldpathBulkDefinition.MaxRows.get -> int	keep		
+Goldpath.GoldpathBulkDefinition.Name.get -> string!	keep		
+Goldpath.GoldpathBulkDefinition.Validate(Goldpath.GoldpathBulkRawRow! raw, System.IServiceProvider! services) -> Goldpath.GoldpathBulkRowResult!	keep		public on purpose: an adopter's unit test runs a definition's validation rules against a raw row with no database, as Goldpath.Bulk.Tests' OptionsTests do
+Goldpath.GoldpathBulkDefinition.TolerateInvalidRows.get -> bool	keep		
+Goldpath.GoldpathBulkEngine<TContext>	keep		stays public by construction: DI builds it by type (TryAddSingleton) and the public constructors of GoldpathBulkAdminService, GoldpathBulkValidateJob and GoldpathBulkExecuteJob take it, which an internal type would make inconsistent accessibility (CS0051); its methods go internal (remove rows)
+Goldpath.GoldpathBulkEngine<TContext>.AdoptForExecutionAsync(System.IServiceProvider! services, System.Guid runId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathBulkBatch!>!>!	remove		engine plumbing (method Q1): every adopter-facing verb is on GoldpathBulkAdminService — UploadAsync (which also refuses a blank file name, #476, and triggers validation, neither of which IngestAsync does), ApproveAsync, RejectAsync — and the rest are the validate and execute jobs' own steps (ExecuteRangeAsync takes a GoldpathJobChunk, which no adopter can construct); internal, with Goldpath.IntegrationTests added to the existing InternalsVisibleTo (Goldpath.Bulk.Tests) by API-14 (#403)
+Goldpath.GoldpathBulkEngine<TContext>.ApproveAsync(System.IServiceProvider! services, System.Guid batchId, string! actor, string? note, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	remove		engine plumbing (method Q1): every adopter-facing verb is on GoldpathBulkAdminService — UploadAsync (which also refuses a blank file name, #476, and triggers validation, neither of which IngestAsync does), ApproveAsync, RejectAsync — and the rest are the validate and execute jobs' own steps (ExecuteRangeAsync takes a GoldpathJobChunk, which no adopter can construct); internal, with Goldpath.IntegrationTests added to the existing InternalsVisibleTo (Goldpath.Bulk.Tests) by API-14 (#403)
+Goldpath.GoldpathBulkEngine<TContext>.GoldpathBulkEngine(Goldpath.GoldpathBulkOptions! options, Goldpath.GoldpathBulkFileStore<TContext!>! store, System.TimeProvider! time, Microsoft.Extensions.Logging.ILogger<Goldpath.GoldpathBulkEngine<TContext!>!>! logger) -> void	keep		DI's activator binds public constructors only, and the engine is registered by type (TryAddSingleton)
+Goldpath.GoldpathBulkEngine<TContext>.ExecuteRangeAsync(System.IServiceProvider! services, Goldpath.GoldpathJobChunk! chunk, System.Guid batchId, long offset, long endExclusive, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!	remove		engine plumbing (method Q1): every adopter-facing verb is on GoldpathBulkAdminService — UploadAsync (which also refuses a blank file name, #476, and triggers validation, neither of which IngestAsync does), ApproveAsync, RejectAsync — and the rest are the validate and execute jobs' own steps (ExecuteRangeAsync takes a GoldpathJobChunk, which no adopter can construct); internal, with Goldpath.IntegrationTests added to the existing InternalsVisibleTo (Goldpath.Bulk.Tests) by API-14 (#403)
+Goldpath.GoldpathBulkEngine<TContext>.IngestAsync(System.IServiceProvider! services, string! definitionName, System.IO.Stream! content, string! fileName, string? tenant, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<(Goldpath.GoldpathBulkBatch! Batch, bool Created)>!	remove		engine plumbing (method Q1): every adopter-facing verb is on GoldpathBulkAdminService — UploadAsync (which also refuses a blank file name, #476, and triggers validation, neither of which IngestAsync does), ApproveAsync, RejectAsync — and the rest are the validate and execute jobs' own steps (ExecuteRangeAsync takes a GoldpathJobChunk, which no adopter can construct); internal, with Goldpath.IntegrationTests added to the existing InternalsVisibleTo (Goldpath.Bulk.Tests) by API-14 (#403)
+Goldpath.GoldpathBulkEngine<TContext>.PurgeExpiredFilesAsync(System.IServiceProvider! services, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<int>!	remove		engine plumbing (method Q1): every adopter-facing verb is on GoldpathBulkAdminService — UploadAsync (which also refuses a blank file name, #476, and triggers validation, neither of which IngestAsync does), ApproveAsync, RejectAsync — and the rest are the validate and execute jobs' own steps (ExecuteRangeAsync takes a GoldpathJobChunk, which no adopter can construct); internal, with Goldpath.IntegrationTests added to the existing InternalsVisibleTo (Goldpath.Bulk.Tests) by API-14 (#403)
+Goldpath.GoldpathBulkEngine<TContext>.RejectAsync(System.IServiceProvider! services, System.Guid batchId, string! actor, string? note, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	remove		engine plumbing (method Q1): every adopter-facing verb is on GoldpathBulkAdminService — UploadAsync (which also refuses a blank file name, #476, and triggers validation, neither of which IngestAsync does), ApproveAsync, RejectAsync — and the rest are the validate and execute jobs' own steps (ExecuteRangeAsync takes a GoldpathJobChunk, which no adopter can construct); internal, with Goldpath.IntegrationTests added to the existing InternalsVisibleTo (Goldpath.Bulk.Tests) by API-14 (#403)
+Goldpath.GoldpathBulkEngine<TContext>.ReplayRowAsync(System.IServiceProvider! services, string! itemKey, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!	remove		engine plumbing (method Q1): every adopter-facing verb is on GoldpathBulkAdminService — UploadAsync (which also refuses a blank file name, #476, and triggers validation, neither of which IngestAsync does), ApproveAsync, RejectAsync — and the rest are the validate and execute jobs' own steps (ExecuteRangeAsync takes a GoldpathJobChunk, which no adopter can construct); internal, with Goldpath.IntegrationTests added to the existing InternalsVisibleTo (Goldpath.Bulk.Tests) by API-14 (#403)
+static Goldpath.GoldpathBulkEngine<TContext>.ItemKey(System.Guid batchId, int rowNumber) -> string!	remove		engine plumbing (method Q1): every adopter-facing verb is on GoldpathBulkAdminService — UploadAsync (which also refuses a blank file name, #476, and triggers validation, neither of which IngestAsync does), ApproveAsync, RejectAsync — and the rest are the validate and execute jobs' own steps (ExecuteRangeAsync takes a GoldpathJobChunk, which no adopter can construct); internal, with Goldpath.IntegrationTests added to the existing InternalsVisibleTo (Goldpath.Bulk.Tests) by API-14 (#403)
+static Goldpath.GoldpathBulkEngine<TContext>.ParseItemKey(string! itemKey) -> (System.Guid BatchId, int RowNumber)	remove		engine plumbing (method Q1): every adopter-facing verb is on GoldpathBulkAdminService — UploadAsync (which also refuses a blank file name, #476, and triggers validation, neither of which IngestAsync does), ApproveAsync, RejectAsync — and the rest are the validate and execute jobs' own steps (ExecuteRangeAsync takes a GoldpathJobChunk, which no adopter can construct); internal, with Goldpath.IntegrationTests added to the existing InternalsVisibleTo (Goldpath.Bulk.Tests) by API-14 (#403)
+Goldpath.GoldpathBulkEngine<TContext>.ValidateBatchAsync(System.IServiceProvider! services, System.Guid batchId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!	remove		engine plumbing (method Q1): every adopter-facing verb is on GoldpathBulkAdminService — UploadAsync (which also refuses a blank file name, #476, and triggers validation, neither of which IngestAsync does), ApproveAsync, RejectAsync — and the rest are the validate and execute jobs' own steps (ExecuteRangeAsync takes a GoldpathJobChunk, which no adopter can construct); internal, with Goldpath.IntegrationTests added to the existing InternalsVisibleTo (Goldpath.Bulk.Tests) by API-14 (#403)
+Goldpath.GoldpathBulkExecuteJob<TContext>	keep		public and named as written on purpose: the job's key is its type name (GoldpathJobDefinition.Name = jobType.Name, e.g. GoldpathBulkExecuteJob`1), which operators trigger by, the run history stores and the goldpath.job span tag carries (GoldpathJobExecution.JobName holds it); DI builds it by type, and a test constructs it and runs it through IGoldpathJobRunner.RunAsync, as Archival's RetentionAndJobsTests does for its jobs
+Goldpath.GoldpathBulkExecuteJob<TContext>.GoldpathBulkExecuteJob(Goldpath.GoldpathBulkEngine<TContext!>! engine, Goldpath.GoldpathBulkOptions! options) -> void	keep		
+Goldpath.GoldpathBulkExecuteJob<TContext>.ExecuteChunkAsync(Goldpath.GoldpathJobChunk! chunk, Goldpath.GoldpathJobContext! context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!	keep		
+Goldpath.GoldpathBulkExecuteJob<TContext>.PlanAsync(Goldpath.GoldpathJobContext! context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathJobPlan!>!	keep		
+Goldpath.GoldpathBulkExecuteJob<TContext>.ReplayItemAsync(string! itemKey, Goldpath.GoldpathJobContext! context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!	keep		
+Goldpath.GoldpathBulkExtensions	keep		
+Goldpath.GoldpathBulkFile	keep		an EF entity of AddGoldpathBulk's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathBulkFile.GoldpathBulkFile() -> void	keep		
+Goldpath.GoldpathBulkFile.FileName.get -> string!	keep		
+Goldpath.GoldpathBulkFile.FileName.set -> void	keep		
+Goldpath.GoldpathBulkFile.Id.get -> System.Guid	keep		
+Goldpath.GoldpathBulkFile.Id.set -> void	keep		
+Goldpath.GoldpathBulkFile.Length.get -> long	keep		
+Goldpath.GoldpathBulkFile.Length.set -> void	keep		
+Goldpath.GoldpathBulkFile.Sha256.get -> string!	keep		
+Goldpath.GoldpathBulkFile.Sha256.set -> void	keep		
+Goldpath.GoldpathBulkFile.UploadedAt.get -> System.DateTimeOffset	keep		
+Goldpath.GoldpathBulkFile.UploadedAt.set -> void	keep		
+Goldpath.GoldpathBulkFileChunk	keep		an EF entity of AddGoldpathBulk's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathBulkFileChunk.Data.get -> byte[]!	keep		
+Goldpath.GoldpathBulkFileChunk.Data.set -> void	keep		
+Goldpath.GoldpathBulkFileChunk.GoldpathBulkFileChunk() -> void	keep		
+Goldpath.GoldpathBulkFileChunk.FileId.get -> System.Guid	keep		
+Goldpath.GoldpathBulkFileChunk.FileId.set -> void	keep		
+Goldpath.GoldpathBulkFileChunk.Index.get -> int	keep		
+Goldpath.GoldpathBulkFileChunk.Index.set -> void	keep		
+Goldpath.GoldpathBulkFileStore<TContext>	keep		stays public by construction: GoldpathBulkEngine's public constructor takes it and DI builds it by type; the bulk RFC names an IGoldpathBulkFileStore seam that does not exist (Findings for API-13); its methods go internal (remove rows)
+Goldpath.GoldpathBulkFileStore<TContext>.DeleteAsync(TContext! db, System.Guid fileId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!	remove		the engine's storage steps (method Q1): only GoldpathBulkEngine calls them; OpenRead hands out the raw upload, which the admin surface deliberately never exposes (it reports value-free errors). An adopter uploads through GoldpathBulkAdminService.UploadAsync; internal
+Goldpath.GoldpathBulkFileStore<TContext>.GoldpathBulkFileStore(System.TimeProvider! time) -> void	keep		DI's activator binds public constructors only, and the store is registered by type (TryAddSingleton)
+Goldpath.GoldpathBulkFileStore<TContext>.OpenRead(TContext! db, System.Guid fileId) -> System.IO.Stream!	remove		the engine's storage steps (method Q1): only GoldpathBulkEngine calls them; OpenRead hands out the raw upload, which the admin surface deliberately never exposes (it reports value-free errors). An adopter uploads through GoldpathBulkAdminService.UploadAsync; internal
+Goldpath.GoldpathBulkFileStore<TContext>.SaveAsync(TContext! db, System.IO.Stream! stream, string! fileName, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<(Goldpath.GoldpathBulkFile! File, bool Created)>!	remove		the engine's storage steps (method Q1): only GoldpathBulkEngine calls them; OpenRead hands out the raw upload, which the admin surface deliberately never exposes (it reports value-free errors). An adopter uploads through GoldpathBulkAdminService.UploadAsync; internal
+Goldpath.GoldpathBulkMetrics	remove		public-metrics question (Findings for API-13): the meter and instrument names are the contract (API-8, #397), not this class; SetIntakeSnapshot is a public WRITER of the batches-by-state and awaiting-approval gauges, so any caller could overwrite the human-in-the-loop alert's signal. Its only callers are GoldpathBulkAdminService and GoldpathBulkValidateJob, inside Goldpath.Bulk — internal, as GoldpathArchivalMetrics and GoldpathJobsMetrics already are
+Goldpath.GoldpathBulkModel	keep		the ModelBuilder-extension spelling question is cross-package (Findings for API-13); kept as written, because every generated DbContext calls AddGoldpathBulk and the migrations analyzer (MigrationsAnalyzers.cs) names it
+Goldpath.GoldpathBulkOptions	keep		
+Goldpath.GoldpathBulkOptions.AddBatch<TRow>(string! name, System.Action<Goldpath.GoldpathBulkBatchBuilder<TRow!>!>! configure) -> Goldpath.GoldpathBulkOptions!	keep		
+Goldpath.GoldpathBulkOptions.Batches.get -> System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathBulkDefinition!>!	keep		
+Goldpath.GoldpathBulkOptions.ChunkSize.get -> int	keep		
+Goldpath.GoldpathBulkOptions.ChunkSize.set -> void	keep		
+Goldpath.GoldpathBulkOptions.Definition(string! name) -> Goldpath.GoldpathBulkDefinition!	keep		
+Goldpath.GoldpathBulkOptions.GoldpathBulkOptions() -> void	keep		
+Goldpath.GoldpathBulkOptions.InsertBatchSize.get -> int	keep		
+Goldpath.GoldpathBulkOptions.InsertBatchSize.set -> void	keep		
+Goldpath.GoldpathBulkRawError	keep		
+Goldpath.GoldpathBulkRawError.GoldpathBulkRawError(int RowNumber, string! Message) -> void	keep		
+Goldpath.GoldpathBulkRawError.Message.get -> string!	keep		
+Goldpath.GoldpathBulkRawError.Message.init -> void	keep		
+Goldpath.GoldpathBulkRawError.RowNumber.get -> int	keep		
+Goldpath.GoldpathBulkRawError.RowNumber.init -> void	keep		
+Goldpath.GoldpathBulkRawRow	keep		
+Goldpath.GoldpathBulkRawRow.GoldpathBulkRawRow(int RowNumber, System.Collections.Generic.IReadOnlyDictionary<string!, string!>! Fields) -> void	keep		
+Goldpath.GoldpathBulkRawRow.Fields.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>!	keep		
+Goldpath.GoldpathBulkRawRow.Fields.init -> void	keep		
+Goldpath.GoldpathBulkRawRow.RowNumber.get -> int	keep		
+Goldpath.GoldpathBulkRawRow.RowNumber.init -> void	keep		
+Goldpath.GoldpathBulkRow	keep		an EF entity of AddGoldpathBulk's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathBulkRow.BatchId.get -> System.Guid	keep		
+Goldpath.GoldpathBulkRow.BatchId.set -> void	keep		
+Goldpath.GoldpathBulkRow.ClaimedAt.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathBulkRow.ClaimedAt.set -> void	keep		
+Goldpath.GoldpathBulkRow.GoldpathBulkRow() -> void	keep		
+Goldpath.GoldpathBulkRow.ExecutedAt.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathBulkRow.ExecutedAt.set -> void	keep		
+Goldpath.GoldpathBulkRow.FailedAt.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathBulkRow.FailedAt.set -> void	keep		
+Goldpath.GoldpathBulkRow.Payload.get -> string!	keep		
+Goldpath.GoldpathBulkRow.Payload.set -> void	keep		
+Goldpath.GoldpathBulkRow.RowNumber.get -> int	keep		
+Goldpath.GoldpathBulkRow.RowNumber.set -> void	keep		
+Goldpath.GoldpathBulkRowContext	keep		
+Goldpath.GoldpathBulkRowContext.BatchId.get -> System.Guid	keep		
+Goldpath.GoldpathBulkRowContext.Replay.get -> bool	keep		
+Goldpath.GoldpathBulkRowContext.RowNumber.get -> int	keep		
+Goldpath.GoldpathBulkRowContext.Services.get -> System.IServiceProvider!	keep		
+Goldpath.GoldpathBulkRowContext.Tenant.get -> string?	keep		
+Goldpath.GoldpathBulkRowError	keep		an EF entity of AddGoldpathBulk's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathBulkRowError.BatchId.get -> System.Guid	keep		
+Goldpath.GoldpathBulkRowError.BatchId.set -> void	keep		
+Goldpath.GoldpathBulkRowError.GoldpathBulkRowError() -> void	keep		
+Goldpath.GoldpathBulkRowError.Field.get -> string!	keep		
+Goldpath.GoldpathBulkRowError.Field.set -> void	keep		
+Goldpath.GoldpathBulkRowError.Id.get -> long	keep		
+Goldpath.GoldpathBulkRowError.Id.set -> void	keep		
+Goldpath.GoldpathBulkRowError.Message.get -> string!	keep		
+Goldpath.GoldpathBulkRowError.Message.set -> void	keep		
+Goldpath.GoldpathBulkRowError.RowNumber.get -> int	keep		
+Goldpath.GoldpathBulkRowError.RowNumber.set -> void	keep		
+Goldpath.GoldpathBulkRowResult	keep		
+Goldpath.GoldpathBulkRowResult.GoldpathBulkRowResult() -> void	keep		
+Goldpath.GoldpathBulkRowResult.Errors.get -> System.Collections.Generic.IReadOnlyList<(string! Field, string! Message)>!	keep		
+Goldpath.GoldpathBulkRowResult.Errors.init -> void	keep		
+Goldpath.GoldpathBulkRowResult.Payload.get -> string?	keep		
+Goldpath.GoldpathBulkRowResult.Payload.init -> void	keep		
+Goldpath.GoldpathBulkRowResult.RowKey.get -> string?	keep		
+Goldpath.GoldpathBulkRowResult.RowKey.init -> void	keep		
+Goldpath.GoldpathBulkRowValidationContext	keep		
+Goldpath.GoldpathBulkRowValidationContext.Fail(string! field, string! message) -> void	keep		
+Goldpath.GoldpathBulkRowValidationContext.Services.get -> System.IServiceProvider!	keep		
+Goldpath.GoldpathBulkValidateJob<TContext>	keep		public and named as written on purpose: the job's key is its type name (GoldpathJobDefinition.Name = jobType.Name, e.g. GoldpathBulkExecuteJob`1), which operators trigger by, the run history stores and the goldpath.job span tag carries (GoldpathJobExecution.JobName holds it); DI builds it by type, and a test constructs it and runs it through IGoldpathJobRunner.RunAsync, as Archival's RetentionAndJobsTests does for its jobs
+Goldpath.GoldpathBulkValidateJob<TContext>.GoldpathBulkValidateJob(Goldpath.GoldpathBulkEngine<TContext!>! engine, Goldpath.GoldpathBulkOptions! options, System.TimeProvider! time) -> void	keep		
+Goldpath.GoldpathBulkValidateJob<TContext>.ExecuteChunkAsync(Goldpath.GoldpathJobChunk! chunk, Goldpath.GoldpathJobContext! context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!	keep		
+Goldpath.GoldpathBulkValidateJob<TContext>.PlanAsync(Goldpath.GoldpathJobContext! context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathJobPlan!>!	keep		
+static Goldpath.GoldpathBulkExtensions.AddGoldpathBulk<TBuilder, TContext>(this TBuilder builder, System.Action<Goldpath.GoldpathBulkOptions!>! configure) -> TBuilder	keep		
+static Goldpath.GoldpathBulkExtensions.AddGoldpathBulkJobs<TContext>(this Goldpath.GoldpathJobsOptions! jobs, string! validateCron = "0 * * * * ?", string! executeCron = "30 * * * * ?", System.TimeSpan? deadline = null) -> Goldpath.GoldpathJobsOptions!	keep		
+static Goldpath.GoldpathBulkModel.AddGoldpathBulk(this Microsoft.EntityFrameworkCore.ModelBuilder! modelBuilder) -> Microsoft.EntityFrameworkCore.ModelBuilder!	keep		
+Goldpath.GoldpathCsvFormat	keep		
+Goldpath.GoldpathCsvFormat.GoldpathCsvFormat(Goldpath.GoldpathCsvOptions! options) -> void	keep		
+Goldpath.GoldpathCsvFormat.ReadAsync(System.IO.Stream! stream, System.Func<Goldpath.GoldpathBulkRawRow!, System.Threading.Tasks.Task!>! onRow, System.Func<Goldpath.GoldpathBulkRawError!, System.Threading.Tasks.Task!>! onError, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<int>!	keep		
+Goldpath.GoldpathCsvOptions	keep		
+Goldpath.GoldpathCsvOptions.Culture.get -> string!	keep		
+Goldpath.GoldpathCsvOptions.Culture.set -> void	keep		
+Goldpath.GoldpathCsvOptions.Delimiter.get -> char	keep		
+Goldpath.GoldpathCsvOptions.Delimiter.set -> void	keep		
+Goldpath.GoldpathCsvOptions.GoldpathCsvOptions() -> void	keep		
+Goldpath.GoldpathCsvOptions.ResolveCulture() -> System.Globalization.CultureInfo!	keep		
+Goldpath.IGoldpathBulkFormat	keep		the bulk RFC's D3 format seam, kept; no builder method accepts an adopter's implementation yet (Csv() is the only one), so an adopter can implement it but not plug it in (Findings for API-13)
+Goldpath.IGoldpathBulkFormat.ReadAsync(System.IO.Stream! stream, System.Func<Goldpath.GoldpathBulkRawRow!, System.Threading.Tasks.Task!>! onRow, System.Func<Goldpath.GoldpathBulkRawError!, System.Threading.Tasks.Task!>! onError, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<int>!	keep		
+Goldpath.IGoldpathBulkRowHandler<TRow>	keep		
+Goldpath.IGoldpathBulkRowHandler<TRow>.ExecuteAsync(TRow! row, Goldpath.GoldpathBulkRowContext! context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!	keep		
+Goldpath.GoldpathBulkAdminEndpoints	keep		
+Goldpath.GoldpathBulkAdminService<TContext>	keep		
+Goldpath.GoldpathBulkAdminService<TContext>.ApproveAsync(System.Guid batchId, string! actor, string? note, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	rename	Goldpath.GoldpathBulkAdminService<TContext>.ApproveAsync(System.Guid batchId, string! actor, string? note, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Bulk signature this review keeps names it cancellationToken (the Findings' ct policy, API-2). Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathBulkAdminService<TContext>.GoldpathBulkAdminService(Goldpath.GoldpathBulkEngine<TContext!>! engine, Goldpath.GoldpathBulkOptions! options, Microsoft.Extensions.DependencyInjection.IServiceScopeFactory! scopeFactory, System.TimeProvider! time) -> void	keep		
+Goldpath.GoldpathBulkAdminService<TContext>.GetBatchAsync(System.Guid batchId, string? tenant, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathBulkBatchInfo?>!	rename	Goldpath.GoldpathBulkAdminService<TContext>.GetBatchAsync(System.Guid batchId, string? tenant, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathBulkBatchInfo?>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Bulk signature this review keeps names it cancellationToken (the Findings' ct policy, API-2). Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathBulkAdminService<TContext>.GetDefinitionsAsync(System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathBulkDefinitionStatus!>!>!	rename	Goldpath.GoldpathBulkAdminService<TContext>.GetDefinitionsAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathBulkDefinitionStatus!>!>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Bulk signature this review keeps names it cancellationToken (the Findings' ct policy, API-2). Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathBulkAdminService<TContext>.RejectAsync(System.Guid batchId, string! actor, string? note, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	rename	Goldpath.GoldpathBulkAdminService<TContext>.RejectAsync(System.Guid batchId, string! actor, string? note, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Bulk signature this review keeps names it cancellationToken (the Findings' ct policy, API-2). Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathBulkAdminService<TContext>.UploadAsync(string! definition, System.IO.Stream! content, string! fileName, string? tenant, string! actor, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathBulkBatchInfo!>!	rename	Goldpath.GoldpathBulkAdminService<TContext>.UploadAsync(string! definition, System.IO.Stream! content, string! fileName, string? tenant, string! actor, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathBulkBatchInfo!>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Bulk signature this review keeps names it cancellationToken (the Findings' ct policy, API-2). Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathBulkBatchInfo	keep		
+Goldpath.GoldpathBulkBatchInfo.CompletedAt.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathBulkBatchInfo.CompletedAt.init -> void	keep		
+Goldpath.GoldpathBulkBatchInfo.DecidedAt.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathBulkBatchInfo.DecidedAt.init -> void	keep		
+Goldpath.GoldpathBulkBatchInfo.DecidedBy.get -> string?	keep		
+Goldpath.GoldpathBulkBatchInfo.DecidedBy.init -> void	keep		
+Goldpath.GoldpathBulkBatchInfo.DecisionNote.get -> string?	keep		
+Goldpath.GoldpathBulkBatchInfo.DecisionNote.init -> void	keep		
+Goldpath.GoldpathBulkBatchInfo.Definition.get -> string!	keep		
+Goldpath.GoldpathBulkBatchInfo.Definition.init -> void	keep		
+Goldpath.GoldpathBulkBatchInfo.GoldpathBulkBatchInfo(System.Guid Id, string! Definition, string! State, string? Tenant, int TotalRows, int ValidRows, int InvalidRows, int ExecutedRows, int FailedRows, System.Guid? RunId, System.DateTimeOffset ReceivedAt, System.DateTimeOffset? ValidatedAt, System.DateTimeOffset? DecidedAt, string? DecidedBy, string? DecisionNote, System.DateTimeOffset? CompletedAt) -> void	keep		
+Goldpath.GoldpathBulkBatchInfo.ExecutedRows.get -> int	keep		
+Goldpath.GoldpathBulkBatchInfo.ExecutedRows.init -> void	keep		
+Goldpath.GoldpathBulkBatchInfo.FailedRows.get -> int	keep		
+Goldpath.GoldpathBulkBatchInfo.FailedRows.init -> void	keep		
+Goldpath.GoldpathBulkBatchInfo.Id.get -> System.Guid	keep		
+Goldpath.GoldpathBulkBatchInfo.Id.init -> void	keep		
+Goldpath.GoldpathBulkBatchInfo.InvalidRows.get -> int	keep		
+Goldpath.GoldpathBulkBatchInfo.InvalidRows.init -> void	keep		
+Goldpath.GoldpathBulkBatchInfo.ReceivedAt.get -> System.DateTimeOffset	keep		
+Goldpath.GoldpathBulkBatchInfo.ReceivedAt.init -> void	keep		
+Goldpath.GoldpathBulkBatchInfo.RunId.get -> System.Guid?	keep		
+Goldpath.GoldpathBulkBatchInfo.RunId.init -> void	keep		
+Goldpath.GoldpathBulkBatchInfo.State.get -> string!	keep		
+Goldpath.GoldpathBulkBatchInfo.State.init -> void	keep		
+Goldpath.GoldpathBulkBatchInfo.Tenant.get -> string?	keep		
+Goldpath.GoldpathBulkBatchInfo.Tenant.init -> void	keep		
+Goldpath.GoldpathBulkBatchInfo.TotalRows.get -> int	keep		
+Goldpath.GoldpathBulkBatchInfo.TotalRows.init -> void	keep		
+Goldpath.GoldpathBulkBatchInfo.ValidatedAt.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathBulkBatchInfo.ValidatedAt.init -> void	keep		
+Goldpath.GoldpathBulkBatchInfo.ValidRows.get -> int	keep		
+Goldpath.GoldpathBulkBatchInfo.ValidRows.init -> void	keep		
+Goldpath.GoldpathBulkDecisionRequest	keep		
+Goldpath.GoldpathBulkDecisionRequest.GoldpathBulkDecisionRequest(string? Note) -> void	keep		
+Goldpath.GoldpathBulkDecisionRequest.Note.get -> string?	keep		
+Goldpath.GoldpathBulkDecisionRequest.Note.init -> void	keep		
+Goldpath.GoldpathBulkDefinitionStatus	keep		
+Goldpath.GoldpathBulkDefinitionStatus.AwaitingApproval.get -> int	keep		
+Goldpath.GoldpathBulkDefinitionStatus.AwaitingApproval.init -> void	keep		
+Goldpath.GoldpathBulkDefinitionStatus.BatchesByState.get -> System.Collections.Generic.IReadOnlyDictionary<string!, int>!	keep		
+Goldpath.GoldpathBulkDefinitionStatus.BatchesByState.init -> void	keep		
+Goldpath.GoldpathBulkDefinitionStatus.GoldpathBulkDefinitionStatus(string! Name, System.Collections.Generic.IReadOnlyDictionary<string!, int>! BatchesByState, int AwaitingApproval, double? OldestAwaitingApprovalSeconds) -> void	keep		
+Goldpath.GoldpathBulkDefinitionStatus.Name.get -> string!	keep		
+Goldpath.GoldpathBulkDefinitionStatus.Name.init -> void	keep		
+Goldpath.GoldpathBulkDefinitionStatus.OldestAwaitingApprovalSeconds.get -> double?	keep		
+Goldpath.GoldpathBulkDefinitionStatus.OldestAwaitingApprovalSeconds.init -> void	keep		
+static Goldpath.GoldpathBulkAdminEndpoints.MapGoldpathBulkAdmin<TContext>(this Microsoft.AspNetCore.Routing.IEndpointRouteBuilder! endpoints, string! prefix = "/goldpath/admin/bulk", bool exposeUnsecured = false) -> Microsoft.AspNetCore.Routing.IEndpointRouteBuilder!	keep		
+static Goldpath.GoldpathBulkMetrics.SetIntakeSnapshot(string! definition, System.Collections.Generic.IReadOnlyDictionary<string!, int>! batchesByState, double oldestAwaitingSeconds) -> void	remove		public-metrics question (Findings for API-13): the meter and instrument names are the contract (API-8, #397), not this class; SetIntakeSnapshot is a public WRITER of the batches-by-state and awaiting-approval gauges, so any caller could overwrite the human-in-the-loop alert's signal. Its only callers are GoldpathBulkAdminService and GoldpathBulkValidateJob, inside Goldpath.Bulk — internal, as GoldpathArchivalMetrics and GoldpathJobsMetrics already are
+Goldpath.GoldpathBulkAdminService<TContext>.GetErrorsAsync(System.Guid batchId, string? tenant, int afterRowNumber, int take, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathBulkRowError!>!>!	rename	Goldpath.GoldpathBulkAdminService<TContext>.GetErrorsAsync(System.Guid batchId, string? tenant, int afterRowNumber, int take, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathBulkRowError!>!>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Bulk signature this review keeps names it cancellationToken (the Findings' ct policy, API-2). Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathBulkAdminService<TContext>.GetBatchesAsync(string![]? state, string![]? definition, string? tenant, int take, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathBulkBatchInfo!>!>!	rename	Goldpath.GoldpathBulkAdminService<TContext>.GetBatchesAsync(string![]? state, string![]? definition, string? tenant, int take, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathBulkBatchInfo!>!>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Bulk signature this review keeps names it cancellationToken (the Findings' ct policy, API-2). Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathBulkBatchInfo.<Clone>$() -> Goldpath.GoldpathBulkBatchInfo!	keep		
+Goldpath.GoldpathBulkBatchInfo.Deconstruct(out System.Guid Id, out string! Definition, out string! State, out string? Tenant, out int TotalRows, out int ValidRows, out int InvalidRows, out int ExecutedRows, out int FailedRows, out System.Guid? RunId, out System.DateTimeOffset ReceivedAt, out System.DateTimeOffset? ValidatedAt, out System.DateTimeOffset? DecidedAt, out string? DecidedBy, out string? DecisionNote, out System.DateTimeOffset? CompletedAt) -> void	keep		
+Goldpath.GoldpathBulkBatchInfo.Equals(Goldpath.GoldpathBulkBatchInfo? other) -> bool	keep		
+Goldpath.GoldpathBulkDecisionRequest.<Clone>$() -> Goldpath.GoldpathBulkDecisionRequest!	keep		
+Goldpath.GoldpathBulkDecisionRequest.Deconstruct(out string? Note) -> void	keep		
+Goldpath.GoldpathBulkDecisionRequest.Equals(Goldpath.GoldpathBulkDecisionRequest? other) -> bool	keep		
+Goldpath.GoldpathBulkDefinitionStatus.<Clone>$() -> Goldpath.GoldpathBulkDefinitionStatus!	keep		
+Goldpath.GoldpathBulkDefinitionStatus.Deconstruct(out string! Name, out System.Collections.Generic.IReadOnlyDictionary<string!, int>! BatchesByState, out int AwaitingApproval, out double? OldestAwaitingApprovalSeconds) -> void	keep		
+Goldpath.GoldpathBulkDefinitionStatus.Equals(Goldpath.GoldpathBulkDefinitionStatus? other) -> bool	keep		
+Goldpath.GoldpathBulkRawError.<Clone>$() -> Goldpath.GoldpathBulkRawError!	keep		
+Goldpath.GoldpathBulkRawError.Deconstruct(out int RowNumber, out string! Message) -> void	keep		
+Goldpath.GoldpathBulkRawError.Equals(Goldpath.GoldpathBulkRawError? other) -> bool	keep		
+Goldpath.GoldpathBulkRawRow.<Clone>$() -> Goldpath.GoldpathBulkRawRow!	keep		
+Goldpath.GoldpathBulkRawRow.Deconstruct(out int RowNumber, out System.Collections.Generic.IReadOnlyDictionary<string!, string!>! Fields) -> void	keep		
+Goldpath.GoldpathBulkRawRow.Equals(Goldpath.GoldpathBulkRawRow? other) -> bool	keep		
+override Goldpath.GoldpathBulkBatchInfo.Equals(object? obj) -> bool	keep		
+override Goldpath.GoldpathBulkBatchInfo.GetHashCode() -> int	keep		
+override Goldpath.GoldpathBulkBatchInfo.ToString() -> string!	keep		
+override Goldpath.GoldpathBulkDecisionRequest.Equals(object? obj) -> bool	keep		
+override Goldpath.GoldpathBulkDecisionRequest.GetHashCode() -> int	keep		
+override Goldpath.GoldpathBulkDecisionRequest.ToString() -> string!	keep		
+override Goldpath.GoldpathBulkDefinitionStatus.Equals(object? obj) -> bool	keep		
+override Goldpath.GoldpathBulkDefinitionStatus.GetHashCode() -> int	keep		
+override Goldpath.GoldpathBulkDefinitionStatus.ToString() -> string!	keep		
+override Goldpath.GoldpathBulkRawError.Equals(object? obj) -> bool	keep		
+override Goldpath.GoldpathBulkRawError.GetHashCode() -> int	keep		
+override Goldpath.GoldpathBulkRawError.ToString() -> string!	keep		
+override Goldpath.GoldpathBulkRawRow.Equals(object? obj) -> bool	keep		
+override Goldpath.GoldpathBulkRawRow.GetHashCode() -> int	keep		
+override Goldpath.GoldpathBulkRawRow.ToString() -> string!	keep		
+static Goldpath.GoldpathBulkBatchInfo.operator !=(Goldpath.GoldpathBulkBatchInfo? left, Goldpath.GoldpathBulkBatchInfo? right) -> bool	keep		
+static Goldpath.GoldpathBulkBatchInfo.operator ==(Goldpath.GoldpathBulkBatchInfo? left, Goldpath.GoldpathBulkBatchInfo? right) -> bool	keep		
+static Goldpath.GoldpathBulkDecisionRequest.operator !=(Goldpath.GoldpathBulkDecisionRequest? left, Goldpath.GoldpathBulkDecisionRequest? right) -> bool	keep		
+static Goldpath.GoldpathBulkDecisionRequest.operator ==(Goldpath.GoldpathBulkDecisionRequest? left, Goldpath.GoldpathBulkDecisionRequest? right) -> bool	keep		
+static Goldpath.GoldpathBulkDefinitionStatus.operator !=(Goldpath.GoldpathBulkDefinitionStatus? left, Goldpath.GoldpathBulkDefinitionStatus? right) -> bool	keep		
+static Goldpath.GoldpathBulkDefinitionStatus.operator ==(Goldpath.GoldpathBulkDefinitionStatus? left, Goldpath.GoldpathBulkDefinitionStatus? right) -> bool	keep		
+static Goldpath.GoldpathBulkRawError.operator !=(Goldpath.GoldpathBulkRawError? left, Goldpath.GoldpathBulkRawError? right) -> bool	keep		
+static Goldpath.GoldpathBulkRawError.operator ==(Goldpath.GoldpathBulkRawError? left, Goldpath.GoldpathBulkRawError? right) -> bool	keep		
+static Goldpath.GoldpathBulkRawRow.operator !=(Goldpath.GoldpathBulkRawRow? left, Goldpath.GoldpathBulkRawRow? right) -> bool	keep		
+static Goldpath.GoldpathBulkRawRow.operator ==(Goldpath.GoldpathBulkRawRow? left, Goldpath.GoldpathBulkRawRow? right) -> bool	keep		
