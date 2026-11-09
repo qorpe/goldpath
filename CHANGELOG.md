@@ -500,6 +500,31 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   - Three accepted risks (A7–A9), signed by the owner 2026-11-04: counterparty authenticity is the
     transport's job, quarantine reasons are shown as written, and a rail has no size ceiling of its
     own.
+- **The threat model's surfaces 7 and 8: Notification channels and DataProtection (GA gate G15
+  Part 2/2, 3/4, part of #340).** No package code changes. `docs/security/threat-model.md` now models
+  8 of 10 surfaces: T-NTF-01..16 and T-DPK-01..11. Every threat names a test (34 references, each
+  checked to resolve to a method and its suite run green), an issue, or an accepted risk.
+  - **Five tests pin defences that held but were proven by nothing.** Each is red with its fault
+    planted:
+    - a token value is never rendered again (planted: the renderer re-expands values);
+    - a line break in a subject never becomes a header (planted: subject lines written as headers);
+    - a recipient list is refused (planted: `InternetAddressList.Parse`);
+    - without `EnableRedaction()`, a classified log property is dropped, never written in clear
+      (planted: `[GoldpathPersonalData]` no longer a `DataClassificationAttribute`);
+    - a short or non-Base64 HMAC key is refused (planted: the module stretches any key to 44
+      characters).
+  - **Three threats had no holder, and each is now an issue:**
+    - #531: the notification dedup key is unique across tenants. A second tenant's notice is never
+      stored, and its caller gets the first tenant's row (measured);
+    - #532: a failure's `Detail` is the channel's exception text verbatim, so a provider reply that
+      names the address walks around recipient masking;
+    - #533: the webhook channel posts to a plaintext `http://` URL without an opt-in, which the email
+      channel refuses.
+  - **Four accepted risks (A10–A13) await the owner's signature:**
+    - secrets are only as safe as the configuration they come from;
+    - the webhook is unsigned;
+    - the app's own words on the notification surface;
+    - classified values written into free text.
 - **`goldpath check` warns a manifest that selects a roadmap-only value (GA gate G3, #336).**
   After `specdrift validate` passes, every value the schema accepts but no code runs
   (`broker: kafka|inmemory`, `exporters: prometheus`, `auditTrail.store: eventstream`, and
