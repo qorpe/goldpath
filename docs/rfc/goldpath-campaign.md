@@ -986,7 +986,7 @@ flips to 50% failures, the campaign suspends within one tick of the flush that c
 threshold with its reason, nothing more is claimed, and resume continues it to completion with
 every item exactly once.
 
-### R3.7 — four-eyes at `Ready` through Goldpath.Approvals ([#291](https://github.com/qorpe/goldpath/issues/291), T37) — PROPOSED 2026-11-04 ([#515](https://github.com/qorpe/goldpath/issues/515); the owner's merge of its PR is the acceptance)
+### R3.7 — four-eyes at `Ready` through Goldpath.Approvals ([#291](https://github.com/qorpe/goldpath/issues/291), T37) — ACCEPTED 2026-11-09 (the owner's merge of [#527](https://github.com/qorpe/goldpath/pull/527), Q1–Q6 as recommended; written 2026-11-04 in [#515](https://github.com/qorpe/goldpath/issues/515))
 
 **The sentence it serves.** "Above a threshold, a campaign does not release until a second person
 approves it, the creator can never be that person, and the screen says who approved and who is
@@ -1477,7 +1477,7 @@ independent of it, and each has a reason:
 | [#288](https://github.com/qorpe/goldpath/issues/288) snapshot off the leader tick | not in R3 | no public API; it shortens the time to `Ready` and leaves the R3.1 rule unchanged |
 | [#289](https://github.com/qorpe/goldpath/issues/289) `StartAt` + `Ready` | **R3.1** | — |
 | [#290](https://github.com/qorpe/goldpath/issues/290) target-system ceilings, tunable options | **R3.2** (part a + the verb of part b), **R3.3** (the reload of part b) | — |
-| [#291](https://github.com/qorpe/goldpath/issues/291) four-eyes at `Ready` | amendment **R3.7** (owner decision Q6; text PROPOSED 2026-11-04, [#515](https://github.com/qorpe/goldpath/issues/515)); plugs into R3.1; slices R3-S12 and R3-S13 | outside the owner's five |
+| [#291](https://github.com/qorpe/goldpath/issues/291) four-eyes at `Ready` | amendment **R3.7** (owner decision Q6; text ACCEPTED 2026-11-09, written in [#515](https://github.com/qorpe/goldpath/issues/515)); plugs into R3.1; slices R3-S12 and R3-S13 | outside the owner's five |
 | [#292](https://github.com/qorpe/goldpath/issues/292) burst control | not in R3 | a defect against R1's DoD, no knob (owner); R3.2's bucket inherits its one-tick rule |
 | [#293](https://github.com/qorpe/goldpath/issues/293) `MaxAwaitingAck` | **R3.4** | — |
 | [#294](https://github.com/qorpe/goldpath/issues/294) metrics RFC §7 promises | not in R3 | no public API; R3's instruments join its export test |
@@ -1506,8 +1506,8 @@ with the last one.
 | R3-S9 | R3.2 | [#318](https://github.com/qorpe/goldpath/issues/318) | S8, #304's contract text | the ceiling verbs, audit, routes under R4, S-FLEET-03 extended on the real broker, the governor editor |
 | R3-S10 | R3.6 | [#299](https://github.com/qorpe/goldpath/issues/299) | S1 (soft: #294, so the new counter joins its export test) | the window counters in the flush and the sweep, the pacer's evaluation, `Suspended` across the verbs, the reason, unit proofs |
 | R3-S11 | R3.6 | [#319](https://github.com/qorpe/goldpath/issues/319) | S10 | S-OPS-03 on the real broker, the console's suspended view and resume, the runbook item, the scenario entry, the RFC status line `IMPLEMENTED` |
-| R3-S12 | R3.7 (PROPOSED) | [#291](https://github.com/qorpe/goldpath/issues/291) | R3.7's acceptance, S2 (landed), **[#478](https://github.com/qorpe/goldpath/issues/478) and [#487](https://github.com/qorpe/goldpath/issues/487) closed** (R3.7 Q6) | the `IGoldpathApprovalGate` contract in Abstractions and its internal Approvals implementation, `RequiresApproval` with its two startup refusals, the async start gate, `SnapshotDoneState` honouring it, filing, the outcomes table, the `approved` audit rows, `StartBlockedBy`, `R37ApprovalGateTests` + `ApprovalGateTests` + the HTTP four-eyes proof |
-| R3-S13 | R3.7 (PROPOSED) | [#291](https://github.com/qorpe/goldpath/issues/291) (split from it by the planner) | S12 | the real-broker approval fact in `CampaignR3Tests`, the console's `StartBlockedBy` and the smoke journey (self-approval refused on screen, rejection shown), S-FLEET-01's approval step, the runbook lines, T37's closing proof links |
+| R3-S12 | R3.7 (ACCEPTED) | [#291](https://github.com/qorpe/goldpath/issues/291) | R3.7's acceptance, S2 (landed), **[#478](https://github.com/qorpe/goldpath/issues/478) and [#487](https://github.com/qorpe/goldpath/issues/487) closed** (R3.7 Q6) | the `IGoldpathApprovalGate` contract in Abstractions and its internal Approvals implementation, `RequiresApproval` with its two startup refusals, the async start gate, `SnapshotDoneState` honouring it, filing, the outcomes table, the `approved` audit rows, `StartBlockedBy`, `R37ApprovalGateTests` + `ApprovalGateTests` + the HTTP four-eyes proof |
+| R3-S13 | R3.7 (ACCEPTED) | [#291](https://github.com/qorpe/goldpath/issues/291) (split from it by the planner) | S12 | the real-broker approval fact in `CampaignR3Tests`, the console's `StartBlockedBy` and the smoke journey (self-approval refused on screen, rejection shown), S-FLEET-01's approval step, the runbook lines, T37's closing proof links |
 
 #289, #290, #293, #298 and #299 were each too big for one run as written. Each now carries its
 first part, retitled, and the later parts are new issues: #289 → #315, #293 → #316,
