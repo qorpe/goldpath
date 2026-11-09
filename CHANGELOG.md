@@ -666,6 +666,33 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **Messaging: an outbox event above the broker's size limit no longer stops every later event, on either engine (#458).**
+  - **What went wrong:** RabbitMQ refuses a body above `max_message_size` (16 MiB by default) on every attempt. Both
+    adapters' delivery loops retry the oldest undelivered outbox first, so one such row held back every row committed
+    after it, for ever (the verifier's probe P1 on #457: the small row behind it undelivered after 45 s, on both).
+  - **Now:** `GoldpathMessagingOptions.MaxMessageBytes` (`Goldpath:Messaging:MaxMessageBytes`, default 16777216, must be
+    positive; the only public addition) is enforced in the floor, once for every engine:
+    - **A publish above it is refused at the seam:** `PublishAsync` throws `InvalidOperationException` (the event, its
+      size and the limit, never the payload), and the row leaves the unit of work, so nothing commits it.
+    - **A committed row above it is marked failed in place:** an outbox sweep (its first pass at start, before the
+      bus; then every delivery poll) keeps the row and its body, detaches it from its outbox or inbox, writes
+      `Goldpath-Outbox-Failed*` headers with the reason and where it came from, and logs id, type and size at Error.
+      The rows behind it are delivered. The outbox schema is unchanged. The sweep's database pre-filter is a QUARTER
+      of the limit, because PostgreSQL's, Oracle's and SQLite's `length()` count code points, which are up to four
+      bytes each; a third would skip a body made mostly of four-byte characters. A row whose headers are not a JSON
+      object is marked too, its headers kept as text in `Goldpath-Outbox-Failed-OriginalHeaders`, so one corrupt row
+      cannot stop the pass. The publish guard judges only the row its own publish added.
+    - Both count in a new counter, `goldpath.messaging.outbox.oversized{stage=publish|outbox}` (meter `Goldpath.Messaging`).
+  - **Proof:** conformance S2.20 (a committed oversized row, then a small one; the small one is delivered, the large one
+    is kept and marked) and S2.21 (the refusal commits nothing; the next publish goes through), both on MassTransit
+    8.5.12 and Wolverine on real RabbitMQ 4 and PostgreSQL 17. Both are red on `main`, and red again with the detach or
+    the refusal planted out. S2.20b, on PostgreSQL 17 and both engines: a committed row of 80 × U+1F600 (80 code
+    points, 320 bytes) is marked under a 300-byte limit; red with the pre-filter at a third. Boundaries in UTF-8 bytes
+    (ASCII, `İ`, `€`, a surrogate pair; at the publish and, for four-byte code points, at the sweep), corrupt headers,
+    a row added outside the guarded publish and the sweep's page walk are `MessageSizeTests`.
+  - **Docs:** the package README's "Message size", and the runbook's "An outbox row marked failed" (how to recover one).
+  - **Upgrade note:** none required. A publish above 16 MiB now throws where it used to commit a row that never left. To
+    publish larger bodies, raise the broker's `max_message_size` and this option together.
 - **Admin verbs refuse a blank value before it reaches a NOT NULL column, the same on every provider (#476, G7).**
   Oracle stores `''` as NULL, so each of these failed there with `ORA-01400` (a 500). On PostgreSQL and SQL Server
   each stored a meaningless record.
