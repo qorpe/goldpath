@@ -110,6 +110,16 @@ sandbox's, not the CI profile's; 353 mutants tested).
   statements beside it, which were already there: the model the shape tests read is cached by EF across the run, so
   a mutant in the model builder does not reach it. The Oracle model golden holds the column's type and length.
 
+**Archival, Bulk and Notification in diff mode, 2026-11-09** (#409, `GOLDPATH_MUTATE_SINCE=origin/main`, the local
+sandbox; diff mode mutates the whole changed file, and the full run stays the authoritative score, so the table below
+is unchanged): Archival 83.17 % (97 mutants), Bulk 84.75 %, Notification 81.82 %. Every mutant on the lines the
+change touched (the three `ChunkedContains` filters and their guards) is killed or does not compile.
+- **One survivor on those lines, now killed:** Notification's `template is { Length: > 0 }` → `>= 0`. An empty
+  `template` array would have filtered every row out. Bulk's suite already pinned its twin. `AdminServiceTests` now
+  asserts that an empty filter is no filter (79.55 % → 81.82 %).
+- The ChunkedContains call itself yields no mutant. Dropping the archived-keys filter is proven on a real database
+  instead: the PostgreSQL `BatchSize = 600` fact goes red on the unique index.
+
 **Data was re-measured 2026-11-08**, a full run of `mutation-gate.sh Goldpath.Data` on the #408 branch
 (`GoldpathQueryableExtensions.ChunkedContains`, RFC goldpath-oracle §2.5), on the local sandbox: 77.38 % → 80.00 %
 (103 mutants tested, 3.8 minutes, the sandbox's, not the CI profile's).

@@ -6,11 +6,12 @@ using Testcontainers.PostgreSql;
 namespace Goldpath.Tests.Integration;
 
 /// <summary>
-/// The database a Campaign suite runs on (G7 ORA-5, #408). The suites are written once: PostgreSQL in the
-/// <c>integration</c> lane (a container per test, as before), Oracle in the <c>oracle</c> lane (a fresh schema per test
-/// on the collection's one container, with the clustered Quartz store on Oracle, ORA-3 #406).
+/// The database an engine suite runs on: Campaign (G7 ORA-5, #408), Bulk and Archival (ORA-6, #409). Each suite is
+/// written once: PostgreSQL in the <c>integration</c> lane (a container per test, as before), Oracle in the
+/// <c>oracle</c> lane (a fresh schema per test on the collection's one container, with the clustered Quartz store on
+/// Oracle, ORA-3 #406).
 /// </summary>
-public sealed class CampaignStore
+public sealed class SuiteStore
 {
     private static int _schemas;
 
@@ -19,7 +20,7 @@ public sealed class CampaignStore
     private readonly Action<DbContextOptionsBuilder, string> _use;
     private string? _connection;
 
-    private CampaignStore(Func<Task<string>> start, Func<Task> stop, Action<DbContextOptionsBuilder, string> use, GoldpathJobStoreProvider jobs)
+    private SuiteStore(Func<Task<string>> start, Func<Task> stop, Action<DbContextOptionsBuilder, string> use, GoldpathJobStoreProvider jobs)
     {
         _start = start;
         _stop = stop;
@@ -37,10 +38,10 @@ public sealed class CampaignStore
     public string ConnectionString => _connection ?? throw new InvalidOperationException("the store is not started");
 
     /// <summary>A PostgreSQL 17 container of the suite's own.</summary>
-    public static CampaignStore PostgreSql()
+    public static SuiteStore PostgreSql()
     {
         var container = new PostgreSqlBuilder("postgres:17-alpine").Build();
-        return new CampaignStore(
+        return new SuiteStore(
             async () =>
             {
                 await container.StartAsync();
@@ -51,12 +52,15 @@ public sealed class CampaignStore
             GoldpathJobStoreProvider.Postgres);
     }
 
-    /// <summary>A fresh schema on the Oracle collection's container, in the 19c SQL form the RFC ships.</summary>
-    public static CampaignStore Oracle(OracleFixture oracle)
+    /// <summary>
+    /// A fresh schema on the Oracle collection's container, in the 19c SQL form the RFC ships, named
+    /// <paramref name="prefix"/> and a process-wide counter.
+    /// </summary>
+    public static SuiteStore Oracle(OracleFixture oracle, string prefix = "GP_CAMP")
     {
         string? connection = null;
         return new(
-            async () => connection = await oracle.CreateSchemaAsync($"GP_CAMP_{Interlocked.Increment(ref _schemas)}"),
+            async () => connection = await oracle.CreateSchemaAsync($"{prefix}_{Interlocked.Increment(ref _schemas)}"),
             () =>
             {
                 // The container is the collection's, so it outlives the suite; its pooled sessions must not. Oracle Free's
@@ -73,11 +77,15 @@ public sealed class CampaignStore
             GoldpathJobStoreProvider.Oracle);
     }
 
-    /// <summary>Starts the store and creates the suite's schema.</summary>
-    public async Task StartAsync()
+    /// <summary>Starts the store and creates the Campaign suites' schema.</summary>
+    public Task StartAsync() => StartAsync<CampaignTests.CampDb>(options => new(options));
+
+    /// <summary>Starts the store and creates the schema of the suite's context, made by <paramref name="create"/>.</summary>
+    public async Task StartAsync<TContext>(Func<DbContextOptions<TContext>, TContext> create)
+        where TContext : DbContext
     {
         _connection = await _start();
-        await using var db = new CampaignTests.CampDb(Options<CampaignTests.CampDb>());
+        await using var db = create(Options<TContext>());
         await db.Database.EnsureCreatedAsync();
     }
 

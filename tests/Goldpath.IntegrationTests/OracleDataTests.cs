@@ -40,6 +40,8 @@ public sealed class OracleDataTests(OracleFixture oracle, ITestOutputHelper outp
         ["GoldpathApprovalDelegations.From"] = "#503 — delegation takes a blank delegator",
         ["GoldpathApprovalDelegations.To"] = "#503 — delegation takes a blank delegate",
         ["GoldpathFileQuarantine.Reason"] = "#503 — a rail may return a blank quarantine reason",
+        ["GoldpathArchiveChainState.PurgedHeadHash"] = "#547 — a chain's genesis anchor is the empty hash",
+        ["GoldpathArchiveEntries.PreviousHash"] = "#547 — a chain's first entry links to the empty genesis hash",
     };
 
     private static string ModelGolden([CallerFilePath] string thisFile = "")
