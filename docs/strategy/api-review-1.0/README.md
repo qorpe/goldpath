@@ -106,10 +106,14 @@ here and never answers another part's lines.
 
   Goldpath's own tests call these methods, so API-14 (#403) adds `InternalsVisibleTo` for `Goldpath.IntegrationTests` (both
   packages) and `Goldpath.Archival.Tests`. Bulk already grants it to `Goldpath.Bulk.Tests`.
-- **API-3 (#392), two seams the documents promise and the API does not deliver.** Both lines are kept as written, because
-  adding API is out of scope for a review part.
+- **API-3 (#392), three things the documents promise and the API does not deliver.** The lines are kept or removed as
+  their rows say, and nothing is added, because adding API is out of scope for a review part.
   - The bulk RFC names `IGoldpathBulkFileStore` as the file-storage seam (`docs/rfc/goldpath-bulk.md` lines 42 and 57). No
     such interface exists: the engine takes the concrete `GoldpathBulkFileStore<TContext>`.
   - `IGoldpathBulkFormat`, the RFC's D3 format seam, is public, but no builder method accepts an implementation (`Csv()` is
     the only one). An adopter can implement it but cannot plug it in.
+  - The bulk RFC says the stored raw file "is retrievable only through the admin API" (`docs/rfc/goldpath-bulk.md` line 83).
+    No admin route returns it: `MapGoldpathBulkAdmin` maps definitions, upload, batches, one batch, its errors, approve and
+    reject. The only public way to the raw bytes is `GoldpathBulkFileStore<TContext>.OpenRead`, which the Bulk table removes.
+    The owner decides whether the RFC sentence or a route is the fix.
 
