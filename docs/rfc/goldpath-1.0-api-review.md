@@ -36,9 +36,18 @@ The counter, not a hand-typed table, is the source of every number (§7).
 |---|---|---|
 | Public .NET API (the 23 ledgers) | `scripts/api-review-gate.sh` (this record), then API-12's additions-only gate (#401) | API-2 … API-7 |
 | Meter, span and table names | an inventory gate | API-8 (#397) |
-| Admin routes and the signed callback route | a route-contract test per module | API-9 (#398) |
+| Admin routes and the signed callback route | a route-contract test per module (since API-9, #398): `AdminRouteInventoryTests.The_jobs_surface_matches_the_frozen_contract`, `ArchivalRouteContractTests`, `BulkRouteContractTests`, `NotificationRouteContractTests`, `ApprovalsRouteContractTests`, `FileExchangeRouteContractTests`, and campaign's `RouteContractTests` (its admin surface and the callback route); plus the console smoke | API-9 (#398) |
 | CLI verbs and flags, template parameters, the manifest schema | an additions-only snapshot gate | API-10 (#399) |
 | `[Experimental]` marks on Approvals and FileExchange | the diagnostic ids of §4 | API-11 (#400) |
+
+**Inventoried, not yet frozen** (API-9, #398; for the owner to decide, index open question 4). These routes are
+mapped by Goldpath, but no route-contract test holds them:
+- `MapGoldpathDefaultEndpoints`: `GET /health/live` and `GET /health/ready`.
+- `MapGoldpathApi`: the ASP.NET OpenAPI document route (`MapOpenApi()`, its default `/openapi/{documentName}.json`, in
+  Development only, on net10), and
+  the `/api/v{version:apiVersion}` group the app's own endpoints hang off.
+- `MapGoldpathConsole` (prefix `/goldpath/console`): `GET /console.config.json` and `GET /{**path}` (the assets and
+  the SPA fallback).
 
 ## 3. Manifest Surface
 
