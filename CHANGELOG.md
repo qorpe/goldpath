@@ -797,6 +797,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **[schema]** **Approvals: a delegation admits its delegate to the delegator's rung only (#479, threat model T-APR-05).**
+  A delegation carried no role, so an active one admitted its delegate to every rung of every ladder — the amount
+  ladder did not hold for a delegate.
+  - **API (additive):** `GoldpathApprovalEngine.DelegateRoleAsync(from, fromRole, to, window)`;
+    `GoldpathApprovalDelegation.Role` (init-only; the positional constructor is unchanged);
+    `GoldpathApprovalDelegationRow.Role`.
+  - **Behaviour:** `DecideAsync` and `WorklistAsync` admit a delegate only to a rung whose role equals the delegation's
+    (ignoring case). A delegation with no role — every one recorded before this release — admits to nothing.
+  - **Breaking at run time:** `DelegateAsync(from, to, window)` refuses with an `InvalidOperationException` that names
+    `DelegateRoleAsync`, and records nothing. `DelegateRoleAsync` refuses a blank role and a role that is no rung of any
+    declared ladder. The role must come from the authenticated delegator's claims, never from a request body.
+  - **Schema:** `GoldpathApprovalDelegations` gains a nullable `Role` (max 128). The upgrade guide has the migration
+    step and a query for the delegations it leaves without reach.
 - **Archival on Oracle: a definition's first archive is stored, and its chain verifies (#547).** The chain's genesis
   anchor is the empty hash, and Oracle stores `''` as NULL, so the `NOT NULL` anchor columns refused it (ORA-01400):
   nothing archived on Oracle, so retention and erasure had nothing to act on. On Oracle alone

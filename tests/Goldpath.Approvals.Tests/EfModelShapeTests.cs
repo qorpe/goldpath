@@ -53,6 +53,7 @@ public sealed class EfModelShapeTests : IDisposable
     [InlineData(typeof(GoldpathApprovalRequest), "Status", 16)]
     [InlineData(typeof(GoldpathApprovalDelegationRow), "From", 128)]
     [InlineData(typeof(GoldpathApprovalDelegationRow), "To", 128)]
+    [InlineData(typeof(GoldpathApprovalDelegationRow), "Role", 128)]   // #479
     [InlineData(typeof(GoldpathApprovalSignatureRow), "SignedBy", 128)]
     [InlineData(typeof(GoldpathApprovalSignatureRow), "Role", 128)]
     public void Column_lengths_stay_as_the_migration_froze_them(Type entity, string property, int maxLength)
@@ -138,5 +139,23 @@ public sealed class EfModelShapeTests : IDisposable
         Assert.Empty(await store.GetDelegationsAsync(now));   // Until > now is strict
         var stillActive = await store.GetDelegationsAsync(now - TimeSpan.FromSeconds(1));
         Assert.Equal("stand-in", Assert.Single(stillActive).To);
+    }
+
+    [Fact]
+    public async Task A_delegations_role_round_trips_and_a_role_less_row_reads_back_without_one()
+    {
+        // #479: the role column is nullable, so a row written before it reads back with no role (and admits nothing).
+        var store = new GoldpathEfApprovalStore<EfApprovalStoreTests.ApprovalsDbContext>(
+            _provider.GetRequiredService<IServiceScopeFactory>());
+        var until = DateTimeOffset.Parse("2026-08-27T09:00:00Z");
+        await store.AddDelegationAsync(new GoldpathApprovalDelegation("expert-user", "stand-in", until) { Role = "expert" });
+        await store.AddDelegationAsync(new GoldpathApprovalDelegation("manager-user", "deputy", until));
+
+        var read = (await store.GetDelegationsAsync(until - TimeSpan.FromDays(1))).OrderBy(d => d.From).ToList();
+
+        Assert.Equal([("expert-user", "expert"), ("manager-user", (string?)null)], read.Select(d => (d.From, d.Role)));
+        using var scope = _provider.CreateScope();
+        var model = scope.ServiceProvider.GetRequiredService<EfApprovalStoreTests.ApprovalsDbContext>().Model;
+        Assert.True(model.FindEntityType(typeof(GoldpathApprovalDelegationRow))!.FindProperty("Role")!.IsNullable);
     }
 }

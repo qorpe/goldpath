@@ -98,6 +98,18 @@ the dynamic-assembly filter, the scan's catch branches, the kebab formatter on t
 builder names every endpoint), the test host's dispose branches, and its body guard, which the engine's
 own guard now makes equivalent.
 
+**Approvals was re-measured 2026-11-05**, a full run of `mutation-gate.sh Goldpath.Approvals` on the #479 branch
+(a delegation names the rung it delegates: `DelegateRoleAsync`, a nullable `Role` on the delegation and its row, and
+the rung check in `DecideAsync` and the worklist), on the local sandbox: 77.87 % → 77.35 % (2.8 minutes, the
+sandbox's, not the CI profile's; 353 mutants tested).
+- **The first run scored 77.05 %.** Its survivors on the new lines were a blank-role guard that the rung lookup made
+  redundant (a blank role matches no rung, and is refused with the same `fromRole` parameter), now removed, and the
+  refusal's wording, now asserted.
+- **Survivor left on the new lines:** removing `e.Property(x => x.Role).HasMaxLength(128)` from the delegation row's
+  model. It is the same class as the surviving `modelBuilder.Entity<GoldpathApprovalDelegationRow>` and `ToTable`
+  statements beside it, which were already there: the model the shape tests read is cached by EF across the run, so
+  a mutant in the model builder does not reach it. The Oracle model golden holds the column's type and length.
+
 **Archival in diff mode, 2026-11-10** (#547, `GOLDPATH_MUTATE_SINCE=origin/main`, the local sandbox; the full run
 stays the authoritative score, so the table below is unchanged): 98.61 % (72 mutants; diff mode mutates the whole of
 `ArchiveModel.cs`). Every mutant on the Oracle-only genesis mapping (the `IsOracle` test, the two `IsRequired(false)`
@@ -184,7 +196,7 @@ at f459fe2, so its row carries it (minutes not recorded).
 | Notification | 81.23 % | 11.23 | 5.9 | never finished (OOM) |
 | DataProtection | 78.95 % | 8.95 | 1.5 | 78.95 %, 33.0 |
 | ServiceDefaults | 78.48 % (72.15) | 8.48 | 1.4 | 72.15 %, 4.3 |
-| Approvals | 77.87 % (74.84) | 7.87 | 2.8 | 74.84 %, 217.7 |
+| Approvals | 77.35 % (74.84) | 7.35 | 2.8 | 74.84 %, 217.7 |
 | Data | 80.00 % | 10.00 | 3.8 | 77.38 %, 38.0 |
 | FileExchange | 76.92 % | 6.92 | 3.6 | 76.92 %, 31.8 |
 | Archival | 79.90 % (74.49) | 9.90 | 7.9 | never finished (OOM) |
