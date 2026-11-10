@@ -1,0 +1,77 @@
+{
+  "realm": "corpay",
+  "enabled": true,
+  "sslRequired": "none",
+  "accessTokenLifespan": 1800,
+  "roles": {
+    "realm": [
+      { "name": "goldpath-ops", "description": "The role CorPay's admin surfaces (and the console they serve) require — Goldpath.Auth's OpsRole default." }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "corpay-console-smoke",
+      "name": "CorPay console smoke (test fixture — never a production client)",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": true,
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "audience corpay-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": { "included.custom.audience": "corpay-api", "access.token.claim": "true", "id.token.claim": "false" }
+        },
+        {
+          "name": "realm roles as role",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": { "claim.name": "role", "multivalued": "true", "jsonType.label": "String", "access.token.claim": "true", "id.token.claim": "false", "userinfo.token.claim": "false" }
+        },
+        {
+          "name": "username as unique_name",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "config": { "user.attribute": "username", "claim.name": "unique_name", "jsonType.label": "String", "access.token.claim": "true", "id.token.claim": "false", "userinfo.token.claim": "false" }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "maker",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Maker",
+      "lastName": "Smoke",
+      "email": "maker@corpay.invalid",
+      "credentials": [ { "type": "password", "value": "maker-smoke-only", "temporary": false } ],
+      "realmRoles": [ "goldpath-ops" ]
+    },
+    {
+      "username": "approver",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Approver",
+      "lastName": "Smoke",
+      "email": "approver@corpay.invalid",
+      "credentials": [ { "type": "password", "value": "approver-smoke-only", "temporary": false } ],
+      "realmRoles": [ "goldpath-ops" ]
+    },
+    {
+      "username": "viewer",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Viewer",
+      "lastName": "Smoke",
+      "email": "viewer@corpay.invalid",
+      "credentials": [ { "type": "password", "value": "viewer-smoke-only", "temporary": false } ],
+      "realmRoles": []
+    }
+  ]
+}
