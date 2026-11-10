@@ -58,6 +58,8 @@ C:
   - 'scripts/product-guard.sh'
   - 'scripts/validate-*.sh'        # the GM matrix, the CLI and the migration proofs
   - 'scripts/console-smoke.sh'
+  - 'scripts/corpay-console-smoke.sh'   # the CorPay drive the nightly runs (G11, #325)
+  - 'ui/console/e2e/corpay-realm/**'  # the drive's Keycloak realm: who the drive's principals are
   - 'scripts/build-console.sh'
   - 'scripts/review-agent.sh'
   - 'scripts/sbom.sh'
