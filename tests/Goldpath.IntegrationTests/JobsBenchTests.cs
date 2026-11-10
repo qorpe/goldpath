@@ -95,6 +95,12 @@ public class JobsBenchTests : IAsyncLifetime
             $"checkpointed={watch.Elapsed.TotalSeconds:F1}s naked={nakedWatch.Elapsed.TotalSeconds:F1}s " +
             $"checkpoint-cost-per-chunk={overhead / plan.ChunkPayloads.Count:F1}ms{BenchProvider.Tag(_store)}");
 
+        // #556: Oracle's numbers are measured, not promised (oracle RFC §6), so the budgets bind PostgreSQL only.
+        if (_store.IsOracle)
+        {
+            return;
+        }
+
         // RFC §6: plan→complete < 5 min on the reference profile.
         Assert.True(watch.Elapsed < TimeSpan.FromMinutes(5),
             $"100k run took {watch.Elapsed} — the §6 budget is 5 minutes");
@@ -167,7 +173,8 @@ public class JobsBenchTests : IAsyncLifetime
         Console.WriteLine($"BENCH-INTERACTIVE baseline-p95={baseline:F1}ms under-load-p95={underLoad:F1}ms degradation={degradation:P0}{BenchProvider.Tag(_store)}");
         // Budget (telco card): < 10% at the reference profile. Dev-machine noise gets a
         // small allowance; the recorded numbers in ops/jobs-benchmarks.md are the evidence.
-        Assert.True(underLoad < baseline * 1.25 + 1.0,
+        // #556: on Oracle the numbers are measured, not promised (oracle RFC §6), so the budget binds PostgreSQL only.
+        Assert.True(_store.IsOracle || underLoad < baseline * 1.25 + 1.0,
             $"interactive p95 degraded {degradation:P0} (baseline {baseline:F1}ms → {underLoad:F1}ms)");
     }
 

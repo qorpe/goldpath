@@ -95,7 +95,8 @@ public class BulkBenchTests : IAsyncLifetime
             .Set<GoldpathBulkBatch>().AsNoTracking().SingleAsync(b => b.Id == batch.Id);
         Assert.Equal(10_000, validated.ValidRows);
         Console.WriteLine($"BENCH-BULK ingest10k upload={upload.TotalSeconds:F2}s total={watch.Elapsed.TotalSeconds:F2}s (budget 300s){BenchProvider.Tag(_store)}");
-        Assert.True(watch.Elapsed < TimeSpan.FromMinutes(5), $"10k intake took {watch.Elapsed.TotalSeconds:F1}s — the card's 5-minute budget is broken");
+        // #556: on Oracle the numbers are measured, not promised (oracle RFC §6), so the card's budget binds PostgreSQL only.
+        Assert.True(_store.IsOracle || watch.Elapsed < TimeSpan.FromMinutes(5), $"10k intake took {watch.Elapsed.TotalSeconds:F1}s — the card's 5-minute budget is broken");
     }
 
     [Fact]
