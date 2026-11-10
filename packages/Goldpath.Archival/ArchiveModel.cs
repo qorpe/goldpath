@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Goldpath;
 
@@ -49,8 +50,19 @@ public class GoldpathArchiveEntry
     /// </summary>
     public string ChainHash { get; set; } = "";
 
-    /// <summary>The previous entry's chain hash ("" for the genesis entry).</summary>
-    public string PreviousHash { get; set; } = "";
+    /// <summary>
+    /// The previous entry's chain hash ("" for the genesis entry). On Oracle, which stores <c>''</c> as NULL, the
+    /// genesis link is held as NULL and a materialised entry still reads it as <c>""</c> here (#547); a query that
+    /// PROJECTS this column reads NULL for it there.
+    /// </summary>
+    public string PreviousHash
+    {
+        get => _previousHash ?? "";
+        set => _previousHash = value;
+    }
+
+    // EF maps this field (its convention finds it by name); null only where Oracle read the genesis link back as NULL.
+    private string? _previousHash = "";
 
     /// <summary>Set when an erasure redacted classified fields (the evidence pointer).</summary>
     public DateTimeOffset? ErasedAt { get; set; }
@@ -73,14 +85,34 @@ public class GoldpathArchiveChainState
     /// <summary>Index of the newest entry.</summary>
     public long LastIndex { get; set; }
 
-    /// <summary>Hash of the newest entry (the append anchor).</summary>
-    public string LastHash { get; set; } = "";
+    /// <summary>
+    /// Hash of the newest entry (the append anchor); "" — the genesis anchor — until the first entry is appended. On
+    /// Oracle that "" is held as NULL and read back as <c>""</c> into a materialised state (#547).
+    /// </summary>
+    public string LastHash
+    {
+        get => _lastHash ?? "";
+        set => _lastHash = value;
+    }
+
+    // EF maps this field; null only where Oracle read the genesis anchor back as NULL.
+    private string? _lastHash = "";
 
     /// <summary>Retention purges remove the OLDEST prefix; verification starts after it.</summary>
     public long PurgedThroughIndex { get; set; }
 
-    /// <summary>Hash of the last purged entry — the first kept entry must link to it.</summary>
-    public string PurgedHeadHash { get; set; } = "";
+    /// <summary>
+    /// Hash of the last purged entry — the first kept entry must link to it; "" (the genesis anchor) while nothing
+    /// has been purged. On Oracle that "" is held as NULL and read back as <c>""</c> into a materialised state (#547).
+    /// </summary>
+    public string PurgedHeadHash
+    {
+        get => _purgedHeadHash ?? "";
+        set => _purgedHeadHash = value;
+    }
+
+    // EF maps this field; null only where Oracle read the genesis anchor back as NULL.
+    private string? _purgedHeadHash = "";
 }
 
 /// <summary>An active or lifted legal hold — exempts purge AND hard erasure (D4).</summary>
@@ -156,6 +188,15 @@ public static class GoldpathArchiveModelExtensions
             entity.Property(e => e.ChainHash).HasMaxLength(64);
             entity.Property(e => e.PreviousHash).HasMaxLength(64);
             entity.Property(e => e.PreErasureContentHash).HasMaxLength(64);
+            if (IsOracle(modelBuilder))
+            {
+                // #547 (owner decision A, the #502 pattern; oracle RFC §2.2): the genesis entry links to the empty
+                // hash, and Oracle stores '' as NULL, so a NOT NULL column refuses it (ORA-01400). On Oracle alone the
+                // column is nullable, "" is written as NULL and NULL is read back as "": every hash, every chain and
+                // every other provider's column stay as they are.
+                entity.Property(e => e.PreviousHash).IsRequired(false).HasConversion(GenesisAsNull);
+            }
+
             // The retrieval budget (finance: p95 < 5s at 1M entries) rides this index.
             entity.HasIndex(e => new { e.Definition, e.AggregateKey }).IsUnique();
             entity.HasIndex(e => new { e.Definition, e.ChainIndex }).IsUnique();
@@ -169,6 +210,14 @@ public static class GoldpathArchiveModelExtensions
             entity.Property(e => e.Definition).HasMaxLength(120);
             entity.Property(e => e.LastHash).HasMaxLength(64);
             entity.Property(e => e.PurgedHeadHash).HasMaxLength(64);
+            if (IsOracle(modelBuilder))
+            {
+                // #547: both anchors start as the empty genesis hash. PurgedHeadHash stays "" until the first purge;
+                // LastHash is "" in a state row saved before any entry was appended (every candidate of the first
+                // batch raced away). On Oracle alone both are nullable, written and read as PreviousHash is.
+                entity.Property(e => e.LastHash).IsRequired(false).HasConversion(GenesisAsNull);
+                entity.Property(e => e.PurgedHeadHash).IsRequired(false).HasConversion(GenesisAsNull);
+            }
         });
 
         modelBuilder.Entity<GoldpathLegalHold>(entity =>
@@ -193,4 +242,19 @@ public static class GoldpathArchiveModelExtensions
 
         return modelBuilder;
     }
+
+    /// <summary>
+    /// The empty genesis hash, written as NULL (Oracle only, #547). A NULL read back lands in the entity's backing
+    /// field, and the property reads it as the empty hash, so every chain computes and verifies as it does elsewhere.
+    /// </summary>
+    private static readonly ValueConverter<string, string> GenesisAsNull = new(
+        hash => hash.Length == 0 ? null! : hash,
+        stored => stored);
+
+    /// <summary>
+    /// The Oracle EF provider marks the model it builds with its own annotations (<c>Oracle:…</c>) before
+    /// <c>OnModelCreating</c> runs; nothing else does. The same test as the Quartz store model's in Goldpath.Jobs.
+    /// </summary>
+    private static bool IsOracle(ModelBuilder modelBuilder)
+        => modelBuilder.Model.GetAnnotations().Any(a => a.Name.StartsWith("Oracle:", StringComparison.Ordinal));
 }
