@@ -118,6 +118,34 @@ public class BatchPublishTests
         Assert.Equal(GoldpathBatchPublishing.MaxConcurrency, Volatile.Read(ref started));
     }
 
+    /// <summary>
+    /// A cancellation that arrives while the LAST window is publishing does not fail a batch whose every publish has
+    /// completed: the caller would otherwise treat a fully published batch as failed and publish it again.
+    /// </summary>
+    [Fact]
+    public async Task A_cancellation_during_the_last_window_does_not_fail_a_completed_batch()
+    {
+        using var cancel = new CancellationTokenSource();
+        var items = Enumerable.Range(0, GoldpathBatchPublishing.MaxConcurrency * 2).ToList();   // an exact multiple: no window is left to start
+        var published = 0;
+
+        await GoldpathBatchPublishing.BoundedAsync(
+            items,
+            (i, _) =>
+            {
+                Interlocked.Increment(ref published);
+                if (i == items[^1])
+                {
+                    cancel.Cancel();   // during the last window, after which nothing remains to start
+                }
+
+                return Task.CompletedTask;
+            },
+            cancel.Token);
+
+        Assert.Equal(items.Count, Volatile.Read(ref published));
+    }
+
     /// <summary>WIRING: the engine tells the publisher whether an outbox was composed.</summary>
     [Theory]
     [InlineData(false, true)]

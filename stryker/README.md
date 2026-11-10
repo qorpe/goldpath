@@ -98,6 +98,20 @@ the dynamic-assembly filter, the scan's catch branches, the kebab formatter on t
 builder names every endpoint), the test host's dispose branches, and its body guard, which the engine's
 own guard now makes equivalent.
 
+**Messaging, diff mode on the #285 branch (2026-11-10)**: `GOLDPATH_MUTATE_SINCE=origin/main mutation-gate.sh
+Goldpath.Messaging` at 499f74b, the publish seam's internal batch member. **92.11 %, gate green.** It tested 73 mutants
+in 43.5 minutes in the agent sandbox; 725 were unchanged since `origin/main` and skipped. Diff mode is not the
+authoritative score; the next full run is. On the lines #285 adds, two survived:
+- `start < items.Count` → `<=` in `BoundedAsync` was a real gap. When the count is an exact multiple of the bound, a
+  cancellation arriving during the last window would fail a batch whose every publish had completed.
+  `BatchPublishTests.A_cancellation_during_the_last_window_does_not_fail_a_completed_batch` kills it; I planted it
+  and saw it red.
+- Removing the empty-batch early return is equivalent: either path publishes nothing for an empty list.
+
+The rest of the run's survivors and uncovered mutants are lines this branch did not change, in
+`MassTransitMessagingEngine.cs`, which diff mode mutates whole: two message strings, a test-hook statement, and
+`"Stryker was here!"` on a refusal text.
+
 **Approvals was re-measured 2026-11-05**, a full run of `mutation-gate.sh Goldpath.Approvals` on the #479 branch
 (a delegation names the rung it delegates: `DelegateRoleAsync`, a nullable `Role` on the delegation and its row, and
 the rung check in `DecideAsync` and the worklist), on the local sandbox: 77.87 % → 77.35 % (2.8 minutes, the
