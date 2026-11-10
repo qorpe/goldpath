@@ -14,10 +14,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     the list (as ORA-5 found for Campaign); the helper is the guarantee for every provider build.
   - **Bulk on Oracle:** the four `BulkTests` facts run in the Oracle lane (`BulkOracleTests`, `Category=Oracle`),
     with the clustered Quartz store on Oracle.
-  - **Archival on Oracle is refused (#547).** The hash chain's genesis anchor is the empty hash, and Oracle stores
-    `''` as NULL, so a definition's first archive fails with ORA-01400 on `GoldpathArchiveChainState.PurgedHeadHash`.
-    `ArchivalOracleTests` asserts that refusal until #547 (an owner question) lands. The suite gains a
-    `BatchSize = 600` fact that pages 1,200 keys and archives each due aggregate exactly once, on PostgreSQL today.
+  - **Archival on Oracle was refused until #547.** The hash chain's genesis anchor is the empty hash, and Oracle stores
+    `''` as NULL, so a definition's first archive failed with ORA-01400 on `GoldpathArchiveChainState.PurgedHeadHash`,
+    and `ArchivalOracleTests` asserted that refusal. #547 (under Fixed) stores it; the suite now runs end to end on
+    Oracle. The suite gains a `BatchSize = 600` fact that pages 1,200 keys and archives each due aggregate exactly
+    once.
   - **The source scan:** `RawSqlOracleBranchTests` (Goldpath.Data.Tests, no container) fails on any
     `ExecuteSql*`, `FromSql*`, `SqlQuery*` or `MigrationBuilder.Sql` call, and any `CommandText` assigned, appended
     (`+=`) or set in an object initializer, in `packages/` whose method has no Oracle provider check (a literal
@@ -723,6 +724,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **Archival on Oracle: a definition's first archive is stored, and its chain verifies (#547).** The chain's genesis
+  anchor is the empty hash, and Oracle stores `''` as NULL, so the `NOT NULL` anchor columns refused it (ORA-01400):
+  nothing archived on Oracle, so retention and erasure had nothing to act on. On Oracle alone
+  `GoldpathArchiveEntries.PreviousHash`, `GoldpathArchiveChainState.LastHash` and `GoldpathArchiveChainState.PurgedHeadHash`
+  are now nullable: Archival's model writes `""` as NULL and the entity reads NULL back as `""` (owner decision A, the
+  #502 pattern; oracle RFC §2.2 amended). `LastHash` is the third column the issue did not name: a chain state is saved
+  with it still `""` when every candidate of a definition's first batch raced away, and that save was refused too.
+  Every hash and every chain on PostgreSQL and SQL Server is byte-identical, the three properties keep their
+  signatures, and existing chains keep verifying. The engine reads these columns only from materialised entities;
+  a query that PROJECTS one of them on Oracle reads NULL for the genesis value. **Proof:** `ArchivalOracleTests` (the
+  lifecycle, the #383 sub-µs twin, the `BatchSize = 600` run, and the new
+  `A_first_batch_whose_every_candidate_raced_away_keeps_the_genesis_anchor`) runs end to end on Oracle and is red with
+  ORA-01400 without the mapping; the Oracle golden's three columns read `NVARCHAR2(64) null`, and `MayWriteEmpty`
+  drops its two #547 entries. No migration step: Oracle is on no published train yet.
 - **Messaging: an outbox event above the broker's size limit no longer stops every later event, on either engine (#458).**
   - **What went wrong:** RabbitMQ refuses a body above `max_message_size` (16 MiB by default) on every attempt. Both
     adapters' delivery loops retry the oldest undelivered outbox first, so one such row held back every row committed
