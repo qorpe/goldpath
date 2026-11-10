@@ -189,3 +189,113 @@ with the queue still draining. That is the red the bar exists to catch.
   first run (98 calls at once on two hosts configured for four each), and the item consumer
   shares its endpoint with the outcome sink. T48 tracks what that means for the S-FLEET-02a
   numbers above, whose "32 consumers" were set at the bus level.
+
+## S-FLEET-02 — the rig (no result yet)
+
+S-FLEET-02 is one campaign over **30,000,000** synthetic targets, seeded before the measured hour, then released
+in real time for **60 minutes at 2,000 TPS** through the whole path on real RabbitMQ + PostgreSQL. Its pass
+thresholds are the ones the owner signed on [#326](https://github.com/qorpe/goldpath/issues/326#issuecomment-6387926062)
+([scenario-campaign.md](../../../docs/strategy/scenario-campaign.md#s-fleet-02s-rig-spec--signed-2026-10-24)). The run
+is [#349](https://github.com/qorpe/goldpath/issues/349)'s owner step, tracked in open-threads T59. **This section
+publishes no number, and S-FLEET-02 claims nothing until it does.**
+
+### Running it
+
+| Lane | Command | Where the results go |
+|---|---|---|
+| Mac, the pass lane | inside the Lima `bench` VM: `scripts/bench-campaign.sh fleet02` | `artifacts/bench/fleet02-<UTC>/` |
+| Runner, the repeatable lane | dispatch `bench-fleet02.yml` (ubuntu-latest, 360-minute cap, full dataset by default) | the run's `fleet02-<run id>` artifact, kept 90 days, and the job summary |
+
+The `bench` VM is a dedicated one, separate from the `ci` runner VM. The spec gives it all but 2 performance cores
+and 75% of RAM, with its disk on the internal SSD. For example, on a Mac with 10 performance cores and 32 GB:
+`limactl create --name=bench --cpus=8 --memory=24 --disk=100 template://docker`. The VM's own lines come from
+`host.txt`. The **host's** lines are taken on the Mac, because a VM cannot read them:
+`sysctl -n hw.model`, `sw_vers -productVersion` and `limactl list bench`.
+
+The mode exports `GOLDPATH_BENCH_FLEET02=1`. Without it `CampaignFleet02BenchTests` shows as **skipped**, so
+`bench.yml`'s monthly `Category=Bench` run never starts an hours-long bench. A skip is never reported as a pass: the
+script exits 1 when the bench log shows one. The mode builds and runs the tests in **Release**, because this run
+produces the published number, and `host.txt` records that configuration beside the commit and the run link.
+
+| Knob (environment) | fleet02 default | What it is |
+|---|---|---|
+| `GOLDPATH_BENCH_CAMPAIGN_TARGETS` | 30000000 | the dataset, independent of the window (the spec says 30M, never shrunk) |
+| `GOLDPATH_BENCH_CAMPAIGN_SECONDS` | 3600 | the measured window |
+| `GOLDPATH_BENCH_CAMPAIGN_TPS` | 2000 | the configured rate, which is also the per-second ceiling |
+| `GOLDPATH_BENCH_CAMPAIGN_FLOOR_TPS` | 2000 | the signed mean |
+| `GOLDPATH_BENCH_CAMPAIGN_CONSUMERS` | 32 | the bus-level consumer knob; the run reports the peak concurrent handler calls it actually reached (open-threads T48) |
+| `GOLDPATH_BENCH_CAMPAIGN_LATENCY_MS` | 20 | the simulated target's latency |
+| `GOLDPATH_BENCH_CAMPAIGN_SEED_MINUTES` | 180 | the most the seeding may take before the run fails |
+| `GOLDPATH_BENCH_OUT` | `artifacts/bench/fleet02-<UTC>` | the output directory |
+
+### What one run writes
+
+- `host.txt`: date, commit, run id or command, kernel, CPU model, logical CPUs, memory, disk, Docker and .NET versions,
+  and every `GOLDPATH_BENCH_*` knob.
+- `release-per-second.csv`: the released count of each whole second of the window, at the publish instant (the same
+  clock as S-FLEET-02a). `send-per-second.csv` is the same series at the instant the pacer handed each message to the
+  bus. It is a diagnostic, not the verdict.
+- `headroom.csv` (`scripts/bench-headroom.sh`, one row every 10 s on a fixed cadence): host CPU busy and iowait, memory
+  used and available, disk read and write rates and the busiest disk's utilisation; both containers' CPU and memory;
+  RabbitMQ's ready and unacknowledged messages; PostgreSQL's backends and cumulative commits, block reads and hits.
+  The first saturated resource is read from this series by the report's author. The rig does not guess it.
+- `verdict.txt` and the `BENCH-CAMPAIGN fleet02:` lines in `bench.log`.
+
+### How the verdict reads the signed thresholds
+
+`CampaignFleet02Verdict` computes it, and `CampaignFleet02VerdictTests` pins the arithmetic without a container.
+
+- **Mean:** published messages in the window, divided by its seconds, against `_FLOOR_TPS`.
+- **p95 jitter:** the nearest-rank 95th percentile of each second's deviation from the configured rate, so at least
+  95% of the seconds fall within ±5%. A second at exactly 1,900 for 2,000 is inside the band.
+- **Ceiling:** no whole second above the configured rate.
+- **Lost and duplicated.** A publish with no distinct released item is a duplicate, and so is a target executed twice.
+  The following are lost: a terminal item the sink did not count, a target executed with no terminal row (or the
+  reverse), and an item released with no publish. Items the pause strands on the queue stay durable `Released` rows.
+  They are counted as **stranded, not lost**. That is how the rig reads "the sink's count equals the released count"
+  when the hour ends with a pause.
+- **Label:** `FAIL` if anything was lost, doubled or above the ceiling, whatever the rate. Otherwise `HARDWARE CEILING`
+  if the mean missed the floor (signed point 4: it still publishes, with TPS per logical CPU). Otherwise `FAIL` if the
+  jitter missed, and `PASS` if not.
+
+### Proving the rig (not a result)
+
+Two short runs on the overnight agent's cloud sandbox (Linux x64, 4 logical CPUs / 16 GB, Docker Engine 29, everything
+co-located), 2026-11-04, branch `agent/349-fleet02-rig` off `main`@`259bd53`, no run id. The command was
+`GOLDPATH_BENCH_CAMPAIGN_TARGETS=200000 GOLDPATH_BENCH_CAMPAIGN_SECONDS=60 GOLDPATH_BENCH_CAMPAIGN_TPS=500
+GOLDPATH_BENCH_CAMPAIGN_FLOOR_TPS=500 scripts/bench-campaign.sh fleet02`. The second run added the send-instant
+diagnostic.
+
+| | Run 1 | Run 2 |
+|---|---|---|
+| Seeding, 200,000 targets (Created → snapshot complete, held at `Ready`) | 55.7 s | 60.7 s |
+| Released before the start was cleared | 0 | 0 |
+| Mean, at the publish instant | 478.9/s | 477.6/s |
+| Per-second p5 / p50 / p95 | 408 / 483 / 532 | 368 / 492 / 532 |
+| Seconds within ±5% of 500 | 35 / 60 | 29 / 60 |
+| Seconds above 500, at the publish instant / at the send instant | 17 / — | 16 / 15 (max 561 / 560) |
+| Published · stranded · terminal · sink · executed · twice | 29,625 · 124 · 29,501 · 29,501 · 29,501 · 0 | 29,625 · 130 · 29,495 · 29,495 · 29,495 · 0 |
+| Peak concurrent handler calls (bus knob 32) | 156 | 151 |
+| Label | FAIL (ceiling) | FAIL (ceiling) |
+
+These runs prove that the rig seeds without releasing, measures, accounts for every item and writes its files. Their
+rates are not S-FLEET-02's: the dataset is 150 times smaller and the hour is a minute. They produced three readings.
+The first two are owed to the owner before the run, and both are on #349:
+
+- **At 500 TPS, about a quarter of the whole seconds exceed the ceiling, at the send instant as well as the publish
+  instant.** The pacer's bucket refills one tick's worth per tick, and #292's strict rule is proven at **tick
+  granularity**. A tick's batch is handed to the bus over time, though, so a whole second of message instants can hold
+  part of a fifth tick: 560 is 500 plus about half a 125-message tick. At 1000 TPS S-FLEET-02a never saw this, because
+  its release path bound at about 600/s. The signed "no one-second window above the ceiling" therefore needs a
+  definition before the hour is judged: message instants, or ticks.
+- **The floor equals the ceiling.** With the configured rate at 2,000 and no second allowed above it, a mean of at
+  least 2,000 passes only if every second is exactly 2,000. The fact prints that note whenever the floor is not below
+  the configured rate.
+- **The bus knob does not hold.** 32 configured consumers ran up to 156 handler calls at once, which is open-threads
+  T48 measured.
+
+The shared host changed nothing S-FLEET-02a measures. Its 2-minute smoke on the new `CampaignReleaseRig`, run the
+same night on the same sandbox, was red on rate as its baseline is: 654.6/s mean, p50 651, p95 750, max 815,
+0 of 120 seconds in band and 0 above the ceiling. Exactly-once held over 79,250 items, and the run reached 179 peak
+concurrent handler calls against a knob of 32. `main`@`259bd53`, before the extraction, gave 649.2/s, p50 647, p95 771,
+max 851, 0 in band and 0 above, with exactly-once over 78,770 items.

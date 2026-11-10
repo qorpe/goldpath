@@ -83,16 +83,16 @@ public class ApprovalEngineDetailTests
         Assert.Contains($"'{missing}' does not exist", notFound.Message);
 
         var self = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => engine.DelegateAsync("expert-user", "expert-user", TimeSpan.FromDays(1)));
+            () => engine.DelegateRoleAsync("expert-user", "expert", "expert-user", TimeSpan.FromDays(1)));
         Assert.Contains("Delegation to self", self.Message);
 
         var window = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => engine.DelegateAsync("expert-user", "stand-in", TimeSpan.FromDays(15)));
+            () => engine.DelegateRoleAsync("expert-user", "expert", "stand-in", TimeSpan.FromDays(15)));
         Assert.Contains("exceeds the declared maximum", window.Message);
 
-        await engine.DelegateAsync("expert-user", "stand-in", TimeSpan.FromDays(1));
+        await engine.DelegateRoleAsync("expert-user", "expert", "stand-in", TimeSpan.FromDays(1));
         var depth = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => engine.DelegateAsync("stand-in", "third", TimeSpan.FromDays(1)));
+            () => engine.DelegateRoleAsync("stand-in", "expert", "third", TimeSpan.FromDays(1)));
         Assert.Contains("depth is one", depth.Message);
     }
 

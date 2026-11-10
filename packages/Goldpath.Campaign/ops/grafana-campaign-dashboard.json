@@ -1,5 +1,5 @@
 {
-  "__comment": "Goldpath.Campaign panel (campaign RFC section 7). Datasource: Prometheus scraping the OTel collector. The PACER RUN's progress lives on the goldpath-jobs dashboard (the pacer is a run); this board owns the governor story: released rate vs the TPS ceiling, in-flight vs its ceiling, remaining/ETA, window state, outcome split.",
+  "__comment": "Goldpath.Campaign panel (campaign RFC section 7). Datasource: Prometheus scraping the OTel collector, whose prometheus exporter spells an instrument with unit s with a _seconds suffix (goldpath_campaign_handler_duration -> goldpath_campaign_handler_duration_seconds_bucket). The PACER RUN's progress lives on the goldpath-jobs dashboard (the pacer is a run); this board owns the governor story: released rate vs the TPS ceilings, in-flight vs its ceiling, remaining/ETA, window state, outcome split, the binding constraint, quota consumption, handler latency and the leader's tick age. The ceiling, binding-constraint and quota panels read their per-campaign gauges through max by (campaign): a former leader's last values can linger in the collector beside the new leader's for its metric expiry, and both say the same thing. The alert rules are ops/alerts.yaml, not this file (#295).",
   "title": "Goldpath Campaign — governor & progress",
   "uid": "goldpath-campaign",
   "schemaVersion": 39,
@@ -29,7 +29,7 @@
   "panels": [
     {
       "type": "timeseries",
-      "title": "Release rate (items/s) vs the configured TPS — the pacer's precision IS this line (runbook §1)",
+      "title": "Release rate (items/s) vs the TPS ceilings — the pacer's precision IS this line (runbook §1)",
       "gridPos": {
         "x": 0,
         "y": 0,
@@ -38,8 +38,20 @@
       },
       "targets": [
         {
-          "expr": "rate(goldpath_campaign_released_total{type=~\"$type\"}[1m])",
+          "expr": "sum by (type) (rate(goldpath_campaign_released_total{type=~\"$type\"}[1m]))",
           "legendFormat": "released/s {{type}}"
+        },
+        {
+          "expr": "sum by (type) (max by (type, campaign) (goldpath_campaign_tps_ceiling{type=~\"$type\"}))",
+          "legendFormat": "policy Tps {{type}} (its running campaigns together)"
+        },
+        {
+          "expr": "max by (type) (goldpath_campaign_type_max_tps{type=~\"$type\"})",
+          "legendFormat": "MaxTps {{type}} (the type's shared ceiling)"
+        },
+        {
+          "expr": "max by (job) (goldpath_campaign_global_tps)",
+          "legendFormat": "GlobalTps {{job}}"
         }
       ]
     },
@@ -158,6 +170,125 @@
           "legendFormat": "{{campaign}}"
         }
       ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Pacer tick age (s) — over 60 s is a stopped pacer, not a slow one: GoldpathCampaignLeaderStalled (runbook §14)",
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "time() - max by (job) (goldpath_campaign_leader_last_tick_seconds)",
+          "legendFormat": "{{job}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 60
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Item handler latency p50 / p95 (s) — the target system's own speed, a throw timed too",
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, type) (rate(goldpath_campaign_handler_duration_seconds_bucket{type=~\"$type\"}[5m])))",
+          "legendFormat": "p50 {{type}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, type) (rate(goldpath_campaign_handler_duration_seconds_bucket{type=~\"$type\"}[5m])))",
+          "legendFormat": "p95 {{type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Outcomes by code (per hour) — which answer the target system is giving; retries and failures over 20 % page as GoldpathCampaignFailureRatio (runbook §5)",
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum by (type, outcome, error_code) (increase(goldpath_campaign_outcomes_total{type=~\"$type\"}[1h]))",
+          "legendFormat": "{{type}} {{outcome}} {{error_code}}"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Binding constraint per running campaign — the limit that held its last tick back (none = nothing more was ready; a constraint that just changed shows beside the new one for the collector's metric_expiration)",
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "max by (campaign, type, constraint) (goldpath_campaign_binding_constraint{type=~\"$type\"})",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{campaign}} {{constraint}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Daily quota consumption — released today over DailyQuota; campaigns without a quota are absent (runbook §1)",
+      "gridPos": {
+        "x": 12,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "max by (campaign, type) (goldpath_campaign_released_today{type=~\"$type\"}) / max by (campaign, type) (goldpath_campaign_daily_quota{type=~\"$type\"})",
+          "legendFormat": "{{campaign}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "max": 1,
+          "min": 0
+        },
+        "overrides": []
+      }
     }
   ]
 }

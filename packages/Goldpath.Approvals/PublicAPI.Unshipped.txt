@@ -1,1 +1,6 @@
 #nullable enable
+Goldpath.GoldpathApprovalDelegation.Role.get -> string?
+Goldpath.GoldpathApprovalDelegation.Role.init -> void
+Goldpath.GoldpathApprovalDelegationRow.Role.get -> string?
+Goldpath.GoldpathApprovalDelegationRow.Role.set -> void
+Goldpath.GoldpathApprovalEngine.DelegateRoleAsync(string! from, string! fromRole, string! to, System.TimeSpan window, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!

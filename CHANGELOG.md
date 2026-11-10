@@ -20,6 +20,79 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     verb in the CLI's source, a flag one verb stops parsing while its literal stays elsewhere in the source, a renamed
     and a removed template choice, a removed schema property, a removed and an added enum value, and a duplicate
     snapshot line. The unplanted tree and a `$comment`/`description`/`default` change stay green.
+- **The S-FLEET-02 rig: 30M targets, an hour at 2,000 TPS, headroom every 10 seconds (GA gate G10c, #349).** Tests,
+  scripts and a dispatch-only workflow; no package changes. Nothing is measured yet: the run is the owner's overnight
+  slot, tracked in open-threads T59.
+  - `scripts/bench-campaign.sh fleet02` runs the new `CampaignFleet02BenchTests`. The fact seeds the full dataset
+    through the pacer while a scheduled start holds the campaign at `Ready`, so nothing is released early. It then
+    clears the start, measures the hour from the first release, and writes `release-per-second.csv` and `verdict.txt`.
+    The fact is opt-in (`GOLDPATH_BENCH_FLEET02=1`) and shows as skipped otherwise, so `bench.yml`'s monthly
+    `Category=Bench` run never picks it up.
+  - The dataset knob `GOLDPATH_BENCH_CAMPAIGN_TARGETS` is new and independent of the window, because the spec says
+    30M, never shrunk. `_FLOOR_TPS` and `_SEED_MINUTES` are new too.
+  - `CampaignFleet02Verdict` computes the verdict from the thresholds signed on #326 and nothing else, and has its own
+    container-free facts (`CampaignFleet02VerdictTests`): the band's edges, the p95 at 95 and 94 of 100 windows, one
+    second above the ceiling, and each way an item can be lost or doubled.
+  - `scripts/bench-headroom.sh` samples the host (CPU, iowait, memory, disk), both containers, RabbitMQ's queue depth
+    and PostgreSQL's activity every 10 seconds, reading `/proc` rather than needing `vmstat` or `iostat`.
+  - `.github/workflows/bench-fleet02.yml` is the runner lane: `workflow_dispatch` only, 360 minutes, the full dataset
+    by default, with the raw series uploaded for 90 days.
+  - `CampaignBrokerBenchTests` (S-FLEET-02a) now runs on the same `CampaignReleaseRig` host, so the two benches cannot
+    measure different hosts. Its output gains the peak concurrent handler calls, the number open-threads T48 says the
+    consumer knob does not prove.
+- **Campaign: alert rules and the dashboard's missing panels (#295, campaign operability Part 2/2).**
+  - **`packages/Goldpath.Campaign/ops/alerts.yaml`**, plain Prometheus rule groups (the
+    `PrometheusRule` wrapper documented, not required), six rules, each with a `severity` and a
+    `runbook_url`: the pacer's tick older than 60 s (`critical`); no process exporting a tick for
+    2 min (`critical` — the first rule cannot judge a series that has expired); over 5 % of acceptances
+    timing out for 10 min (`major`); over 20 % of attempts failing, retries included, over at least
+    100 attempts, for 10 min (`major`); re-releases over 1 % of releases for 15 min (`minor` — a
+    resume's one jump cannot hold that long); any item failed terminally in the last hour (`minor`,
+    including a campaign's FIRST failures, which `increase` alone never sees — and "first" means no
+    sample anywhere in the hour before, so a scrape gap longer than the five-minute staleness window
+    does not make an old campaign's failures page again an hour later — cases hold a 10- and a
+    40-minute gap, the second pinning the `[1h]` window). Runbook item 14
+    (the pacer stopped ticking) is new, and the runbook opens with the alert → item table.
+  - **Severity scheme** `critical | major | minor` (owner decision 2026-10-20), defined in
+    `Goldpath.ServiceDefaults/ops/dashboard-and-alerts.md` with where each package's rule file lives;
+    the baseline's two `warning` rows read `major`.
+  - **Gate:** `scripts/alert-rules.sh`, in its own `alert-rules` workflow — `promtool check rules` and
+    `promtool test rules` on every `packages/*/ops/alerts.yaml` (a rule file without its
+    `alerts.test.yaml` is refused), every severity from the scheme, every `runbook_url` resolving to
+    a heading. promtool comes from Prometheus 3.5.0, its archive checked against a pinned SHA-256
+    (a downloaded copy that fails the check is deleted, so a re-run fetches it again); an air-gapped
+    run passes the archive or a provisioned binary of that version.
+  - **Dashboard:** the release-rate panel gains the ceilings (the running campaigns' policy `Tps`
+    per type, the type's `MaxTps`, `GlobalTps`) and sums the released rate per type; new panels for
+    the pacer's tick age, handler p50/p95, outcomes by code, the binding constraint and daily-quota
+    consumption.
+  - **Proof:** `alerts.test.yaml`'s six cases, among them the issue's: a pacer that stops ticking fires
+    `GoldpathCampaignLeaderStalled` once it has been silent for more than a minute (not at 60 s, at
+    75 s), and the case is red with the rule removed. 23 planted faults in the rules (thresholds,
+    windows, `for`, label filters, aggregation, severity, the link) each turn a case red. On a real
+    OpenTelemetry Collector 0.120.0 and Prometheus 3.5.0, a stalled pacer fired the rule 63 s after
+    its last tick, and the exported names are the ones the rules query.
+- **The console DRIVES CorPay, the adopter-shaped sample (GA gate G11, open-threads T1, #325).** No package change.
+  - **What runs:** `scripts/corpay-console-smoke.sh`, a new `corpay-console-smoke` job in the nightly. It brings CorPay up on
+    its PUBLISHED train (the API head behind its OpenID floor, and the EOD worker's internal head) on real Postgres, RabbitMQ
+    and Redis, with Keycloak `26.0.7` importing a committed realm (`ui/console/e2e/corpay-realm/realm.json`: `maker`,
+    `approver`, a `viewer` without the ops role). Playwright (`ui/console/e2e/corpay.spec.ts`) gets a token per actor by
+    direct grant and carries it as `Authorization: Bearer` on that actor's browser context (owner decision 2026-11-04).
+  - **What it drives, through the consoles CorPay serves:** the floor (no token 401, no ops role 403, an operator 200); the
+    EOD job triggered, its new run `Completed` and `Manual` in the history, paused and resumed with the store's state read
+    back after a reload, and the three crossings on the fleet's audit; a payment file uploaded by `maker`, validated, and
+    approved by `approver` in a second context, the batch recording `Approved by approver`, the jobs audit naming `maker`.
+  - **Proof:** `CORPAY_EXPECTED_APPROVER=maker` fails the run on the batch's decider.
+  - **Found by driving it:** the approved file's rows never execute on a multi-tenant app (#539; pinned to its failure
+    shape — `CompletedWithFailures`, 0 executed, 1 failed — so every earlier step stays guarded and the assertion goes
+    red when it is fixed, T62); an approval leaves no admin-audit row (T63); a head's console
+    asked for another fleet's jobs answers 500 (T64). T1 closes on the job's first green night.
+- **Gates: every admin route is frozen per module (G4 API-9, #398).** A route-contract test for each of the seven
+  admin mappers (jobs, archival, bulk, notification, campaign, approvals, fileexchange) and for the signed campaign
+  callback route compares the exact, sorted `METHOD pattern` list with a frozen array. A renamed, added or removed
+  route fails in its module's test project. The admin contract gains Revision R5, which describes the callback route
+  as shipped (signature, staleness window, result codes), and its Conventions now count seven surfaces. No route
+  changed.
 - **Bulk and Archival on Oracle, and hand-written SQL guarded by a source scan (G7 ORA-6, #409; RFC goldpath-oracle
   §2.5, §2.6, §2.7, §7).**
   - **`ChunkedContains` at the three remaining sites** that can pass Oracle's 1,000-element `IN` list: Archival's
@@ -29,10 +102,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     the list (as ORA-5 found for Campaign); the helper is the guarantee for every provider build.
   - **Bulk on Oracle:** the four `BulkTests` facts run in the Oracle lane (`BulkOracleTests`, `Category=Oracle`),
     with the clustered Quartz store on Oracle.
-  - **Archival on Oracle is refused (#547).** The hash chain's genesis anchor is the empty hash, and Oracle stores
-    `''` as NULL, so a definition's first archive fails with ORA-01400 on `GoldpathArchiveChainState.PurgedHeadHash`.
-    `ArchivalOracleTests` asserts that refusal until #547 (an owner question) lands. The suite gains a
-    `BatchSize = 600` fact that pages 1,200 keys and archives each due aggregate exactly once, on PostgreSQL today.
+  - **Archival on Oracle was refused until #547.** The hash chain's genesis anchor is the empty hash, and Oracle stores
+    `''` as NULL, so a definition's first archive failed with ORA-01400 on `GoldpathArchiveChainState.PurgedHeadHash`,
+    and `ArchivalOracleTests` asserted that refusal. #547 (under Fixed) stores it; the suite now runs end to end on
+    Oracle. The suite gains a `BatchSize = 600` fact that pages 1,200 keys and archives each due aggregate exactly
+    once.
   - **The source scan:** `RawSqlOracleBranchTests` (Goldpath.Data.Tests, no container) fails on any
     `ExecuteSql*`, `FromSql*`, `SqlQuery*` or `MigrationBuilder.Sql` call, and any `CommandText` assigned, appended
     (`+=`) or set in an object initializer, in `packages/` whose method has no Oracle provider check (a literal
@@ -101,8 +175,40 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     at create or at registration, and the detail or the gauge reading the stored count unclamped. On real PostgreSQL and RabbitMQ, `CampaignR2Tests` ends with the count at 0 after
     callbacks, parking and the ack sweep, and a drifted count is re-counted by the next slice
     (red without the re-count). Mutation gate: 82.31 % (`stryker/README.md`).
-  - **Not yet:** the real-broker proof with a slow-acknowledging target and the console's view
-    and edit of the ceiling (R3-S6, #316).
+  - **The real-broker proof and the console (R3-S6, #316):** `CampaignAwaitingAckProof` runs a campaign on
+    RabbitMQ + PostgreSQL against a target system that accepts every call and answers through the signed
+    callback surface eight seconds later, with `MaxInFlight = 4` and `MaxAwaitingAck = 40`. Live calls
+    (`Released + Processing + AwaitingRetry`, sampled from the rows about every 25 ms, and the handler's own
+    concurrency) never pass 4 while the outstanding acknowledgements reach the ceiling of 40 and never pass it,
+    and all 120 items complete exactly once; a campaign on the same host without the field holds its
+    acknowledgements at 4. It is red with the pacer on R2's rule (acknowledgements stay at 4) and red with the
+    acknowledgement room removed. The governor shows the live calls against `MaxInFlight` and the
+    acknowledgements with everything in flight against `MaxAwaitingAck` (or, without it, that each acceptance
+    holds an in-flight slot), and edits the ceiling through `throttle` (`max awaiting ack`, and a
+    `clear max awaiting ack` box while one is set; a clear wins, so a typed value beside it is not sent).
+- **The S3 differential run: every bus conformance fact on both engines, the candidate's outcome compared with the
+  oracle's (messaging-exit RFC §7.1 S3, GA gate G5 Part 3/5, #332).** Tests and CI only; no package changes.
+  - `BusDifferentialTests` (`Category=Differential`, in `tests/Goldpath.Messaging.Conformance`) runs every fact of
+    the two conformance classes, found by reflection, on MassTransit 8.5.12 and then on the Wolverine adapter. Every
+    harness handler reports to a `DeliveryRecorder`, and after each run the record holds: deliveries per endpoint,
+    per business key and per message id; the retry attempts each message was given; the headers the handler saw, and
+    the values of `X-Goldpath-Tenant` and `X-Correlation-Id`; the order, only where the seam promises one (S2.14);
+    every `*_error` queue's messages, read from the broker; and the `InboxState` / `OutboxMessage` / `OutboxState`
+    rows. Error queues and those tables are emptied before each engine's run.
+  - The comparator fails on any line where the two records differ, unless an entry of the reviewed allow-list
+    `differential-allowlist.json` excuses it. There are 33 entries, each carrying its reason, and a container-free
+    fact keeps every entry narrow: no entry may excuse the retry ladder, duplicates, the tenant, the correlation or an
+    order.
+  - The report (`summary.md` plus one `<fact>.json` per fact) is uploaded by CI's integration job as the
+    `s3-differential-report` artifact.
+  - **Measured on the way, and allowed with a reason, not fixed:**
+    - The oracle parks duplicates of a message it has already handled in `<queue>_error` when two deliveries of one
+      message id are in flight at once (S2.1, S2.19).
+    - The fault-diagnostic headers on a parked message are each engine's own (`MT-Fault-*` / `MT-Host-*` /
+      `MT-Reason` against `exception-*` / `failed-at` / `attempts`).
+    - A Wolverine-parked envelope does not list the `IIntegrationEvent` URN. The record holds one line per type a
+      parked envelope names, so only that URN's line is excused and the event's own type is still compared.
+    - Both of the last two are open-threads T51.
 - **Campaign: the metrics RFC §7 promised, and the ones an impact dashboard needs (#294).** Ten new instruments
   on the `Goldpath.Campaign` meter; no `PublicAPI` change. RFC campaign §7 is rewritten as the table of every
   exported instrument, and `MetricsExportTests` holds each one's name, unit and tags against it.
@@ -515,6 +621,31 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   - Three accepted risks (A7–A9), signed by the owner 2026-11-04: counterparty authenticity is the
     transport's job, quarantine reasons are shown as written, and a rail has no size ceiling of its
     own.
+- **The threat model's surfaces 7 and 8: Notification channels and DataProtection (GA gate G15
+  Part 2/2, 3/4, part of #340).** No package code changes. `docs/security/threat-model.md` now models
+  8 of 10 surfaces: T-NTF-01..16 and T-DPK-01..11. Every threat names a test (34 references, each
+  checked to resolve to a method and its suite run green), an issue, or an accepted risk.
+  - **Five tests pin defences that held but were proven by nothing.** Each is red with its fault
+    planted:
+    - a token value is never rendered again (planted: the renderer re-expands values);
+    - a line break in a subject never becomes a header (planted: subject lines written as headers);
+    - a recipient list is refused (planted: `InternetAddressList.Parse`);
+    - without `EnableRedaction()`, a classified log property is dropped, never written in clear
+      (planted: `[GoldpathPersonalData]` no longer a `DataClassificationAttribute`);
+    - a short or non-Base64 HMAC key is refused (planted: the module stretches any key to 44
+      characters).
+  - **Three threats had no holder, and each is now an issue:**
+    - #531: the notification dedup key is unique across tenants. A second tenant's notice is never
+      stored, and its caller gets the first tenant's row (measured);
+    - #532: a failure's `Detail` is the channel's exception text verbatim, so a provider reply that
+      names the address walks around recipient masking;
+    - #533: the webhook channel posts to a plaintext `http://` URL without an opt-in, which the email
+      channel refuses.
+  - **Four accepted risks (A10–A13) await the owner's signature:**
+    - secrets are only as safe as the configuration they come from;
+    - the webhook is unsigned;
+    - the app's own words on the notification surface;
+    - classified values written into free text.
 - **`goldpath check` warns a manifest that selects a roadmap-only value (GA gate G3, #336).**
   After `specdrift validate` passes, every value the schema accepts but no code runs
   (`broker: kafka|inmemory`, `exporters: prometheus`, `auditTrail.store: eventstream`, and
@@ -681,6 +812,60 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **[schema]** **Approvals: a delegation admits its delegate to the delegator's rung only (#479, threat model T-APR-05).**
+  A delegation carried no role, so an active one admitted its delegate to every rung of every ladder — the amount
+  ladder did not hold for a delegate.
+  - **API (additive):** `GoldpathApprovalEngine.DelegateRoleAsync(from, fromRole, to, window)`;
+    `GoldpathApprovalDelegation.Role` (init-only; the positional constructor is unchanged);
+    `GoldpathApprovalDelegationRow.Role`.
+  - **Behaviour:** `DecideAsync` and `WorklistAsync` admit a delegate only to a rung whose role equals the delegation's
+    (ignoring case). A delegation with no role — every one recorded before this release — admits to nothing.
+  - **Breaking at run time:** `DelegateAsync(from, to, window)` refuses with an `InvalidOperationException` that names
+    `DelegateRoleAsync`, and records nothing. `DelegateRoleAsync` refuses a blank role and a role that is no rung of any
+    declared ladder. The role must come from the authenticated delegator's claims, never from a request body.
+  - **Schema:** `GoldpathApprovalDelegations` gains a nullable `Role` (max 128). The upgrade guide has the migration
+    step and a query for the delegations it leaves without reach.
+- **Archival on Oracle: a definition's first archive is stored, and its chain verifies (#547).** The chain's genesis
+  anchor is the empty hash, and Oracle stores `''` as NULL, so the `NOT NULL` anchor columns refused it (ORA-01400):
+  nothing archived on Oracle, so retention and erasure had nothing to act on. On Oracle alone
+  `GoldpathArchiveEntries.PreviousHash`, `GoldpathArchiveChainState.LastHash` and `GoldpathArchiveChainState.PurgedHeadHash`
+  are now nullable: Archival's model writes `""` as NULL and the entity reads NULL back as `""` (owner decision A, the
+  #502 pattern; oracle RFC §2.2 amended). `LastHash` is the third column the issue did not name: a chain state is saved
+  with it still `""` when every candidate of a definition's first batch raced away, and that save was refused too.
+  Every hash and every chain on PostgreSQL and SQL Server is byte-identical, the three properties keep their
+  signatures, and existing chains keep verifying. The engine reads these columns only from materialised entities;
+  a query that PROJECTS one of them on Oracle reads NULL for the genesis value. **Proof:** `ArchivalOracleTests` (the
+  lifecycle, the #383 sub-µs twin, the `BatchSize = 600` run, and the new
+  `A_first_batch_whose_every_candidate_raced_away_keeps_the_genesis_anchor`) runs end to end on Oracle and is red with
+  ORA-01400 without the mapping; the Oracle golden's three columns read `NVARCHAR2(64) null`, and `MayWriteEmpty`
+  drops its two #547 entries. No migration step: Oracle is on no published train yet.
+- **Messaging: an outbox event above the broker's size limit no longer stops every later event, on either engine (#458).**
+  - **What went wrong:** RabbitMQ refuses a body above `max_message_size` (16 MiB by default) on every attempt. Both
+    adapters' delivery loops retry the oldest undelivered outbox first, so one such row held back every row committed
+    after it, for ever (the verifier's probe P1 on #457: the small row behind it undelivered after 45 s, on both).
+  - **Now:** `GoldpathMessagingOptions.MaxMessageBytes` (`Goldpath:Messaging:MaxMessageBytes`, default 16777216, must be
+    positive; the only public addition) is enforced in the floor, once for every engine:
+    - **A publish above it is refused at the seam:** `PublishAsync` throws `InvalidOperationException` (the event, its
+      size and the limit, never the payload), and the row leaves the unit of work, so nothing commits it.
+    - **A committed row above it is marked failed in place:** an outbox sweep (its first pass at start, before the
+      bus; then every delivery poll) keeps the row and its body, detaches it from its outbox or inbox, writes
+      `Goldpath-Outbox-Failed*` headers with the reason and where it came from, and logs id, type and size at Error.
+      The rows behind it are delivered. The outbox schema is unchanged. The sweep's database pre-filter is a QUARTER
+      of the limit, because PostgreSQL's, Oracle's and SQLite's `length()` count code points, which are up to four
+      bytes each; a third would skip a body made mostly of four-byte characters. A row whose headers are not a JSON
+      object is marked too, its headers kept as text in `Goldpath-Outbox-Failed-OriginalHeaders`, so one corrupt row
+      cannot stop the pass. The publish guard judges only the row its own publish added.
+    - Both count in a new counter, `goldpath.messaging.outbox.oversized{stage=publish|outbox}` (meter `Goldpath.Messaging`).
+  - **Proof:** conformance S2.20 (a committed oversized row, then a small one; the small one is delivered, the large one
+    is kept and marked) and S2.21 (the refusal commits nothing; the next publish goes through), both on MassTransit
+    8.5.12 and Wolverine on real RabbitMQ 4 and PostgreSQL 17. Both are red on `main`, and red again with the detach or
+    the refusal planted out. S2.20b, on PostgreSQL 17 and both engines: a committed row of 80 × U+1F600 (80 code
+    points, 320 bytes) is marked under a 300-byte limit; red with the pre-filter at a third. Boundaries in UTF-8 bytes
+    (ASCII, `İ`, `€`, a surrogate pair; at the publish and, for four-byte code points, at the sweep), corrupt headers,
+    a row added outside the guarded publish and the sweep's page walk are `MessageSizeTests`.
+  - **Docs:** the package README's "Message size", and the runbook's "An outbox row marked failed" (how to recover one).
+  - **Upgrade note:** none required. A publish above 16 MiB now throws where it used to commit a row that never left. To
+    publish larger bodies, raise the broker's `max_message_size` and this option together.
 - **Admin verbs refuse a blank value before it reaches a NOT NULL column, the same on every provider (#476, G7).**
   Oracle stores `''` as NULL, so each of these failed there with `ORA-01400` (a 500). On PostgreSQL and SQL Server
   each stored a meaningless record.

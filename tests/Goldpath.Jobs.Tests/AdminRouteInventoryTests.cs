@@ -15,6 +15,39 @@ namespace Goldpath.Jobs.Tests;
 /// </summary>
 public class AdminRouteInventoryTests
 {
+    /// <summary>
+    /// G4 API-9 (#398): the exact route list, frozen. The facts below prove what the surface refuses to offer; this one
+    /// proves nothing else moved — a renamed, added or removed route fails here, so the contract document
+    /// (<c>docs/rfc/goldpath-admin-contract.md</c>, the jobs table and Revision R2) changes in the same PR.
+    /// </summary>
+    [Fact]
+    public void The_jobs_surface_matches_the_frozen_contract()
+    {
+        string[] frozen =
+        [
+            "DELETE /goldpath/admin/jobs/fleets/{fleet}/calendars/{name}",
+            "DELETE /goldpath/admin/jobs/fleets/{fleet}/jobs/{job}/triggers/{name}",
+            "GET /goldpath/admin/jobs/audit",
+            "GET /goldpath/admin/jobs/fleets",
+            "GET /goldpath/admin/jobs/fleets/{fleet}/calendars",
+            "GET /goldpath/admin/jobs/fleets/{fleet}/jobs",
+            "GET /goldpath/admin/jobs/fleets/{fleet}/runs",
+            "GET /goldpath/admin/jobs/fleets/{fleet}/status",
+            "GET /goldpath/admin/jobs/runs/{runId:guid}",
+            "POST /goldpath/admin/jobs/fleets/{fleet}/jobs/{job}/pause",
+            "POST /goldpath/admin/jobs/fleets/{fleet}/jobs/{job}/reschedule",
+            "POST /goldpath/admin/jobs/fleets/{fleet}/jobs/{job}/resume",
+            "POST /goldpath/admin/jobs/fleets/{fleet}/jobs/{job}/trigger",
+            "POST /goldpath/admin/jobs/fleets/{fleet}/jobs/{job}/triggers",
+            "POST /goldpath/admin/jobs/fleets/{fleet}/pause-all",
+            "POST /goldpath/admin/jobs/fleets/{fleet}/resume-all",
+            "POST /goldpath/admin/jobs/runs/{runId:guid}/replay-items",
+            "POST /goldpath/admin/jobs/runs/{runId:guid}/rerun",
+            "PUT /goldpath/admin/jobs/fleets/{fleet}/calendars/{name}",
+        ];
+        Assert.Equal(frozen, Inventory().Select(route => $"{route.Method} {route.Pattern}").Order(StringComparer.Ordinal).ToArray());
+    }
+
     [Fact]
     public void The_scheduling_routes_of_R2_are_mapped()
     {

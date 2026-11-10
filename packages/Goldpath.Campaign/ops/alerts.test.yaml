@@ -1,0 +1,258 @@
+# promtool test rules for alerts.yaml (#295). Run: scripts/alert-rules.sh
+# Each case is written so it goes red if its rule is removed, renamed, or loses its threshold.
+rule_files:
+  - alerts.yaml
+
+evaluation_interval: 15s
+
+tests:
+  # S-OPS-02 style: the operator is told, not surprised. A pacer that stops ticking at 5m fires
+  # once it has been silent for more than a minute; a healthy job beside it, and a former leader
+  # of the same job holding an older tick, fire nothing.
+  - name: a stalled leader fires within a minute, per job
+    interval: 15s
+    input_series:
+      # The value is the tick's Unix time; the test clock starts at 0, so a live pacer reads `time()`.
+      - series: 'goldpath_campaign_leader_last_tick_seconds{job="fleet", instance="leader"}'
+        values: '0+15x20 300x40'
+      - series: 'goldpath_campaign_leader_last_tick_seconds{job="fleet", instance="former-leader"}'
+        values: '0+15x4 60x56'
+      - series: 'goldpath_campaign_leader_last_tick_seconds{job="billing", instance="leader"}'
+        values: '0+15x60'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: GoldpathCampaignLeaderStalled
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: GoldpathCampaignLeaderStalled
+        exp_alerts: []          # 60 s silent: not yet MORE than a minute
+      - eval_time: 6m15s
+        alertname: GoldpathCampaignLeaderStalled
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: fleet
+            exp_annotations:
+              summary: "No campaign pacer of fleet has ticked for 1m 15s"
+              description: "Nothing is being released and no sweep is running. The watermarks are durable, so the next leader resumes where this one stopped; find out why none is leading."
+              runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#14-the-pacer-stopped-ticking
+      - eval_time: 6m15s
+        alertname: GoldpathCampaignNoLeader
+        exp_alerts: []
+
+  - name: no process exporting a tick at all fires after two minutes
+    interval: 15s
+    input_series:
+      - series: 'goldpath_campaign_released_total{job="fleet", type="sms"}'
+        values: '0+10x20'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: GoldpathCampaignNoLeader
+        exp_alerts: []
+      - eval_time: 2m15s
+        alertname: GoldpathCampaignNoLeader
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "No process exports a campaign pacer tick"
+              description: "No host has led the campaign pacer since the series expired or the stack started. The pacer's cron fires every minute, so two minutes without one is a fleet that cannot lead."
+              runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#14-the-pacer-stopped-ticking
+
+  # sms: 10 of 100 acceptances a minute time out (10 %); push: 2 of 100 (2 %), under the line;
+  # mail: timeouts with no acceptance in the window at all (+Inf).
+  - name: ack timeouts above one acceptance in twenty fire after ten minutes
+    interval: 1m
+    input_series:
+      - series: 'goldpath_campaign_outcomes_total{job="fleet", type="sms", outcome="accepted", error_code="none"}'
+        values: '0+100x40'
+      - series: 'goldpath_campaign_ack_timeouts_total{job="fleet", type="sms"}'
+        values: '0+10x40'
+      - series: 'goldpath_campaign_outcomes_total{job="fleet", type="sms", outcome="succeeded", error_code="none"}'
+        values: '0+900x40'   # settled outcomes are not acceptances: they must not dilute the ratio
+      - series: 'goldpath_campaign_outcomes_total{job="fleet", type="push", outcome="accepted", error_code="none"}'
+        values: '0+100x40'
+      - series: 'goldpath_campaign_ack_timeouts_total{job="fleet", type="push"}'
+        values: '0+2x40'
+      - series: 'goldpath_campaign_outcomes_total{job="fleet", type="mail", outcome="accepted", error_code="none"}'
+        values: '500x40'
+      - series: 'goldpath_campaign_ack_timeouts_total{job="fleet", type="mail"}'
+        values: '0+3x40'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: GoldpathCampaignAckTimeouts
+        exp_alerts: []          # over the line, but not yet for ten minutes
+      - eval_time: 20m
+        alertname: GoldpathCampaignAckTimeouts
+        exp_alerts:
+          - exp_labels: { severity: major, job: fleet, type: sms }
+            exp_annotations:
+              summary: "sms: 10% of acceptances time out before their callback"
+              description: "Each timeout is retried by the ladder and lands in the repair queue when the ladder is exhausted; nothing is lost, but the target system is not answering what it accepted."
+              runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#8-acceptances-piling-up-r21
+          - exp_labels: { severity: major, job: fleet, type: mail }
+            exp_annotations:
+              summary: "mail: +Inf% of acceptances time out before their callback"
+              description: "Each timeout is retried by the ladder and lands in the repair queue when the ladder is exhausted; nothing is lost, but the target system is not answering what it accepted."
+              runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#8-acceptances-piling-up-r21
+
+  # sms re-releases 5 % of what it releases, steadily; push re-releases once, after a resume at 10m.
+  - name: a steady re-release rate fires, the one jump after a resume does not
+    interval: 1m
+    input_series:
+      - series: 'goldpath_campaign_released_total{job="fleet", type="sms"}'
+        values: '0+100x40'
+      - series: 'goldpath_campaign_orphans_rereleased_total{job="fleet", type="sms"}'
+        values: '0+5x40'
+      - series: 'goldpath_campaign_released_total{job="fleet", type="push"}'
+        values: '0+100x40'
+      - series: 'goldpath_campaign_orphans_rereleased_total{job="fleet", type="push"}'
+        values: '0x10 500x30'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: GoldpathCampaignOrphansRereleased
+        exp_alerts: []          # both over the line, neither for fifteen minutes yet
+      - eval_time: 25m
+        alertname: GoldpathCampaignOrphansRereleased
+        exp_alerts:
+          - exp_labels: { severity: minor, job: fleet, type: sms }
+            exp_annotations:
+              summary: "sms: released items are being published again (5% of releases)"
+              description: "Consumers are refusing claims or the broker is losing messages. The sweep keeps the campaign moving; a host or a queue needs looking at."
+              runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#9-orphaned-releases-being-published-again-r26
+      - eval_time: 35m
+        alertname: GoldpathCampaignOrphansRereleased
+        exp_alerts:
+          - exp_labels: { severity: minor, job: fleet, type: sms }
+            exp_annotations:
+              summary: "sms: released items are being published again (5% of releases)"
+              description: "Consumers are refusing claims or the broker is losing messages. The sweep keeps the campaign moving; a host or a queue needs looking at."
+              runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#9-orphaned-releases-being-published-again-r26
+
+  # sms: 20 of 80 attempts a minute are retries (25 %), 1,200 attempts in 15 minutes;
+  # push: the same 25 % on 4 attempts a minute (60 in 15 minutes, under the minimum sample);
+  # mail: 8 of 80 fail terminally (10 %), under the line.
+  - name: a failure ratio above one in five fires, only over a real sample
+    interval: 1m
+    input_series:
+      - series: 'goldpath_campaign_outcomes_total{job="fleet", type="sms", outcome="succeeded", error_code="none"}'
+        values: '0+60x40'
+      - series: 'goldpath_campaign_outcomes_total{job="fleet", type="sms", outcome="retry", error_code="TIMEOUT"}'
+        values: '0+20x40'
+      - series: 'goldpath_campaign_outcomes_total{job="fleet", type="sms", outcome="accepted", error_code="none"}'
+        values: '0+1000x40'   # acceptances are not attempts that ended: they must not dilute the ratio
+      - series: 'goldpath_campaign_outcomes_total{job="fleet", type="push", outcome="succeeded", error_code="none"}'
+        values: '0+3x40'
+      - series: 'goldpath_campaign_outcomes_total{job="fleet", type="push", outcome="failed", error_code="DENIED"}'
+        values: '0+1x40'
+      - series: 'goldpath_campaign_outcomes_total{job="fleet", type="mail", outcome="succeeded", error_code="none"}'
+        values: '0+72x40'
+      - series: 'goldpath_campaign_outcomes_total{job="fleet", type="mail", outcome="failed", error_code="BOUNCE"}'
+        values: '0+8x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: GoldpathCampaignFailureRatio
+        exp_alerts:
+          - exp_labels: { severity: major, job: fleet, type: sms }
+            exp_annotations:
+              summary: "sms: 25% of attempts fail"
+              description: "Read the error codes on the dashboard's outcomes-by-code panel, then the failed items. A provider limiting the rate is a throttle (runbook item 3); a poisoned target is a repair."
+              runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#5-failed-items--poisoned-targets
+
+  # c1's first failures arrive at 20m, on a series that did not exist before (`increase` alone
+  # would never see them); c3 starts life at 0 already holding 7; c2's series exists from the
+  # start at 0 and grows at 40m; c4 likewise, by a single failure. Each resolves once its last
+  # failure is an hour old.
+  - name: new terminal failures fire, including a campaign's first; they resolve after an hour
+    interval: 1m
+    input_series:
+      - series: 'goldpath_campaign_failed_total{job="fleet", campaign="c1"}'
+        values: '_x19 3x80'
+      - series: 'goldpath_campaign_failed_total{job="fleet", campaign="c2"}'
+        values: '0x39 2x60'
+      - series: 'goldpath_campaign_failed_total{job="fleet", campaign="c3"}'
+        values: '7x100'
+      # c4 exists from the start and grows by exactly ONE: "any new one" is one, not more than one.
+      - series: 'goldpath_campaign_failed_total{job="fleet", campaign="c4"}'
+        values: '0x39 1x60'
+    alert_rule_test:
+      - eval_time: 21m
+        alertname: GoldpathCampaignRepairQueueGrowing
+        exp_alerts:
+          - exp_labels: { severity: minor, job: fleet, campaign: c1 }
+            exp_annotations:
+              summary: "Campaign c1: items failed terminally in the last hour"
+              description: "They sit in the jobs repair queue. Read GET /goldpath/admin/campaign/{id}/failures, fix the cause, and replay from the jobs console (replay-items)."
+              runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#5-failed-items--poisoned-targets
+          - exp_labels: { severity: minor, job: fleet, campaign: c3 }
+            exp_annotations:
+              summary: "Campaign c3: items failed terminally in the last hour"
+              description: "They sit in the jobs repair queue. Read GET /goldpath/admin/campaign/{id}/failures, fix the cause, and replay from the jobs console (replay-items)."
+              runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#5-failed-items--poisoned-targets
+      - eval_time: 90m
+        alertname: GoldpathCampaignRepairQueueGrowing
+        exp_alerts:
+          - exp_labels: { severity: minor, job: fleet, campaign: c2 }
+            exp_annotations:
+              summary: "Campaign c2: items failed terminally in the last hour"
+              description: "They sit in the jobs repair queue. Read GET /goldpath/admin/campaign/{id}/failures, fix the cause, and replay from the jobs console (replay-items)."
+              runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#5-failed-items--poisoned-targets
+          - exp_labels: { severity: minor, job: fleet, campaign: c4 }
+            exp_annotations:
+              summary: "Campaign c4: items failed terminally in the last hour"
+              description: "They sit in the jobs repair queue. Read GET /goldpath/admin/campaign/{id}/failures, fix the cause, and replay from the jobs console (replay-items)."
+              runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#5-failed-items--poisoned-targets
+      - eval_time: 101m
+        alertname: GoldpathCampaignRepairQueueGrowing
+        exp_alerts: []
+
+
+  # The minimum sample is inclusive: exactly 100 attempts in fifteen minutes is a real sample.
+  # cdr: every 3 minutes 14 attempts succeed and 6 are retried (30 %). A 15-minute window holds
+  # five steps of 20 spanning 12 minutes, which `increase` extrapolates to 80 × 15/12 = 100 exactly
+  # (900 s / 720 s is exact in binary, so the boundary is not left to rounding).
+  - name: the failure ratio's minimum sample is inclusive at exactly one hundred attempts
+    interval: 3m
+    input_series:
+      - series: 'goldpath_campaign_outcomes_total{job="fleet", type="cdr", outcome="succeeded", error_code="none"}'
+        values: '0+14x20'
+      - series: 'goldpath_campaign_outcomes_total{job="fleet", type="cdr", outcome="retry", error_code="TIMEOUT"}'
+        values: '0+6x20'
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: GoldpathCampaignFailureRatio
+        exp_alerts:
+          - exp_labels: { severity: major, job: fleet, type: cdr }
+            exp_annotations:
+              summary: "cdr: 30% of attempts fail"
+              description: "Read the error codes on the dashboard's outcomes-by-code panel, then the failed items. A provider limiting the rate is a throttle (runbook item 3); a poisoned target is a repair."
+              runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#5-failed-items--poisoned-targets
+
+  # A monitoring gap is not a new failure. c1 has held 5 failures since before the hour began;
+  # scraping stops for ten minutes at 29m. An hour after the gap, the instant `offset 1h` lookup
+  # (five minutes of lookback) would find nothing and call c1 a new series; the rule must not.
+  - name: a scrape gap longer than the staleness window does not make an old series look new
+    interval: 1m
+    input_series:
+      - series: 'goldpath_campaign_failed_total{job="fleet", campaign="c1"}'
+        values: '5x29 _x10 5x80'
+    alert_rule_test:
+      - eval_time: 1h35m
+        alertname: GoldpathCampaignRepairQueueGrowing
+        exp_alerts: []
+
+  # The same, for a gap longer than half the hour: the `[1h]` window is what holds it. A gap of 40
+  # minutes (29m..68m) leaves samples only before 29m in the window that ends at 2h05m - 1h; a
+  # window shrunk to 30m would see none there and page for c1 again.
+  - name: a scrape gap longer than half the hour does not make an old series look new either
+    interval: 1m
+    input_series:
+      - series: 'goldpath_campaign_failed_total{job="fleet", campaign="c1"}'
+        values: '5x29 _x40 5x80'
+    alert_rule_test:
+      - eval_time: 1h50m
+        alertname: GoldpathCampaignRepairQueueGrowing
+        exp_alerts: []
+      - eval_time: 2h5m
+        alertname: GoldpathCampaignRepairQueueGrowing
+        exp_alerts: []

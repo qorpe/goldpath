@@ -147,6 +147,9 @@ interface ThrottleDraft {
   /** Which of the two instants a repeated-hour start means; empty until the operator says. */
   startChoice: "" | "earlier" | "later";
   clearStartAt: boolean;
+  /** R3.4: the acknowledgement ceiling; empty keeps it. */
+  maxAwaitingAck: string;
+  clearMaxAwaitingAck: boolean;
 }
 
 const EMPTY_DRAFT: ThrottleDraft = {
@@ -167,6 +170,8 @@ const EMPTY_DRAFT: ThrottleDraft = {
   startLocal: "",
   startChoice: "",
   clearStartAt: false,
+  maxAwaitingAck: "",
+  clearMaxAwaitingAck: false,
 };
 
 /**
@@ -193,6 +198,9 @@ export function toThrottle(draft: ThrottleDraft, timeZone = "UTC"): CampaignThro
   if (draft.clearEndDate) patch.clearEndDate = true;
   if (text(draft.priority)) patch.priority = text(draft.priority) as CampaignThrottle["priority"];
   if (draft.clearStartAt) patch.clearStartAt = true;
+  // A clear wins on the server, so a typed ceiling beside it is not sent: the confirm line names only what happens.
+  if (draft.clearMaxAwaitingAck) patch.clearMaxAwaitingAck = true;
+  else if (number(draft.maxAwaitingAck) !== undefined) patch.maxAwaitingAck = number(draft.maxAwaitingAck);
   // A start goes into the patch only once it names exactly one instant (startProblem says why it does not).
   if (text(draft.startLocal) && !draft.clearStartAt) {
     const start = resolveStart(draft.startLocal, text(draft.timeZoneId) ?? timeZone);
@@ -217,6 +225,27 @@ export function startProblem(draft: ThrottleDraft, timeZone: string): string | n
   return null;
 }
 
+/**
+ * R3.4: the in-flight rows. Without `maxAwaitingAck` an acceptance holds an in-flight slot (R2's rule), so one row
+ * says so. With it, `maxInFlight` caps the live calls (everything in flight but the acceptances) and
+ * `maxAwaitingAck` caps everything in flight, the acceptances included: each row names its own ceiling.
+ */
+export function inFlightRows(c: CampaignInfo): { key: string; value: string }[] {
+  const acks = c.awaitingAck ?? 0;
+  if (c.maxAwaitingAck == null) {
+    return [
+      { key: "In flight", value: `${c.inFlight} of ${c.maxInFlight} allowed` },
+      ...(c.awaitingAck === undefined
+        ? []
+        : [{ key: "Awaiting acknowledgement", value: `${acks} — each holds an in-flight slot (no acknowledgement ceiling)` }]),
+    ];
+  }
+  return [
+    { key: "Live calls", value: `${c.inFlight - acks} of ${c.maxInFlight} allowed` },
+    { key: "Awaiting acknowledgement", value: `${acks} · ${c.inFlight} in flight of ${c.maxAwaitingAck} allowed` },
+  ];
+}
+
 /** The confirm line: what the operator is actually about to change, field by field. */
 export function describeThrottle(patch: CampaignThrottle, timeZone = "UTC"): string {
   const parts: string[] = [];
@@ -235,6 +264,8 @@ export function describeThrottle(patch: CampaignThrottle, timeZone = "UTC"): str
   if (patch.priority) parts.push(`priority ${patch.priority}`);
   if (patch.startAt) parts.push(`start ${formatInZone(patch.startAt, patch.timeZoneId ?? timeZone)} ${patch.timeZoneId ?? timeZone} (${patch.startAt})`);
   if (patch.clearStartAt) parts.push("no scheduled start (it starts as soon as it is ready)");
+  if (patch.maxAwaitingAck !== undefined) parts.push(`max awaiting acknowledgement ${patch.maxAwaitingAck}`);
+  if (patch.clearMaxAwaitingAck) parts.push("no acknowledgement ceiling (an acceptance holds an in-flight slot)");
   return parts.join(", ");
 }
 
@@ -465,7 +496,7 @@ export function CampaignPanel({ client }: CampaignPanelProps) {
                     </>
                   ),
                 },
-                { key: "In flight", value: `${selected.inFlight} of ${selected.maxInFlight} allowed` },
+                ...inFlightRows(selected),
                 {
                   key: "Remaining",
                   value: (
@@ -528,6 +559,7 @@ export function CampaignPanel({ client }: CampaignPanelProps) {
                     ["dailyQuota", "daily quota", selected.dailyQuota],
                     ["maxInFlight", "max in-flight", selected.maxInFlight],
                     ["maxAttempts", "max attempts", selected.maxAttempts],
+                    ["maxAwaitingAck", "max awaiting ack", selected.maxAwaitingAck],
                   ] as const
                 ).map(([field, label, current]) => (
                   <label key={field} className="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -634,6 +666,13 @@ export function CampaignPanel({ client }: CampaignPanelProps) {
                   onChange={(clearEndDate) => setDraft({ ...draft, clearEndDate })}
                   label="clear end date"
                 />
+                {selected.maxAwaitingAck != null && (
+                  <Checkbox
+                    checked={draft.clearMaxAwaitingAck}
+                    onChange={(clearMaxAwaitingAck) => setDraft({ ...draft, clearMaxAwaitingAck })}
+                    label="clear max awaiting ack"
+                  />
+                )}
                 {BEFORE_START.has(selected.state) && (
                   <>
                     <label className="flex flex-col gap-1 text-xs text-muted-foreground">

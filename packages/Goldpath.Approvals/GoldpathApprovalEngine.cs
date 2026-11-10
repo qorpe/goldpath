@@ -339,12 +339,36 @@ public sealed class GoldpathApprovalEngine
     }
 
     /// <summary>
-    /// Delegates <paramref name="from"/>'s pending decisions to <paramref name="to"/> for a
-    /// bounded window. Depth is one: a delegate cannot re-delegate — the cycle guard is
-    /// structural, not a graph search.
+    /// Refused since 0.1.0-preview.10 (#479): a delegation that names no role would admit its delegate to every rung
+    /// of every ladder. Call <see cref="DelegateRoleAsync"/> with the delegator's role.
     /// </summary>
-    public async Task DelegateAsync(string from, string to, TimeSpan window, CancellationToken cancellationToken = default)
+    /// <exception cref="InvalidOperationException">Always — the returned task faults with the teaching text.</exception>
+    public Task DelegateAsync(string from, string to, TimeSpan window, CancellationToken cancellationToken = default)
+        => Task.FromException(new InvalidOperationException(RoleRequired));
+
+    // The refusal of the role-less overload, in words an adopter can act on.
+    private const string RoleRequired =
+        "A delegation names the role it delegates (#479): call DelegateRoleAsync(from, fromRole, to, window) with the delegator's role "
+        + "taken from the authenticated delegator's claims, never from a request body. A delegation without a role would admit "
+        + "its delegate to every rung of every ladder.";
+
+    /// <summary>
+    /// Delegates <paramref name="from"/>'s pending decisions on the <paramref name="fromRole"/> rung to
+    /// <paramref name="to"/> for a bounded window (#479): the delegate may decide what the delegator may decide, on
+    /// every ladder that has that rung, and nothing above or below it. Take <paramref name="fromRole"/> from the
+    /// authenticated delegator's claims, never from a request body — the engine cannot tell who holds a role. Depth
+    /// is one: a delegate cannot re-delegate — the cycle guard is structural, not a graph search.
+    /// </summary>
+    /// <exception cref="ArgumentException"><paramref name="fromRole"/> is empty, or no rung of any declared ladder.</exception>
+    /// <exception cref="InvalidOperationException">Self-delegation, a window above the declared maximum, or a delegator who holds a delegation.</exception>
+    public async Task DelegateRoleAsync(string from, string fromRole, string to, TimeSpan window, CancellationToken cancellationToken = default)
     {
+        // Recorded in the ladder's own spelling, so the delegation reads as the rung it admits to. A blank role matches
+        // no rung, so it is refused here too.
+        var role = _options.Ladders.Values.SelectMany(l => l.Rungs)
+            .FirstOrDefault(r => string.Equals(r.Role, fromRole, StringComparison.OrdinalIgnoreCase))?.Role
+            ?? throw new ArgumentException($"'{fromRole}' is no rung of any declared ladder, so a delegation of it would admit to nothing.", nameof(fromRole));
+
         if (string.Equals(from, to, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("Delegation to self is meaningless.");
@@ -362,7 +386,7 @@ public sealed class GoldpathApprovalEngine
             throw new InvalidOperationException($"'{from}' currently holds a delegation and cannot re-delegate (depth is one).");
         }
 
-        await _store.AddDelegationAsync(new GoldpathApprovalDelegation(from, to, now + window), cancellationToken);
+        await _store.AddDelegationAsync(new GoldpathApprovalDelegation(from, to, now + window) { Role = role }, cancellationToken);
     }
 
     /// <summary>
@@ -426,7 +450,8 @@ public sealed class GoldpathApprovalEngine
 
     /// <summary>
     /// The worklist: pending requests the given identity (holding the given role) may decide —
-    /// their role's rung plus anything delegated to them. Four-eyes filters their own requests out.
+    /// their role's rung plus the rungs delegated to them (#479: a delegation's own rung, no other).
+    /// Four-eyes filters their own requests out.
     /// </summary>
     public async Task<IReadOnlyList<GoldpathApprovalRequest>> WorklistAsync(string identity, string role, CancellationToken cancellationToken = default)
     {
@@ -436,18 +461,23 @@ public sealed class GoldpathApprovalEngine
         return pending
             .Where(r => !string.Equals(r.RequestedBy, identity, StringComparison.OrdinalIgnoreCase))
             .Where(r => string.Equals(r.PendingRole, role, StringComparison.OrdinalIgnoreCase)
-                || delegations.Any(d => string.Equals(d.To, identity, StringComparison.OrdinalIgnoreCase)))
+                || delegations.Any(d => Admits(d, identity, r.PendingRole)))
             .OrderBy(r => r.PendingSince)
             .ToList();
     }
 
     private async Task<bool> HasDelegationToRoleAsync(string identity, string pendingRole, DateTimeOffset now, CancellationToken cancellationToken)
     {
-        // A delegation transfers the DELEGATOR's decision right; v0 models identity-level
-        // delegation, so holding any active delegation admits the delegate to the rung.
+        // A delegation transfers the DELEGATOR's decision right, and only that (#479): the rung of the role it was
+        // granted with. A row with no role (written before preview.10) admits to nothing.
         var delegations = await _store.GetDelegationsAsync(now, cancellationToken);
-        return delegations.Any(d => string.Equals(d.To, identity, StringComparison.OrdinalIgnoreCase));
+        return delegations.Any(d => Admits(d, identity, pendingRole));
     }
+
+    private static bool Admits(GoldpathApprovalDelegation delegation, string identity, string pendingRole)
+        => string.Equals(delegation.To, identity, StringComparison.OrdinalIgnoreCase)
+            && delegation.Role is { } role
+            && string.Equals(role, pendingRole, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>How many times one call reads again after losing a write race before it gives up (#480).</summary>
     private const int ConflictAttempts = 8;

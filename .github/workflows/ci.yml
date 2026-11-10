@@ -96,8 +96,20 @@ jobs:
             --filter "Category!=Bench&Category!=Oracle" --nologo
           # The bus conformance suite (ADR-0013 §3): the facts a bus must hold for Goldpath,
           # on real RabbitMQ + PostgreSQL through the seam — the oracle is MassTransit 8.5.12.
+          # It includes S3, the differential run (messaging-exit §7.1, G5 Part 3/5): every fact
+          # again on both engines, the candidate's recorded outcome compared with the oracle's.
           dotnet test tests/Goldpath.Messaging.Conformance/Goldpath.Messaging.Conformance.csproj --nologo
+        env:
+          GOLDPATH_DIFFERENTIAL_OUT: ${{ github.workspace }}/differential-report
         timeout-minutes: 45
+      - name: upload the S3 differential report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: s3-differential-report
+          path: differential-report/
+          if-no-files-found: warn
+          retention-days: 30
 
   # The Oracle lane (G7, slice O-1, #404; RFC goldpath-oracle §8): every Category=Oracle test, on the pinned
   # Oracle Database Free image, in its own job so its container's start-up never slows the integration job.

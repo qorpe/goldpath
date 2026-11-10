@@ -132,9 +132,9 @@ public class ApprovalAdminServiceTests
     {
         var (engine, _, _) = Build();
 
-        await engine.DelegateAsync("expert-one", "stand-in", new GoldpathApprovalsOptions().MaxDelegationWindow);
+        await engine.DelegateRoleAsync("expert-one", "expert", "stand-in", new GoldpathApprovalsOptions().MaxDelegationWindow);
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            engine.DelegateAsync("expert-two", "stand-in", new GoldpathApprovalsOptions().MaxDelegationWindow + TimeSpan.FromTicks(1)));
+            engine.DelegateRoleAsync("expert-two", "expert", "stand-in", new GoldpathApprovalsOptions().MaxDelegationWindow + TimeSpan.FromTicks(1)));
     }
 
     [Fact]
