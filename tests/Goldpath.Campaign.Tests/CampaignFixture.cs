@@ -8,10 +8,40 @@ namespace Goldpath.Campaign.Tests;
 /// <summary>The test campaign's target payload.</summary>
 public sealed record TestTarget(int Id, string Email);
 
-/// <summary>Records what the engine publishes; can be scripted to crash mid-batch.</summary>
-public sealed class RecordingPublisher : IIntegrationEventPublisher
+/// <summary>
+/// Records what the engine publishes; can be scripted to crash mid-batch. It carries the seam's internal batch member
+/// (#285), as both engines' publishers do, and records each batch's size; a batch publishes its events in order through
+/// <see cref="PublishAsync{TEvent}"/>, so a crash scripted by <see cref="ThrowAfter"/> lands part way through one.
+/// </summary>
+public sealed class RecordingPublisher : IIntegrationEventPublisher, IGoldpathBatchPublisher
 {
     public List<object> Published { get; } = [];
+
+    /// <summary>The size of every batch handed to the batch member, in order.</summary>
+    public List<int> Batches { get; } = [];
+
+    /// <summary>How many publishes arrived through the single member OUTSIDE a batch.</summary>
+    public int Singles { get; private set; }
+
+    private bool _inBatch;
+
+    public async Task PublishBatchAsync<TEvent>(IReadOnlyList<TEvent> integrationEvents, CancellationToken cancellationToken)
+        where TEvent : class, IIntegrationEvent
+    {
+        Batches.Add(integrationEvents.Count);
+        _inBatch = true;
+        try
+        {
+            foreach (var integrationEvent in integrationEvents)
+            {
+                await PublishAsync(integrationEvent, cancellationToken);
+            }
+        }
+        finally
+        {
+            _inBatch = false;
+        }
+    }
 
     /// <summary>When positive, the publisher throws after this many more publishes.</summary>
     public int ThrowAfter { get; set; } = -1;
@@ -27,6 +57,11 @@ public sealed class RecordingPublisher : IIntegrationEventPublisher
         if (ThrowAfter > 0)
         {
             ThrowAfter--;
+        }
+
+        if (!_inBatch)
+        {
+            Singles++;
         }
 
         Published.Add(integrationEvent);
