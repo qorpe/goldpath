@@ -110,6 +110,15 @@ sandbox's, not the CI profile's; 353 mutants tested).
   statements beside it, which were already there: the model the shape tests read is cached by EF across the run, so
   a mutant in the model builder does not reach it. The Oracle model golden holds the column's type and length.
 
+**Archival in diff mode, 2026-11-10** (#547, `GOLDPATH_MUTATE_SINCE=origin/main`, the local sandbox; the full run
+stays the authoritative score, so the table below is unchanged): 98.61 % (72 mutants; diff mode mutates the whole of
+`ArchiveModel.cs`). Every mutant on the Oracle-only genesis mapping (the `IsOracle` test, the two `IsRequired(false)`
+blocks, the `GenesisAsNull` converter and the three properties' `?? ""`) is killed by
+`ModelAndPlanContractTests`, which builds the model with and without the Oracle provider's annotation; the mapping's
+effect on a real Oracle is proven by `ArchivalOracleTests` instead, outside this scope.
+- **One survivor, equivalent:** the chain state's `ToTable("GoldpathArchiveChainState")` removed. EF's default table
+  name for an entity with no `DbSet` is its class name, which is the same string.
+
 **Archival, Bulk and Notification in diff mode, 2026-11-09** (#409, `GOLDPATH_MUTATE_SINCE=origin/main`, the local
 sandbox; diff mode mutates the whole changed file, and the full run stays the authoritative score, so the table below
 is unchanged): Archival 83.17 % (97 mutants), Bulk 84.75 %, Notification 81.82 %. Every mutant on the lines the

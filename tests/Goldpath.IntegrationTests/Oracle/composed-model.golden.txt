@@ -23,9 +23,9 @@ GoldpathApprovals.SupersedesId: RAW(16) null
 GoldpathApprovals.Trail: NVARCHAR2(2000) not null
 GoldpathApprovals.Version: NUMBER(19) not null
 GoldpathArchiveChainState.Definition: NVARCHAR2(120) not null
-GoldpathArchiveChainState.LastHash: NVARCHAR2(64) not null
+GoldpathArchiveChainState.LastHash: NVARCHAR2(64) null
 GoldpathArchiveChainState.LastIndex: NUMBER(19) not null
-GoldpathArchiveChainState.PurgedHeadHash: NVARCHAR2(64) not null
+GoldpathArchiveChainState.PurgedHeadHash: NVARCHAR2(64) null
 GoldpathArchiveChainState.PurgedThroughIndex: NUMBER(19) not null
 GoldpathArchiveEntries.AggregateKey: NVARCHAR2(256) not null
 GoldpathArchiveEntries.ArchivedAt: TIMESTAMP(7) WITH TIME ZONE not null
@@ -38,7 +38,7 @@ GoldpathArchiveEntries.DueAt: TIMESTAMP(7) WITH TIME ZONE not null
 GoldpathArchiveEntries.ErasedAt: TIMESTAMP(7) WITH TIME ZONE null
 GoldpathArchiveEntries.Id: NUMBER(19) not null
 GoldpathArchiveEntries.PreErasureContentHash: NVARCHAR2(64) null
-GoldpathArchiveEntries.PreviousHash: NVARCHAR2(64) not null
+GoldpathArchiveEntries.PreviousHash: NVARCHAR2(64) null
 GoldpathArchiveEntries.SchemaVersion: NUMBER(10) not null
 GoldpathArchiveEntries.Tenant: NVARCHAR2(64) null
 GoldpathAuditLog.Action: NVARCHAR2(16) not null

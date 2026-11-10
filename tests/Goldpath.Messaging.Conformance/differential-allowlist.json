@@ -1,0 +1,167 @@
+[
+  {
+    "fact": "*",
+    "path": "deliveries.*.headers.x-dotnet-pub-seq-no",
+    "reason": "The RabbitMQ .NET client's publisher-confirm sequence number, which the candidate's publisher stamps as an AMQP header and the candidate hands its handler with the rest. It is transport bookkeeping, not a Goldpath header: the seam promises only X-Goldpath-Tenant and X-Correlation-Id by name (messaging-exit §7.1), and both are compared by value on every delivery."
+  },
+  {
+    "fact": "*",
+    "path": "error-queue.*.headers.x-dotnet-pub-seq-no",
+    "reason": "The same publisher-confirm sequence number on a parked message: transport bookkeeping, not a header the error-queue promise names (messaging-exit §7.1: the envelope, the message id, X-Goldpath-Tenant and X-Correlation-Id)."
+  },
+  {
+    "fact": "*",
+    "path": "deliveries.*.headers.traceparent",
+    "reason": "The W3C trace header the candidate's transport writes beside the 8.x MT-Activity-Id. What the seam promises is the trace itself, one trace from publish to consume with the tenant and correlation tags, and S2.16 proves that on each engine; which header carries it is the engine's (open-threads T51 records the mixed-fleet half)."
+  },
+  {
+    "fact": "*",
+    "path": "store.inbox.receive-counts*",
+    "reason": "InboxState.ReceiveCount is the engine's own bookkeeping: measured on 2026-11-04, the oracle wrote 3 or 4 for a message its handler ran once, the candidate writes 1. The seam's inbox promise is dedup by message id and handler (S2.1, S2.19, S4.2), which the deliveries' per-message-id and per-key lines compare, and nothing in Goldpath reads the column."
+  },
+  {
+    "fact": "S2_3_*",
+    "path": "store.inbox.rows",
+    "reason": "The oracle inserts an inbox row before it runs the handler and leaves it, never consumed, when the message faults out; the candidate's inbox writes its row only with the handler's commit. Neither marks the message consumed (store.inbox.consumed is compared and equal), so a parked message shovelled back is handled once on either engine, which S4.5 proves both ways."
+  },
+  {
+    "fact": "S2_18_*",
+    "path": "store.inbox.rows",
+    "reason": "As for S2.3, on the limited endpoint: the oracle leaves an unconsumed inbox row for the message it faulted out, the candidate leaves none; store.inbox.consumed is compared and equal."
+  },
+  {
+    "fact": "S2_9_*",
+    "path": "store.inbox.*",
+    "reason": "Known gap, open-threads T51: a batch endpoint runs without the inbox on the candidate, so it writes no inbox rows where the oracle writes one per batch. The thread's proof (inbox dedup on a batch endpoint, on both engines) removes this entry."
+  },
+  {
+    "fact": "S2_10_*",
+    "path": "store.inbox.*",
+    "reason": "Known gap, open-threads T51: a batch endpoint runs without the inbox on the candidate. Removed with T51's proof."
+  },
+  {
+    "fact": "S2_11_*",
+    "path": "store.inbox.*",
+    "reason": "Known gap, open-threads T51: a batch endpoint runs without the inbox on the candidate. Removed with T51's proof."
+  },
+  {
+    "fact": "S2_12_*",
+    "path": "store.inbox.*",
+    "reason": "Known gap, open-threads T51: the batch endpoint runs without the inbox on the candidate, so only the Ping handler's row is written. Removed with T51's proof."
+  },
+  {
+    "fact": "S2_8_*",
+    "path": "deliveries.ping.count",
+    "reason": "S2.8 sizes its backlog to the engine's MEASURED in-flight window (the fact's own comment: the oracle's grows with the machine's cores), so how many messages the fact publishes is the engine's. Every message being handled once, at attempt 0, with no duplicate across the two processes is still compared, on the .values lines."
+  },
+  {
+    "fact": "S2_8_*",
+    "path": "deliveries.ping.distinct-*",
+    "reason": "The backlog's size is the engine's measured window (see deliveries.ping.count)."
+  },
+  {
+    "fact": "S2_8_*",
+    "path": "deliveries.ping.per-key",
+    "reason": "The count half of the multiset follows the backlog's size; its .values line (every key handled once) is compared."
+  },
+  {
+    "fact": "S2_8_*",
+    "path": "deliveries.ping.per-message-id",
+    "reason": "The count half of the multiset follows the backlog's size; its .values line (every message id delivered once) is compared."
+  },
+  {
+    "fact": "S2_8_*",
+    "path": "deliveries.ping.attempts",
+    "reason": "The count half of the multiset follows the backlog's size; its .values line (every message at attempt 0 only) is compared."
+  },
+  {
+    "fact": "S2_8_*",
+    "path": "store.inbox.rows",
+    "reason": "One inbox row per message of a backlog whose size is the engine's measured window."
+  },
+  {
+    "fact": "S2_8_*",
+    "path": "store.inbox.consumed",
+    "reason": "One consumed inbox row per message of a backlog whose size is the engine's measured window."
+  },
+  {
+    "fact": "S2_8_*",
+    "path": "store.inbox.delivered",
+    "reason": "One delivered inbox row per message of a backlog whose size is the engine's measured window."
+  },
+  {
+    "fact": "S2_1_exactly_once_*",
+    "path": "error-queue.ping_error.*",
+    "reason": "As in S2.19, measured here too: the ORACLE sometimes parks the second of two deliveries of one message id in ping_error when its window takes both at once (1 of 2 on one of two runs on 2026-11-04), the candidate parks none. Both run the handler exactly once, the seam's promise (S2.1), compared on the deliveries' lines."
+  },
+  {
+    "fact": "S2_19_*",
+    "path": "error-queue.work_error.*",
+    "reason": "The ORACLE parks some of five concurrent deliveries of one message id in work_error (3 of 5 on 2026-11-04; how many varies run to run), the candidate parks none. Both run the handler exactly once, which is the seam's promise (S2.19) and is compared on the deliveries' lines. An operator of the oracle therefore finds duplicates of an already handled message in the error queue after a burst of redeliveries; messaging-exit §7.1 records it as a measured oracle behaviour."
+  },
+  {
+    "fact": "*",
+    "path": "error-queue.*.headers.MT-Fault-*",
+    "reason": "The oracle's fault diagnostics on a parked message (exception type, message, stack, input address, retry count, timestamp). The candidate writes its own (see the exception-* entries). The error-queue promise is the envelope, the message id and the two Goldpath headers (messaging-exit §7.1), so an operator's tooling that reads these names reads engine-specific headers; open-threads T51 carries whether the candidate should also write them."
+  },
+  {
+    "fact": "*",
+    "path": "error-queue.*.headers.MT-Host-*",
+    "reason": "The oracle's host diagnostics on a parked message (machine, process, assembly, framework and library versions): engine-specific, not part of the error-queue promise (messaging-exit §7.1); open-threads T51."
+  },
+  {
+    "fact": "*",
+    "path": "error-queue.*.headers.MT-Reason",
+    "reason": "The oracle's fault reason on a parked message: engine-specific, not part of the error-queue promise (messaging-exit §7.1); open-threads T51."
+  },
+  {
+    "fact": "*",
+    "path": "error-queue.*.headers.exception-*",
+    "reason": "The candidate's fault diagnostics on a parked message (exception type, message, stack), its counterpart of MT-Fault-*: engine-specific, not part of the error-queue promise (messaging-exit §7.1); open-threads T51."
+  },
+  {
+    "fact": "*",
+    "path": "error-queue.*.headers.failed-at",
+    "reason": "The candidate's fault timestamp on a parked message, its counterpart of MT-Fault-Timestamp: engine-specific (messaging-exit §7.1); open-threads T51."
+  },
+  {
+    "fact": "*",
+    "path": "error-queue.*.headers.attempts",
+    "reason": "The candidate's attempt count on a parked message, its counterpart of MT-Fault-RetryCount: engine-specific, and no attempt count crosses the wire by design (messaging-exit §7.1, goldpath-messaging-engines §4.4); open-threads T51."
+  },
+  {
+    "fact": "*",
+    "path": "error-queue.*.headers.original-destination",
+    "reason": "The candidate's record of the queue a parked message came from, its counterpart of MT-Fault-InputAddress: engine-specific (messaging-exit §7.1); open-threads T51."
+  },
+  {
+    "fact": "*",
+    "path": "error-queue.*.headers.accepted-content-types",
+    "reason": "Envelope metadata the candidate's own envelope carries as a header when it re-sends a parked message: engine-specific; the parked body is still the 8.x envelope, which S4.5 shovels back and the oracle handles."
+  },
+  {
+    "fact": "*",
+    "path": "error-queue.*.headers.conversation-id",
+    "reason": "Envelope metadata the candidate writes as a header on a parked message (the oracle keeps it inside the 8.x envelope body): engine-specific; S4.5 proves the parked message is handled by the oracle once shovelled back."
+  },
+  {
+    "fact": "*",
+    "path": "error-queue.*.headers.reply-uri",
+    "reason": "Envelope metadata the candidate writes as a header on a parked message: engine-specific; S4.5 proves the parked message is handled by the oracle once shovelled back."
+  },
+  {
+    "fact": "*",
+    "path": "error-queue.*.headers.sent-at",
+    "reason": "Envelope metadata the candidate writes as a header on a parked message (the oracle keeps sentTime inside the 8.x envelope body): engine-specific; S4.5 proves the parked message is handled by the oracle once shovelled back."
+  },
+  {
+    "fact": "*",
+    "path": "error-queue.*.headers.wolverine-protocol-version",
+    "reason": "The candidate's own envelope protocol marker on a parked message: engine-specific; S4.5 proves the parked message is handled by the oracle once shovelled back."
+  },
+  {
+    "fact": "*",
+    "path": "error-queue.*.message-type.urn:message:Goldpath:IIntegrationEvent",
+    "reason": "The oracle's parked envelope lists the event's interface URN (urn:message:Goldpath:IIntegrationEvent) after the event's own; the candidate's lists the event's own only. This entry excuses that one URN's line and nothing else: the event's own type, an empty list and an unreadable envelope are each a line of their own that no entry excuses. Every Goldpath endpoint binds the event's own exchange, which both name, and S4.5 proves the parked message is handled by the oracle once shovelled back; open-threads T51 records the difference."
+  }
+]

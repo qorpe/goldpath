@@ -64,30 +64,6 @@ public class ArchivalTests : IAsyncLifetime
 
     private ServiceProvider _services = null!;
 
-    /// <summary>
-    /// The open issue under which this provider refuses a chain's first archive (its genesis anchor is the empty hash),
-    /// or <see langword="null"/> where it is stored. While it is set, each fact asserts that refusal at its first
-    /// archive and stops: the day the issue lands, the assertion goes red.
-    /// </summary>
-    protected virtual string? GenesisRefusedUnder => null;
-
-    /// <summary>
-    /// Runs a definition's first archive. Where <see cref="GenesisRefusedUnder"/> is set, asserts the refusal and
-    /// returns <see langword="null"/>; otherwise returns how many aggregates moved.
-    /// </summary>
-    private async Task<int?> FirstArchiveAsync(Func<Task<int>> archive)
-    {
-        if (GenesisRefusedUnder is null)
-        {
-            return await archive();
-        }
-
-        var refused = await Assert.ThrowsAsync<DbUpdateException>(archive);
-        Assert.Contains("ORA-01400", refused.InnerException?.Message, StringComparison.Ordinal);
-        Assert.Contains("\"PurgedHeadHash\"", refused.InnerException?.Message, StringComparison.Ordinal);
-        return null;
-    }
-
     public async Task InitializeAsync()
     {
         await _store.StartAsync<ArchDb>(options => new(options));
@@ -130,6 +106,53 @@ public class ArchivalTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// #547: a chain state saved before its first entry. Every candidate of a definition's first batch raced away (its
+    /// row was gone by the time it was loaded), so the batch archives nothing, yet the chain state is still saved, and
+    /// it holds the genesis anchor in BOTH hashes. On Oracle, which stores <c>''</c> as NULL, that save is refused
+    /// unless <c>LastHash</c> is nullable there as <c>PurgedHeadHash</c> is. The next batch then links its first entry
+    /// to that anchor, and the chain verifies.
+    /// </summary>
+    [Fact]
+    public async Task A_first_batch_whose_every_candidate_raced_away_keeps_the_genesis_anchor()
+    {
+        var engine = new GoldpathArchiveEngine<ArchDb>(TimeProvider.System, NullLogger<GoldpathArchiveEngine<ArchDb>>.Instance);
+        var definition = PolicyArchival().Archives[0];
+        var load = typeof(GoldpathArchiveDefinition).GetProperty("LoadAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var realLoad = load.GetValue(definition)!;
+        using (var scope = _services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ArchDb>();
+            db.Policies.Add(new Policy { Id = Guid.NewGuid(), Holder = "holder", CancelledAt = DateTimeOffset.UtcNow.AddDays(-60) });
+            await db.SaveChangesAsync();
+        }
+
+        load.SetValue(definition, (Func<DbContext, string, CancellationToken, Task<GoldpathArchiveCandidate?>>)((_, _, _) => Task.FromResult<GoldpathArchiveCandidate?>(null)));
+        using (var scope = _services.CreateScope())
+        {
+            Assert.Equal(0, await engine.ArchiveNextBatchAsync(scope.ServiceProvider, definition, 10, CancellationToken.None));
+        }
+
+        using (var scope = _services.CreateScope())
+        {
+            var state = await scope.ServiceProvider.GetRequiredService<ArchDb>().Set<GoldpathArchiveChainState>().AsNoTracking().SingleAsync();
+            Assert.Equal((0L, "", ""), (state.LastIndex, state.LastHash, state.PurgedHeadHash));
+        }
+
+        load.SetValue(definition, realLoad);
+        using (var scope = _services.CreateScope())
+        {
+            Assert.Equal(1, await engine.ArchiveNextBatchAsync(scope.ServiceProvider, definition, 10, CancellationToken.None));
+        }
+
+        using (var scope = _services.CreateScope())
+        {
+            var entry = await scope.ServiceProvider.GetRequiredService<ArchDb>().Set<GoldpathArchiveEntry>().AsNoTracking().SingleAsync();
+            Assert.Equal((1L, ""), (entry.ChainIndex, entry.PreviousHash));
+            Assert.Empty(await engine.VerifySliceAsync(scope.ServiceProvider, definition, 1, 1, CancellationToken.None));
+        }
+    }
+
+    /// <summary>
     /// #383: PostgreSQL's <c>timestamptz</c> keeps microseconds, a <see cref="DateTimeOffset"/>
     /// carries 100 ns ticks. An entry whose <c>DueAt</c> was hashed at full ticks and stored at
     /// microseconds can never verify again — "document does not match its content hash" with
@@ -152,12 +175,7 @@ public class ArchivalTests : IAsyncLifetime
             var db = scope.ServiceProvider.GetRequiredService<ArchDb>();
             db.Policies.Add(new Policy { Id = Guid.NewGuid(), Holder = "holder", CancelledAt = cancelledAt });
             await db.SaveChangesAsync();
-            var archived = await FirstArchiveAsync(() => engine.ArchiveNextBatchAsync(scope.ServiceProvider, definition, 10, CancellationToken.None));
-            if (archived is null)
-            {
-                return;
-            }
-
+            var archived = await engine.ArchiveNextBatchAsync(scope.ServiceProvider, definition, 10, CancellationToken.None);
             Assert.Equal(1, archived);
         }
 
@@ -214,12 +232,7 @@ public class ArchivalTests : IAsyncLifetime
         // ARCHIVE: graphs move, chain seals.
         using (var scope = _services.CreateScope())
         {
-            var archived = await FirstArchiveAsync(() => engine.ArchiveNextBatchAsync(scope.ServiceProvider, definition, 10, CancellationToken.None));
-            if (archived is null)
-            {
-                return;
-            }
-
+            var archived = await engine.ArchiveNextBatchAsync(scope.ServiceProvider, definition, 10, CancellationToken.None);
             Assert.Equal(3, archived);
             var db = scope.ServiceProvider.GetRequiredService<ArchDb>();
             Assert.Equal(0, await db.Policies.CountAsync());
@@ -325,20 +338,6 @@ public class ArchivalTests : IAsyncLifetime
         for (var pass = 0; pass < 5; pass++)
         {
             using var scope = _services.CreateScope();
-            if (pass == 0)
-            {
-                // The first pass reads its 1,200-key page and filters it before it writes; a refusal at the write
-                // (ORA-01400, not ORA-01795) is that filter accepted.
-                var first = await FirstArchiveAsync(() => engine.ArchiveNextBatchAsync(scope.ServiceProvider, definition, BatchSize, CancellationToken.None));
-                if (first is null)
-                {
-                    return;
-                }
-
-                moved.Add(first.Value);
-                continue;
-            }
-
             moved.Add(await engine.ArchiveNextBatchAsync(scope.ServiceProvider, definition, BatchSize, CancellationToken.None));
         }
 
@@ -358,11 +357,9 @@ public class ArchivalTests : IAsyncLifetime
 
 /// <summary>
 /// The archival suite on Oracle (G7 ORA-6, #409; RFC goldpath-oracle §7, Archival). The chain's genesis anchor is the
-/// empty hash, and Oracle stores <c>''</c> as NULL, so a definition's first archive is refused there until #547 lands.
+/// empty hash, and Oracle stores <c>''</c> as NULL: since #547 the anchor columns are nullable there, "" is written as
+/// NULL and read back as "", so a definition's first archive is stored and its chain verifies as on every provider.
 /// </summary>
 [Trait("Category", "Oracle")]
 [Collection(OracleCollection.Name)]
-public sealed class ArchivalOracleTests(OracleFixture oracle) : ArchivalTests(SuiteStore.Oracle(oracle, "GP_ARCH"))
-{
-    protected override string? GenesisRefusedUnder => "#547";
-}
+public sealed class ArchivalOracleTests(OracleFixture oracle) : ArchivalTests(SuiteStore.Oracle(oracle, "GP_ARCH"));

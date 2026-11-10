@@ -147,6 +147,29 @@ run from RabbitMQ 4.3. Without it, a redelivery is refused by the broker and the
 queue instead of reaching `<queue>_error` (measured, open-threads T52). On such a broker, clear
 `Goldpath:Messaging:Retry:RedeliveryIntervals` until that thread is decided.
 
+### Message size
+
+`Goldpath:Messaging:MaxMessageBytes` is the largest body, in bytes, the message path publishes. Its default,
+16 MiB (16777216), is RabbitMQ 4's own `max_message_size`; set it to your broker's value when that differs, and
+never above it. It must be positive. The rule is the same on every engine (#458; conformance S2.20 and S2.21):
+
+- **Above it, a publish is refused at the seam.** With an outbox, `PublishAsync` throws `InvalidOperationException`
+  naming the event, its size and the limit, and the row is taken out of the unit of work, so nothing commits it even
+  if the caller catches and saves. The failure lands on the line that published, not in the outbox an hour later.
+  Without an outbox the event goes straight to the broker, and the broker's refusal reaches the caller instead.
+- **A committed row above it is marked failed in place.** A row can still be committed above the limit: by a build
+  that ran with a higher one, or before you lowered it. The broker refuses such a row on every attempt, and before
+  #458 that held back every row committed after it, on both engines. Now the outbox's own sweep finds it once it is among the oldest undelivered
+  outboxes, the only place a row can hold others back (at start, before the bus, and then every delivery poll). It keeps the row and its body, detaches it from its outbox so no
+  delivery pass takes it again, and writes the reason into its headers (`Goldpath-Outbox-Failed`). It logs the row's
+  id, type and size at Error, never the body, and counts it in `goldpath.messaging.outbox.oversized{stage=outbox}`.
+  The rows behind it are delivered.
+- Both stages count in `goldpath.messaging.outbox.oversized` (meter `Goldpath.Messaging`), tagged `stage=publish` or
+  `stage=outbox`. Recovering a marked row is the runbook's "An outbox row marked failed".
+
+A body that size is the symptom: publish a reference to the data (a claim check), or several smaller events.
+Chunking is not built (out of scope in #458).
+
 ## Advanced
 
 **The event boundary (the rule everything hangs on):**

@@ -47,6 +47,28 @@ test.describe("the console is operable without a mouse or a perfect screen", () 
     });
   }
 
+  // The campaign governor OPEN, with both in-flight ceilings and the throttle form's R3.4 fields on screen:
+  // the panel scan above sees only the list.
+  test("the campaign governor with an acknowledgement ceiling has no serious accessibility violation", async ({ page, request }) => {
+    const created = await request.post(`${service}/goldpath/admin/campaign/`, {
+      data: { type: "welcome", name: "a11y-acks", policy: { tps: 1, maxInFlight: 5, maxAwaitingAck: 30 } },
+    });
+    expect(created.ok()).toBeTruthy();
+    await page.goto(`/?base=${encodeURIComponent(service)}`);
+    await page.getByRole("button", { name: "Campaigns", exact: true }).click();
+    await page.getByRole("button", { name: "a11y-acks" }).click();
+    await expect(page.getByLabel("clear max awaiting ack")).toBeVisible();
+
+    expect(await violations(page)).toEqual([]);
+
+    // Nothing left releasing behind the next scan.
+    await page.getByRole("button", { name: "abort" }).click();
+    const aborting = page.getByRole("alertdialog", { name: "confirm abort" });
+    await aborting.getByLabel("reason (required)").fill("a11y scan finished");
+    await aborting.getByRole("button", { name: "abort" }).click();
+    await expect(page.getByTestId("campaign-detail").getByRole("status")).toBeVisible();
+  });
+
   // Each SECTION of the scheduling surface is its own screen behind a tab; scanning only
   // whichever one happens to be active would leave three unchecked.
   for (const tab of ["Overview", "Jobs", "Calendars", "History"]) {

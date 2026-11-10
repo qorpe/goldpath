@@ -150,6 +150,42 @@ public class ModelAndChannelTests : IDisposable
         Assert.Contains("policy.pdf", mime.BodyParts.Select(p => p.ContentDisposition?.FileName));
     }
 
+    /// <summary>
+    /// Threat model T-NTF-04: a subject is a header VALUE. A line break in it, from a token, never
+    /// starts a header of its own, so a rendered subject cannot add a <c>Bcc</c>.
+    /// </summary>
+    [Fact]
+    public void A_line_break_in_the_subject_never_becomes_a_header()
+    {
+        var options = new GoldpathNotificationOptions();
+        options.Email(e => { e.Host = "smtp.local"; e.From = "noreply@goldpath.local"; });
+
+        var mime = new GoldpathEmailChannel(options).BuildMessage(new GoldpathNotificationMessage(
+            Guid.NewGuid(), "omer@example.test", "Konu\r\nBcc: someone@elsewhere.test", "Gövde", [], "t", null, null));
+        using var wire = new MemoryStream();
+        mime.WriteTo(wire);
+        var headers = System.Text.Encoding.UTF8.GetString(wire.ToArray()).Split("\r\n\r\n")[0].Split("\r\n");
+
+        Assert.DoesNotContain(headers, h => h.StartsWith("Bcc:", StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(mime.Bcc);
+        Assert.Equal("omer@example.test", mime.To.ToString());
+    }
+
+    /// <summary>
+    /// Threat model T-NTF-05: a notification goes to ONE person. A recipient that is an address
+    /// list is refused when the message is built, never sent to everybody it names.
+    /// </summary>
+    [Fact]
+    public void A_recipient_is_one_mailbox_and_a_list_is_refused()
+    {
+        var options = new GoldpathNotificationOptions();
+        options.Email(e => { e.Host = "smtp.local"; e.From = "noreply@goldpath.local"; });
+        var channel = new GoldpathEmailChannel(options);
+
+        Assert.Throws<MimeKit.ParseException>(() => channel.BuildMessage(new GoldpathNotificationMessage(
+            Guid.NewGuid(), "omer@example.test, someone@elsewhere.test", "Konu", "Gövde", [], "t", null, null)));
+    }
+
     [Fact]
     public async Task Misconfigured_shipped_channels_teach_their_config_keys()
     {

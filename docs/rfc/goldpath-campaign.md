@@ -986,6 +986,351 @@ flips to 50% failures, the campaign suspends within one tick of the flush that c
 threshold with its reason, nothing more is claimed, and resume continues it to completion with
 every item exactly once.
 
+### R3.7 — four-eyes at `Ready` through Goldpath.Approvals ([#291](https://github.com/qorpe/goldpath/issues/291), T37) — ACCEPTED 2026-11-09 (the owner's merge of [#527](https://github.com/qorpe/goldpath/pull/527), Q1–Q6 as recommended; written 2026-11-04 in [#515](https://github.com/qorpe/goldpath/issues/515))
+
+**The sentence it serves.** "Above a threshold, a campaign does not release until a second person
+approves it, the creator can never be that person, and the screen says who approved and who is
+still awaited." It comes from the device-fleet adopter's analysis (#291), and the owner made
+three decisions about it:
+
+- 2026-10-20: T37's trigger has fired.
+- 2026-10-20: the gate sits at `Ready`, after the snapshot, so the ladder's amount is the real
+  enumerated count, and it goes through `Goldpath.Approvals`.
+- 2026-10-21 (R3's Q6): the binding is this amendment. It adds no campaign column and binds the
+  Approvals subject to the campaign id.
+
+It plugs into the one start gate R3.1 left empty: `GoldpathCampaignJobs.StartGates` is an empty
+list, consulted on `Ready → Running` (`StartGateRefusal(campaign) is null`).
+
+**The packaging question comes first.** No optional module references another. `Goldpath.Campaign`
+references Abstractions, Sdk, Data, Jobs and Messaging; `Goldpath.Approvals` references
+Abstractions, Jobs, Messaging and Sdk. A disabled module must not exist in the application at all
+(CLAUDE.md invariant 1). So **neither package may reference the other**, because either reference
+would ship the other module into every app that composes one of them. R3.7 therefore puts a
+**module-neutral contract in `Goldpath.Abstractions`**:
+
+- **Campaign consumes the contract.** It resolves the contract from DI only when a campaign type
+  declares a binding.
+- **Approvals implements it.** `AddGoldpathApprovals` registers the implementation, `internal`
+  to the package.
+
+The two alternatives, a bridge package `Goldpath.Campaign.Approvals` and a direct reference, are
+Q1 below.
+
+#### Declaration
+
+A campaign type names the ladder it routes through, and only one ladder (more than one ladder
+per type is out of scope, #291):
+
+```csharp
+options.AddCampaign<Device>("firmware-push", t => t
+    .Targets(...)
+    .RequiresApproval("campaign-start"));   // the ladder declared in AddGoldpathApprovals
+```
+
+**Startup refusal, with teaching text:**
+
+- *No contract is registered.* "Campaign type 'firmware-push' requires approval on ladder
+  'campaign-start', but no approval gate is registered: compose Goldpath.Approvals
+  (AddGoldpathApprovals) and declare the ladder."
+- *The ladder is not declared.* "… ladder 'campaign-start' is not declared in
+  AddGoldpathApprovals."
+
+Both checks are startup refusals of the kind R3.2 specifies for an undeclared target system, so
+the host does not start with a binding it cannot honour. A type without `RequiresApproval` resolves nothing and behaves
+exactly as R3.1, with the same states, the same tick and the same queries.
+
+#### The state machine: one row changes
+
+| From | Event | To | Who |
+|---|---|---|---|
+| `Enumerating` | snapshot complete, `StartAt` null or passed, **and every start gate open** | `Running` | pacer (R3.1, now conditional on the gates) |
+| `Enumerating` | snapshot complete, `StartAt` still ahead **or a start gate closed** | `Ready` | pacer |
+| `Ready` | `StartAt` passed and every start gate open | `Running` | pacer, audited `start` by `system`, plus one `approved` row per approver (below) |
+| `Ready` | the approval request is **rejected**, **expires** or is **withdrawn** | **`Aborted`** | pacer, audited `abort` with the decider as the actor (below) |
+
+Every other R3.1 row stands. Two of them matter here:
+
+- `pause`, `abort` and the end date still act on a `Ready` campaign that waits for approval.
+- A paused campaign that waits for approval resumes to `Ready`, as R3.1 says for a start that is
+  still ahead.
+
+`SnapshotDoneState` (`GoldpathCampaignEngine.cs`) today returns `Ready` only while the start is
+ahead. With R3.7 it also returns `Ready` while a gate refuses. A bound type therefore always
+passes through `Ready`, which is where the owner put the gate.
+
+#### Filing, subject and amount
+
+- **When.** The pacer evaluates the gates of a bound campaign in the tick that completes its
+  snapshot, and again on every tick while it is `Ready`. A request that does not exist yet is
+  filed by that evaluation, so filing is idempotent across a leader crash or a takeover.
+- **Request id.** It is **the campaign id itself**. The gate looks the request up with
+  `IGoldpathApprovalStore.GetAsync(id)`, which every store already has, so it needs no lookup
+  by subject and no new store member.
+- **A second leader filing at once.** If two leaders race during a handover, the losing insert's
+  key violation is caught and the request is read again.
+- **Subject.** `campaign:{campaignId:D}`, for example
+  `campaign:3f2a…`. Approvals shows the subject on the worklist, and the detail shows the
+  campaign's name and tenant from the trail entry below.
+- **Amount.** `EnumeratedThrough` at snapshot completion: the number of items the snapshot
+  materialised, as the owner decided. It is never `MaxTargets`.
+- **Requester.** `GoldpathCampaign.CreatedBy`, the actor `create` recorded. The binding files the
+  request as that identity, so the Approvals four-eyes rule compares the decider with the
+  creator.
+- **First trail entry.** "requested by campaign '{name}' (type '{type}', tenant '{tenant}'),
+  {count} targets". This is the existing `requested` entry with the campaign's facts in its
+  detail.
+
+The binding refuses to file when `CreatedBy` is empty or `anonymous`. Four-eyes between two
+anonymous principals can never pass (the second would compare equal to the first), so a filed
+request would sit pending forever. Instead the campaign stays `Ready` with the refusal "this
+campaign type requires approval, and its creator has no identity: secure the campaign admin
+surface (Goldpath.Auth) or create it through the engine with a real `createdBy`". The
+`anonymous` half of this is Q3.
+
+#### The refusal while pending, and what each outcome does
+
+A closed gate answers a refusal string, and the pacer keeps the campaign `Ready`:
+
+> waiting for approval: request {id} on ladder 'campaign-start', at rung '{PendingRole}' ({n} of {required} signatures), requested by {creator} for {amount} targets
+
+The admin detail returns this as **`StartBlockedBy`**, computed when the detail is read, with no
+column. The console shows it on the campaign. While both `StartAt` is ahead and a gate is
+closed, the detail shows the gate's refusal, because a start that passes cannot release past it.
+
+| Approvals outcome | The campaign | Audit row (campaign audit) | `LastVerb` |
+|---|---|---|---|
+| `Pending` | stays `Ready` | — | unchanged |
+| `Granted` | the R3.1 start, at or after `StartAt`, in the same conditional update | `start` by `system` as R3.1, **plus one `approved` row per signature**: actor = the signer, detail = the rung's role and the signer's reason (`GetSignaturesAsync`) | R3.1's `goldpath: started …` |
+| `Rejected` | **`Aborted`**, state-token guarded like `TryExpireAsync`; nothing was released, so nothing drains | `abort`, actor = `DecidedBy`, detail = "approval rejected: {Reason}" (the reason is mandatory in Approvals) | `rejected by {DecidedBy}: {Reason}` (truncated to the column) |
+| `Expired` (escalation ran past the top rung) | `Aborted` | `abort`, actor `system`, detail = "approval expired at rung '{role}'" | `approval expired at '{role}'` |
+| `Withdrawn` (the creator took the request back in Approvals) | `Aborted` | `abort`, actor = the requester, detail = "approval withdrawn" | `approval withdrawn by {creator}` |
+
+A rejection is terminal because Approvals' own rejection is terminal. Approvals has a
+`ResubmitAsync`, but it files a **new** request id, which this binding would not see. To try
+again, the operator creates a new campaign. Whether that is the right answer is Q4.
+
+All the `approved` rows are written with the start, in the one `SaveChanges` that follows the
+conditional update, so a lost race writes neither. The campaign audit then holds the creator
+(`create`), every approver (`approved`, one per signature, across rungs) and the start.
+Approvals' own trail holds the same decisions, with its distinct-eyes and quorum rules applied.
+
+#### Self-approval: one rule, and the prerequisites that make it hold
+
+R3.7 adds **no four-eyes check of its own**. Two existing rules apply:
+
+- Approvals' four-eyes: `RequestedBy` ≠ `decidedBy`, ordinal and ignoring case
+  (`GoldpathApprovalEngine.DecideOnceAsync`).
+- Approvals' distinct-eyes: one signature per identity, across rungs.
+
+Because the request is filed as the creator, the creator can never sign it. This holds on the
+engine for any caller that passes one identifier space to both sides.
+
+**On the admin surfaces it holds only after two open Approvals defects are fixed. Both are
+prerequisites of the implementation slice.**
+
+- **[#487](https://github.com/qorpe/goldpath/issues/487) (T-APR-12).** Both the Approvals and the
+  **Campaign** admin surfaces take the actor from `http.User.Identity?.Name ?? "anonymous"`.
+  - With an OIDC token shaped like `sub` + `preferred_username`, that name is null.
+  - It is also not `ICurrentUser.UserId`, which an app filing through the engine would pass.
+  - So a campaign created through the engine as `u-1` and approved on the admin surface by the
+    same person compares two identifier spaces, and the self-approval is **applied**. Measured
+    on 2026-10-29 for Approvals alone.
+
+  R3.7 requires #487's fix to land as **one shared actor helper used by both surfaces**, deriving
+  the actor the way `ICurrentUser.UserId` does (`NameIdentifier`, then `sub`). #487's last
+  paragraph already names the Campaign surface.
+- **[#478](https://github.com/qorpe/goldpath/issues/478) (T-APR-03).** The decider's role comes
+  from the request body, so any ops holder can decide any rung. Four-eyes and distinct-eyes still
+  hold, but the **ladder**, which is the reason the amount routes at all, does not. The binding
+  must not go live on a surface where "a second person" means "anyone with `goldpath-ops` who
+  types the top rung's role".
+
+The implementation slice (R3-S12 below) **depends on #478 and #487 being closed**. Its HTTP proof
+drives both surfaces with one principal authenticated by `sub` only, and expects
+`FourEyesViolation`.
+
+#### The contract (`Goldpath.Abstractions`, additions only)
+
+```
+Goldpath.IGoldpathApprovalGate
+Goldpath.IGoldpathApprovalGate.IsLadderDeclared(string! ladderName) -> bool
+Goldpath.IGoldpathApprovalGate.EnsureRequestedAsync(System.Guid requestId, string! ladderName, string! subject, decimal amount, string! requestedBy, string! detail, System.Threading.CancellationToken cancellationToken = default) -> System.Threading.Tasks.Task<Goldpath.GoldpathApprovalGateStatus!>!
+Goldpath.GoldpathApprovalGateStatus
+Goldpath.GoldpathApprovalGateStatus.GoldpathApprovalGateStatus(Goldpath.GoldpathApprovalGateState State, string? PendingRole, int Signatures, int RequiredSignatures, string? DecidedBy, string? Reason, System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathApprovalGateSigner!>! Signers) -> void
+Goldpath.GoldpathApprovalGateStatus.State.get -> Goldpath.GoldpathApprovalGateState
+Goldpath.GoldpathApprovalGateStatus.State.init -> void
+Goldpath.GoldpathApprovalGateStatus.PendingRole.get -> string?
+Goldpath.GoldpathApprovalGateStatus.PendingRole.init -> void
+Goldpath.GoldpathApprovalGateStatus.Signatures.get -> int
+Goldpath.GoldpathApprovalGateStatus.Signatures.init -> void
+Goldpath.GoldpathApprovalGateStatus.RequiredSignatures.get -> int
+Goldpath.GoldpathApprovalGateStatus.RequiredSignatures.init -> void
+Goldpath.GoldpathApprovalGateStatus.DecidedBy.get -> string?
+Goldpath.GoldpathApprovalGateStatus.DecidedBy.init -> void
+Goldpath.GoldpathApprovalGateStatus.Reason.get -> string?
+Goldpath.GoldpathApprovalGateStatus.Reason.init -> void
+Goldpath.GoldpathApprovalGateStatus.Signers.get -> System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathApprovalGateSigner!>!
+Goldpath.GoldpathApprovalGateStatus.Signers.init -> void
+Goldpath.GoldpathApprovalGateSigner
+Goldpath.GoldpathApprovalGateSigner.GoldpathApprovalGateSigner(string! SignedBy, string! Role, System.DateTimeOffset SignedAt) -> void
+Goldpath.GoldpathApprovalGateSigner.SignedBy.get -> string!
+Goldpath.GoldpathApprovalGateSigner.SignedBy.init -> void
+Goldpath.GoldpathApprovalGateSigner.Role.get -> string!
+Goldpath.GoldpathApprovalGateSigner.Role.init -> void
+Goldpath.GoldpathApprovalGateSigner.SignedAt.get -> System.DateTimeOffset
+Goldpath.GoldpathApprovalGateSigner.SignedAt.init -> void
+Goldpath.GoldpathApprovalGateState
+Goldpath.GoldpathApprovalGateState.Pending = 0 -> Goldpath.GoldpathApprovalGateState
+Goldpath.GoldpathApprovalGateState.Granted = 1 -> Goldpath.GoldpathApprovalGateState
+Goldpath.GoldpathApprovalGateState.Rejected = 2 -> Goldpath.GoldpathApprovalGateState
+Goldpath.GoldpathApprovalGateState.Expired = 3 -> Goldpath.GoldpathApprovalGateState
+Goldpath.GoldpathApprovalGateState.Withdrawn = 4 -> Goldpath.GoldpathApprovalGateState
+```
+
+`GoldpathApprovalGateStatus` and `GoldpathApprovalGateSigner` are positional records. The
+compiler also generates `Deconstruct`, `Equals`, `GetHashCode`, `ToString`, `PrintMembers`,
+`<Clone>$` and the copy constructor, and the slice commits whatever `PublicAPI.Unshipped.txt` the
+analyzer then demands, **with no member beyond the ones above**. The reason for the `detail`
+parameter: Approvals takes no detail on `RequestAsync`, and the trail entry's detail is how the
+worklist shows the campaign's name, type, tenant and count without a column.
+
+**`Goldpath.Approvals`: no public line.** The implementation is an `internal sealed class` that
+`AddGoldpathApprovals` registers as the `IGoldpathApprovalGate` singleton. It files through an
+`internal` overload of the engine's request path that takes the id, so the engine's public
+`RequestAsync` keeps its shape. It reads the request with `GetAsync` and the signers with
+`GetSignaturesAsync`. On the built-in stores a duplicate id throws: the in-memory store's dictionary `Add` and the EF
+store's primary key. The overload answers it by reading again. Whether a custom
+`IGoldpathApprovalStore` guarantees the same is that store's own business, and the README says
+so.
+
+**`Goldpath.Campaign`: three lines.**
+
+```
+Goldpath.GoldpathCampaignTypeBuilder<TTarget>.RequiresApproval(string! ladderName) -> Goldpath.GoldpathCampaignTypeBuilder<TTarget>!
+Goldpath.GoldpathCampaignInfo.StartBlockedBy.get -> string?
+Goldpath.GoldpathCampaignInfo.StartBlockedBy.init -> void
+```
+
+`StartBlockedBy` is init-only, outside the positional list, like every R3 field on
+`GoldpathCampaignInfo`, so no constructor changes. The start gate itself becomes an `internal`
+async check, `Task<string?> RefusalAsync(GoldpathCampaign, CancellationToken)`, in place of the
+`Func<GoldpathCampaign, string?>` list R3.1 shipped. That list was static and synchronous, and a
+gate that reads a store is neither. **Nothing else is public:** no new campaign column, no state,
+no enum value, no route.
+
+#### Migration, admin contract, console, scenario
+
+- **No migration** (R3's Q6): no column, no table, no index. Approvals' tables are Approvals'.
+- **Admin contract.** The campaign detail gains `startBlockedBy`, omitted when null, the way R1
+  and R2 grew the detail. There is no new route: approving happens on the existing Approvals
+  routes. This fits admin-contract R4's text with no new revision; the slice says so in R4's
+  campaign section if R4 is still open, and otherwise in a one-line note.
+- **Console.**
+  - The campaign panel shows `StartBlockedBy` on a `Ready` campaign, and links the request id to
+    the Approvals panel.
+  - The Approvals panel is unchanged; it already shows the trail, the quorum and the engine's
+    refusal names.
+  - **Smoke journey** (the existing console smoke host, which already drives the Approvals
+    worklist and its four-eyes refusal):
+    1. Operator A creates a bound campaign, and it reaches `Ready` with "waiting for approval".
+    2. A tries to approve it on the Approvals panel, and the engine's `FourEyesViolation` is shown
+       by name.
+    3. Approver B approves.
+    4. The campaign reaches `Running`, and its audit shows `create` by A, `approved` by B and
+       `start` by `system`.
+
+    A rejection with a reason shows the campaign `Aborted` with "rejected by B: {reason}". axe
+    holds on both screens.
+- **Scenario.** S-FLEET-01 gains the approval step between "snapshot complete" and "releasing".
+- **Runbook.**
+  - Item 1 learns "`Ready`, waiting for approval: read `StartBlockedBy`, the request is in the
+    Approvals worklist".
+  - A new line explains a campaign aborted by a rejection: create a new one, and the reason is in
+    the audit.
+- **Metrics.** None new. Approvals already counts requested, granted, rejected, expired and
+  withdrawn per ladder, and the campaign's `start` and `abort` are already audited.
+
+#### Proof (red-first, from this text)
+
+- **Unit (`R37ApprovalGateTests`, campaign side, with a fake `IGoldpathApprovalGate`; red today,
+  because `RequiresApproval` does not exist):**
+  - A bound campaign with no `StartAt` completes its snapshot and reports `Ready`, not
+    `Running`.
+  - The request is filed once, with id = campaign id, subject `campaign:{id}`, amount =
+    `EnumeratedThrough` and requester = `CreatedBy`. It is filed again neither on the next tick
+    nor after a takeover.
+  - While the request is `Pending`, nothing is claimed and the detail's `StartBlockedBy` reads
+    the refusal above, word for word.
+  - `Granted` with `StartAt` ahead stays `Ready` until the start. `Granted` with `StartAt` passed
+    starts in that tick, with one `approved` audit row per signer.
+  - `Rejected`, `Expired` and `Withdrawn` each abort, with the actor and detail in the table.
+  - A creator of `anonymous` or empty files nothing and shows the teaching refusal.
+  - An unbound type takes R3.1's path unchanged. This is the equality case, the same tick query
+    for query, held by the existing R3 suites passing unedited.
+  - Startup refuses a bound type without a registered gate, and a ladder the gate does not
+    declare, each in its words.
+- **Unit (`ApprovalGateTests`, Approvals side):**
+  - `EnsureRequestedAsync` files once. A second call returns the same request's status.
+  - A concurrent second filing reads the first, on both built-in stores.
+  - The status mirrors `Granted`, `Rejected` (with its reason and decider), `Expired` and
+    `Withdrawn`.
+  - `Signers` lists every signature across rungs.
+- **HTTP (after #478 and #487):** one principal authenticated by `sub` only creates the campaign
+  on the Campaign admin route and approves its request on the Approvals route, and gets
+  `FourEyesViolation`. A second principal holding the rung's role gets `Applied`.
+- **Integration (real broker + PostgreSQL, extending `CampaignR3Tests`):** a bound campaign
+  reaches `Ready` and no item's `ClaimedAt` exists. After a second principal's approval through
+  the engine, it runs to completion with every item exactly once, and the audit holds
+  `create` → `approved` → `start`.
+- **Console smoke:** the journey above. **Scenario:** S-FLEET-01's approval step.
+
+#### Deliberately NOT in R3.7
+
+- **More than one ladder per type**, and choosing the ladder by action type (#291 out of scope;
+  per-action ladders are app code).
+- **A gate at `create`** instead of at `Ready`: the owner put it at `Ready` (2026-10-20).
+- **Resubmission** of a rejected request into the same campaign (Q4).
+- **A campaign column** for the request id, or a `PendingApproval` state: R3's Q6 says no column, and
+  `Ready` plus `StartBlockedBy` already says why it waits.
+- **Approvals console federation** (T21) and **fixing #478 / #487**. Those defects are
+  prerequisites, named here and fixed in their own issues.
+- **Approval of a throttle, a resume or an abort.** Only the start is gated.
+
+#### Open questions for the owner (each with a recommendation)
+
+- **Q1 — Where the binding lives.**
+  - **(a)** A module-neutral contract in `Goldpath.Abstractions`, implemented inside Approvals
+    and consumed by Campaign, with no package referencing the other. This is the text above.
+  - **(b)** A bridge package `Goldpath.Campaign.Approvals` that references both, added by the
+    generator only when both modules are enabled. It is a new package on the train, with its
+    own SBOM, provenance and template pins.
+  - **(c)** Campaign references Approvals directly. That ships Approvals into every campaign app
+    and breaks invariant 1.
+
+  **Recommended: (a).** It is the smallest surface. The contract is generic enough for Bulk or
+  FileExchange to gate on later. It adds no package.
+- **Q2 — A rejection's effect.** (a) `Aborted`, terminal (the text above); or (b) stay `Ready`
+  showing the rejection, until the operator aborts or a resubmission is granted. **Recommended:
+  (a).** Approvals' rejection is terminal, and (b) needs the binding to follow
+  `SupersedesId` chains.
+- **Q3 — A creator of `anonymous`.** (a) Refuse to file, with the teaching refusal (the text
+  above); or (b) file anyway, which leaves the campaign stuck behind a request no anonymous
+  approver can pass. **Recommended: (a)**, because it says what to fix instead of hanging.
+- **Q4 — Resubmission.** (a) Not supported: create a new campaign (the text above); or (b) the
+  binding follows a resubmitted request (`SupersedesId`), keeping the campaign `Ready`.
+  **Recommended: (a) now, and (b) on the first adopter who asks.** That trigger rides T37's row.
+- **Q5 — A campaign aborted, expired or paused while its request is pending.** (a) Leave the
+  request pending, where a decision on it changes nothing; or (b) withdraw it on the creator's
+  behalf, which writes a trail entry that names the creator for an act they did not take.
+  **Recommended: (a)**, plus a slice note that the worklist row shows the campaign's state when
+  the detail is read.
+- **Q6 — Prerequisites.** Does R3-S12 wait for #478 and #487, as written? The alternative is to
+  land the binding behind a startup refusal on any host whose Approvals admin surface is mapped
+  until they close. **Recommended: wait.** Both are small, both are already filed, and a
+  four-eyes feature that ships with a known four-eyes bypass is the one outcome the module
+  cannot afford.
+
 ### The one migration
 
 Every R3 column lands in ONE generated migration, named in the upgrade guide with its `[schema]`
@@ -1132,7 +1477,7 @@ independent of it, and each has a reason:
 | [#288](https://github.com/qorpe/goldpath/issues/288) snapshot off the leader tick | not in R3 | no public API; it shortens the time to `Ready` and leaves the R3.1 rule unchanged |
 | [#289](https://github.com/qorpe/goldpath/issues/289) `StartAt` + `Ready` | **R3.1** | — |
 | [#290](https://github.com/qorpe/goldpath/issues/290) target-system ceilings, tunable options | **R3.2** (part a + the verb of part b), **R3.3** (the reload of part b) | — |
-| [#291](https://github.com/qorpe/goldpath/issues/291) four-eyes at `Ready` | amendment R3.7 (owner decision Q6); plugs into R3.1 | outside the owner's five |
+| [#291](https://github.com/qorpe/goldpath/issues/291) four-eyes at `Ready` | amendment **R3.7** (owner decision Q6; text ACCEPTED 2026-11-09, written in [#515](https://github.com/qorpe/goldpath/issues/515)); plugs into R3.1; slices R3-S12 and R3-S13 | outside the owner's five |
 | [#292](https://github.com/qorpe/goldpath/issues/292) burst control | not in R3 | a defect against R1's DoD, no knob (owner); R3.2's bucket inherits its one-tick rule |
 | [#293](https://github.com/qorpe/goldpath/issues/293) `MaxAwaitingAck` | **R3.4** | — |
 | [#294](https://github.com/qorpe/goldpath/issues/294) metrics RFC §7 promises | not in R3 | no public API; R3's instruments join its export test |
@@ -1161,6 +1506,8 @@ with the last one.
 | R3-S9 | R3.2 | [#318](https://github.com/qorpe/goldpath/issues/318) | S8, #304's contract text | the ceiling verbs, audit, routes under R4, S-FLEET-03 extended on the real broker, the governor editor |
 | R3-S10 | R3.6 | [#299](https://github.com/qorpe/goldpath/issues/299) | S1 (soft: #294, so the new counter joins its export test) | the window counters in the flush and the sweep, the pacer's evaluation, `Suspended` across the verbs, the reason, unit proofs |
 | R3-S11 | R3.6 | [#319](https://github.com/qorpe/goldpath/issues/319) | S10 | S-OPS-03 on the real broker, the console's suspended view and resume, the runbook item, the scenario entry, the RFC status line `IMPLEMENTED` |
+| R3-S12 | R3.7 (ACCEPTED) | [#291](https://github.com/qorpe/goldpath/issues/291) | R3.7's acceptance, S2 (landed), **[#478](https://github.com/qorpe/goldpath/issues/478) and [#487](https://github.com/qorpe/goldpath/issues/487) closed** (R3.7 Q6) | the `IGoldpathApprovalGate` contract in Abstractions and its internal Approvals implementation, `RequiresApproval` with its two startup refusals, the async start gate, `SnapshotDoneState` honouring it, filing, the outcomes table, the `approved` audit rows, `StartBlockedBy`, `R37ApprovalGateTests` + `ApprovalGateTests` + the HTTP four-eyes proof |
+| R3-S13 | R3.7 (ACCEPTED) | [#291](https://github.com/qorpe/goldpath/issues/291) (split from it by the planner) | S12 | the real-broker approval fact in `CampaignR3Tests`, the console's `StartBlockedBy` and the smoke journey (self-approval refused on screen, rejection shown), S-FLEET-01's approval step, the runbook lines, T37's closing proof links |
 
 #289, #290, #293, #298 and #299 were each too big for one run as written. Each now carries its
 first part, retitled, and the later parts are new issues: #289 → #315, #293 → #316,

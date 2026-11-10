@@ -1,12 +1,13 @@
 # Threat model — every surface with an auth boundary (GA gate G15, Part 2/2)
 
-Status: **IN PROGRESS, 6 of 10 surfaces.** Below are:
+Status: **IN PROGRESS, 8 of 10 surfaces.** Below are:
 - the admin routes, the served console, Campaign R2.8 signed callbacks, and Bulk upload with
   its gate (written 2026-10-25 against `main` c5bf84a, re-checked against `main` aff2d3e the
   same day);
-- Approvals decisions and FileExchange ingress (written 2026-10-29 against `main` 92ad7a0).
+- Approvals decisions and FileExchange ingress (written 2026-10-29 against `main` 92ad7a0);
+- Notification channels and DataProtection (written 2026-11-06 against `main` 9513a76).
 
-The other four are the checklist at the end; [#340](https://github.com/qorpe/goldpath/issues/340)
+The other two are the checklist at the end; [#340](https://github.com/qorpe/goldpath/issues/340)
 stays open until they land.
 
 ## How to read this
@@ -15,7 +16,8 @@ Each surface is a STRIDE table. Every threat names what holds it, and that holde
 three things:
 
 - **a test** (the class and method, runnable as named) or **an analyzer** rule;
-- **an accepted risk**: listed again in [the signed list](#accepted-risks-signed-by-the-owner-2026-10-26) or [the list signed 2026-11-04](#accepted-risks-signed-by-the-owner-2026-11-04),
+- **an accepted risk**: listed again in [the signed list](#accepted-risks-signed-by-the-owner-2026-10-26), [the list signed 2026-11-04](#accepted-risks-signed-by-the-owner-2026-11-04)
+  or [the list awaiting signature](#accepted-risks-awaiting-the-owners-signature-added-2026-11-06),
   which the owner signs on the pull request. That signature is the gate's last step;
 - **an issue**: a threat with no holder today. The issue says what would hold it.
 
@@ -165,6 +167,72 @@ decided under which rung.
 | T-FXI-10 | E / T | An operator changes ingestion state from the console | There are no verbs: re-delivering the file is the reprocess, and a `POST` anywhere under the surface is never a `200` | `Goldpath.FileExchange.Tests.FileExchangeAdminTests.The_routes_answer_over_real_HTTP_with_the_R3_query_shape` |
 | T-FXI-11 | D | A huge file exhausts memory, or the ledger with one round trip per line | Lines arrive as a list the pick-up job built. The module sets no line or byte ceiling, and makes up to three ledger calls per line (processed?, mark, release the quarantine). Lists on the admin surface clamp `take` | lists: `Goldpath.FileExchange.Tests.FileExchangeAdminTests.Take_is_clamped_and_files_filter_by_rail`; the size: **accepted risk A9** |
 
+## 7. Notification channels (`IGoldpathNotifier`, the send job, `/goldpath/admin/notification`)
+
+**Boundary:** three crossings.
+- **The app's code** calls `RequestAsync` with a template key, a channel, a recipient, the tokens and
+  a dedup key. Rendering happens there, inside the app's transaction. The tokens are the app's, and
+  some of them often come from an end user: a name typed into a form.
+- **The send job** claims rows and hands each to a channel: email (MailKit SMTP), webhook (an HTTP
+  POST) or one the app registers. Credentials come from configuration (`Goldpath:Notification:*`).
+- **An operator** reads through the admin surface. It is read-only: re-sending is the jobs console's
+  `replay-items`, never a verb here.
+
+**Assets:** a message to one person that is sent once and only to them; the personal data in it
+(recipient, rendered body, attachments); the channel credentials; and the evidence row that answers
+"did the customer get the notice?".
+
+| # | STRIDE | Threat | Defence | Held by |
+|---|---|---|---|---|
+| T-NTF-01 | S / E | An unauthenticated caller, or one without an ops role, reads notifications, or anybody sends one through the surface | The admin floor (T-ADM-01/02). The surface maps reads only, so there is no verb to inject a message with | as T-ADM-01..02; `Goldpath.Tests.Integration.AdminReadRoleSurfaceTests.Every_admin_route_is_a_read_for_the_viewer_or_a_verb_for_the_operator` |
+| T-NTF-02 | T | A half-rendered notice is stored and sent, with `{{Name}}` still in it | Rendering at request time refuses a missing token, and the refusal throws into the app's transaction | `Goldpath.Notification.Tests.NotifierAndSendTests.A_missing_token_never_persists`; `Goldpath.Notification.Tests.TemplateTests.A_missing_token_refuses_with_a_teaching_message` |
+| T-NTF-03 | T / I | A token value that an end user controls carries `{{Code}}`, and the renderer expands it, pulling another token (a one-time code, an amount) into a place the template did not put it | The renderer reads the TEMPLATE once, left to right, and appends each value as text. A value is never scanned again | `Goldpath.Notification.Tests.TemplateTests.A_token_value_is_inserted_as_text_never_rendered_again` (added with this section) |
+| T-NTF-04 | T | A line break in a rendered subject starts a header of its own: a `Bcc` to somebody else | The subject is a header value that MimeKit encodes, and a line break in it never ends the header. The body is plain text (`TextBody`), so there is no markup to inject into | `Goldpath.Notification.Tests.ModelAndChannelTests.A_line_break_in_the_subject_never_becomes_a_header` (added with this section) |
+| T-NTF-05 | T / I | A recipient that is an address list sends one person's notice to everybody it names | The email channel parses the recipient as ONE mailbox, and a list is refused when the message is built | `Goldpath.Notification.Tests.ModelAndChannelTests.A_recipient_is_one_mailbox_and_a_list_is_refused` (added with this section) |
+| T-NTF-06 | I | The SMTP password, or the notice itself, crosses the network in clear | `UseSsl` is the default, and the channel then demands STARTTLS. Plaintext needs `AllowInsecureTransport = true`. The credentials are bound from configuration and are never on the admin surface | `Goldpath.Notification.Tests.ModelAndChannelTests.Plaintext_smtp_is_an_explicit_optout_never_a_default`; custody of the secret: **accepted risk A10** |
+| T-NTF-07 | I / S | The webhook channel posts the recipient and the rendered body to an `http://` URL, or the receiving hub cannot tell the post is ours | **Neither is held today.** The webhook URL's scheme is not checked, unlike SMTP. The post is not signed: a hub authenticates the sender by the secret in its URL | plaintext: **issue [#533](https://github.com/qorpe/goldpath/issues/533)**; unsigned: **accepted risk A11** |
+| T-NTF-08 | I | The admin surface shows a recipient's address, or a notice's content | Recipients are masked (first character and a domain hint) on the list and detail views. The views carry no subject, body or attachment: `GoldpathNotificationInfo` has no such field | `Goldpath.Notification.Tests.AdminServiceTests.Recipients_are_masked_on_every_surface`, `…The_mask_is_a_golden_shape` |
+| T-NTF-09 | I | The mask is walked around through a failure's `Detail`, which is the channel's exception text as it is. An SMTP reply often names the rejected address, and a gateway's error often echoes the number | **None today.** Measured: a channel's exception message lands verbatim in `Detail` on the failures view, which is not masked | **Issue [#532](https://github.com/qorpe/goldpath/issues/532)** |
+| T-NTF-10 | I | The app's own words on the surface carry personal data: a dedup key built from an identifier (`renewal:<policy number>`), or an attachment with no size limit stored in the app's database | They are the app's choices: the module stores the key as given, and shows it so a retry can be traced. The attachment is bounded by what the app hands over | **accepted risk A12** |
+| T-NTF-11 | E / I | On a multi-tenant app, an operator of tenant A reads tenant B's notifications | Every read resolves the admin tenant scope (admin-contract R1) and fails closed on a tenant it may not see | `Goldpath.Notification.Tests.AdminServiceTests.Notification_queries_filter_and_fail_closed_on_tenant` |
+| T-NTF-12 | I / D | Two tenants use the same dedup key (a policy number scoped per tenant): the second tenant's notice is never stored, and its code receives the first tenant's row, with its recipient and content | **None today.** The dedup key's unique index and the lookup ignore `Tenant`. Measured: tenant B's request returns tenant A's row, and the table holds one row | **Issue [#531](https://github.com/qorpe/goldpath/issues/531)** |
+| T-NTF-13 | T | A retry storm, or a consumer that died mid-send, sends one notice twice | The dedup key lands once. The send job claims a row before calling a channel, and a stale claim goes to the repair queue for a human-confirmed replay, never back into a silent resend | `Goldpath.Notification.Tests.NotifierAndSendTests.The_same_dedup_key_lands_once`, `…The_send_pass_claims_before_sending_and_stamps_the_evidence`, `…A_stale_claim_is_repaired_never_resent` |
+| T-NTF-14 | R | The organisation cannot show what it sent, or that it decided not to send | Every request is a row; `MaySend` refusals are `Suppressed` rows. The template hash survives retention, and it pins exactly which wording was sent | `Goldpath.Notification.Tests.NotifierAndSendTests.Suppression_is_evidence`, `…Retention_nulls_bodies_and_attachment_content_but_the_evidence_survives`; `Goldpath.Notification.Tests.OptionsGoldenTests.The_template_hash_is_a_pinned_golden_value` |
+| T-NTF-15 | I | Personal data stays in the notification store forever | A template declares `DeleteBodyAfter`. The retention job nulls bodies and attachment content, whatever the row's state, and leaves the evidence | `Goldpath.Notification.Tests.NotifierAndSendTests.Retention_nulls_bodies_and_attachment_content_but_the_evidence_survives`, `…Retention_covers_failed_and_suppressed_rows_too` |
+| T-NTF-16 | D | A dead channel or a poison notice stops every notice behind it | Attempts are budgeted. An exhausted row fails into the repair queue and the pass moves on, and sends run oldest first | `Goldpath.Notification.Tests.NotifierAndSendTests.Exhausted_attempts_fail_into_the_repair_queue_and_replay_resends_once_confirmed`, `…Sends_run_oldest_first` |
+
+## 8. DataProtection (`AddGoldpathDataProtection`: the classification, the redactors and the HMAC key)
+
+**Boundary:** a classified value (a member marked `[GoldpathPersonalData]` or `[GoldpathSensitiveData]`, any
+`DataClassificationAttribute`, Mediant's `[SensitiveData]`, or a catalog entry) leaves the process through
+one of these sinks:
+- an audit change row;
+- a log line;
+- Mediant's command audit;
+- an archived document;
+- an integration event.
+
+The module decides what is classified and how it is redacted. The redaction is either the fixed `***`
+token or an HMAC pseudonym under a key from configuration. The redactors are Microsoft's
+(`Microsoft.Extensions.Compliance.Redaction`), composed (ADR-0003).
+
+**Assets:** the classified values, and the HMAC key. Whoever holds the key can test a guess against a
+pseudonym.
+
+| # | STRIDE | Threat | Defence | Held by |
+|---|---|---|---|---|
+| T-DPK-01 | I | A classified member reaches an audit change row in clear | The audit contributor redacts every classified member it records, and leaves the rest whole | `Goldpath.Tests.AuditMaskingTests.Classified_properties_are_masked_in_change_rows_and_the_rest_stay_full` (`tests/Goldpath.DataProtection.Tests`) |
+| T-DPK-02 | I | A classified member reaches a log line in clear | With `builder.Logging.EnableRedaction()`, a classified `[LogProperties]` member is redacted. Without it (the generated templates do not call it), the logging generator drops the member rather than write it | `Goldpath.Tests.LogRedactionTests.Classified_properties_arrive_redacted_through_the_mel_path`; `Goldpath.Tests.LogRedactionTests.Without_EnableRedaction_a_classified_property_is_dropped_never_logged_in_clear` (added with this section) |
+| T-DPK-03 | I | A member that should be classified is not: a scaffolded entity whose source cannot be annotated, or a renamed property | The catalog classifies members that cannot be annotated, and wins over an annotation. It is type-safe, so a rename breaks the build rather than orphan an entry | `Goldpath.Tests.ClassificationTests.Catalog_classifies_untouchable_members_and_wins_ties_with_annotations` |
+| T-DPK-04 | I | Members are classified but nothing masks them, because the module is not referenced | GOLDPATH0702 flags a classified member in a compilation without the module. Without the module, values are recorded unmasked, as documented | `Goldpath.Analyzers.Tests.Batch3AnalyzerTests.GOLDPATH0701_flags_classified_property_on_an_integration_event` (asserts 0702 too), `…GOLDPATH0702_quiet_when_the_module_is_referenced`; `Goldpath.Tests.AuditMaskingTests.Without_the_module_values_are_recorded_unmasked` |
+| T-DPK-05 | I | A classified member leaves on an integration event, past every sink the module masks | GOLDPATH0701 flags a classified member on an `IIntegrationEvent`, Mediant's `[SensitiveData]` and its subclasses included | `Goldpath.Analyzers.Tests.Batch3AnalyzerTests.GOLDPATH0701_flags_classified_property_on_an_integration_event`, `…GOLDPATH0701_honours_Mediants_SensitiveData_and_its_subclasses_only` |
+| T-DPK-06 | I | The erase token reveals something: the value's length, or whether it was empty | Every classified value becomes the same `***`, whatever its length. Null stays null, because "no value" is not personal data | `Goldpath.Tests.ClassificationTests.Erase_mode_redacts_to_the_fixed_token_and_passes_unclassified_through` |
+| T-DPK-07 | S / I | A weak HMAC key lets anyone who guesses it reverse a low-entropy value (a national id, a phone number) by trying every candidate | A key under 44 Base64 characters, or not Base64, is refused before anything is redacted. HMAC mode without a key fails at startup | `Goldpath.Tests.ClassificationTests.Hmac_mode_refuses_a_short_or_non_base64_key_before_it_redacts` (added with this section); `Goldpath.Tests.ClassificationTests.Hmac_mode_without_a_key_fails_loudly_at_startup` |
+| T-DPK-08 | I | The HMAC key itself leaks. Whoever holds it can test every candidate value against a pseudonym | The key is bound from configuration (`Goldpath:DataProtection:HmacKey`) and never stored by the module. Rotation bumps `HmacKeyId`, so pseudonyms under the old key stop correlating with new ones | rotation: `Goldpath.Tests.ClassificationTests.Hmac_mode_is_deterministic_per_key_and_differs_across_keys`; custody: **accepted risk A10** |
+| T-DPK-09 | I | Command-level audit (Mediant) records a member the entity audit masks | Catalog-declared names are fed into Mediant's sensitive patterns, so both audits mask the same members | `Goldpath.Tests.AuditMaskingTests.Cataloged_names_flow_into_mediant_sensitive_patterns` |
+| T-DPK-10 | I | A classified value written into free text — a log message's own template parameter, an exception message, an unclassified string field — is not found | Classification is per member. Text that merely contains a value cannot be recognised without guessing | **accepted risk A13** |
+| T-DPK-11 | I | An archived document's classified fields are returned on retrieval | That is the regulatory record, and erasure is the path that masks it | as T-ADM-13; **accepted risk A6** |
+
 ## Accepted risks (signed by the owner 2026-10-26)
 
 These have no test because the answer is a decision, not code. The owner signed A1–A6 on
@@ -193,11 +261,23 @@ below. Each stays accepted until its "Revisit when" trigger fires.
 | A8 | A quarantine reason can carry a row's classified values to anyone who may read the surface (T-FXI-08) | The reason is the app's own words, from its parser, validator or handler, and it is what an operator needs to fix the row. Masking free text would guess at it | an adopter's validator is found echoing classified values, or the quarantine is opened beyond the two ops roles |
 | A9 | A rail has no line or byte ceiling of its own (T-FXI-11) | The pick-up job builds the line list and is the place to bound it. Counterparty files on these rails are bounded by contract. Bulk is the module for large uploads (`MaxRows`) | an adopter routes files larger than the transport's own limits through a rail, or a ledger's per-line round trips become the bottleneck (then the ledger should batch) |
 
+## Accepted risks awaiting the owner's signature (added 2026-11-06)
+
+Added with §7 and §8. They are not accepted until the owner signs them on the pull request that
+adds them.
+
+| # | Risk | Why it is accepted | Revisit when |
+|---|---|---|---|
+| A10 | Channel credentials (the SMTP password, a webhook URL that carries its own secret) and the HMAC redaction key are only as safe as the configuration they are bound from (T-NTF-06, T-DPK-08) | Custody of a secret is the host's secret store: Key Vault, a Kubernetes secret, a vault agent. Goldpath reads the value from configuration like every other setting and never stores or shows it. A module-level secret store would duplicate the host's and make rotation harder | an adopter needs rotation without a restart, or a Goldpath surface is found showing a bound secret |
+| A11 | The webhook channel's post is not signed, so the receiving hub cannot verify it came from this app (T-NTF-07) | The hubs it is built for (team chat, in-house relays) authenticate the sender by the secret in the URL they issued. A signature they do not verify adds nothing. Campaign's callbacks are signed because Goldpath is the receiver there | a receiver that verifies signatures is the target, or the webhook URL is no longer a secret |
+| A12 | The app's own words on the notification surface — a dedup key built from an identifier, the size of an attachment — can carry personal data or grow without a ceiling (T-NTF-10) | They are the app's decisions: the dedup key is shown so an operator can trace a retry to its cause, and the attachment is exactly what the app handed over. Hashing the key would lose that trace | a dedup key is found carrying a classified value in an adopter's app, or attachments are found exhausting a store |
+| A13 | A classified value written into free text — a log message's template parameter, an exception message, an unclassified string — is not redacted (T-DPK-10) | Redaction is per classified member. Finding a value inside arbitrary text means guessing at patterns, and a guessing redactor both misses and mangles. The analyzers and the review checklist in `ops/data-protection.md` keep values in members | an adopter's logs are found carrying a classified value through free text that a member-level rule could have caught |
+
 ## Still to model (Part 2/2, remaining checklist)
 
 - [x] Approvals decisions (§5)
 - [x] FileExchange ingress (§6)
-- [ ] Notification channels (credentials, template injection)
-- [ ] DataProtection keys
+- [x] Notification channels (§7)
+- [x] DataProtection keys (§8)
 - [ ] Idempotency key scope
 - [ ] MultiTenancy isolation
