@@ -66,6 +66,8 @@ C:
   - 'scripts/zap-baseline*'       # G15's dynamic scan and its rules file (every IGNORE carries a reason)
   - 'scripts/bench-campaign.sh'    # bench-fleet02.yml runs S-FLEET-02 through it (#349): its verdict is G10c's
   - 'scripts/bench-headroom.sh'    # the headroom series that run publishes, run by bench-campaign.sh fleet02
+  - 'scripts/bench-bulk.sh'        # bench.yml runs it on Oracle by dispatch (#556): its provider check is what refuses a run that measured PostgreSQL
+  - 'scripts/bench-jobs.sh'        # the same, for the Jobs benches (#556)
   - 'scripts/alert-rules.sh'       # the packages' alert rules: promtool check + test, severities, runbook links (#295)
   # EXTENSION: lowering a verifier's severity or skipping a test switches a gate off from
   # outside the gate's own files ("suppression without justification is forbidden").
