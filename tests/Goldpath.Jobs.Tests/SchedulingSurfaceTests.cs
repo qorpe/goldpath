@@ -95,6 +95,9 @@ public class SchedulingSurfaceTests
             TriggerBuilder.Create()
                 .WithIdentity("poller-simple", GoldpathJobsExtensions.JobGroup)
                 .ForJob(new JobKey("poller", GoldpathJobsExtensions.JobGroup))
+                // An hour out, so the STARTED scheduler cannot fire it before it is read: without a start the
+                // trigger is due now, and a fire landing first made TimesTriggered 1 (#550, a red main).
+                .StartAt(DateTimeOffset.UtcNow.AddHours(1))
                 .WithSimpleSchedule(s => s.WithInterval(TimeSpan.FromMinutes(15)).WithRepeatCount(4))
                 .Build());
 

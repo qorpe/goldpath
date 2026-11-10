@@ -43,4 +43,29 @@ public class RouteContractTests
         ];
         Assert.Equal(frozen, actual);
     }
+
+    /// <summary>
+    /// G4 API-9 (#398): the signed callback route, outside <c>/goldpath/admin</c>, frozen at its default prefix with the
+    /// rest (admin contract, "Revision R5 — the signed callback route"). A target system is handed this path, so a
+    /// rename strands every acceptance already in flight.
+    /// </summary>
+    [Fact]
+    public void The_signed_callback_route_matches_the_frozen_contract()
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.Services.AddDbContext<CampaignTestContext>(o => o.UseSqlite("DataSource=:memory:"));
+        builder.Services.AddSingleton(new GoldpathCampaignOptions().AddCampaign<TestTarget>("device", c => c
+            .MaxTargets(10).SignedCallbacks(CampaignFixture.CallbackSecret).Targets((_, _) => AsyncEnumerable.Empty<TestTarget>())));
+        using var app = builder.Build();
+        app.MapGoldpathCampaignCallbacks<CampaignTestContext>();
+
+        var actual = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(s => s.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Select(e => $"{e.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods.Single()} {e.RoutePattern.RawText}")
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(["POST /goldpath/campaign/callbacks/{type}/{campaignId:guid}/{correlationId}"], actual);
+    }
 }

@@ -100,10 +100,11 @@ public sealed class Observed
 }
 
 /// <summary>The seam-side handler under test: names no engine type.</summary>
-public sealed class PingHandler(Observed observed) : IIntegrationEventHandler<Ping>
+public sealed class PingHandler(Observed observed, DeliveryRecorder recorder) : IIntegrationEventHandler<Ping>
 {
     public async Task HandleAsync(Ping integrationEvent, IntegrationEventContext context, CancellationToken cancellationToken = default)
     {
+        recorder.Record(GetType(), integrationEvent.Id, context);
         observed.MarkStarted();
         if (observed.HandlerGate is { } gate)
         {
@@ -125,10 +126,11 @@ public sealed class PingHandler(Observed observed) : IIntegrationEventHandler<Pi
 }
 
 /// <summary>Throws every time: the pipeline's retry ladder then the error queue.</summary>
-public sealed class PoisonHandler(Observed observed) : IIntegrationEventHandler<Poison>
+public sealed class PoisonHandler(Observed observed, DeliveryRecorder recorder) : IIntegrationEventHandler<Poison>
 {
     public Task HandleAsync(Poison integrationEvent, IntegrationEventContext context, CancellationToken cancellationToken = default)
     {
+        recorder.Record(GetType(), integrationEvent.Id, context);
         observed.PoisonAttempts.Add(context.RetryAttempt);
         throw new InvalidOperationException("poison");
     }
@@ -141,10 +143,11 @@ public sealed class Repairable : IIntegrationEvent
 }
 
 /// <summary>Throws while <see cref="Observed.Broken"/> is set — the release with the bug — and records once it is not.</summary>
-public sealed class RepairableHandler(Observed observed) : IIntegrationEventHandler<Repairable>
+public sealed class RepairableHandler(Observed observed, DeliveryRecorder recorder) : IIntegrationEventHandler<Repairable>
 {
     public Task HandleAsync(Repairable integrationEvent, IntegrationEventContext context, CancellationToken cancellationToken = default)
     {
+        recorder.Record(GetType(), integrationEvent.Id, context);
         if (observed.Broken)
         {
             throw new InvalidOperationException("broken");
@@ -204,10 +207,15 @@ public sealed class BatchesObserved
 }
 
 /// <summary>The seam's batch handler under test: names no engine type.</summary>
-public sealed class TickBatchHandler(BatchesObserved observed, IIntegrationEventPublisher publisher) : IIntegrationEventBatchHandler<Tick>
+public sealed class TickBatchHandler(BatchesObserved observed, IIntegrationEventPublisher publisher, DeliveryRecorder recorder) : IIntegrationEventBatchHandler<Tick>
 {
     public async Task HandleAsync(IReadOnlyList<IntegrationEvent<Tick>> batch, CancellationToken cancellationToken = default)
     {
+        foreach (var item in batch)
+        {
+            recorder.Record(GetType(), item.Message.Number, item.Context);
+        }
+
         observed.Enter();
         try
         {
@@ -272,10 +280,11 @@ public sealed class WorkObserved
 }
 
 /// <summary>The seam-side handler of <see cref="Work"/>: names no engine type.</summary>
-public sealed class WorkHandler(WorkObserved observed) : IIntegrationEventHandler<Work>
+public sealed class WorkHandler(WorkObserved observed, DeliveryRecorder recorder) : IIntegrationEventHandler<Work>
 {
     public async Task HandleAsync(Work integrationEvent, IntegrationEventContext context, CancellationToken cancellationToken = default)
     {
+        recorder.Record(GetType(), integrationEvent.Number, context);
         observed.Enter();
         try
         {
@@ -298,10 +307,11 @@ public sealed class LimitedPoison : IIntegrationEvent
 }
 
 /// <summary>Throws every time, on an endpoint run at a concurrency limit.</summary>
-public sealed class LimitedPoisonHandler(Observed observed) : IIntegrationEventHandler<LimitedPoison>
+public sealed class LimitedPoisonHandler(Observed observed, DeliveryRecorder recorder) : IIntegrationEventHandler<LimitedPoison>
 {
     public Task HandleAsync(LimitedPoison integrationEvent, IntegrationEventContext context, CancellationToken cancellationToken = default)
     {
+        recorder.Record(GetType(), integrationEvent.Id, context);
         observed.PoisonAttempts.Add(context.RetryAttempt);
         throw new InvalidOperationException("poison");
     }
@@ -324,19 +334,21 @@ public sealed class RenameObserved
     }
 }
 
-public sealed class OrderPlacedHandler(RenameObserved observed) : IIntegrationEventHandler<Legacy.OrderPlaced>
+public sealed class OrderPlacedHandler(RenameObserved observed, DeliveryRecorder recorder) : IIntegrationEventHandler<Legacy.OrderPlaced>
 {
     public Task HandleAsync(Legacy.OrderPlaced integrationEvent, IntegrationEventContext context, CancellationToken cancellationToken = default)
     {
+        recorder.Record(GetType(), integrationEvent.Id, context);
         observed.AsOld.Add(integrationEvent.Id);
         return Task.CompletedTask;
     }
 }
 
-public sealed class OrderSubmittedHandler(RenameObserved observed) : IIntegrationEventHandler<OrderSubmitted>
+public sealed class OrderSubmittedHandler(RenameObserved observed, DeliveryRecorder recorder) : IIntegrationEventHandler<OrderSubmitted>
 {
     public Task HandleAsync(OrderSubmitted integrationEvent, IntegrationEventContext context, CancellationToken cancellationToken = default)
     {
+        recorder.Record(GetType(), integrationEvent.Id, context);
         observed.AsNew.Add(integrationEvent.Id);
         return Task.CompletedTask;
     }
@@ -384,11 +396,24 @@ public sealed class ConformanceContainers : IAsyncLifetime
         .WithPortBinding(15672, true)
         .Build();
 
+    /// <summary>
+    /// What every handler of every host built on these containers delivered (messaging-exit §7.1 S3): the differential
+    /// clears it before each engine's run of a fact and reads it after.
+    /// </summary>
+    public DeliveryRecorder Recorder { get; } = new();
+
+    /// <summary>A client of the broker's management API, as the operator reaches it.</summary>
+    public HttpClient ManagementClient()
+    {
+        var http = new HttpClient { BaseAddress = new Uri($"http://{Rabbit.Hostname}:{Rabbit.GetMappedPublicPort(15672)}/") };
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes("guest:guest")));
+        return http;
+    }
+
     /// <summary>Messages sitting in a queue, by the management API — the operator's own view.</summary>
     public async Task<int> QueueDepthAsync(string queue)
     {
-        using var http = new HttpClient { BaseAddress = new Uri($"http://{Rabbit.Hostname}:{Rabbit.GetMappedPublicPort(15672)}/") };
-        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes("guest:guest")));
+        using var http = ManagementClient();
         using var response = await http.GetAsync($"api/queues/%2F/{queue}");
         if (!response.IsSuccessStatusCode)
         {
@@ -402,8 +427,7 @@ public sealed class ConformanceContainers : IAsyncLifetime
     /// <summary>Whether the broker holds an exchange named <paramref name="exchange"/>, by the management API.</summary>
     public async Task<bool> ExchangeExistsAsync(string exchange)
     {
-        using var http = new HttpClient { BaseAddress = new Uri($"http://{Rabbit.Hostname}:{Rabbit.GetMappedPublicPort(15672)}/") };
-        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes("guest:guest")));
+        using var http = ManagementClient();
         using var response = await http.GetAsync($"api/exchanges/%2F/{Uri.EscapeDataString(exchange)}");
         return response.IsSuccessStatusCode;
     }
@@ -478,6 +502,7 @@ public sealed class ConformanceContainers : IAsyncLifetime
             {
                 builder.Configuration["ConnectionStrings:messaging"] = Rabbit.GetConnectionString();
                 builder.Services.AddSingleton(observed);
+                builder.Services.AddSingleton(Recorder);
                 if (batches is { } batch)
                 {
                     builder.Services.AddSingleton(batch.Observed);
