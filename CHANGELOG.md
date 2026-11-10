@@ -5,6 +5,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **Gates: every admin route is frozen per module (G4 API-9, #398).** A route-contract test for each of the seven
+  admin mappers (jobs, archival, bulk, notification, campaign, approvals, fileexchange) and for the signed campaign
+  callback route compares the exact, sorted `METHOD pattern` list with a frozen array. A renamed, added or removed
+  route fails in its module's test project. The admin contract gains Revision R5, which describes the callback route
+  as shipped (signature, staleness window, result codes), and its Conventions now count seven surfaces. No route
+  changed.
 - **Bulk and Archival on Oracle, and hand-written SQL guarded by a source scan (G7 ORA-6, #409; RFC goldpath-oracle
   §2.5, §2.6, §2.7, §7).**
   - **`ChunkedContains` at the three remaining sites** that can pass Oracle's 1,000-element `IN` list: Archival's
