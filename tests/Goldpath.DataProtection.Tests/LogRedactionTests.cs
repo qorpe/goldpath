@@ -42,4 +42,28 @@ public sealed class LogRedactionTests
         Assert.Contains(state, kv => kv.Key == "customer.NationalId" && kv.Value == GoldpathErasingRedactor.Token);
         Assert.Contains(state, kv => kv.Key == "customer.Segment" && kv.Value == "gold");
     }
+
+    /// <summary>
+    /// Threat model T-DPK-02: an application that never calls <c>EnableRedaction()</c> (the generated
+    /// templates do not) still never logs a classified property in clear: the logging generator
+    /// drops it rather than write it. It is redacted only where redaction is enabled.
+    /// </summary>
+    [Fact]
+    public void Without_EnableRedaction_a_classified_property_is_dropped_never_logged_in_clear()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.AddGoldpathDataProtection();
+        builder.Logging.AddFakeLogging();
+        using var host = builder.Build();
+
+        var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("test");
+        TestLog.CustomerSeen(logger, new CustomerLogModel { NationalId = "12345678901", Segment = "gold" });
+
+        var record = Assert.Single(
+            host.Services.GetRequiredService<FakeLogCollector>().GetSnapshot(),
+            r => r.Message == "customer event");
+        Assert.DoesNotContain(record.StructuredState!, kv => kv.Value is not null && kv.Value.Contains("12345678901", StringComparison.Ordinal));
+        Assert.DoesNotContain(record.StructuredState!, kv => kv.Key == "customer.NationalId");
+        Assert.Contains(record.StructuredState!, kv => kv.Key == "customer.Segment" && kv.Value == "gold");
+    }
 }

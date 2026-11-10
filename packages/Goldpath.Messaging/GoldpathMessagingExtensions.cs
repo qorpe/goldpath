@@ -88,8 +88,12 @@ public static class GoldpathMessagingExtensions
         builder.Services.AddSingleton(messaging.Options);
         builder.Services.TryAddScoped<GoldpathMessageTenantContext>();
         builder.Services.TryAddScoped<ITenantContext>(sp => sp.GetRequiredService<GoldpathMessageTenantContext>());
+        GoldpathOutboxSize.Validate(messaging.Options);
         builder.Services.AddSingleton(engine);
-        engine.Compose(new GoldpathMessagingComposition(messaging, waitUntilStarted), builder.Services, builder.Configuration);
+        var composition = new GoldpathMessagingComposition(messaging, waitUntilStarted);
+        engine.Compose(composition, builder.Services, builder.Configuration);
+        // The size floor on every engine (#458), after the engine: it wraps the publisher the engine registered.
+        GoldpathOutboxSize.Compose(builder.Services, composition);
         return builder;
     }
 

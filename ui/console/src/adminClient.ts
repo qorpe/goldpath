@@ -296,6 +296,13 @@ export interface CampaignInfo {
   tenant?: string | null;
   /** R3.1: the earliest instant it may release, UTC (ISO 8601); null = as soon as its snapshot is ready. */
   startAt?: string | null;
+  /**
+   * R3.4: the ceiling on everything in flight once acceptances have their own; null = R2's rule, where an
+   * acceptance keeps its `maxInFlight` slot. Absent from an app on a train before preview.10.
+   */
+  maxAwaitingAck?: number | null;
+  /** R3.4: acceptances waiting for their callback, held by the server inside [0, inFlight]. */
+  awaitingAck?: number;
 }
 
 /** One failed item — the drill-down; REPLAY belongs to the jobs console. */
@@ -343,6 +350,10 @@ export interface CampaignThrottle {
   startAt?: string;
   /** R3.1: clears the scheduled start, so the campaign starts as soon as its snapshot is ready. */
   clearStartAt?: boolean;
+  /** R3.4: gives acceptances their own ceiling (positive); omitted = keep. */
+  maxAwaitingAck?: number;
+  /** R3.4: removes that ceiling, back to R2's rule (an acceptance keeps its in-flight slot). Wins over `maxAwaitingAck`. */
+  clearMaxAwaitingAck?: boolean;
 }
 
 /** One template with its live queue numbers and its retention promise. */

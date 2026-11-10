@@ -429,6 +429,50 @@ test.describe("the run console against a real Goldpath app", () => {
     await expect(page.getByRole("button", { name: "pause" })).toHaveCount(0);
   });
 
+  test("campaign R3.4: the governor shows MaxAwaitingAck and the outstanding count, and sets and clears the ceiling", async ({ page, request }) => {
+    const created = await request.post(`${service}/goldpath/admin/campaign/`, {
+      data: { type: "welcome", name: "r3-acks", policy: { tps: 1, maxInFlight: 5, maxAwaitingAck: 30 } },
+    });
+    expect(created.ok()).toBeTruthy();
+
+    await page.goto(`/?base=${encodeURIComponent(service)}`);
+    await page.getByTestId("shell-rail").getByRole("button", { name: "Campaigns", exact: true }).click();
+    await page.getByRole("button", { name: "r3-acks" }).click();
+    const detail = page.getByTestId("campaign-detail");
+    // The server's own detail, read back: live calls against MaxInFlight, everything in flight against the ceiling.
+    await expect(detail).toContainText("Live calls");
+    await expect(detail).toContainText(/of 5 allowed/);
+    await expect(detail).toContainText(/Awaiting acknowledgement\s*\d+ · \d+ in flight of 30 allowed/);
+    const ceiling = page.getByLabel("max awaiting ack", { exact: true });
+    await expect(page.locator("label", { has: ceiling })).toContainText("(now 30)");
+
+    await ceiling.fill("60");
+    await page.getByRole("button", { name: "throttle" }).click();
+    const raising = page.getByRole("alertdialog", { name: "confirm throttle" });
+    await expect(raising).toContainText("max awaiting acknowledgement 60");
+    await raising.getByRole("button", { name: "throttle" }).click();
+    await expect(page.locator("label", { has: ceiling })).toContainText("(now 60)");
+    await expect(detail).toContainText(/in flight of 60 allowed/);
+
+    // Cleared, the campaign is back on R2's rule, and the governor says what that means.
+    await page.getByTestId("sheet").getByText("clear max awaiting ack").click();   // the kit's checkbox, as the R1 journey clicks it
+    await page.getByRole("button", { name: "throttle" }).click();
+    const clearing = page.getByRole("alertdialog", { name: "confirm throttle" });
+    await expect(clearing).toContainText("no acknowledgement ceiling");
+    await clearing.getByRole("button", { name: "throttle" }).click();
+    await expect(page.locator("label", { has: ceiling })).toContainText("(now none)");
+    await expect(detail).toContainText("each holds an in-flight slot (no acknowledgement ceiling)");
+    await expect(page.getByLabel("clear max awaiting ack")).toHaveCount(0);
+
+    // Nothing left releasing behind the next test.
+    await page.getByRole("button", { name: "abort" }).click();
+    const aborting = page.getByRole("alertdialog", { name: "confirm abort" });
+    await expect(aborting).toBeVisible();
+    await aborting.getByLabel("reason (required)").fill("smoke run finished");
+    await aborting.getByRole("button", { name: "abort" }).click();
+    await expect(detail.getByRole("status")).toBeVisible();
+  });
+
   test("campaign R3.1: a scheduled start waits in Ready, shows in the policy time zone, and moving it starts the campaign", async ({ page, request }) => {
     // Created half an hour out, in UTC so the wall time the console shows is the instant itself.
     const later = new Date(Date.now() + 30 * 60_000);

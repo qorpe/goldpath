@@ -150,4 +150,24 @@ public class TemplateTests
             "welcome", "email", "a@b.c", "tr", new Dictionary<string, string>(), dedupKey: "  "));
         Assert.Contains("dedup key", e.Message, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// Threat model T-NTF-03: a token's VALUE is inserted as text and never rendered again, so a
+    /// value an end user controls (a name typed into a form) cannot pull another token's value
+    /// into the notice.
+    /// </summary>
+    [Fact]
+    public void A_token_value_is_inserted_as_text_never_rendered_again()
+    {
+        var options = new GoldpathNotificationOptions();
+        options.AddTemplate("otp", t => t.Channel("email", c => c
+            .Subject("", "Hello {{Name}}")
+            .Body("", "Dear {{Name}}, your code is {{Code}}.")));
+
+        var (subject, body, _) = options.Template("otp").ChannelTemplate("email")
+            .Render("", new Dictionary<string, string> { ["Name"] = "{{Code}}", ["Code"] = "481516" });
+
+        Assert.Equal("Hello {{Code}}", subject);
+        Assert.Equal("Dear {{Code}}, your code is 481516.", body);
+    }
 }

@@ -37,6 +37,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     windows, `for`, label filters, aggregation, severity, the link) each turn a case red. On a real
     OpenTelemetry Collector 0.120.0 and Prometheus 3.5.0, a stalled pacer fired the rule 63 s after
     its last tick, and the exported names are the ones the rules query.
+- **Gates: every admin route is frozen per module (G4 API-9, #398).** A route-contract test for each of the seven
+  admin mappers (jobs, archival, bulk, notification, campaign, approvals, fileexchange) and for the signed campaign
+  callback route compares the exact, sorted `METHOD pattern` list with a frozen array. A renamed, added or removed
+  route fails in its module's test project. The admin contract gains Revision R5, which describes the callback route
+  as shipped (signature, staleness window, result codes), and its Conventions now count seven surfaces. No route
+  changed.
 - **Bulk and Archival on Oracle, and hand-written SQL guarded by a source scan (G7 ORA-6, #409; RFC goldpath-oracle
   §2.5, §2.6, §2.7, §7).**
   - **`ChunkedContains` at the three remaining sites** that can pass Oracle's 1,000-element `IN` list: Archival's
@@ -46,10 +52,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     the list (as ORA-5 found for Campaign); the helper is the guarantee for every provider build.
   - **Bulk on Oracle:** the four `BulkTests` facts run in the Oracle lane (`BulkOracleTests`, `Category=Oracle`),
     with the clustered Quartz store on Oracle.
-  - **Archival on Oracle is refused (#547).** The hash chain's genesis anchor is the empty hash, and Oracle stores
-    `''` as NULL, so a definition's first archive fails with ORA-01400 on `GoldpathArchiveChainState.PurgedHeadHash`.
-    `ArchivalOracleTests` asserts that refusal until #547 (an owner question) lands. The suite gains a
-    `BatchSize = 600` fact that pages 1,200 keys and archives each due aggregate exactly once, on PostgreSQL today.
+  - **Archival on Oracle was refused until #547.** The hash chain's genesis anchor is the empty hash, and Oracle stores
+    `''` as NULL, so a definition's first archive failed with ORA-01400 on `GoldpathArchiveChainState.PurgedHeadHash`,
+    and `ArchivalOracleTests` asserted that refusal. #547 (under Fixed) stores it; the suite now runs end to end on
+    Oracle. The suite gains a `BatchSize = 600` fact that pages 1,200 keys and archives each due aggregate exactly
+    once.
   - **The source scan:** `RawSqlOracleBranchTests` (Goldpath.Data.Tests, no container) fails on any
     `ExecuteSql*`, `FromSql*`, `SqlQuery*` or `MigrationBuilder.Sql` call, and any `CommandText` assigned, appended
     (`+=`) or set in an object initializer, in `packages/` whose method has no Oracle provider check (a literal
@@ -118,8 +125,40 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     at create or at registration, and the detail or the gauge reading the stored count unclamped. On real PostgreSQL and RabbitMQ, `CampaignR2Tests` ends with the count at 0 after
     callbacks, parking and the ack sweep, and a drifted count is re-counted by the next slice
     (red without the re-count). Mutation gate: 82.31 % (`stryker/README.md`).
-  - **Not yet:** the real-broker proof with a slow-acknowledging target and the console's view
-    and edit of the ceiling (R3-S6, #316).
+  - **The real-broker proof and the console (R3-S6, #316):** `CampaignAwaitingAckProof` runs a campaign on
+    RabbitMQ + PostgreSQL against a target system that accepts every call and answers through the signed
+    callback surface eight seconds later, with `MaxInFlight = 4` and `MaxAwaitingAck = 40`. Live calls
+    (`Released + Processing + AwaitingRetry`, sampled from the rows about every 25 ms, and the handler's own
+    concurrency) never pass 4 while the outstanding acknowledgements reach the ceiling of 40 and never pass it,
+    and all 120 items complete exactly once; a campaign on the same host without the field holds its
+    acknowledgements at 4. It is red with the pacer on R2's rule (acknowledgements stay at 4) and red with the
+    acknowledgement room removed. The governor shows the live calls against `MaxInFlight` and the
+    acknowledgements with everything in flight against `MaxAwaitingAck` (or, without it, that each acceptance
+    holds an in-flight slot), and edits the ceiling through `throttle` (`max awaiting ack`, and a
+    `clear max awaiting ack` box while one is set; a clear wins, so a typed value beside it is not sent).
+- **The S3 differential run: every bus conformance fact on both engines, the candidate's outcome compared with the
+  oracle's (messaging-exit RFC §7.1 S3, GA gate G5 Part 3/5, #332).** Tests and CI only; no package changes.
+  - `BusDifferentialTests` (`Category=Differential`, in `tests/Goldpath.Messaging.Conformance`) runs every fact of
+    the two conformance classes, found by reflection, on MassTransit 8.5.12 and then on the Wolverine adapter. Every
+    harness handler reports to a `DeliveryRecorder`, and after each run the record holds: deliveries per endpoint,
+    per business key and per message id; the retry attempts each message was given; the headers the handler saw, and
+    the values of `X-Goldpath-Tenant` and `X-Correlation-Id`; the order, only where the seam promises one (S2.14);
+    every `*_error` queue's messages, read from the broker; and the `InboxState` / `OutboxMessage` / `OutboxState`
+    rows. Error queues and those tables are emptied before each engine's run.
+  - The comparator fails on any line where the two records differ, unless an entry of the reviewed allow-list
+    `differential-allowlist.json` excuses it. There are 33 entries, each carrying its reason, and a container-free
+    fact keeps every entry narrow: no entry may excuse the retry ladder, duplicates, the tenant, the correlation or an
+    order.
+  - The report (`summary.md` plus one `<fact>.json` per fact) is uploaded by CI's integration job as the
+    `s3-differential-report` artifact.
+  - **Measured on the way, and allowed with a reason, not fixed:**
+    - The oracle parks duplicates of a message it has already handled in `<queue>_error` when two deliveries of one
+      message id are in flight at once (S2.1, S2.19).
+    - The fault-diagnostic headers on a parked message are each engine's own (`MT-Fault-*` / `MT-Host-*` /
+      `MT-Reason` against `exception-*` / `failed-at` / `attempts`).
+    - A Wolverine-parked envelope does not list the `IIntegrationEvent` URN. The record holds one line per type a
+      parked envelope names, so only that URN's line is excused and the event's own type is still compared.
+    - Both of the last two are open-threads T51.
 - **Campaign: the metrics RFC §7 promised, and the ones an impact dashboard needs (#294).** Ten new instruments
   on the `Goldpath.Campaign` meter; no `PublicAPI` change. RFC campaign §7 is rewritten as the table of every
   exported instrument, and `MetricsExportTests` holds each one's name, unit and tags against it.
@@ -532,6 +571,31 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   - Three accepted risks (A7–A9), signed by the owner 2026-11-04: counterparty authenticity is the
     transport's job, quarantine reasons are shown as written, and a rail has no size ceiling of its
     own.
+- **The threat model's surfaces 7 and 8: Notification channels and DataProtection (GA gate G15
+  Part 2/2, 3/4, part of #340).** No package code changes. `docs/security/threat-model.md` now models
+  8 of 10 surfaces: T-NTF-01..16 and T-DPK-01..11. Every threat names a test (34 references, each
+  checked to resolve to a method and its suite run green), an issue, or an accepted risk.
+  - **Five tests pin defences that held but were proven by nothing.** Each is red with its fault
+    planted:
+    - a token value is never rendered again (planted: the renderer re-expands values);
+    - a line break in a subject never becomes a header (planted: subject lines written as headers);
+    - a recipient list is refused (planted: `InternetAddressList.Parse`);
+    - without `EnableRedaction()`, a classified log property is dropped, never written in clear
+      (planted: `[GoldpathPersonalData]` no longer a `DataClassificationAttribute`);
+    - a short or non-Base64 HMAC key is refused (planted: the module stretches any key to 44
+      characters).
+  - **Three threats had no holder, and each is now an issue:**
+    - #531: the notification dedup key is unique across tenants. A second tenant's notice is never
+      stored, and its caller gets the first tenant's row (measured);
+    - #532: a failure's `Detail` is the channel's exception text verbatim, so a provider reply that
+      names the address walks around recipient masking;
+    - #533: the webhook channel posts to a plaintext `http://` URL without an opt-in, which the email
+      channel refuses.
+  - **Four accepted risks (A10–A13) await the owner's signature:**
+    - secrets are only as safe as the configuration they come from;
+    - the webhook is unsigned;
+    - the app's own words on the notification surface;
+    - classified values written into free text.
 - **`goldpath check` warns a manifest that selects a roadmap-only value (GA gate G3, #336).**
   After `specdrift validate` passes, every value the schema accepts but no code runs
   (`broker: kafka|inmemory`, `exporters: prometheus`, `auditTrail.store: eventstream`, and
@@ -698,6 +762,47 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **Archival on Oracle: a definition's first archive is stored, and its chain verifies (#547).** The chain's genesis
+  anchor is the empty hash, and Oracle stores `''` as NULL, so the `NOT NULL` anchor columns refused it (ORA-01400):
+  nothing archived on Oracle, so retention and erasure had nothing to act on. On Oracle alone
+  `GoldpathArchiveEntries.PreviousHash`, `GoldpathArchiveChainState.LastHash` and `GoldpathArchiveChainState.PurgedHeadHash`
+  are now nullable: Archival's model writes `""` as NULL and the entity reads NULL back as `""` (owner decision A, the
+  #502 pattern; oracle RFC §2.2 amended). `LastHash` is the third column the issue did not name: a chain state is saved
+  with it still `""` when every candidate of a definition's first batch raced away, and that save was refused too.
+  Every hash and every chain on PostgreSQL and SQL Server is byte-identical, the three properties keep their
+  signatures, and existing chains keep verifying. The engine reads these columns only from materialised entities;
+  a query that PROJECTS one of them on Oracle reads NULL for the genesis value. **Proof:** `ArchivalOracleTests` (the
+  lifecycle, the #383 sub-µs twin, the `BatchSize = 600` run, and the new
+  `A_first_batch_whose_every_candidate_raced_away_keeps_the_genesis_anchor`) runs end to end on Oracle and is red with
+  ORA-01400 without the mapping; the Oracle golden's three columns read `NVARCHAR2(64) null`, and `MayWriteEmpty`
+  drops its two #547 entries. No migration step: Oracle is on no published train yet.
+- **Messaging: an outbox event above the broker's size limit no longer stops every later event, on either engine (#458).**
+  - **What went wrong:** RabbitMQ refuses a body above `max_message_size` (16 MiB by default) on every attempt. Both
+    adapters' delivery loops retry the oldest undelivered outbox first, so one such row held back every row committed
+    after it, for ever (the verifier's probe P1 on #457: the small row behind it undelivered after 45 s, on both).
+  - **Now:** `GoldpathMessagingOptions.MaxMessageBytes` (`Goldpath:Messaging:MaxMessageBytes`, default 16777216, must be
+    positive; the only public addition) is enforced in the floor, once for every engine:
+    - **A publish above it is refused at the seam:** `PublishAsync` throws `InvalidOperationException` (the event, its
+      size and the limit, never the payload), and the row leaves the unit of work, so nothing commits it.
+    - **A committed row above it is marked failed in place:** an outbox sweep (its first pass at start, before the
+      bus; then every delivery poll) keeps the row and its body, detaches it from its outbox or inbox, writes
+      `Goldpath-Outbox-Failed*` headers with the reason and where it came from, and logs id, type and size at Error.
+      The rows behind it are delivered. The outbox schema is unchanged. The sweep's database pre-filter is a QUARTER
+      of the limit, because PostgreSQL's, Oracle's and SQLite's `length()` count code points, which are up to four
+      bytes each; a third would skip a body made mostly of four-byte characters. A row whose headers are not a JSON
+      object is marked too, its headers kept as text in `Goldpath-Outbox-Failed-OriginalHeaders`, so one corrupt row
+      cannot stop the pass. The publish guard judges only the row its own publish added.
+    - Both count in a new counter, `goldpath.messaging.outbox.oversized{stage=publish|outbox}` (meter `Goldpath.Messaging`).
+  - **Proof:** conformance S2.20 (a committed oversized row, then a small one; the small one is delivered, the large one
+    is kept and marked) and S2.21 (the refusal commits nothing; the next publish goes through), both on MassTransit
+    8.5.12 and Wolverine on real RabbitMQ 4 and PostgreSQL 17. Both are red on `main`, and red again with the detach or
+    the refusal planted out. S2.20b, on PostgreSQL 17 and both engines: a committed row of 80 × U+1F600 (80 code
+    points, 320 bytes) is marked under a 300-byte limit; red with the pre-filter at a third. Boundaries in UTF-8 bytes
+    (ASCII, `İ`, `€`, a surrogate pair; at the publish and, for four-byte code points, at the sweep), corrupt headers,
+    a row added outside the guarded publish and the sweep's page walk are `MessageSizeTests`.
+  - **Docs:** the package README's "Message size", and the runbook's "An outbox row marked failed" (how to recover one).
+  - **Upgrade note:** none required. A publish above 16 MiB now throws where it used to commit a row that never left. To
+    publish larger bodies, raise the broker's `max_message_size` and this option together.
 - **Admin verbs refuse a blank value before it reaches a NOT NULL column, the same on every provider (#476, G7).**
   Oracle stores `''` as NULL, so each of these failed there with `ORA-01400` (a 500). On PostgreSQL and SQL Server
   each stored a meaningless record.
