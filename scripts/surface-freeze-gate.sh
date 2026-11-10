@@ -12,6 +12,7 @@
 #   template-choice <template> <name> <c>  every choice of such a parameter
 #   schema-property <JSON pointer>         every property of the manifest schema v1
 #   schema-enum <JSON pointer> <value>     every enum value of the manifest schema v1 (JSON-encoded)
+#   schema-const <JSON pointer> <value>    every const of the manifest schema v1 (a one-value enum)
 #
 # The CLI lines come from the PARSER, not from a grep: scripts/surface-freeze-gate.probe.cs drives
 # CliRunner.Run with every flag literal of tools/Goldpath.Cli against every verb form and keeps the
@@ -23,6 +24,11 @@
 # on any line the snapshot lacks, telling the author to add it. Versioning D2 counts a removal as
 # breaking; an addition is allowed, but only on the record. `$comment`, `description`, `default`,
 # `title` and `examples` are never read, so changing them cannot turn the gate red.
+#
+# NOT frozen here (the record's §2 names them, and open-threads T66 holds the decision for API-13):
+# a CLI flag's VALUES and a verb's positional vocabulary (`--trigger jobs`, `add feature <name>`),
+# a template parameter's value shape (`datatype`, `isRequired`, `allowMultipleValues`), and the
+# schema's `type`, `required`, `pattern`, length and range bounds and `additionalProperties`.
 #
 # Modes:
 #   (default)    compare the tree with the snapshot
@@ -44,7 +50,7 @@ def cli_verbs(root):
     cli = root / "tools" / "Goldpath.Cli"
     dispatch = (cli / "CliRunner.cs").read_text(encoding="utf-8")
     verbs = set()
-    for m in re.finditer(r'\["([a-z]+)"(?:, "([a-z]+)")?', dispatch):
+    for m in re.finditer(r'\["([a-z][a-z0-9-]*)"(?:, "([a-z][a-z0-9-]*)")?', dispatch):
         verbs.add(m.group(1) if not m.group(2) else f"{m.group(1)} {m.group(2)}")
     # `new <kind>`: the heads are tested as `kind is "service" or "gateway"`, the templates are the
     # arms of the `"solution" => "goldpath-solution"` switch. (docs-freshness block 3's reading
@@ -70,8 +76,11 @@ def cli_flags(root):
 
 def cli_lines(root):
     probe = root / "scripts" / "surface-freeze-gate.probe.cs"
+    # --no-cache: a file-based app's up-to-date check reads the entry file and its directives, never
+    # the source behind its `#:project` reference, so a cached probe asks a STALE build of the CLI and
+    # a renamed or added flag stays green on any machine that has run the gate once (verifier, #552).
     run = subprocess.run(
-        ["dotnet", "run", str(probe), "--", *cli_verbs(root), "--", *cli_flags(root)],
+        ["dotnet", "run", "--no-cache", str(probe), "--", *cli_verbs(root), "--", *cli_flags(root)],
         capture_output=True, text=True, encoding="utf-8")
     if run.returncode != 0:
         sys.exit(f"surface-freeze-gate: the CLI probe failed ({run.returncode}):\n{run.stdout}{run.stderr}")
@@ -116,6 +125,9 @@ def schema_lines(root):
                 elif key == "enum" and isinstance(value, list):
                     for item in value:
                         lines.add(f"schema-enum {pointer or '/'} {json.dumps(item, ensure_ascii=False)}")
+                elif key == "const":
+                    # A one-value enum: `schemaVersion: const 1` -> 2 invalidates every manifest written.
+                    lines.add(f"schema-const {pointer or '/'} {json.dumps(value, ensure_ascii=False, sort_keys=True)}")
                 else:
                     walk(value, f"{pointer}/{escape(key)}")
         elif isinstance(node, list):
@@ -228,6 +240,14 @@ def selftest():
          'case "--trigger" when i + 1 < rest.Count:\n                    trigger = rest[i + 1];\n                    break;\n', "")
     expect("a flag one verb stops parsing while its literal stays in the source (add worker --trigger)", work, red=True,
            must_name="REMOVED (or renamed): cli-flag add worker --trigger")
+    # A probe that has run once must not answer from a stale build: the scratch copy is probed, THEN
+    # edited, and probed again (a cached `dotnet run` answered with the old parser, #552).
+    work = scratch(with_cli_source=True)
+    cli_lines(work)
+    edit(work / "tools/Goldpath.Cli/CliRunner.cs",
+         'case "--trigger" when i + 1 < rest.Count:', 'case "--force": break;\n                case "--trigger" when i + 1 < rest.Count:')
+    expect("a flag added after the probe already ran once (add worker --force, no stale build)", work, red=True,
+           must_name="NOT IN THE SNAPSHOT: cli-flag add worker --force")
     work = scratch(with_cli_source=True)
     edit(work / "tools/Goldpath.Cli/CliRunner.cs",
          '["discover", .. var rest] => DiscoverCommand.Run(ParsePath(rest), output, error),\n', "")
@@ -254,13 +274,19 @@ def selftest():
     schema_edit(work, lambda d: d["properties"]["kind"]["enum"].remove("module"))
     expect('a removed enum value (/properties/kind "module")', work, red=True, must_name='REMOVED (or renamed): schema-enum /properties/kind "module"')
     work = scratch()
+    schema_edit(work, lambda d: d["properties"]["schemaVersion"].update(const=2))
+    expect("a changed const (/properties/schemaVersion 1 → 2)", work, red=True,
+           must_name="REMOVED (or renamed): schema-const /properties/schemaVersion 1")
+    work = scratch()
     schema_edit(work, lambda d: d["properties"]["kind"]["enum"].append("planted"))
     expect('an added enum value without its snapshot line (/properties/kind "planted")', work, red=True,
            must_name='NOT IN THE SNAPSHOT: schema-enum /properties/kind "planted"')
 
-    # And the snapshot side: a line typed twice.
-    _, duplicates = read_snapshot("\n".join(sorted(snapshot) + [sorted(snapshot)[0]]))
-    if duplicates:
+    # And the snapshot side: a line typed twice, through the same compare the gate runs.
+    typed_twice = sorted(snapshot)[0]
+    planted, duplicates = read_snapshot("\n".join(sorted(snapshot) + [typed_twice]))
+    observed = real_cli | template_lines(pathlib.Path(".")) | schema_lines(pathlib.Path("."))
+    if f"duplicate snapshot line: {typed_twice}" in compare(observed, planted, duplicates):
         print("surface-freeze-gate selftest: red as it should be — a duplicate snapshot line")
     else:
         failures.append("NOT caught: a duplicate snapshot line")

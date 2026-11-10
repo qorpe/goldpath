@@ -37,8 +37,8 @@ The counter, not a hand-typed table, is the source of every number (§7).
 | Public .NET API (the 23 ledgers) | `scripts/api-review-gate.sh` (this record), then API-12's additions-only gate (#401) | API-2 … API-7 |
 | Meter, span and table names | an inventory gate | API-8 (#397) |
 | Admin routes and the signed callback route | a route-contract test per module (since API-9, #398): `AdminRouteInventoryTests.The_jobs_surface_matches_the_frozen_contract`, `ArchivalRouteContractTests`, `BulkRouteContractTests`, `NotificationRouteContractTests`, `ApprovalsRouteContractTests`, `FileExchangeRouteContractTests`, and campaign's `RouteContractTests` (its admin surface and the callback route); plus the console smoke | API-9 (#398) |
-| Manifest schema v1 (`schemas/manifest/v1`) | `scripts/corpus-check.sh`, `scripts/schema-honesty.sh`, and `scripts/surface-freeze-gate.sh` over [`surface-freeze-gate.snapshot.txt`](../../scripts/surface-freeze-gate.snapshot.txt) (112 property JSON pointers, 78 enum values) | API-10 (#399) |
-| CLI verbs + template parameters | `scripts/docs-freshness.sh`, `scripts/validate-cli.sh`, and `scripts/surface-freeze-gate.sh` over the same snapshot (17 verb forms, 18 verb flags, 4 top-level flags, 2 pass-through verbs; 9 template parameters with 37 choices across `goldpath-solution` and `goldpath-worker`) | API-10 (#399) |
+| Manifest schema v1 (`schemas/manifest/v1`) | `scripts/corpus-check.sh`, `scripts/schema-honesty.sh`, and `scripts/surface-freeze-gate.sh` over [`surface-freeze-gate.snapshot.txt`](../../scripts/surface-freeze-gate.snapshot.txt) (112 property JSON pointers, 78 enum values, 8 consts; the shape keywords are not frozen, see below) | API-10 (#399) |
+| CLI verbs + template parameters | `scripts/docs-freshness.sh`, `scripts/validate-cli.sh`, and `scripts/surface-freeze-gate.sh` over the same snapshot (17 verb forms, 18 verb flags, 4 top-level flags, 2 pass-through verbs; 9 template parameters with 37 choices across `goldpath-solution` and `goldpath-worker`; flag values and value shapes are not frozen, see below) | API-10 (#399) |
 | `[Experimental]` marks on Approvals and FileExchange | the diagnostic ids of §4 | API-11 (#400) |
 
 **Inventoried, not yet frozen** (API-9, #398; for the owner to decide, index open question 4). These routes are
@@ -66,6 +66,18 @@ CLI also reads to find the generated app, are `dotnet new`'s surface and are not
 schemas (`schemas/specanchor/v1`). Both are validated by `corpus-check.sh`, and the specanchor copies are held
 byte-identical by `specanchor-freshness.sh`. Neither is in this section's surface list, so neither is frozen
 additions-only. Whether 1.0 promises them is a question for API-13 (#402).
+
+**Not frozen by this gate, named for the owner (open-threads T66):** the gate freezes NAMES and the values a
+manifest writes literally — property pointers, `enum` values and `const` values (8, among them
+`schemaVersion: 1`). It does not freeze, and a change to any of these stays green:
+- in the manifest schema: `type`, `required` (an optional property made required), `pattern`, the length and range
+  bounds (`maxLength`, `minimum`, …) and `additionalProperties`;
+- on the CLI: a flag's VALUES and a verb's positional vocabulary (`--trigger jobs`, `--next-id rule|spec`, the
+  `add feature <name>` names);
+- in the templates: a parameter's value shape (`datatype`, `isRequired`, `allowMultipleValues`).
+
+Each can break an adopter, so "additions-only" on this section's rows means the lines in the snapshot. Whether 1.0
+promises the rest, and so whether the gate grows a line kind for each, is API-13's (#402) to decide.
 
 ## 3. Manifest Surface
 

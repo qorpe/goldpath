@@ -9,17 +9,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   gate G4 API-10, #399).** A gate and its probe; no package, CLI or template changes.
   - `scripts/surface-freeze-gate.sh` compares the tree with `scripts/surface-freeze-gate.snapshot.txt`, which has one
     line per CLI verb form (17), verb flag (18), top-level flag (4) and pass-through verb (2), per template parameter (9)
-    and choice (37), and per manifest-schema property JSON pointer (112) and enum value (78). It fails on a removed
+    and choice (37), and per manifest-schema property JSON pointer (112), enum value (78) and const (8). It fails on a removed
     line, which covers a rename, and on a line the snapshot lacks, with the message telling the author to add it.
     `$comment`, `description`, `default`, `title` and `examples` are never read. It runs in `gates`, with `--selftest`.
   - **The CLI half is read from the parser, not grepped:** `scripts/surface-freeze-gate.probe.cs` (a .NET 10
     file-based app over `tools/Goldpath.Cli`) drives `CliRunner.Run` with every flag literal against every verb form,
     and keeps the flags the parser does not reject the way it rejects an undeclared one. The CLI has no parse table and
     no per-verb `--help`, and `goldpath --help` omits `--path` on four verb forms, so neither could be the source.
+    The probe runs with `dotnet run --no-cache`: a file-based app's up-to-date check never reads the source behind its
+    `#:project` reference, so a cached probe would ask a stale build of the CLI and pass a renamed or added flag.
   - `--selftest` plants each fault in a scratch copy of the tree and must see it red: a renamed flag and a removed
     verb in the CLI's source, a flag one verb stops parsing while its literal stays elsewhere in the source, a renamed
-    and a removed template choice, a removed schema property, a removed and an added enum value, and a duplicate
-    snapshot line. The unplanted tree and a `$comment`/`description`/`default` change stay green.
+    and a removed template choice, a removed schema property, a removed and an added enum value, a changed const, a
+    flag added after the probe has already run once on that tree, and a duplicate snapshot line (through the gate's own
+    comparison). The unplanted tree and a `$comment`/`description`/`default` change stay green.
+  - **Not frozen, and said so** (the record's §2, open-threads T66, for API-13 #402): the schema's `type`, `required`,
+    `pattern`, bounds and `additionalProperties`; CLI flag values and positional vocabularies; template value shapes.
 - **The S-FLEET-02 rig: 30M targets, an hour at 2,000 TPS, headroom every 10 seconds (GA gate G10c, #349).** Tests,
   scripts and a dispatch-only workflow; no package changes. Nothing is measured yet: the run is the owner's overnight
   slot, tracked in open-threads T59.

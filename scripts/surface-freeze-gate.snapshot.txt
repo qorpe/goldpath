@@ -1,5 +1,5 @@
 # The surface freeze snapshot (GA G4 API-10, #399): one line per CLI verb, flag and pass-through, template
-# parameter and choice, manifest-schema property and enum value. scripts/surface-freeze-gate.sh fails when a
+# parameter and choice, manifest-schema property, enum value and const. scripts/surface-freeze-gate.sh fails when a
 # line disappears or the tree has one this file lacks. An addition lands here in the PR that adds it;
 # a removal or rename only through the 1.0 review (versioning D2). Regenerate the body with --print.
 cli-flag add feature --path
@@ -43,6 +43,14 @@ cli-verb new service
 cli-verb new solution
 cli-verb new worker
 cli-verb spec ready
+schema-const /allOf/0/if/properties/kind "solution"
+schema-const /allOf/1/if/properties/features/properties/campaign/not false
+schema-const /allOf/1/if/properties/kind "solution"
+schema-const /allOf/2/if/properties/kind "service"
+schema-const /allOf/3/if/properties/kind "module"
+schema-const /allOf/4/if/properties/kind "worker"
+schema-const /allOf/5/if/properties/kind "gateway"
+schema-const /properties/schemaVersion 1
 schema-enum /$defs/architecture/properties/codeOrg "clean-architecture"
 schema-enum /$defs/architecture/properties/codeOrg "vertical-slice"
 schema-enum /$defs/architecture/properties/deploymentModel "microservice"
