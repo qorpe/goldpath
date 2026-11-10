@@ -86,8 +86,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     at create or at registration, and the detail or the gauge reading the stored count unclamped. On real PostgreSQL and RabbitMQ, `CampaignR2Tests` ends with the count at 0 after
     callbacks, parking and the ack sweep, and a drifted count is re-counted by the next slice
     (red without the re-count). Mutation gate: 82.31 % (`stryker/README.md`).
-  - **Not yet:** the real-broker proof with a slow-acknowledging target and the console's view
-    and edit of the ceiling (R3-S6, #316).
+  - **The real-broker proof and the console (R3-S6, #316):** `CampaignAwaitingAckProof` runs a campaign on
+    RabbitMQ + PostgreSQL against a target system that accepts every call and answers through the signed
+    callback surface eight seconds later, with `MaxInFlight = 4` and `MaxAwaitingAck = 40`. Live calls
+    (`Released + Processing + AwaitingRetry`, sampled from the rows about every 25 ms, and the handler's own
+    concurrency) never pass 4 while the outstanding acknowledgements reach the ceiling of 40 and never pass it,
+    and all 120 items complete exactly once; a campaign on the same host without the field holds its
+    acknowledgements at 4. It is red with the pacer on R2's rule (acknowledgements stay at 4) and red with the
+    acknowledgement room removed. The governor shows the live calls against `MaxInFlight` and the
+    acknowledgements with everything in flight against `MaxAwaitingAck` (or, without it, that each acceptance
+    holds an in-flight slot), and edits the ceiling through `throttle` (`max awaiting ack`, and a
+    `clear max awaiting ack` box while one is set; a clear wins, so a typed value beside it is not sent).
 - **The S3 differential run: every bus conformance fact on both engines, the candidate's outcome compared with the
   oracle's (messaging-exit RFC §7.1 S3, GA gate G5 Part 3/5, #332).** Tests and CI only; no package changes.
   - `BusDifferentialTests` (`Category=Differential`, in `tests/Goldpath.Messaging.Conformance`) runs every fact of

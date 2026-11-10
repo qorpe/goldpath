@@ -1,13 +1,14 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AdminClient, type CampaignInfo } from "./adminClient";
-import { CampaignPanel, describeThrottle, formatInZone, resolveStart, startProblem, toThrottle, zoneReadable } from "./CampaignPanel";
+import { CampaignPanel, describeThrottle, formatInZone, inFlightRows, resolveStart, startProblem, toThrottle, zoneReadable } from "./CampaignPanel";
 
 const emptyDraft = {
   tps: "", dailyQuota: "", maxInFlight: "", windowStart: "", windowEnd: "", timeZoneId: "",
   clearDailyQuota: false, clearWindow: false,
   excludedDays: [] as string[], endDate: "", maxAttempts: "", clearExcludedDays: false, clearEndDate: false, priority: "",
   startLocal: "", startChoice: "" as "" | "earlier" | "later", clearStartAt: false,
+  maxAwaitingAck: "", clearMaxAwaitingAck: false,
 };
 
 const campaign = (over: Partial<CampaignInfo> = {}): CampaignInfo => ({
@@ -113,6 +114,79 @@ describe("the throttle patch (a null field KEEPS the server's current value)", (
 
   it("describes the change in the operator's words", () => {
     expect(describeThrottle({ tps: 40, clearWindow: true })).toBe("40 tps, no window (release around the clock)");
+  });
+});
+
+describe("R3.4: the acknowledgement ceiling in the governor", () => {
+  const draft = { ...emptyDraft };
+
+  it("the ceiling travels only when typed, and a clear wins over a typed value", () => {
+    expect(toThrottle({ ...draft, maxAwaitingAck: "2000" })).toEqual({ maxAwaitingAck: 2000 });
+    expect(toThrottle({ ...draft, clearMaxAwaitingAck: true })).toEqual({ clearMaxAwaitingAck: true });
+    // The server applies the clear when both arrive, so the console sends (and confirms) only the clear.
+    expect(toThrottle({ ...draft, maxAwaitingAck: "2000", clearMaxAwaitingAck: true })).toEqual({ clearMaxAwaitingAck: true });
+    expect(describeThrottle({ maxAwaitingAck: 2000 })).toBe("max awaiting acknowledgement 2000");
+    expect(describeThrottle({ clearMaxAwaitingAck: true })).toBe("no acknowledgement ceiling (an acceptance holds an in-flight slot)");
+  });
+
+  it("without the field, one in-flight ceiling — and the acceptances are said to hold its slots", () => {
+    expect(inFlightRows(campaign({ inFlight: 60, maxInFlight: 100, maxAwaitingAck: null, awaitingAck: 45 }))).toEqual([
+      { key: "In flight", value: "60 of 100 allowed" },
+      { key: "Awaiting acknowledgement", value: "45 — each holds an in-flight slot (no acknowledgement ceiling)" },
+    ]);
+    // An app on an older train sends neither field: the row it cannot fill is not invented.
+    expect(inFlightRows(campaign({ inFlight: 60, maxInFlight: 100 }))).toEqual([{ key: "In flight", value: "60 of 100 allowed" }]);
+  });
+
+  it("with the field, live calls under MaxInFlight and everything in flight under MaxAwaitingAck", () => {
+    expect(inFlightRows(campaign({ inFlight: 46, maxInFlight: 10, maxAwaitingAck: 50, awaitingAck: 40 }))).toEqual([
+      { key: "Live calls", value: "6 of 10 allowed" },
+      { key: "Awaiting acknowledgement", value: "40 · 46 in flight of 50 allowed" },
+    ]);
+    // A field set with no count yet (never on a preview.10 app, which always sends it) reads zero acceptances.
+    expect(inFlightRows(campaign({ inFlight: 3, maxInFlight: 10, maxAwaitingAck: 50 }))[0]).toEqual({ key: "Live calls", value: "3 of 10 allowed" });
+  });
+
+  it("the governor shows both ceilings and the count, and edits the ceiling through throttle", async () => {
+    const detail = campaign({ inFlight: 46, maxInFlight: 10, maxAwaitingAck: 50, awaitingAck: 40 });
+    const { client: api, posted } = client({ list: [detail], detail, verb: { status: 200, body: { ok: true, message: "policy updated" } } });
+    render(<CampaignPanel client={api} />);
+
+    await open();
+    expect(await screen.findByText("6 of 10 allowed")).toBeInTheDocument();
+    expect(screen.getByText("40 · 46 in flight of 50 allowed")).toBeInTheDocument();
+    const box = screen.getByLabelText("max awaiting ack");
+    expect(box.closest("label")).toHaveTextContent("(now 50)");
+
+    await userEvent.type(box, "2000");
+    await userEvent.click(screen.getByRole("button", { name: "throttle" }));
+    const dialog = screen.getByRole("alertdialog", { name: "confirm throttle" });
+    expect(dialog).toHaveTextContent("max awaiting acknowledgement 2000");
+    await userEvent.click(within(dialog).getByRole("button", { name: "throttle" }));
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0].url).toContain(`/goldpath/admin/campaign/${detail.id}/throttle`);
+    expect(JSON.parse(String(posted[0].body))).toEqual({ maxAwaitingAck: 2000 });
+  });
+
+  it("the clear box is offered only while a ceiling is set, and posts the clear alone", async () => {
+    const detail = campaign({ maxAwaitingAck: 50, awaitingAck: 0 });
+    const { client: api, posted } = client({ list: [detail], detail, verb: { status: 200, body: { ok: true, message: "policy updated" } } });
+    render(<CampaignPanel client={api} />);
+
+    await open();
+    await userEvent.click(await screen.findByLabelText("clear max awaiting ack"));
+    await userEvent.click(screen.getByRole("button", { name: "throttle" }));
+    await userEvent.click(within(screen.getByRole("alertdialog", { name: "confirm throttle" })).getByRole("button", { name: "throttle" }));
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(JSON.parse(String(posted[0].body))).toEqual({ clearMaxAwaitingAck: true });
+  });
+
+  it("no clear box on a campaign without the ceiling — there is nothing to clear", async () => {
+    const { client: api } = client();
+    render(<CampaignPanel client={api} />);
+    await open();
+    expect(await screen.findByLabelText("max awaiting ack")).toBeInTheDocument();
+    expect(screen.queryByLabelText("clear max awaiting ack")).not.toBeInTheDocument();
   });
 });
 

@@ -210,8 +210,12 @@ new GoldpathCampaignThrottle(Tps: 200, MaxInFlight: 10) { MaxAwaitingAck = 50_00
   under — the type's default with the patch applied — so neither path can make a campaign that
   never releases.
 - **Changing it:** `throttle` sets it (`maxAwaitingAck`, positive; omitted keeps it) or clears it
-  (`clearMaxAwaitingAck`, back to R2's rule), audited old → new. The console does not show or edit
-  it yet (R3-S6, #316).
+  (`clearMaxAwaitingAck`, back to R2's rule), audited old → new. The console's governor shows the
+  live calls against `MaxInFlight` and the acknowledgements, with everything in flight, against
+  `MaxAwaitingAck`, and edits the ceiling (`max awaiting ack`; `clear max awaiting ack` while one is set).
+- **Proven on a real broker:** `CampaignAwaitingAckProof` (RabbitMQ + PostgreSQL, a target system that
+  answers eight seconds after it accepts) holds live calls at or below `MaxInFlight = 4` while ten times as
+  many acknowledgements are outstanding, and every item completes exactly once.
 
 ## Auto-suspend on a failure ratio (R3.6)
 
