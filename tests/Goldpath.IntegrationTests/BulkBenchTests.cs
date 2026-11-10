@@ -3,32 +3,43 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
-using Testcontainers.PostgreSql;
 using Xunit;
 
 namespace Goldpath.Tests.Integration;
 
 /// <summary>
 /// Bulk RFC §6 performance proofs (scripts/bench-bulk.sh → ops/bulk-benchmarks.md).
-/// Trait-gated out of the normal suite: evidence, not regression tests.
+/// Trait-gated out of the normal suite: evidence, not regression tests. Written once and run on
+/// PostgreSQL (this class) or Oracle (<see cref="BulkBenchOracleTests"/>, G7 Oracle 8/12, #556):
+/// <c>scripts/bench-bulk.sh</c> picks one with <c>GOLDPATH_BENCH_PROVIDER</c>.
 /// </summary>
 [Trait("Category", "Bench")]
-public sealed class BulkBenchTests : IAsyncLifetime
+public class BulkBenchTests : IAsyncLifetime
 {
+    private readonly SuiteStore _store;
+
+    /// <summary>The PostgreSQL bench: a container of its own, as before #556.</summary>
+    public BulkBenchTests()
+        : this(SuiteStore.PostgreSql())
+    {
+    }
+
+    /// <summary>The same bench on <paramref name="store"/>.</summary>
+    protected BulkBenchTests(SuiteStore store) => _store = store;
+
     private sealed class NopHandler : IGoldpathBulkRowHandler<BulkTests.PaymentRow>
     {
         public Task ExecuteAsync(BulkTests.PaymentRow row, GoldpathBulkRowContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
     }
 
-    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17-alpine").Build();
     private ServiceProvider _services = null!;
     private GoldpathBulkOptions _options = null!;
     private GoldpathBulkEngine<BulkTests.BulkDb> _engine = null!;
 
     public async Task InitializeAsync()
     {
-        await _postgres.StartAsync();
+        await _store.StartAsync<BulkTests.BulkDb>(options => new(options));
         _options = new GoldpathBulkOptions();
         _options.AddBatch<BulkTests.PaymentRow>("payments", b => b
             .MaxRows(1_000_000)
@@ -42,12 +53,10 @@ public sealed class BulkBenchTests : IAsyncLifetime
             }));
 
         var services = new ServiceCollection();
-        services.AddDbContext<BulkTests.BulkDb>(o => o.UseNpgsql(_postgres.GetConnectionString()));
+        services.AddDbContext<BulkTests.BulkDb>(_store.Use);
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IGoldpathBulkRowHandler<BulkTests.PaymentRow>, NopHandler>();
         _services = services.BuildServiceProvider();
-        using var scope = _services.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<BulkTests.BulkDb>().Database.EnsureCreatedAsync();
 
         _engine = new GoldpathBulkEngine<BulkTests.BulkDb>(
             _options, new GoldpathBulkFileStore<BulkTests.BulkDb>(TimeProvider.System),
@@ -57,7 +66,7 @@ public sealed class BulkBenchTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _services.DisposeAsync();
-        await _postgres.DisposeAsync();
+        await _store.StopAsync();
     }
 
     private static MemoryStream Csv(int rows)
@@ -85,7 +94,7 @@ public sealed class BulkBenchTests : IAsyncLifetime
         var validated = await check.ServiceProvider.GetRequiredService<BulkTests.BulkDb>()
             .Set<GoldpathBulkBatch>().AsNoTracking().SingleAsync(b => b.Id == batch.Id);
         Assert.Equal(10_000, validated.ValidRows);
-        Console.WriteLine($"BENCH-BULK ingest10k upload={upload.TotalSeconds:F2}s total={watch.Elapsed.TotalSeconds:F2}s (budget 300s)");
+        Console.WriteLine($"BENCH-BULK ingest10k upload={upload.TotalSeconds:F2}s total={watch.Elapsed.TotalSeconds:F2}s (budget 300s){BenchProvider.Tag(_store)}");
         Assert.True(watch.Elapsed < TimeSpan.FromMinutes(5), $"10k intake took {watch.Elapsed.TotalSeconds:F1}s — the card's 5-minute budget is broken");
     }
 
@@ -122,7 +131,7 @@ public sealed class BulkBenchTests : IAsyncLifetime
 
         watch.Stop();
         var rowsPerSecond = 100_000 / watch.Elapsed.TotalSeconds;
-        Console.WriteLine($"BENCH-BULK execute100k={watch.Elapsed.TotalSeconds:F1}s rows/s={rowsPerSecond:F0} (chunk {_options.ChunkSize}, claim+stamp overhead only)");
+        Console.WriteLine($"BENCH-BULK execute100k={watch.Elapsed.TotalSeconds:F1}s rows/s={rowsPerSecond:F0} (chunk {_options.ChunkSize}, claim+stamp overhead only){BenchProvider.Tag(_store)}");
 
         using var verify = _services.CreateScope();
         var done = await verify.ServiceProvider.GetRequiredService<BulkTests.BulkDb>()
@@ -131,3 +140,12 @@ public sealed class BulkBenchTests : IAsyncLifetime
         Assert.Equal(100_000, done.ExecutedRows);
     }
 }
+
+/// <summary>
+/// <see cref="BulkBenchTests"/> on Oracle (#556): a fresh schema on the Oracle collection's pinned container. Both traits
+/// are on the class so the per-PR <c>oracle</c> lane (<c>Category=Oracle&amp;Category!=Bench</c>) never runs it.
+/// </summary>
+[Trait("Category", "Bench")]
+[Trait("Category", "Oracle")]
+[Collection(OracleCollection.Name)]
+public sealed class BulkBenchOracleTests(OracleFixture oracle) : BulkBenchTests(SuiteStore.Oracle(oracle, "GP_BBENCH"));
