@@ -43,6 +43,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     - a new gauge, `goldpath_campaign_target_system_max_tps{target_system}`;
     - `goldpath_campaign_global_tps` now reports the row;
     - `goldpath_campaign_binding_constraint` gains `target_system`.
+    - the campaign dashboard's "Release rate vs the TPS ceilings" panel draws each target system's
+      ceiling beside the type and global ones.
   - **Proof:**
     - `R3TargetSystemTests` (SQLite), every fact red with its fault planted.
     - `CampaignCeilingProof` (PostgreSQL 17) and `CampaignCeilingOracleProof` (the Oracle lane): eight
