@@ -1,0 +1,34 @@
+# The packages' Prometheus alert rules (#295): promtool check + promtool test on every
+# packages/*/ops/alerts.yaml, with the severity scheme and the runbook links held by
+# scripts/alert-rules.sh. Its own workflow rather than a job in ci.yml: it needs no .NET, runs in
+# seconds, and only when a rule file, its cases, a runbook or the gate itself changes.
+# promtool comes from a pinned Prometheus release whose SHA-256 the script verifies.
+name: alert-rules
+
+on:
+  pull_request:
+    paths:
+      - "packages/*/ops/**"
+      - "packages/Goldpath.ServiceDefaults/ops/dashboard-and-alerts.md"
+      - "scripts/alert-rules.sh"
+      - ".github/workflows/alert-rules.yml"
+  push:
+    branches: [main]
+    paths:
+      - "packages/*/ops/**"
+      - "scripts/alert-rules.sh"
+      - ".github/workflows/alert-rules.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  alert-rules:
+    name: alert-rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: promtool check + test, severities, runbook links
+        run: ./scripts/alert-rules.sh
