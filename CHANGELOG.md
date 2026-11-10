@@ -50,6 +50,73 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
       pacer slice bound by the row rather than by code.
   - **Not in this slice:** the audited verbs, the routes under admin-contract R4 and the governor's
     editor (R3-S9, #318).
+- **The S-FLEET-02 rig: 30M targets, an hour at 2,000 TPS, headroom every 10 seconds (GA gate G10c, #349).** Tests,
+  scripts and a dispatch-only workflow; no package changes. Nothing is measured yet: the run is the owner's overnight
+  slot, tracked in open-threads T59.
+  - `scripts/bench-campaign.sh fleet02` runs the new `CampaignFleet02BenchTests`. The fact seeds the full dataset
+    through the pacer while a scheduled start holds the campaign at `Ready`, so nothing is released early. It then
+    clears the start, measures the hour from the first release, and writes `release-per-second.csv` and `verdict.txt`.
+    The fact is opt-in (`GOLDPATH_BENCH_FLEET02=1`) and shows as skipped otherwise, so `bench.yml`'s monthly
+    `Category=Bench` run never picks it up.
+  - The dataset knob `GOLDPATH_BENCH_CAMPAIGN_TARGETS` is new and independent of the window, because the spec says
+    30M, never shrunk. `_FLOOR_TPS` and `_SEED_MINUTES` are new too.
+  - `CampaignFleet02Verdict` computes the verdict from the thresholds signed on #326 and nothing else, and has its own
+    container-free facts (`CampaignFleet02VerdictTests`): the band's edges, the p95 at 95 and 94 of 100 windows, one
+    second above the ceiling, and each way an item can be lost or doubled.
+  - `scripts/bench-headroom.sh` samples the host (CPU, iowait, memory, disk), both containers, RabbitMQ's queue depth
+    and PostgreSQL's activity every 10 seconds, reading `/proc` rather than needing `vmstat` or `iostat`.
+  - `.github/workflows/bench-fleet02.yml` is the runner lane: `workflow_dispatch` only, 360 minutes, the full dataset
+    by default, with the raw series uploaded for 90 days.
+  - `CampaignBrokerBenchTests` (S-FLEET-02a) now runs on the same `CampaignReleaseRig` host, so the two benches cannot
+    measure different hosts. Its output gains the peak concurrent handler calls, the number open-threads T48 says the
+    consumer knob does not prove.
+- **Campaign: alert rules and the dashboard's missing panels (#295, campaign operability Part 2/2).**
+  - **`packages/Goldpath.Campaign/ops/alerts.yaml`**, plain Prometheus rule groups (the
+    `PrometheusRule` wrapper documented, not required), six rules, each with a `severity` and a
+    `runbook_url`: the pacer's tick older than 60 s (`critical`); no process exporting a tick for
+    2 min (`critical` — the first rule cannot judge a series that has expired); over 5 % of acceptances
+    timing out for 10 min (`major`); over 20 % of attempts failing, retries included, over at least
+    100 attempts, for 10 min (`major`); re-releases over 1 % of releases for 15 min (`minor` — a
+    resume's one jump cannot hold that long); any item failed terminally in the last hour (`minor`,
+    including a campaign's FIRST failures, which `increase` alone never sees — and "first" means no
+    sample anywhere in the hour before, so a scrape gap longer than the five-minute staleness window
+    does not make an old campaign's failures page again an hour later — cases hold a 10- and a
+    40-minute gap, the second pinning the `[1h]` window). Runbook item 14
+    (the pacer stopped ticking) is new, and the runbook opens with the alert → item table.
+  - **Severity scheme** `critical | major | minor` (owner decision 2026-10-20), defined in
+    `Goldpath.ServiceDefaults/ops/dashboard-and-alerts.md` with where each package's rule file lives;
+    the baseline's two `warning` rows read `major`.
+  - **Gate:** `scripts/alert-rules.sh`, in its own `alert-rules` workflow — `promtool check rules` and
+    `promtool test rules` on every `packages/*/ops/alerts.yaml` (a rule file without its
+    `alerts.test.yaml` is refused), every severity from the scheme, every `runbook_url` resolving to
+    a heading. promtool comes from Prometheus 3.5.0, its archive checked against a pinned SHA-256
+    (a downloaded copy that fails the check is deleted, so a re-run fetches it again); an air-gapped
+    run passes the archive or a provisioned binary of that version.
+  - **Dashboard:** the release-rate panel gains the ceilings (the running campaigns' policy `Tps`
+    per type, the type's `MaxTps`, `GlobalTps`) and sums the released rate per type; new panels for
+    the pacer's tick age, handler p50/p95, outcomes by code, the binding constraint and daily-quota
+    consumption.
+  - **Proof:** `alerts.test.yaml`'s six cases, among them the issue's: a pacer that stops ticking fires
+    `GoldpathCampaignLeaderStalled` once it has been silent for more than a minute (not at 60 s, at
+    75 s), and the case is red with the rule removed. 23 planted faults in the rules (thresholds,
+    windows, `for`, label filters, aggregation, severity, the link) each turn a case red. On a real
+    OpenTelemetry Collector 0.120.0 and Prometheus 3.5.0, a stalled pacer fired the rule 63 s after
+    its last tick, and the exported names are the ones the rules query.
+- **The console DRIVES CorPay, the adopter-shaped sample (GA gate G11, open-threads T1, #325).** No package change.
+  - **What runs:** `scripts/corpay-console-smoke.sh`, a new `corpay-console-smoke` job in the nightly. It brings CorPay up on
+    its PUBLISHED train (the API head behind its OpenID floor, and the EOD worker's internal head) on real Postgres, RabbitMQ
+    and Redis, with Keycloak `26.0.7` importing a committed realm (`ui/console/e2e/corpay-realm/realm.json`: `maker`,
+    `approver`, a `viewer` without the ops role). Playwright (`ui/console/e2e/corpay.spec.ts`) gets a token per actor by
+    direct grant and carries it as `Authorization: Bearer` on that actor's browser context (owner decision 2026-11-04).
+  - **What it drives, through the consoles CorPay serves:** the floor (no token 401, no ops role 403, an operator 200); the
+    EOD job triggered, its new run `Completed` and `Manual` in the history, paused and resumed with the store's state read
+    back after a reload, and the three crossings on the fleet's audit; a payment file uploaded by `maker`, validated, and
+    approved by `approver` in a second context, the batch recording `Approved by approver`, the jobs audit naming `maker`.
+  - **Proof:** `CORPAY_EXPECTED_APPROVER=maker` fails the run on the batch's decider.
+  - **Found by driving it:** the approved file's rows never execute on a multi-tenant app (#539; pinned to its failure
+    shape — `CompletedWithFailures`, 0 executed, 1 failed — so every earlier step stays guarded and the assertion goes
+    red when it is fixed, T62); an approval leaves no admin-audit row (T63); a head's console
+    asked for another fleet's jobs answers 500 (T64). T1 closes on the job's first green night.
 - **Gates: every admin route is frozen per module (G4 API-9, #398).** A route-contract test for each of the seven
   admin mappers (jobs, archival, bulk, notification, campaign, approvals, fileexchange) and for the signed campaign
   callback route compares the exact, sorted `METHOD pattern` list with a frozen array. A renamed, added or removed

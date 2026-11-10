@@ -222,6 +222,50 @@ jobs:
         run: dotnet test tests/CorPay.SmokeTests/CorPay.SmokeTests.csproj --no-build --nologo
         timeout-minutes: 20
 
+  # GA gate G11 (open-threads T1, #325): the console DRIVES CorPay, not only serves it. CorPay on
+  # its published train (the same feed decision as sample-corpay above), a pinned Keycloak with the
+  # committed realm, and Playwright through the consoles CorPay's two heads serve. Any failed step
+  # fails the job; the hosts' logs are uploaded when it does, because a red drive is read from them.
+  corpay-console-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: ui/console/pnpm-lock.yaml
+      - name: which feed (as sample-corpay — #378)
+        run: bash scripts/corpay-feed.sh
+        env:
+          GOLDPATH_CORPAY_FEED: ${{ runner.temp }}/goldpath-feed
+      - name: install the console's Playwright + browser
+        working-directory: ui/console
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps chromium
+      - name: "the CorPay drive — the EOD job, the payment-file four-eyes gate, two principals"
+        run: bash scripts/corpay-console-smoke.sh
+        env:
+          CORPAY_SMOKE_LOGS: ${{ runner.temp }}
+      - name: the hosts' logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: corpay-console-smoke-logs
+          path: |
+            ${{ runner.temp }}/corpay-smoke-*.log
+            ui/console/test-results/
+
   # OWASP ZAP baseline (GA gate G15, owner decision Q9: the free pentest substitute, beside
   # codeql.yml). A passive scan of a GENERATED app — golden-manifest shape GmBulkOnly, its
   # API root and the console it serves — in Production posture. Any alert the committed
