@@ -60,8 +60,16 @@ public sealed class OracleFixture : IAsyncLifetime
     }
 }
 
-/// <summary>The collection every Oracle-backed test class joins, so they share one container.</summary>
-[CollectionDefinition(Name)]
+/// <summary>
+/// The collection every Oracle-backed test class joins, so they share one container. It runs with parallelization
+/// DISABLED — after every parallel collection, alone — because its Quartz-hosting twins (Campaign, Bulk, Archival,
+/// Notification on Oracle) share Quartz's process-global state with the PostgreSQL suites in the
+/// <c>quartz-process-globals</c> collection: run side by side in one process, a PostgreSQL scheduler was handed the
+/// Oracle data source (<c>Unable to cast … OracleConnection to … NpgsqlConnection</c>, #409). CI's lanes never mix
+/// the two, so this costs the <c>oracle</c> lane nothing it was not already doing one class at a time; it makes a
+/// whole-project run, or one filter naming both suites, honest.
+/// </summary>
+[CollectionDefinition(Name, DisableParallelization = true)]
 public sealed class OracleCollection : ICollectionFixture<OracleFixture>
 {
     /// <summary>The collection's name.</summary>

@@ -100,9 +100,11 @@ the pacer's run health lives on the goldpath-jobs dashboard. This board owns the
   second attempt is a new acceptance with a new correlation id.
 - A campaign that stalls with `AwaitingAck` at `MaxInFlight`: without `MaxAwaitingAck`, every
   acceptance holds an in-flight slot until its answer or its deadline. Set `MaxAwaitingAck`
-  (`POST /{id}/throttle {"maxAwaitingAck": <n>}`, audited), so `MaxInFlight` keeps limiting the
-  live calls into the target system while the acceptances wait under their own ceiling; or
-  shorten the timeout the handler declares.
+  (the governor's `max awaiting ack`, or `POST /{id}/throttle {"maxAwaitingAck": <n>}`;
+  audited), so `MaxInFlight` keeps limiting the live calls into the target system while the
+  acceptances wait under their own ceiling; or shorten the timeout the handler declares. The
+  governor then shows the two apart: live calls against `MaxInFlight`, and the acceptances with
+  everything in flight against `MaxAwaitingAck`.
 - `goldpath_campaign_awaiting_ack` flat at `MaxAwaitingAck` and nothing releasing: the
   acknowledgement ceiling is holding, by design (`goldpath_campaign_binding_constraint` reads
   `awaiting_ack`). The target system is answering more slowly than

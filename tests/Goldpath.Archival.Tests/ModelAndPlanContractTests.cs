@@ -21,11 +21,70 @@ public class ModelAndPlanContractTests
 {
     private Microsoft.EntityFrameworkCore.Metadata.IModel Model { get; } = BuildModel();
 
-    private static Microsoft.EntityFrameworkCore.Metadata.IModel BuildModel()
+    private static Microsoft.EntityFrameworkCore.Metadata.IModel BuildModel(bool asOracle = false)
     {
         var builder = new ModelBuilder(Microsoft.EntityFrameworkCore.Metadata.Conventions.SqliteConventionSetBuilder.Build());
+        if (asOracle)
+        {
+            // What the Oracle EF provider leaves on the model before OnModelCreating, and the only thing Archival reads.
+            builder.HasAnnotation("Oracle:ValueGenerationStrategy", "IdentityColumn");
+        }
+
         builder.AddGoldpathArchiveModel();
         return builder.FinalizeModel();
+    }
+
+    /// <summary>The three columns that hold the empty genesis hash (#547).</summary>
+    private static IEnumerable<Microsoft.EntityFrameworkCore.Metadata.IProperty> GenesisAnchors(Microsoft.EntityFrameworkCore.Metadata.IModel model) =>
+    [
+        model.FindEntityType(typeof(GoldpathArchiveEntry))!.FindProperty(nameof(GoldpathArchiveEntry.PreviousHash))!,
+        model.FindEntityType(typeof(GoldpathArchiveChainState))!.FindProperty(nameof(GoldpathArchiveChainState.LastHash))!,
+        model.FindEntityType(typeof(GoldpathArchiveChainState))!.FindProperty(nameof(GoldpathArchiveChainState.PurgedHeadHash))!,
+    ];
+
+    /// <summary>#547: everywhere but Oracle the genesis anchors stay required and unconverted — every chain byte-identical.</summary>
+    [Fact]
+    public void Outside_Oracle_the_genesis_anchors_stay_required_and_unconverted()
+    {
+        Assert.All(GenesisAnchors(Model), p =>
+        {
+            Assert.False(p.IsNullable, p.Name);
+            Assert.Null(p.GetValueConverter());
+            Assert.Equal(64, p.GetMaxLength());
+        });
+    }
+
+    /// <summary>
+    /// #547 (owner decision A): on Oracle, which stores <c>''</c> as NULL, the genesis anchors are nullable, the empty
+    /// hash is written as NULL and any other hash as itself, and a NULL read back is the empty hash on the entity.
+    /// </summary>
+    [Fact]
+    public void On_Oracle_the_empty_genesis_hash_is_written_as_null_and_read_back_as_empty()
+    {
+        const string hash = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+        Assert.All(GenesisAnchors(BuildModel(asOracle: true)), p =>
+        {
+            Assert.True(p.IsNullable, p.Name);
+            Assert.Equal(64, p.GetMaxLength());
+            var converter = p.GetValueConverter()!;
+            Assert.Null(converter.ConvertToProvider(""));
+            Assert.Equal(hash, converter.ConvertToProvider(hash));
+            Assert.Equal(hash, converter.ConvertFromProvider(hash));
+        });
+
+        // EF writes a NULL it reads into the mapped backing field, past the converter; the property reads it as "".
+        var entry = new GoldpathArchiveEntry();
+        var state = new GoldpathArchiveChainState();
+        foreach (var (target, field) in new (object, string)[] { (entry, "_previousHash"), (state, "_lastHash"), (state, "_purgedHeadHash") })
+        {
+            target.GetType().GetField(field, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(target, null);
+        }
+
+        Assert.Equal(("", "", ""), (entry.PreviousHash, state.LastHash, state.PurgedHeadHash));
+        entry.PreviousHash = hash;
+        state.LastHash = hash;
+        state.PurgedHeadHash = hash;
+        Assert.Equal((hash, hash, hash), (entry.PreviousHash, state.LastHash, state.PurgedHeadHash));
     }
 
     [Fact]

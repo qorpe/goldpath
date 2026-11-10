@@ -39,6 +39,36 @@ it is the only copy of what the producer promised.
 - Backlog flat, `masstransit_publish` zero → nothing is publishing; check that handlers call
   `IIntegrationEventPublisher` (GP0404 makes direct `IPublishEndpoint` injection an error).
 
+## An outbox row marked failed
+`goldpath.messaging.outbox.oversized{stage="outbox"}` rose, or the log carries "Outbox message … is N bytes, above
+Goldpath:Messaging:MaxMessageBytes". A committed row was larger than the broker accepts. RabbitMQ refuses it on every
+attempt (`PRECONDITION_FAILED - message size … is larger than configured max size`), so the sweep marked it failed
+in place, and the rows behind it moved on (#458). Nothing was sent, and nothing is lost: the row is still in the table.
+```sql
+SELECT "SequenceNumber", "MessageId", "MessageType", octet_length("Body") AS bytes, "Headers"
+FROM "OutboxMessage" WHERE "Headers" LIKE '%Goldpath-Outbox-Failed%';
+```
+The SQL is PostgreSQL's. On SQL Server, `LEN("Body")` gives characters, a lower bound of the bytes, and the header edit is `JSON_MODIFY`.
+- **Decide first, with its producer.** The fix is on the producer's side: a body that size should be a reference
+  (a claim check) or several events. Usually the right recovery is to republish the corrected event from the
+  producer, then delete the marked row.
+- **Or deliver it as it is,** if the broker can be given a larger `max_message_size`: raise the broker's limit AND
+  `Goldpath:Messaging:MaxMessageBytes` above the row's `bytes`, restore the outbox it came from
+  (`Goldpath-Outbox-Failed-OutboxId` in its headers), and remove the `Goldpath-Outbox-Failed*` headers. A row whose
+  headers were not a JSON object when it was marked (corrupt data: neither engine writes one) carries them, as
+  written, in `Goldpath-Outbox-Failed-OriginalHeaders`; put that text back as `"Headers"` instead of editing the JSON.
+  ```sql
+  INSERT INTO "OutboxState" ("OutboxId", "LockId", "Created")
+  VALUES ('<Goldpath-Outbox-Failed-OutboxId>', gen_random_uuid(), now() AT TIME ZONE 'utc') ON CONFLICT DO NOTHING;
+  UPDATE "OutboxMessage" SET "OutboxId" = '<Goldpath-Outbox-Failed-OutboxId>',
+         "Headers" = ("Headers"::jsonb - 'Goldpath-Outbox-Failed' - 'Goldpath-Outbox-Failed-OutboxId' - 'Goldpath-Outbox-Failed-Inbox')::text
+  WHERE "SequenceNumber" = <n>;
+  ```
+  The delivery loop takes it on its next pass. A row a consumer published (`Goldpath-Outbox-Failed-Inbox`) was
+  part of that consumer's inbox delivery, which has finished. Republish it from the producer rather than reattach it.
+- `stage="publish"` counts refusals at the seam: an `InvalidOperationException` reached the caller, and nothing was
+  committed. There is nothing to recover, only a producer to fix.
+
 ## Redelivery storms
 `masstransit_consume_retry` climbing on one endpoint = one consumer failing repeatedly under
 retry. The retry policy is the floor's (immediate + delayed); a storm means a DOWNSTREAM
@@ -54,7 +84,9 @@ the fix is on the PRODUCER side (publish inside a tenant scope), never a guard b
 ## Dashboard
 `grafana-messaging-dashboard.json` — receive/consume/fault rates per endpoint, consume
 duration p95, retries, publish rate. The outbox backlog has NO meter (it is a table): the
-SQL above is the panel until the exit RFC's conformance suite adds one (ADR-0013 §3).
+SQL above is the panel until the exit RFC's conformance suite adds one (ADR-0013 §3). The one outbox meter Goldpath
+emits is `goldpath.messaging.outbox.oversized` (meter `Goldpath.Messaging`, #458): a body above the size limit,
+refused at publish or marked failed in place ("An outbox row marked failed" above).
 
 ## Exit posture
 The bus is a swappable engine behind a Goldpath-owned seam (ADR-0013). Application code

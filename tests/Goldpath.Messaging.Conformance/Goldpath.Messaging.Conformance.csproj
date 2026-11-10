@@ -22,6 +22,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- S3 (messaging-exit RFC §7.1): the reviewed differences the comparator excuses, each with its reason. -->
+    <None Include="differential-allowlist.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="../../packages/Goldpath.Data/Goldpath.Data.csproj" />
     <ProjectReference Include="../../packages/Goldpath.Messaging/Goldpath.Messaging.csproj" />
     <!-- The second engine (G5): the same facts run on it, chosen per class by its manifest value. -->

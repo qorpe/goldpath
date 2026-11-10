@@ -130,6 +130,13 @@ Oracle test projects.
 - **Empty string.** Oracle stores `''` as `NULL`. No Goldpath column distinguishes an empty
   string from null, which O-2 asserts across the model. The adopter guide states it, because an
   adopter's `required` string column will refuse `""`.
+  - *Amendment (#547, owner decision 2026-11-09):* Archival's hash chain is an exception. Its genesis anchor
+    is the empty hash, held in `GoldpathArchiveEntries.PreviousHash` (the first entry's link) and in
+    `GoldpathArchiveChainState.LastHash` and `PurgedHeadHash` (a chain with no entry, or nothing purged). On Oracle
+    alone those three columns are nullable, and Archival's own model writes `""` as `NULL` (a converter) and reads
+    `NULL` back as `""` (the entities' backing fields — a materialised entity only, which is how the engine reads
+    them). Every hash and every chain on PostgreSQL and SQL Server is unchanged; a non-empty sentinel was rejected
+    because it would re-anchor shipped archives.
 - **The campaign global ceiling row's name** (#384, owner decision 2026-10-24). R3.2 keyed the
   global row `(Global, "")`, which Oracle cannot store in a primary key. The row is named
   `"*"` (`GoldpathCampaignCeiling.GlobalName`) on **every** provider, not only Oracle, so no

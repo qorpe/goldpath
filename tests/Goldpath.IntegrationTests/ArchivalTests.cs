@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Compliance.Redaction;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
-using Testcontainers.PostgreSql;
 using Xunit;
 
 namespace Goldpath.Tests.Integration;
@@ -10,10 +9,22 @@ namespace Goldpath.Tests.Integration;
 /// <summary>
 /// The archival lifecycle on real PostgreSQL: archive-moves-graph, retrieval, a raw-SQL
 /// tamper caught by verification, legal hold stopping the purge, and row retention — the
-/// exact story the RFC promises, against the real provider.
+/// exact story the RFC promises, against the real provider. The same facts run on Oracle
+/// (<see cref="ArchivalOracleTests"/>, G7 ORA-6 #409).
 /// </summary>
-public sealed class ArchivalTests : IAsyncLifetime
+public class ArchivalTests : IAsyncLifetime
 {
+    private readonly SuiteStore _store;
+
+    /// <summary>The suite on PostgreSQL, in the integration lane.</summary>
+    public ArchivalTests()
+        : this(SuiteStore.PostgreSql())
+    {
+    }
+
+    /// <summary>The suite on the given store (the Oracle twin, ORA-6 #409).</summary>
+    protected ArchivalTests(SuiteStore store) => _store = store;
+
     public sealed class Policy
     {
         public Guid Id { get; set; }
@@ -51,14 +62,13 @@ public sealed class ArchivalTests : IAsyncLifetime
         }
     }
 
-    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17-alpine").Build();
     private ServiceProvider _services = null!;
 
     public async Task InitializeAsync()
     {
-        await _postgres.StartAsync();
+        await _store.StartAsync<ArchDb>(options => new(options));
         var services = new ServiceCollection();
-        services.AddDbContext<ArchDb>(o => o.UseNpgsql(_postgres.GetConnectionString()));
+        services.AddDbContext<ArchDb>(_store.Use);
         // The REAL DataProtection module: classify once, the archive redacts on erasure.
         var dataProtection = new GoldpathDataProtectionOptions();
         dataProtection.Catalog(c => c.Classify<Policy>(p => p.Holder, GoldpathDataClass.Personal));
@@ -66,30 +76,80 @@ public sealed class ArchivalTests : IAsyncLifetime
         services.AddSingleton<IGoldpathDataProtector>(sp =>
             new GoldpathDataProtector(dataProtection, sp.GetRequiredService<IRedactorProvider>()));
         _services = services.BuildServiceProvider();
-        using var scope = _services.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<ArchDb>().Database.EnsureCreatedAsync();
     }
 
     public async Task DisposeAsync()
     {
         await _services.DisposeAsync();
-        await _postgres.DisposeAsync();
+        await _store.StopAsync();
     }
 
-    private static GoldpathArchivalOptions PolicyArchival(int retainYears = 10)
+    private static GoldpathArchivalOptions PolicyArchival(int retainYears = 10, bool deleteHotRows = true)
     {
         var options = new GoldpathArchivalOptions();
-        options.AddArchive<Policy>(a => a
-            .Graph(p => p.Endorsements)
-            .Key(p => p.Id)
-            .DueWhen(p => p.CancelledAt != null, p => p.CancelledAt!.Value)
-            .ArchiveAfter(TimeSpan.FromDays(30))
-            .RetainFor(retainYears)
-            .DeleteHotRowsAfterArchive());
+        options.AddArchive<Policy>(a =>
+        {
+            a.Graph(p => p.Endorsements)
+                .Key(p => p.Id)
+                .DueWhen(p => p.CancelledAt != null, p => p.CancelledAt!.Value)
+                .ArchiveAfter(TimeSpan.FromDays(30))
+                .RetainFor(retainYears);
+            if (deleteHotRows)
+            {
+                a.DeleteHotRowsAfterArchive();
+            }
+        });
         options.AddRowRetention<CallRecord>(r => r
             .After(TimeSpan.FromDays(90), c => c.RecordedAt)
             .Where(c => c.RolledUp));
         return options;
+    }
+
+    /// <summary>
+    /// #547: a chain state saved before its first entry. Every candidate of a definition's first batch raced away (its
+    /// row was gone by the time it was loaded), so the batch archives nothing, yet the chain state is still saved, and
+    /// it holds the genesis anchor in BOTH hashes. On Oracle, which stores <c>''</c> as NULL, that save is refused
+    /// unless <c>LastHash</c> is nullable there as <c>PurgedHeadHash</c> is. The next batch then links its first entry
+    /// to that anchor, and the chain verifies.
+    /// </summary>
+    [Fact]
+    public async Task A_first_batch_whose_every_candidate_raced_away_keeps_the_genesis_anchor()
+    {
+        var engine = new GoldpathArchiveEngine<ArchDb>(TimeProvider.System, NullLogger<GoldpathArchiveEngine<ArchDb>>.Instance);
+        var definition = PolicyArchival().Archives[0];
+        var load = typeof(GoldpathArchiveDefinition).GetProperty("LoadAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var realLoad = load.GetValue(definition)!;
+        using (var scope = _services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ArchDb>();
+            db.Policies.Add(new Policy { Id = Guid.NewGuid(), Holder = "holder", CancelledAt = DateTimeOffset.UtcNow.AddDays(-60) });
+            await db.SaveChangesAsync();
+        }
+
+        load.SetValue(definition, (Func<DbContext, string, CancellationToken, Task<GoldpathArchiveCandidate?>>)((_, _, _) => Task.FromResult<GoldpathArchiveCandidate?>(null)));
+        using (var scope = _services.CreateScope())
+        {
+            Assert.Equal(0, await engine.ArchiveNextBatchAsync(scope.ServiceProvider, definition, 10, CancellationToken.None));
+        }
+
+        using (var scope = _services.CreateScope())
+        {
+            var state = await scope.ServiceProvider.GetRequiredService<ArchDb>().Set<GoldpathArchiveChainState>().AsNoTracking().SingleAsync();
+            Assert.Equal((0L, "", ""), (state.LastIndex, state.LastHash, state.PurgedHeadHash));
+        }
+
+        load.SetValue(definition, realLoad);
+        using (var scope = _services.CreateScope())
+        {
+            Assert.Equal(1, await engine.ArchiveNextBatchAsync(scope.ServiceProvider, definition, 10, CancellationToken.None));
+        }
+
+        using (var scope = _services.CreateScope())
+        {
+            var entry = await scope.ServiceProvider.GetRequiredService<ArchDb>().Set<GoldpathArchiveEntry>().AsNoTracking().SingleAsync();
+            Assert.Equal((1L, ""), (entry.ChainIndex, entry.PreviousHash));
+            Assert.Empty(await engine.VerifySliceAsync(scope.ServiceProvider, definition, 1, 1, CancellationToken.None));
+        }
     }
 
     /// <summary>
@@ -101,7 +161,7 @@ public sealed class ArchivalTests : IAsyncLifetime
     /// have dropped: the shape a <c>DueWhen</c> date selector that reads the clock produces.
     /// </summary>
     [Fact]
-    public async Task An_entry_whose_DueAt_carries_sub_microsecond_ticks_verifies_on_postgres()
+    public async Task An_entry_whose_DueAt_carries_sub_microsecond_ticks_verifies()
     {
         var engine = new GoldpathArchiveEngine<ArchDb>(TimeProvider.System, NullLogger<GoldpathArchiveEngine<ArchDb>>.Instance);
         var options = PolicyArchival();
@@ -115,7 +175,8 @@ public sealed class ArchivalTests : IAsyncLifetime
             var db = scope.ServiceProvider.GetRequiredService<ArchDb>();
             db.Policies.Add(new Policy { Id = Guid.NewGuid(), Holder = "holder", CancelledAt = cancelledAt });
             await db.SaveChangesAsync();
-            Assert.Equal(1, await engine.ArchiveNextBatchAsync(scope.ServiceProvider, definition, 10, CancellationToken.None));
+            var archived = await engine.ArchiveNextBatchAsync(scope.ServiceProvider, definition, 10, CancellationToken.None);
+            Assert.Equal(1, archived);
         }
 
         using (var scope = _services.CreateScope())
@@ -123,7 +184,8 @@ public sealed class ArchivalTests : IAsyncLifetime
             var findings = await engine.VerifySliceAsync(scope.ServiceProvider, definition, 1, 1, CancellationToken.None);
             Assert.True(findings.Count == 0, string.Join("; ", findings.Select(f => f.Problem)));
 
-            // What was stored is what was hashed: the microsecond the store can hold.
+            // What was stored is what was hashed: the microsecond every store can hold (Oracle's TIMESTAMP(7) keeps
+            // the 100 ns tick, PostgreSQL's timestamptz does not; the engine truncates for both).
             var stored = await scope.ServiceProvider.GetRequiredService<ArchDb>().Set<GoldpathArchiveEntry>().AsNoTracking().SingleAsync();
             Assert.Equal(cancelledAt.AddTicks(-7), stored.DueAt);
 
@@ -135,7 +197,7 @@ public sealed class ArchivalTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task The_full_lifecycle_holds_on_postgres()
+    public async Task The_full_lifecycle_holds()
     {
         var engine = new GoldpathArchiveEngine<ArchDb>(TimeProvider.System, NullLogger<GoldpathArchiveEngine<ArchDb>>.Instance);
         var options = PolicyArchival(retainYears: 0);
@@ -170,7 +232,8 @@ public sealed class ArchivalTests : IAsyncLifetime
         // ARCHIVE: graphs move, chain seals.
         using (var scope = _services.CreateScope())
         {
-            Assert.Equal(3, await engine.ArchiveNextBatchAsync(scope.ServiceProvider, definition, 10, CancellationToken.None));
+            var archived = await engine.ArchiveNextBatchAsync(scope.ServiceProvider, definition, 10, CancellationToken.None);
+            Assert.Equal(3, archived);
             var db = scope.ServiceProvider.GetRequiredService<ArchDb>();
             Assert.Equal(0, await db.Policies.CountAsync());
             Assert.Equal(3, await db.Set<GoldpathArchiveEntry>().CountAsync());
@@ -246,4 +309,57 @@ public sealed class ArchivalTests : IAsyncLifetime
             Assert.Equal(25, await db.Calls.CountAsync());   // the unguarded half survives
         }
     }
+
+    /// <summary>
+    /// RFC goldpath-oracle §2.5: discovery pages <c>BatchSize * 2</c> keys and filters out the archived ones with one
+    /// <c>Contains</c>, so a <c>BatchSize</c> of 600 sends 1,200 keys, past Oracle's 1,000-element <c>IN</c> list. A copy
+    /// (no hot-row delete) is the shape that needs the filter: the archived prefix stays due, so every later page holds
+    /// keys already archived, and an unfiltered page would archive them twice.
+    /// </summary>
+    [Fact]
+    public async Task A_batch_of_600_discovers_1200_keys_and_archives_every_due_aggregate_exactly_once()
+    {
+        const int Policies = 1_300;
+        const int BatchSize = 600;
+        var engine = new GoldpathArchiveEngine<ArchDb>(TimeProvider.System, NullLogger<GoldpathArchiveEngine<ArchDb>>.Instance);
+        var definition = PolicyArchival(deleteHotRows: false).Archives[0];
+        using (var scope = _services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ArchDb>();
+            for (var i = 0; i < Policies; i++)
+            {
+                db.Policies.Add(new Policy { Id = Guid.NewGuid(), Holder = $"holder-{i}", CancelledAt = DateTimeOffset.UtcNow.AddDays(-90) });
+            }
+
+            await db.SaveChangesAsync();
+        }
+
+        var moved = new List<int>();
+        for (var pass = 0; pass < 5; pass++)
+        {
+            using var scope = _services.CreateScope();
+            moved.Add(await engine.ArchiveNextBatchAsync(scope.ServiceProvider, definition, BatchSize, CancellationToken.None));
+        }
+
+        // 600, then 600 (its pages each carry 1,200 keys, 600 of them archived), then the last 100, then nothing.
+        Assert.Equal([600, 600, 100, 0, 0], moved);
+        using (var scope = _services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ArchDb>();
+            var keys = await db.Set<GoldpathArchiveEntry>().AsNoTracking().Select(e => e.AggregateKey).ToListAsync();
+            Assert.Equal(Policies, keys.Count);
+            Assert.Equal(Policies, keys.Distinct(StringComparer.Ordinal).Count());
+            Assert.Equal(Policies, await db.Policies.CountAsync());   // a copy: the hot rows stay
+            Assert.Empty(await engine.VerifySliceAsync(scope.ServiceProvider, definition, 1, Policies, CancellationToken.None));
+        }
+    }
 }
+
+/// <summary>
+/// The archival suite on Oracle (G7 ORA-6, #409; RFC goldpath-oracle §7, Archival). The chain's genesis anchor is the
+/// empty hash, and Oracle stores <c>''</c> as NULL: since #547 the anchor columns are nullable there, "" is written as
+/// NULL and read back as "", so a definition's first archive is stored and its chain verifies as on every provider.
+/// </summary>
+[Trait("Category", "Oracle")]
+[Collection(OracleCollection.Name)]
+public sealed class ArchivalOracleTests(OracleFixture oracle) : ArchivalTests(SuiteStore.Oracle(oracle, "GP_ARCH"));
