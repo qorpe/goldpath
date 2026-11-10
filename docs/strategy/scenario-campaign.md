@@ -69,7 +69,9 @@ S-FLEET-02 — 30M inventory: one campaign sustains the configured TPS for an ho
   needs:    scale-rig — the rig spec SIGNED by the owner on 2026-10-24 (#326; the Scale-rig
             note below): the full 30M dataset in real time, on two lanes — the owner's Mac in
             the Lima `bench` VM (the pass lane) and a GitHub-hosted runner (the repeatable
-            lane). The run itself is #349
+            lane). The run itself is #349. The rig is built: CampaignFleet02BenchTests via
+            scripts/bench-campaign.sh fleet02 (the Mac lane) and bench-fleet02.yml (the runner
+            lane); it has not run for a result (open-threads T59), so this claims nothing
   evidence: —
 
 S-FLEET-02a — One leader sustains 1000 TPS on a real broker (local profile of S-FLEET-02)
@@ -233,4 +235,4 @@ overnight as the primary hardware, GitHub-hosted free runners as the repeatable 
 The owner leaves the Mac on overnight when a slice is ready to measure. The run issue (#349)
 says so **a day ahead**. The plan for the rig script is the checklist in #349's body: the
 `scripts/bench-campaign.sh` mode, the environment knobs, the seeding step and the 10-second
-headroom sampler. Until that run publishes, S-FLEET-02 claims nothing.
+headroom sampler. That rig is built (#349: [campaign-benchmarks.md, "S-FLEET-02 — the rig"](../../packages/Goldpath.Campaign/ops/campaign-benchmarks.md#s-fleet-02--the-rig-no-result-yet)). Until the run publishes, S-FLEET-02 claims nothing.

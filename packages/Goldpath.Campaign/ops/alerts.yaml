@@ -1,0 +1,128 @@
+# Goldpath.Campaign — Prometheus alert rules (#295; campaign RFC §7 and §8).
+#
+# Plain rule groups: load this file with `rule_files:` in prometheus.yml, or wrap the `groups:`
+# list in a PrometheusRule for the Prometheus Operator — Goldpath.ServiceDefaults/ops/dashboard-and-alerts.md
+# shows the wrapper. Every rule carries `severity` from the family's scheme (critical | major | minor,
+# defined in that same document) and a `runbook_url` to the item that answers it.
+#
+# Series names are the Prometheus spelling of the Goldpath.Campaign meter's instruments, as the
+# OpenTelemetry Collector's prometheus exporter writes them: an instrument with unit `s` gains
+# `_seconds` (`goldpath_campaign_leader_last_tick` → `goldpath_campaign_leader_last_tick_seconds`), and
+# `job` is the service's name. Rules aggregate `by (job, …)` so two applications that both run
+# campaigns are judged apart.
+#
+# The thresholds are starting points, each with its reason beside it; tune them to your target
+# systems. Validated by scripts/alert-rules.sh (promtool check + the cases in alerts.test.yaml).
+groups:
+  - name: goldpath-campaign
+    rules:
+      # Every process that ever led keeps its last tick, so liveness is the NEWEST tick per job
+      # (RFC §7). A healthy leader ticks every 250 ms and leadership hands over in under 0.6 s, so
+      # a minute without a tick is a stopped pacer, never a slow one.
+      - alert: GoldpathCampaignLeaderStalled
+        expr: time() - max by (job) (goldpath_campaign_leader_last_tick_seconds) > 60
+        labels:
+          severity: critical
+        annotations:
+          summary: "No campaign pacer of {{ $labels.job }} has ticked for {{ $value | humanizeDuration }}"
+          description: >-
+            Nothing is being released and no sweep is running. The watermarks are durable, so the
+            next leader resumes where this one stopped; find out why none is leading.
+          runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#14-the-pacer-stopped-ticking
+
+      # The rule above can only judge a series that exists. When every process that exported one is
+      # gone, the series expires and that rule goes quiet; this one speaks instead. It is global: while
+      # ANY job still exports the series it cannot fire, which is why it pairs with the target's `up`.
+      - alert: GoldpathCampaignNoLeader
+        expr: absent(goldpath_campaign_leader_last_tick_seconds)
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No process exports a campaign pacer tick"
+          description: >-
+            No host has led the campaign pacer since the series expired or the stack started. The
+            pacer's cron fires every minute, so two minutes without one is a fleet that cannot lead.
+          runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#14-the-pacer-stopped-ticking
+
+      # One acceptance in twenty timing out, for ten minutes: the callback surface or the target
+      # system is losing answers. A type with no acceptance in the window but timeouts still
+      # arriving divides by zero, reads +Inf and fires — everything it accepted went unanswered.
+      # Both rates share one window, so with an acknowledgement deadline longer than ten minutes the
+      # timeouts are of earlier acceptances than the ones they are divided by; at a steady pace the
+      # two agree, and when releasing stops the timeouts still arriving are what this reports.
+      - alert: GoldpathCampaignAckTimeouts
+        expr: |
+          sum by (job, type) (rate(goldpath_campaign_ack_timeouts_total[10m]))
+            / sum by (job, type) (rate(goldpath_campaign_outcomes_total{outcome="accepted"}[10m]))
+            > 0.05
+        for: 10m
+        labels:
+          severity: major
+        annotations:
+          summary: "{{ $labels.type }}: {{ $value | humanizePercentage }} of acceptances time out before their callback"
+          description: >-
+            Each timeout is retried by the ladder and lands in the repair queue when the ladder is
+            exhausted; nothing is lost, but the target system is not answering what it accepted.
+          runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#8-acceptances-piling-up-r21
+
+      # Re-releases above 1 % of releases, held for fifteen minutes. A resume re-releases once by
+      # design; that jump stays in a 10-minute rate for ten minutes and cannot hold for fifteen.
+      - alert: GoldpathCampaignOrphansRereleased
+        expr: |
+          sum by (job, type) (rate(goldpath_campaign_orphans_rereleased_total[10m]))
+            / sum by (job, type) (rate(goldpath_campaign_released_total[10m]))
+            > 0.01
+        for: 15m
+        labels:
+          severity: minor
+        annotations:
+          summary: "{{ $labels.type }}: released items are being published again ({{ $value | humanizePercentage }} of releases)"
+          description: >-
+            Consumers are refusing claims or the broker is losing messages. The sweep keeps the
+            campaign moving; a host or a queue needs looking at.
+          runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#9-orphaned-releases-being-published-again-r26
+
+      # One attempt in five failing, retries included (a melting target system shows up as timeouts
+      # first, as auto-suspend reads it, R3.6), over at least 100 attempts — auto-suspend's default
+      # minimum sample, so a handful of early failures cannot page anybody.
+      - alert: GoldpathCampaignFailureRatio
+        expr: |
+          (
+            sum by (job, type) (rate(goldpath_campaign_outcomes_total{outcome=~"retry|failed"}[15m]))
+              / sum by (job, type) (rate(goldpath_campaign_outcomes_total{outcome=~"succeeded|retry|failed"}[15m]))
+          ) > 0.2
+          and
+          sum by (job, type) (increase(goldpath_campaign_outcomes_total{outcome=~"succeeded|retry|failed"}[15m])) >= 100
+        for: 10m
+        labels:
+          severity: major
+        annotations:
+          summary: "{{ $labels.type }}: {{ $value | humanizePercentage }} of attempts fail"
+          description: >-
+            Read the error codes on the dashboard's outcomes-by-code panel, then the failed items.
+            A provider limiting the rate is a throttle (runbook item 3); a poisoned target is a repair.
+          runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#5-failed-items--poisoned-targets
+
+      # An item that failed terminally is what the repair queue holds (runbook item 5): any new one
+      # in the last hour is a decision waiting for an operator. The alert resolves an hour after the
+      # last one, whether or not it was replayed — the queue itself is on the jobs dashboard.
+      # The counter is per campaign and appears with its first failures, and `increase` cannot see
+      # a series' first sample, so the second half counts a series that did not exist an hour ago
+      # (a campaign's first failures, or a restarted host's) by its value. "Did not exist" means no
+      # sample ANYWHERE in the hour before, not none at that one instant: `x offset 1h` looks back
+      # only five minutes, so a scrape gap longer than that would make every old series look new an
+      # hour later and page for failures that are not new.
+      - alert: GoldpathCampaignRepairQueueGrowing
+        expr: |
+          sum by (job, campaign) (increase(goldpath_campaign_failed_total[1h])) > 0
+          or
+          sum by (job, campaign) (goldpath_campaign_failed_total unless last_over_time(goldpath_campaign_failed_total[1h] offset 1h)) > 0
+        labels:
+          severity: minor
+        annotations:
+          summary: "Campaign {{ $labels.campaign }}: items failed terminally in the last hour"
+          description: >-
+            They sit in the jobs repair queue. Read GET /goldpath/admin/campaign/{id}/failures, fix
+            the cause, and replay from the jobs console (replay-items).
+          runbook_url: https://github.com/qorpe/goldpath/blob/main/packages/Goldpath.Campaign/ops/runbooks.md#5-failed-items--poisoned-targets

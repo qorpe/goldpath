@@ -58,10 +58,15 @@ C:
   - 'scripts/product-guard.sh'
   - 'scripts/validate-*.sh'        # the GM matrix, the CLI and the migration proofs
   - 'scripts/console-smoke.sh'
+  - 'scripts/corpay-console-smoke.sh'   # the CorPay drive the nightly runs (G11, #325)
+  - 'ui/console/e2e/corpay-realm/**'  # the drive's Keycloak realm: who the drive's principals are
   - 'scripts/build-console.sh'
   - 'scripts/review-agent.sh'
   - 'scripts/sbom.sh'
   - 'scripts/zap-baseline*'       # G15's dynamic scan and its rules file (every IGNORE carries a reason)
+  - 'scripts/bench-campaign.sh'    # bench-fleet02.yml runs S-FLEET-02 through it (#349): its verdict is G10c's
+  - 'scripts/bench-headroom.sh'    # the headroom series that run publishes, run by bench-campaign.sh fleet02
+  - 'scripts/alert-rules.sh'       # the packages' alert rules: promtool check + test, severities, runbook links (#295)
   # EXTENSION: lowering a verifier's severity or skipping a test switches a gate off from
   # outside the gate's own files ("suppression without justification is forbidden").
   - '**/.editorconfig'
