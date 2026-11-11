@@ -790,7 +790,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
       above 1000. Open-threads T67 holds what remains.
     - Exactly-once held over 724,500 items.
     - The pacer's steady tick issues 7 database commands for one hungry campaign, before and after; `TickQueryCountTests`
-      pins that.
+      pins that. It is 8 since R3-S8's per-tick ceiling read (#290) landed beside it on 2026-11-11.
   - **Proof:**
     - `BatchedReleaseTests`: each path publishes one batch, and goes red with the per-item loops put back.
     - `BatchPublishTests`: the bound is reached and never exceeded; with an outbox, or without the engine's mode, the
