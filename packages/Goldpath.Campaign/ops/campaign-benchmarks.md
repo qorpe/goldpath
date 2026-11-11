@@ -360,14 +360,14 @@ seeds 1,000,000 items set-based (60% `Succeeded`, 30% `Failed` under 25 codes pl
 
 **Profile:** the overnight agent's cloud sandbox, Linux x64, 4 logical CPUs (Intel Xeon @ 2.10 GHz)
 / 15 GB, Docker Engine 29.9.2, PostgreSQL 17 (`postgres:17-alpine`) in Testcontainers, co-located.
-Release build. **Commit:** `7ed23b0`. **Run:** local, `dotnet test tests/Goldpath.IntegrationTests -c
+Release build. **Commit:** `abbd4c9` (2026-11-11, 21:00 UTC). **Run:** local, `dotnet test tests/Goldpath.IntegrationTests -c
 Release --filter "FullyQualifiedName~CampaignBenchTests.Outcomes_on_a_one_million_item_campaign"`,
 twice.
 
 | Run | Median of 5 | Slowest of 5 |
 |---|---|---|
-| 1 | **116 ms** | 122 ms |
-| 2 | **107 ms** | 129 ms |
+| 1 | **104 ms** | 129 ms |
+| 2 | **118 ms** | 124 ms |
 
 - **Against the governor's poll:** R4.3 says that if the call takes longer than the poll interval
   (5 s), the console polls it less often than the detail. At about 110 ms it does not, so the

@@ -401,6 +401,19 @@ These are the next facts to add for this package (T39's proof for R3-S10).
   - **A collision only with a system named `global`:** the `"target:"` ledger prefix.
   - **Log text only:** the `moved == 1` log and the message strings.
 
+**Campaign after R4-S3 and R4-S4, failures by code and the outcomes aggregate (#296), 2026-11-11.**
+- **The run:** scoped to the lines the slice added, `dotnet stryker --config-file ../../stryker/Goldpath.Campaign.json
+  -m "**/GoldpathCampaignAdminService.cs{13361..17350}" -c 2` from `packages/Goldpath.Campaign` (the span is the
+  character range of `GetFailedItemsAsync` through `GetOutcomesAsync` at abbd4c9; Stryker.NET's spans count
+  characters, not lines). It ran the whole Campaign suite, 516 tests. It is not a package score, and the table row
+  above is unchanged.
+- **First run, at 7ed23b0:** 31 tested, **83.87 %**. Four survivors were the database-side NULL-placement clause in
+  the codes query (`ThenBy(g => g.Code == null ? 1 : 0)`: its conditional, its equality and its direction). The clause
+  could not change the answer, because there is one NULL group and the extra row it may take is the row the page
+  drops, so it was removed and the code comment says why. One survivor was `byState`'s key order
+  (`OrderBy` → `OrderByDescending`), which no test pinned; `Outcomes_CountByState_AndFailuresByCode` now asserts it.
+- **Re-run, at abbd4c9:** 27 tested, 27 killed, **100 %**.
+
 ## Excluded files
 
 | Package | Excluded file | Why it is not scored |
