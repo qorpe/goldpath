@@ -301,8 +301,10 @@ public sealed class GoldpathCampaignAdminService<TContext>
     /// <summary>
     /// One campaign's items counted by state, and its failures counted by error code
     /// (admin-contract R4.3); null when no campaign has <paramref name="id"/>. Two grouped counts
-    /// over one campaign's items — the first admin read that scans more than one page, so the
-    /// console polls it no faster than the governor's interval.
+    /// over one campaign's items — the first admin read that scans more than one page, so a caller
+    /// polls it at the governor's interval, not in a loop. The two counts are two statements, not one
+    /// snapshot: while the campaign runs, the codes may sum to a few more or fewer failures than
+    /// <see cref="GoldpathCampaignOutcomes.ByState"/> reports.
     /// </summary>
     public async Task<GoldpathCampaignOutcomes?> GetOutcomesAsync(Guid id, CancellationToken ct)
     {

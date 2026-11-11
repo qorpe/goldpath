@@ -211,7 +211,8 @@ R4.2). Pass the last `Seq` of a full page; a short page is the end. `GetOutcomes
 20 most frequent codes, count descending, then code ordinal, with no code last among equal counts,
 and `FailedCodesTruncated` when there are more. The order is applied by the service, not left to
 the database's collation. It answers from two grouped counts, measured at about 110 ms on a
-1M-item campaign (`ops/campaign-benchmarks.md`). The console's live governor, which will poll it,
+1M-item campaign (`ops/campaign-benchmarks.md`); they are two statements, not one snapshot, so
+on a running campaign the codes can sum to slightly more or fewer failures than `ByState` holds. The console's live governor, which will poll it,
 is not built yet (open-threads T69).
 
 ## R3: a ceiling for outstanding acknowledgements
