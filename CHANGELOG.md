@@ -750,6 +750,34 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
 ### Changed
+- **Campaign: a tick's releases are published as one batch, not one awaited broker round trip per item (#285, campaign
+  throughput Part 3/3).** No public API change: no line in any `PublicAPI.*.txt` moves, and an adopter changes nothing.
+  - **The seam gains an INTERNAL batch member** (`IGoldpathBatchPublisher`, owner decision on #285, 2026-11-09), reached
+    by `Goldpath.Campaign` and implemented by the second engine through `InternalsVisibleTo`. Both engines implement
+    it. With no outbox composed, a batch goes to the broker with at most 64 publishes outstanding: MassTransit through
+    the scoped `IPublishEndpoint`, and Wolverine on its one confirming channel. With an outbox, every publish is a row
+    in the one scoped `DbContext`, so the rows are added one at a time. The outbox's size guard has no batch member, so
+    that holds by construction. A publisher without the member, such as a decorator or a registration through the
+    `configureBus` overload, is published through one event at a time.
+  - **The pacer's three publish paths use it:** a tick's new releases, the ripe retries and the orphan re-releases.
+    Publish-then-mark is unchanged. The batch completes before the durable mark, and a batch that faults part way marks
+    nothing; `EngineTests.CrashBetweenPublishAndMarkRepublishesButNeverDoubleClaims` now runs through the batch member.
+  - **Measured** (`ops/campaign-benchmarks.md`, S-FLEET-02a). These are local sandbox runs, not CI.
+    - The 2-minute smoke: 584.4/s on `main` against 969.2/s with this change, and windows within ±5% of 1000 went
+      from 0% to 72.5%.
+    - The 15-minute run: 809.0/s mean with this change, against the 2026-10-22 baseline of 524.1/s.
+    - **S-FLEET-02a is still RED on this profile**: 37.6% of windows are in band against ≥95%, and 50 windows are
+      above 1000. Open-threads T67 holds what remains.
+    - Exactly-once held over 724,500 items.
+    - The pacer's steady tick issues 7 database commands for one hungry campaign, before and after; `TickQueryCountTests`
+      pins that.
+  - **Proof:**
+    - `BatchedReleaseTests`: each path publishes one batch, and goes red with the per-item loops put back.
+    - `BatchPublishTests`: the bound is reached and never exceeded; with an outbox, or without the engine's mode, the
+      batch goes one at a time; a failure is rethrown only after every started publish has settled; cancellation
+      starts no further window; and the engine composes the mode from the outbox (wiring).
+    - Conformance S2_22 and S2_23, on both engines, on real RabbitMQ and PostgreSQL: a 300-event batch straight to the
+      broker and a 200-event batch through the outbox, each delivered exactly once.
 - **Console: TypeScript 5.9.3 → 7.0.2, the native compiler (#493, replaces Dependabot #243).** A dev dependency, pinned
   exactly (`"typescript": "7.0.2"`, no range; the newest 7.0.x, published 2026-07-08). The console uses TypeScript only
   for `pnpm typecheck` (`tsc --noEmit`): Vite and Vitest transpile without loading the TypeScript API, and the console

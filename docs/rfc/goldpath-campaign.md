@@ -145,6 +145,10 @@ Reference profile, `scripts/bench-campaign.sh` → `ops/campaign-benchmarks.md`:
 - End-to-end 100k-item campaign on RabbitMQ: wall time, exactly-once-or-repair
   reconciliation (sink counts == durable counts == consumer executions).
 - Counter warmup: reconcile 1M-item campaign state from tables (seconds).
+- One leader at `Tps = 1000` on a real broker (S-FLEET-02a, measured 2026-11-10 after #285's batched publishing, the
+  overnight sandbox, 4 CPUs, co-located): 969.2/s over a 2-minute smoke with 72.5% of one-second windows within ±5%,
+  and 809.0/s over 15 minutes with 37.6% in band and 50 windows above 1000. The bar is ≥95% in band and none above,
+  so it is **not met on that profile**; exactly-once held over 724,500 items. Open-threads T67 holds the rest.
 
 ## 7. Observability (shipped)
 

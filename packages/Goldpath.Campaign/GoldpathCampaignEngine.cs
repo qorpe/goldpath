@@ -274,10 +274,7 @@ public sealed class GoldpathCampaignEngine<TContext>
         var from = campaign.ReleasedThrough + 1;
         var to = campaign.ReleasedThrough + count;
 
-        for (var seq = from; seq <= to; seq++)
-        {
-            await publisher.PublishAsync(new GoldpathCampaignItemMessage(campaign.Id, seq, campaign.Type), cancellationToken);
-        }
+        await PublishItemsAsync(publisher, campaign, Enumerable.Range(0, count).Select(i => from + i), cancellationToken);
 
         await db.Set<GoldpathCampaignItem>()
             .Where(i => i.CampaignId == campaign.Id && i.Seq >= from && i.Seq <= to && i.State == GoldpathCampaignItemState.Pending)
@@ -327,11 +324,7 @@ public sealed class GoldpathCampaignEngine<TContext>
             return 0;
         }
 
-        var publisher = services.GetRequiredService<IIntegrationEventPublisher>();
-        foreach (var seq in due)
-        {
-            await publisher.PublishAsync(new GoldpathCampaignItemMessage(campaign.Id, seq, campaign.Type), cancellationToken);
-        }
+        await PublishItemsAsync(services.GetRequiredService<IIntegrationEventPublisher>(), campaign, due, cancellationToken);
 
         await db.Set<GoldpathCampaignItem>()
             .Where(i => i.CampaignId == campaign.Id && i.State == GoldpathCampaignItemState.AwaitingRetry)
@@ -375,11 +368,7 @@ public sealed class GoldpathCampaignEngine<TContext>
             return 0;
         }
 
-        var publisher = services.GetRequiredService<IIntegrationEventPublisher>();
-        foreach (var seq in orphans)
-        {
-            await publisher.PublishAsync(new GoldpathCampaignItemMessage(campaign.Id, seq, campaign.Type), cancellationToken);
-        }
+        await PublishItemsAsync(services.GetRequiredService<IIntegrationEventPublisher>(), campaign, orphans, cancellationToken);
 
         await db.Set<GoldpathCampaignItem>()
             .Where(i => i.CampaignId == campaign.Id && i.State == GoldpathCampaignItemState.Released)
@@ -389,6 +378,20 @@ public sealed class GoldpathCampaignEngine<TContext>
         _logger.LogInformation("Campaign {CampaignId}: {Count} orphaned releases published again.", campaign.Id, orphans.Length);
         return orphans.Length;
     }
+
+    /// <summary>
+    /// Publishes one item message per sequence number as ONE batch through the seam's internal batch member (#285):
+    /// with no outbox, the engine keeps a bounded number of publishes outstanding on the wire instead of awaiting a
+    /// broker round trip per item; with an outbox, it adds the rows in order to the one scoped context. Every message is
+    /// handed over before this returns, so the durable mark that follows is still AFTER the publish — the
+    /// publish-then-mark order the claim guard's duplicate safety rests on. A batch that faults part way may have
+    /// published some of its items; none is marked, and the next tick (or a takeover) publishes them again, which the
+    /// state-guarded claim makes a no-op, never a double send.
+    /// </summary>
+    private static Task PublishItemsAsync(
+        IIntegrationEventPublisher publisher, GoldpathCampaign campaign, IEnumerable<long> seqs, CancellationToken cancellationToken)
+        => publisher.PublishBatchAsync(
+            [.. seqs.Select(seq => new GoldpathCampaignItemMessage(campaign.Id, seq, campaign.Type))], cancellationToken);
 
     /// <summary>Rolls the quota day when the policy-timezone midnight passed (durable — survives takeover).</summary>
     public async Task RollQuotaDayIfNeededAsync(TContext db, GoldpathCampaign campaign, CancellationToken cancellationToken)

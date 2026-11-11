@@ -35,6 +35,8 @@ internal sealed class MassTransitMessagingEngine : IGoldpathMessagingEngine
 
         // The publish seam (RFC goldpath-messaging-exit §5), scoped because the outbox's publish endpoint is.
         services.TryAddScoped<IIntegrationEventPublisher, MassTransitIntegrationEventPublisher>();
+        // The batch member's mode (#285): concurrent on the wire only with no outbox composed.
+        services.TryAddSingleton(new MassTransitPublishMode(ConcurrentOnTheWire: composition.OutboxContext is null));
         services.AddMassTransit(bus =>
         {
             bus.SetKebabCaseEndpointNameFormatter();
