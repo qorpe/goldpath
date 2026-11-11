@@ -621,6 +621,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     failed request.
   - **The smoke host** files a second approval request at startup, so this spec never races
     the approvals journey for one quorum.
+- **The 1.0 API review: Goldpath.Approvals and Goldpath.FileExchange (GA gate G4, API-5, #394).** Repository only,
+  no package change. All 635 live lines carry a verdict (376 Approvals, 259 FileExchange, at c9d23ae): 611
+  `experimental`, 24 `remove`, no `rename`. The removals are the two EF stores (`GoldpathEfApprovalStore<TContext>`,
+  `GoldpathEfFileLedger<TContext>`), which only their `AddGoldpath…<TBuilder, TContext>` registers behind the store
+  interface, and the two public metrics classes, which have no public member. The record's §4 states the lift condition
+  once (open-threads T21, T22).
 - **The 1.0 API review's record and its counter (GA gate G4, API-1, #390).** Repository only: no
   package changes.
   - `docs/rfc/goldpath-1.0-api-review.md` is DRAFT, in the eight RFC sections. It holds the scope,
@@ -949,6 +955,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   fill that table (API-4) turned "an uncovered line in the one package --package names" into a fault it could not
   plant, and CI's `gates` job red. Every scratch copy now resets the fixture's table to its header, whatever the real
   table holds; the gate's checks of the real tables are unchanged.
+- **`api-review-gate.sh --selftest` resets its second fixture too, `Goldpath.FileExchange` (API-5, #394).** Its
+  "an experimental package reviewed under its own id is green" case appends a row for every live FileExchange line, so
+  API-5 filling the real table turned each into a duplicate row and the selftest red. Both fixture tables now start
+  header-only in every scratch copy; the checks of the real tables are unchanged.
 - **[schema]** **Approvals: a delegation admits its delegate to the delegator's rung only (#479, threat model T-APR-05).**
   A delegation carried no role, so an active one admitted its delegate to every rung of every ladder — the amount
   ladder did not hold for a delegate.

@@ -147,3 +147,34 @@ here and never answers another part's lines.
   `cancellationToken` (API-2's ct policy), and `GoldpathNotificationMetrics` with its writer `SetQueueSnapshot` is a
   `remove` (API-3's metrics policy): `SetQueueSnapshot` sets the gauge the notification runbook pages on. Notification's
   model extension `AddGoldpathNotification` is kept as written, waiting on API-3's model-extension spelling finding.
+- **API-5 (#394), the experimental packages answered: every line `experimental` or `remove`; no `rename` was needed.**
+  Measured at c9d23ae: 376 Approvals lines and 259 FileExchange lines, 635 in all (the issue's 462 was taken at 0186ca3,
+  before #479 and #480 grew Approvals). 611 are `experimental` under `GPEXP001`/`GPEXP002`, and 24 are `remove`. The
+  issue's four questions, answered:
+  - **The EF stores go internal.** `GoldpathEfApprovalStore<TContext>` and `GoldpathEfFileLedger<TContext>` are
+    registered only by `AddGoldpathApprovals<TBuilder, TContext>` and `AddGoldpathFileExchange<TBuilder, TContext>`,
+    behind `IGoldpathApprovalStore` and `IGoldpathFileLedger`. No other public line and no template or sample names
+    them, so unlike Bulk's `GoldpathBulkFileStore<TContext>` (which a public constructor takes) nothing forces them
+    public. API-14 (#403) adds `InternalsVisibleTo` for `Goldpath.Approvals.Tests`, `Goldpath.FileExchange.Tests` and
+    `Goldpath.IntegrationTests`, which construct them.
+  - **The persistence rows stay public** (`experimental`): `GoldpathApprovalDelegationRow`,
+    `GoldpathApprovalSignatureRow`, `GoldpathFileProcessedRow`, `GoldpathFileQuarantineRow`, `GoldpathFileArchiveRow`.
+    They are EF entities of the module's model, and the adopter's migrations name them, which is why Bulk's and
+    Archival's entities are kept. Whether every module's entities should go internal is one cross-module question, not
+    this part's: it would also have to answer EF compiled models, whose generated code in the adopter's assembly names
+    the entity types.
+  - **The admin services stay non-generic.** `GoldpathApprovalsAdminService` and `GoldpathFileExchangeAdminService`
+    read through their store interfaces, not the app's context, so a `TContext` parameter (method Q7) would bind
+    nothing.
+  - **Singular or plural:** the Archival rule applies (API-3): the module's entry points say `Approvals` /
+    `FileExchange`, and one request, ladder, rung, file or rail says `Approval` / `File`. The one module-level name that
+    breaks it, `GoldpathApprovalModelExtensions.AddGoldpathApprovalModel`, is the ModelBuilder extension, which waits on
+    API-3's spelling finding, so it is `experimental` as written. `GoldpathApprovalEscalationJob` keeps its name
+    because a job's type name is its key.
+  - **The metrics policy applied:** `GoldpathApprovalsMetrics` and `GoldpathFileExchangeMetrics` are `remove`. Both
+    are public static classes with no public member at all.
+  - **Two kept shapes, said so the owner can overrule them:** `GoldpathApprovalRequest`'s five `set` accessors stay
+    `set` (the engine moves the state on the request it read, and a custom store outside the assembly materializes
+    it, which neither `init` nor an internal setter serves); and no `ct` parameter exists in either package (measured),
+    so API-2's ct policy changes nothing here.
+
