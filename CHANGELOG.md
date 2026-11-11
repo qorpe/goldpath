@@ -957,6 +957,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **Generated apps with an AppHost failed restore on an Aspire advisory published 2026-11-10 (GHSA-f7vh-h5g3-7jrh,
+  CVE-2026-120006, high: Aspire elevation of privilege, fixed in 13.6.5).** `Aspire.Hosting` and `Aspire.Hosting.AppHost`
+  below 13.6.5 are affected. Under TreatWarningsAsErrors NU1903 is a restore failure, so every golden-manifest shape with an
+  AppHost went red at PR time (GmCleanFeatures, GmEverything, GmGrownRest, GmWorkerInSolution on #560), whatever the PR
+  touched. Both templates (`goldpath-solution`, `goldpath-worker`) and CorPay now pin every Aspire package and the
+  `Aspire.AppHost.Sdk` at **13.6.5**. The CLI reads the Aspire version from the app's own `Directory.Packages.props`, so a
+  feature it adds later (Redis, RabbitMQ, Oracle) follows the app's pin with no CLI change. An app generated before this
+  train lifts its own pins the same way.
 - **`api-review-gate.sh --selftest` no longer depends on its fixture package being unreviewed (API-4, #393).** The
   selftest plants its faults against `Goldpath.Caching`'s table and assumed it was empty, so the first review part to
   fill that table (API-4) turned "an uncovered line in the one package --package names" into a fault it could not

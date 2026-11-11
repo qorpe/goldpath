@@ -285,7 +285,7 @@ Additions only, in `PublicAPI.Unshipped.txt`:
 - `goldpath new solution --db oracle`; the template's `db` choice gains
   `{ "choice": "oracle", "description": "Oracle Database 19c+ (FUTC-licensed driver)" }`.
 - `goldpath-worker` gains the same choice.
-- The AppHost uses `Aspire.Hosting.Oracle` **13.4.6**, the same line as the template's other
+- The AppHost uses `Aspire.Hosting.Oracle` **13.6.5** (13.4.6 until GHSA-f7vh-h5g3-7jrh, 2026-11-11), the same line as the template's other
   Aspire packages. Its container image is pinned to **`gvenzl/oracle-free:23.26.3-slim-faststart`**,
   never `23`, `slim` or `latest`.
 - The generated `Directory.Packages.props` pins `Oracle.EntityFrameworkCore` (§2.1) under the

@@ -2,21 +2,21 @@
   <!-- Every version pinned (Goldpath rule: "latest" is forbidden). Renovate keeps these fresh. -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0" />
-    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.4.6" />
+    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.6.5" />
     <!--#if (UsePostgres) -->
-    <PackageVersion Include="Aspire.Hosting.PostgreSQL" Version="13.4.6" />
+    <PackageVersion Include="Aspire.Hosting.PostgreSQL" Version="13.6.5" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
     <!--#endif -->
     <!--#if (UseSqlServer) -->
-    <PackageVersion Include="Aspire.Hosting.SqlServer" Version="13.4.6" />
+    <PackageVersion Include="Aspire.Hosting.SqlServer" Version="13.6.5" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.9" />
     <!--#endif -->
     <!--#if (UseQueue) -->
-    <PackageVersion Include="Aspire.Hosting.RabbitMQ" Version="13.4.6" />
+    <PackageVersion Include="Aspire.Hosting.RabbitMQ" Version="13.6.5" />
     <PackageVersion Include="MassTransit.RabbitMQ" Version="8.5.12" />
     <PackageVersion Include="Goldpath.Messaging" Version="0.1.0-preview.9" />
     <!--#endif -->
-    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.4.6" />
+    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.6.5" />
     <PackageVersion Include="Goldpath.Abstractions" Version="0.1.0-preview.9" />
     <PackageVersion Include="Goldpath.Analyzers" Version="0.1.0-preview.9" />
     <PackageVersion Include="Goldpath.ServiceDefaults" Version="0.1.0-preview.9" />

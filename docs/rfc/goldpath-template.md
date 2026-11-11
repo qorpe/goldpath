@@ -102,3 +102,4 @@ Template parameters ⇄ manifest fields (deterministic both ways): `--db postgre
   machines), a spike CI job early in 7b; if DinD is blocked, the suite stays a local+release
   gate and we say so in writing (no silent gap).
 - **D5 — Aspire version:** pin 13.4.6 (current stable line). **Recommendation: yes.**
+  _Since 2026-11-11 the pin is **13.6.5**: GHSA-f7vh-h5g3-7jrh affects every `Aspire.Hosting` below it._
