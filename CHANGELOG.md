@@ -797,6 +797,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **`api-review-gate.sh --selftest` no longer depends on its fixture package being unreviewed (API-4, #393).** The
+  selftest plants its faults against `Goldpath.Caching`'s table and assumed it was empty, so the first review part to
+  fill that table (API-4) turned "an uncovered line in the one package --package names" into a fault it could not
+  plant, and CI's `gates` job red. Every scratch copy now resets the fixture's table to its header, whatever the real
+  table holds; the gate's checks of the real tables are unchanged.
 - **[schema]** **Approvals: a delegation admits its delegate to the delegator's rung only (#479, threat model T-APR-05).**
   A delegation carried no role, so an active one admitted its delegate to every rung of every ladder — the amount
   ladder did not hold for a delegate.

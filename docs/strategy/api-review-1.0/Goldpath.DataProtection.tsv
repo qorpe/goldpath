@@ -1,1 +1,30 @@
 line	verdict	target	reason
+Goldpath.GoldpathClassificationCatalog	keep		
+Goldpath.GoldpathClassificationCatalog.Classify<T>(System.Linq.Expressions.Expression<System.Func<T, object?>!>! property, Goldpath.GoldpathDataClass dataClass) -> Goldpath.GoldpathClassificationCatalog!	keep		
+Goldpath.GoldpathClassificationCatalog.GoldpathClassificationCatalog() -> void	keep		
+Goldpath.GoldpathDataProtectionExtensions	keep		
+Goldpath.GoldpathDataProtectionOptions	keep		
+Goldpath.GoldpathDataProtectionOptions.Catalog(System.Action<Goldpath.GoldpathClassificationCatalog!>! configure) -> Goldpath.GoldpathDataProtectionOptions!	keep		
+Goldpath.GoldpathDataProtectionOptions.GoldpathDataProtectionOptions() -> void	keep		
+Goldpath.GoldpathDataProtectionOptions.HmacKey.get -> string?	keep		
+Goldpath.GoldpathDataProtectionOptions.HmacKey.set -> void	keep		
+Goldpath.GoldpathDataProtectionOptions.HmacKeyId.get -> int	keep		
+Goldpath.GoldpathDataProtectionOptions.HmacKeyId.set -> void	keep		
+Goldpath.GoldpathDataProtectionOptions.Redactor.get -> Goldpath.GoldpathRedactionMode	keep		
+Goldpath.GoldpathDataProtectionOptions.Redactor.set -> void	keep		
+Goldpath.GoldpathDataProtectionOptions.UseHmacRedaction(string! base64Key, int keyId = 1) -> Goldpath.GoldpathDataProtectionOptions!	keep		
+Goldpath.GoldpathDataProtector	keep		the concrete protector beside IGoldpathDataProtector: Classify answers which class a property is, which the interface does not, so the concrete type is the only way to ask it (method Q1)
+Goldpath.GoldpathDataProtector.CatalogedPropertyNames.get -> System.Collections.Generic.IReadOnlyCollection<string!>!	keep		the concrete protector beside IGoldpathDataProtector: Classify answers which class a property is, which the interface does not, so the concrete type is the only way to ask it (method Q1)
+Goldpath.GoldpathDataProtector.Classify(System.Type! declaringType, string! propertyName) -> Goldpath.GoldpathDataClass?	keep		the concrete protector beside IGoldpathDataProtector: Classify answers which class a property is, which the interface does not, so the concrete type is the only way to ask it (method Q1)
+Goldpath.GoldpathDataProtector.GoldpathDataProtector(Goldpath.GoldpathDataProtectionOptions! options, Microsoft.Extensions.Compliance.Redaction.IRedactorProvider! redactors) -> void	keep		the concrete protector beside IGoldpathDataProtector: Classify answers which class a property is, which the interface does not, so the concrete type is the only way to ask it (method Q1)
+Goldpath.GoldpathDataProtector.IsClassified(System.Type! declaringType, string! propertyName) -> bool	keep		the concrete protector beside IGoldpathDataProtector: Classify answers which class a property is, which the interface does not, so the concrete type is the only way to ask it (method Q1)
+Goldpath.GoldpathDataProtector.Redact(System.Type! declaringType, string! propertyName, string? value) -> string?	keep		the concrete protector beside IGoldpathDataProtector: Classify answers which class a property is, which the interface does not, so the concrete type is the only way to ask it (method Q1)
+Goldpath.GoldpathErasingRedactor	keep		
+Goldpath.GoldpathErasingRedactor.GoldpathErasingRedactor() -> void	keep		
+Goldpath.GoldpathRedactionMode	keep		
+Goldpath.GoldpathRedactionMode.Erase = 0 -> Goldpath.GoldpathRedactionMode	keep		
+Goldpath.GoldpathRedactionMode.Hmac = 1 -> Goldpath.GoldpathRedactionMode	keep		
+const Goldpath.GoldpathErasingRedactor.Token = "***" -> string!	keep		
+override Goldpath.GoldpathErasingRedactor.GetRedactedLength(System.ReadOnlySpan<char> input) -> int	keep		
+override Goldpath.GoldpathErasingRedactor.Redact(System.ReadOnlySpan<char> source, System.Span<char> destination) -> int	keep		
+static Goldpath.GoldpathDataProtectionExtensions.AddGoldpathDataProtection<TBuilder>(this TBuilder builder, System.Action<Goldpath.GoldpathDataProtectionOptions!>? configure = null) -> TBuilder	keep		
