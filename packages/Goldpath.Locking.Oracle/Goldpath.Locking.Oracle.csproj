@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <PackageId>Goldpath.Locking.Oracle</PackageId>
+    <Description>Oracle Database provider (DBMS_LOCK) for Goldpath.Locking. Ships separately ON PURPOSE: its dependency chain carries Oracle's ODP.NET driver (Oracle.ManagedDataAccess.Core) under the Oracle Free Use Terms and Conditions (FUTC — closed source, free of charge, redistributable). Only teams that explicitly choose Oracle — and therefore already run a commercially licensed Oracle Database — take that dependency; the core Goldpath.Locking graph stays fully open source.</Description>
+    <RootNamespace>Goldpath</RootNamespace>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Goldpath.Locking/Goldpath.Locking.csproj" />
+    <PackageReference Include="DistributedLock.Oracle" />
+    <!-- DistributedLock.Oracle asks for ODP.NET [23.6.1, ): referenced to raise it to the line the repository pins
+         (Directory.Packages.props, ORA-1 #404), so the driver an adopter gets is the one CI runs. -->
+    <PackageReference Include="Oracle.ManagedDataAccess.Core" />
+    <!-- NU1903 lift (see Directory.Packages.props): ODP.NET carries a vulnerable System.Security.Cryptography.Pkcs;
+         referenced only to raise it to the patched line. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+    <None Include="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+</Project>

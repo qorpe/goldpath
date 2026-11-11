@@ -121,6 +121,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Goldpath.Messaging.Conforma
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Goldpath.Messaging.Wolverine", "packages\Goldpath.Messaging.Wolverine\Goldpath.Messaging.Wolverine.csproj", "{8AC96AB2-568A-456F-9912-7B04D8584C9D}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Goldpath.Locking.Oracle", "packages\Goldpath.Locking.Oracle\Goldpath.Locking.Oracle.csproj", "{C66FBD37-6932-434A-840C-DAEA89DCC45E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -779,6 +781,18 @@ Global
 		{8AC96AB2-568A-456F-9912-7B04D8584C9D}.Release|x64.Build.0 = Release|Any CPU
 		{8AC96AB2-568A-456F-9912-7B04D8584C9D}.Release|x86.ActiveCfg = Release|Any CPU
 		{8AC96AB2-568A-456F-9912-7B04D8584C9D}.Release|x86.Build.0 = Release|Any CPU
+		{C66FBD37-6932-434A-840C-DAEA89DCC45E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C66FBD37-6932-434A-840C-DAEA89DCC45E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C66FBD37-6932-434A-840C-DAEA89DCC45E}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{C66FBD37-6932-434A-840C-DAEA89DCC45E}.Debug|x64.Build.0 = Debug|Any CPU
+		{C66FBD37-6932-434A-840C-DAEA89DCC45E}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{C66FBD37-6932-434A-840C-DAEA89DCC45E}.Debug|x86.Build.0 = Debug|Any CPU
+		{C66FBD37-6932-434A-840C-DAEA89DCC45E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C66FBD37-6932-434A-840C-DAEA89DCC45E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C66FBD37-6932-434A-840C-DAEA89DCC45E}.Release|x64.ActiveCfg = Release|Any CPU
+		{C66FBD37-6932-434A-840C-DAEA89DCC45E}.Release|x64.Build.0 = Release|Any CPU
+		{C66FBD37-6932-434A-840C-DAEA89DCC45E}.Release|x86.ActiveCfg = Release|Any CPU
+		{C66FBD37-6932-434A-840C-DAEA89DCC45E}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -838,5 +852,6 @@ Global
 		{32D01C47-7F37-4AEF-BD33-EE7849F897BB} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{FBFA9E42-8EC7-455B-A22C-4DF64AD9F0C3} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{8AC96AB2-568A-456F-9912-7B04D8584C9D} = {809F86A1-1C4C-B159-0CD4-DF9D33D876CE}
+		{C66FBD37-6932-434A-840C-DAEA89DCC45E} = {809F86A1-1C4C-B159-0CD4-DF9D33D876CE}
 	EndGlobalSection
 EndGlobal

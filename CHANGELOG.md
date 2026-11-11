@@ -26,6 +26,66 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   - **Bulk on Oracle is not measurable yet.** Every upload over 2,000 bytes fails with ORA-01460, because
     `GoldpathBulkFileChunks.Data` is `RAW(2000)` on Oracle and the store writes 256 KB chunks. #559 tracks it, and
     open-threads T68 holds the Bulk column.
+- **Locking on Oracle: the optional `Goldpath.Locking.Oracle` package (G7, slice O-4, #407; RFC goldpath-oracle
+  §2.9).**
+  - **API (additive):** `AddGoldpathOracleLocking<TBuilder>(configure)` in the new package, and
+    `GoldpathLockProvider.Oracle` (= 3) in `Goldpath.Locking`.
+  - **The provider:** Medallion's `DistributedLock.Oracle` 1.0.5 (MIT, `DBMS_LOCK`), composed as the SQL
+    Server package composes its own (ADR-0003). `ConnectionName` defaults to `database`.
+  - **Why separate:** its chain reaches ODP.NET (FUTC). The package raises ODP.NET to the repository's
+    23.26.301 pin and `System.Security.Cryptography.Pkcs` to the patched line. It is the one Goldpath package
+    that references ODP.NET, under the existing scoped licence exception: `license-gate.py` has no new
+    exception.
+  - **The grant:** the runtime user needs `EXECUTE ON SYS.DBMS_LOCK`. The README and
+    `ops/locking-oracle.md` say so, and the runbook covers inspecting a held lock (`DBA_LOCKS` / `V$LOCK`
+    type `UL`) and session-owned semantics.
+  - **Lock names fit `DBMS_LOCK`'s 128 BYTES.** The library hashes a name by its character count, so a name
+    of at most 128 characters whose UTF-8 is longer (Turkish characters, or a long tenant prefix) reached
+    `DBMS_LOCK_ALLOCATED.NAME` unchanged and threw ORA-12899 from `TryAcquireLockAsync` instead of returning a
+    handle. Goldpath now maps the name first (`OracleLockNames`): an ASCII name that fits passes unchanged, and
+    any other becomes its leading printable ASCII (at most 40 characters), `#`, and the hex SHA-256 of its
+    UTF-8 — at most 105 ASCII bytes, the same on every host and culture. An ASCII name already in that shape
+    is hashed too, so it cannot stand in for another lock. The runbook says how to find such a lock.
+  - **Cancellation waits out the acquire timeout (documented, not changed).** `DBMS_LOCK.REQUEST` is a
+    server-side wait the library does not interrupt, so a cancelled acquire on a held lock returns
+    (`OperationCanceledException`) only when its timeout ends. Goldpath passes the token down unchanged. The
+    runbook (§ Cancellation and shutdown) and the README say to keep acquire timeouts shorter than the host's
+    shutdown timeout, or to loop on short `TryAcquireLockAsync` slices while checking the token.
+  - **Proof:** on a real Oracle Database Free 23.26.3 container (`LockContractOracleTests`, `Category=Oracle`),
+    both lock-contract facts pass through `AddGoldpathOracleLocking`, in a schema granted as the runbook says.
+    More facts:
+    - a schema without the grant fails its first acquire with `PLS-00201` naming `DBMS_LOCK`;
+    - a 300-character name is one exclusive lock, and a name differing only past Oracle's limit is another;
+    - an 87-character, 148-byte Turkish name is one exclusive lock, a name differing in its last character is
+      another, and a 300-character multi-byte name is taken (red with ORA-12899 without the mapping);
+    - a `Provider` left in configuration for another store is refused in words, rather than describing a lock
+      the method does not build.
+    - an acquire on a held lock, cancelled at 0.5 s with an 8 s timeout, observes the token only after the
+      server-side wait (at least 6 s), so a library upgrade that starts honouring cancellation is noticed.
+    The facts are red with the grant not run, red with a provider whose lock is not exclusive, and red with the
+    configuration check removed. Mutation gate for `Goldpath.Locking`: 91.67 % → 92.00 % (`stryker/README.md`).
+    `Goldpath.Locking.Oracle` joins the nightly mutation matrix for its name mapping, scored by
+    `OracleLockNameTests` (no container): 100.00 %.
+- **The surface freeze gate: CLI verbs and flags, template parameters and the manifest schema, additions-only (GA
+  gate G4 API-10, #399).** A gate and its probe; no package, CLI or template changes.
+  - `scripts/surface-freeze-gate.sh` compares the tree with `scripts/surface-freeze-gate.snapshot.txt`, which has one
+    line per CLI verb form (17), verb flag (18), top-level flag (4) and pass-through verb (2), per template parameter (9)
+    and choice (37), and per manifest-schema property JSON pointer (112), enum value (78) and const (8). It fails on a removed
+    line, which covers a rename, and on a line the snapshot lacks, with the message telling the author to add it.
+    `$comment`, `description`, `default`, `title` and `examples` are never read. It runs in `gates`, with `--selftest`.
+  - **The CLI half is read from the parser, not grepped:** `scripts/surface-freeze-gate.probe.cs` (a .NET 10
+    file-based app over `tools/Goldpath.Cli`) drives `CliRunner.Run` with every flag literal against every verb form,
+    and keeps the flags the parser does not reject the way it rejects an undeclared one. The CLI has no parse table and
+    no per-verb `--help`, and `goldpath --help` omits `--path` on four verb forms, so neither could be the source.
+    The probe runs with `dotnet run --no-cache`: a file-based app's up-to-date check never reads the source behind its
+    `#:project` reference, so a cached probe would ask a stale build of the CLI and pass a renamed or added flag.
+  - `--selftest` plants each fault in a scratch copy of the tree and must see it red: a renamed flag and a removed
+    verb in the CLI's source, a flag one verb stops parsing while its literal stays elsewhere in the source, a renamed
+    and a removed template choice, a removed schema property, a removed and an added enum value, a changed const, a
+    flag added after the probe has already run once on that tree, and a duplicate snapshot line (through the gate's own
+    comparison). The unplanted tree and a `$comment`/`description`/`default` change stay green.
+  - **Not frozen, and said so** (the record's §2, open-threads T66, for API-13 #402): the schema's `type`, `required`,
+    `pattern`, bounds and `additionalProperties`; CLI flag values and positional vocabularies; template value shapes.
 - **Campaign: target-system ceilings as data (campaign RFC R3.2, part a, slice R3-S8, #290).**
   - **API (additive):**
     - `GoldpathCampaignOptions.AddTargetSystem(name, maxTps)` and `TargetSystems`;
@@ -771,6 +831,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
 ### Changed
+- **`AddGoldpathLocking` refuses a provider it does not build (#407).** `Provider = Oracle` is refused at
+  registration and names `Goldpath.Locking.Oracle` and `AddGoldpathOracleLocking()`, as `SqlServer` already
+  was. A value that names no provider at all (an out-of-range cast) is refused in words; before, it was built
+  as PostgreSQL. Proof: `LockingRegistrationTests` (three facts), red with the old registration.
 - **Campaign: a tick's releases are published as one batch, not one awaited broker round trip per item (#285, campaign
   throughput Part 3/3).** No public API change: no line in any `PublicAPI.*.txt` moves, and an adopter changes nothing.
   - **The seam gains an INTERNAL batch member** (`IGoldpathBatchPublisher`, owner decision on #285, 2026-11-09), reached
@@ -791,7 +855,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
       above 1000. Open-threads T67 holds what remains.
     - Exactly-once held over 724,500 items.
     - The pacer's steady tick issues 7 database commands for one hungry campaign, before and after; `TickQueryCountTests`
-      pins that.
+      pins that. It is 8 since R3-S8's per-tick ceiling read (#290) landed beside it on 2026-11-11.
   - **Proof:**
     - `BatchedReleaseTests`: each path publishes one batch, and goes red with the per-item loops put back.
     - `BatchPublishTests`: the bound is reached and never exceeded; with an outbox, or without the engine's mode, the

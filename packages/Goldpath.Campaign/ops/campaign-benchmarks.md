@@ -170,6 +170,8 @@ The 15-minute "before" number is the 2026-10-22 baseline above, 524.1/s. It was 
 **Per-tick database commands:** **7** per steady tick for one hungry, fully enumerated campaign, on `main` and on this
 branch alike. `TickQueryCountTests` measures this on a tick-exact clock and pins it. This part removes no query, because
 the publish was the round trip that dominated.
+**Since 2026-11-11 it is 8:** R3-S8 (#290) reads the live ceilings, meaning the global row and each declared target
+system's, in one query a tick. `TickQueryCountTests` pins 8.
 
 ### Reading the numbers
 

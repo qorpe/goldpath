@@ -37,6 +37,10 @@ jobs:
         run: |
           ./scripts/api-review-gate.sh
           ./scripts/api-review-gate.sh --selftest
+      - name: surface freeze gate (GA G4 API-10 — CLI verbs and flags, template parameters, manifest schema; additions on the record, no removal)
+        run: |
+          ./scripts/surface-freeze-gate.sh
+          ./scripts/surface-freeze-gate.sh --selftest
       - name: docs freshness (no link to a missing file)
         run: bash scripts/docs-freshness.sh
       - name: corpay feed self-test (#378 — the nightly packs this repository only while the train is unpublished)
