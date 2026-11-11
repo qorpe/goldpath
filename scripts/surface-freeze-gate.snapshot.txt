@@ -1,0 +1,289 @@
+# The surface freeze snapshot (GA G4 API-10, #399): one line per CLI verb, flag and pass-through, template
+# parameter and choice, manifest-schema property, enum value and const. scripts/surface-freeze-gate.sh fails when a
+# line disappears or the tree has one this file lacks. An addition lands here in the PR that adds it;
+# a removal or rename only through the 1.0 review (versioning D2). Regenerate the body with --print.
+cli-flag add feature --path
+cli-flag add feature --plan
+cli-flag add worker --path
+cli-flag add worker --trigger
+cli-flag check --path
+cli-flag db add --path
+cli-flag db bundle --path
+cli-flag db init --path
+cli-flag db status --path
+cli-flag discover --path
+cli-flag export compose --path
+cli-flag init --path
+cli-flag new gateway --path
+cli-flag new service --path
+cli-flag spec ready --author
+cli-flag spec ready --gate
+cli-flag spec ready --next-id
+cli-flag spec ready --path
+cli-global --help
+cli-global --version
+cli-global -h
+cli-global -v
+cli-passthrough new solution
+cli-passthrough new worker
+cli-verb add feature
+cli-verb add worker
+cli-verb check
+cli-verb db add
+cli-verb db bundle
+cli-verb db init
+cli-verb db status
+cli-verb discover
+cli-verb export compose
+cli-verb help
+cli-verb init
+cli-verb new
+cli-verb new gateway
+cli-verb new service
+cli-verb new solution
+cli-verb new worker
+cli-verb spec ready
+schema-const /allOf/0/if/properties/kind "solution"
+schema-const /allOf/1/if/properties/features/properties/campaign/not false
+schema-const /allOf/1/if/properties/kind "solution"
+schema-const /allOf/2/if/properties/kind "service"
+schema-const /allOf/3/if/properties/kind "module"
+schema-const /allOf/4/if/properties/kind "worker"
+schema-const /allOf/5/if/properties/kind "gateway"
+schema-const /properties/schemaVersion 1
+schema-enum /$defs/architecture/properties/codeOrg "clean-architecture"
+schema-enum /$defs/architecture/properties/codeOrg "vertical-slice"
+schema-enum /$defs/architecture/properties/deploymentModel "microservice"
+schema-enum /$defs/architecture/properties/deploymentModel "modular-monolith"
+schema-enum /$defs/architecture/properties/deploymentModel "monolith"
+schema-enum /$defs/externalSystem/properties/criticality "high"
+schema-enum /$defs/externalSystem/properties/criticality "low"
+schema-enum /$defs/externalSystem/properties/criticality "medium"
+schema-enum /$defs/externalSystem/properties/direction "both"
+schema-enum /$defs/externalSystem/properties/direction "inbound"
+schema-enum /$defs/externalSystem/properties/direction "outbound"
+schema-enum /$defs/externalSystem/properties/kind "file"
+schema-enum /$defs/externalSystem/properties/kind "queue"
+schema-enum /$defs/externalSystem/properties/kind "rest"
+schema-enum /$defs/externalSystem/properties/kind "soap"
+schema-enum /$defs/externalSystem/properties/mock/properties/strategy "passthrough"
+schema-enum /$defs/externalSystem/properties/mock/properties/strategy "record-replay"
+schema-enum /$defs/externalSystem/properties/mock/properties/strategy "stub"
+schema-enum /$defs/features/properties/auditTrail/oneOf/1/properties/store "database"
+schema-enum /$defs/features/properties/auditTrail/oneOf/1/properties/store "eventstream"
+schema-enum /$defs/features/properties/dataProtection/oneOf/1/properties/mode "annotate"
+schema-enum /$defs/features/properties/dataProtection/oneOf/1/properties/mode "both"
+schema-enum /$defs/features/properties/dataProtection/oneOf/1/properties/mode "catalog"
+schema-enum /$defs/features/properties/dataProtection/oneOf/1/properties/redactor "erase"
+schema-enum /$defs/features/properties/dataProtection/oneOf/1/properties/redactor "hmac"
+schema-enum /$defs/features/properties/distributedCaching/oneOf/1/properties/levels/items "l1"
+schema-enum /$defs/features/properties/distributedCaching/oneOf/1/properties/levels/items "l2"
+schema-enum /$defs/features/properties/distributedLocking/oneOf/1/properties/provider "postgres"
+schema-enum /$defs/features/properties/distributedLocking/oneOf/1/properties/provider "redis"
+schema-enum /$defs/features/properties/distributedLocking/oneOf/1/properties/provider "sqlserver"
+schema-enum /$defs/features/properties/idempotency/oneOf/1/properties/fingerprint "none"
+schema-enum /$defs/features/properties/idempotency/oneOf/1/properties/fingerprint "strict"
+schema-enum /$defs/features/properties/idempotency/oneOf/1/properties/onConflict "reject"
+schema-enum /$defs/features/properties/idempotency/oneOf/1/properties/onConflict "wait"
+schema-enum /$defs/features/properties/idempotency/oneOf/1/properties/store "database"
+schema-enum /$defs/features/properties/idempotency/oneOf/1/properties/store "redis"
+schema-enum /$defs/features/properties/multiTenancy/oneOf/1/properties/isolation "shared-db"
+schema-enum /$defs/features/properties/multiTenancy/oneOf/1/properties/strategy "header"
+schema-enum /$defs/features/properties/multiTenancy/oneOf/1/properties/strategy "subdomain"
+schema-enum /$defs/modules/items "yarpGateway"
+schema-enum /$defs/observability/properties/exporters/items "console"
+schema-enum /$defs/observability/properties/exporters/items "otlp"
+schema-enum /$defs/observability/properties/exporters/items "prometheus"
+schema-enum /$defs/observability/properties/profile "full"
+schema-enum /$defs/observability/properties/profile "minimal"
+schema-enum /$defs/observability/properties/profile "standard"
+schema-enum /$defs/providersFull/properties/auth "apikey"
+schema-enum /$defs/providersFull/properties/auth "none"
+schema-enum /$defs/providersFull/properties/auth "openid"
+schema-enum /$defs/providersFull/properties/broker "inmemory"
+schema-enum /$defs/providersFull/properties/broker "kafka"
+schema-enum /$defs/providersFull/properties/broker "none"
+schema-enum /$defs/providersFull/properties/broker "rabbitmq"
+schema-enum /$defs/providersFull/properties/cache "inmemory"
+schema-enum /$defs/providersFull/properties/cache "redis"
+schema-enum /$defs/providersFull/properties/db "oracle"
+schema-enum /$defs/providersFull/properties/db "postgresql"
+schema-enum /$defs/providersFull/properties/db "sqlserver"
+schema-enum /$defs/providersServiceOverride/properties/cache "inmemory"
+schema-enum /$defs/providersServiceOverride/properties/cache "redis"
+schema-enum /$defs/providersServiceOverride/properties/db "oracle"
+schema-enum /$defs/providersServiceOverride/properties/db "postgresql"
+schema-enum /$defs/providersServiceOverride/properties/db "sqlserver"
+schema-enum /allOf/1/then/properties/providers/properties/broker "inmemory"
+schema-enum /allOf/1/then/properties/providers/properties/broker "kafka"
+schema-enum /allOf/1/then/properties/providers/properties/broker "rabbitmq"
+schema-enum /allOf/3/then/properties/codeOrg "clean-architecture"
+schema-enum /allOf/3/then/properties/codeOrg "vertical-slice"
+schema-enum /allOf/4/then/properties/workerType "batch"
+schema-enum /allOf/4/then/properties/workerType "bulk"
+schema-enum /allOf/4/then/properties/workerType "consumer-kafka"
+schema-enum /allOf/4/then/properties/workerType "consumer-rabbitmq"
+schema-enum /allOf/4/then/properties/workerType "scheduler-quartz"
+schema-enum /properties/kind "gateway"
+schema-enum /properties/kind "module"
+schema-enum /properties/kind "service"
+schema-enum /properties/kind "solution"
+schema-enum /properties/kind "worker"
+schema-property /$defs/architecture/properties/codeOrg
+schema-property /$defs/architecture/properties/deploymentModel
+schema-property /$defs/envelope/properties/description
+schema-property /$defs/envelope/properties/kind
+schema-property /$defs/envelope/properties/name
+schema-property /$defs/envelope/properties/owner
+schema-property /$defs/envelope/properties/schemaVersion
+schema-property /$defs/externalSystem/properties/criticality
+schema-property /$defs/externalSystem/properties/direction
+schema-property /$defs/externalSystem/properties/kind
+schema-property /$defs/externalSystem/properties/mock
+schema-property /$defs/externalSystem/properties/mock/properties/strategy
+schema-property /$defs/externalSystem/properties/mock/properties/stubs
+schema-property /$defs/externalSystem/properties/name
+schema-property /$defs/externalSystem/properties/spec
+schema-property /$defs/features/properties/approvals
+schema-property /$defs/features/properties/archival
+schema-property /$defs/features/properties/auditTrail
+schema-property /$defs/features/properties/auditTrail/oneOf/1/properties/store
+schema-property /$defs/features/properties/bulk
+schema-property /$defs/features/properties/campaign
+schema-property /$defs/features/properties/dataProtection
+schema-property /$defs/features/properties/dataProtection/oneOf/1/properties/auditMasking
+schema-property /$defs/features/properties/dataProtection/oneOf/1/properties/mode
+schema-property /$defs/features/properties/dataProtection/oneOf/1/properties/redactor
+schema-property /$defs/features/properties/distributedCaching
+schema-property /$defs/features/properties/distributedCaching/oneOf/1/properties/defaultTtl
+schema-property /$defs/features/properties/distributedCaching/oneOf/1/properties/levels
+schema-property /$defs/features/properties/distributedCaching/oneOf/1/properties/redis
+schema-property /$defs/features/properties/distributedCaching/oneOf/1/properties/redis/properties/connectionName
+schema-property /$defs/features/properties/distributedLocking
+schema-property /$defs/features/properties/distributedLocking/oneOf/1/properties/connectionName
+schema-property /$defs/features/properties/distributedLocking/oneOf/1/properties/provider
+schema-property /$defs/features/properties/fileExchange
+schema-property /$defs/features/properties/idempotency
+schema-property /$defs/features/properties/idempotency/oneOf/1/properties/fingerprint
+schema-property /$defs/features/properties/idempotency/oneOf/1/properties/onConflict
+schema-property /$defs/features/properties/idempotency/oneOf/1/properties/store
+schema-property /$defs/features/properties/idempotency/oneOf/1/properties/ttlHours
+schema-property /$defs/features/properties/multiTenancy
+schema-property /$defs/features/properties/multiTenancy/oneOf/1/properties/exemptPaths
+schema-property /$defs/features/properties/multiTenancy/oneOf/1/properties/isolation
+schema-property /$defs/features/properties/multiTenancy/oneOf/1/properties/strategy
+schema-property /$defs/features/properties/multiTenancy/oneOf/1/properties/strict
+schema-property /$defs/features/properties/notification
+schema-property /$defs/features/properties/outbox
+schema-property /$defs/features/properties/softDelete
+schema-property /$defs/featuresWorker/properties/auditTrail
+schema-property /$defs/featuresWorker/properties/dataProtection
+schema-property /$defs/featuresWorker/properties/distributedLocking
+schema-property /$defs/featuresWorker/properties/fileExchange
+schema-property /$defs/featuresWorker/properties/multiTenancy
+schema-property /$defs/featuresWorker/properties/notification
+schema-property /$defs/featuresWorker/properties/softDelete
+schema-property /$defs/nfr/properties/availability
+schema-property /$defs/nfr/properties/errorBudgetPct
+schema-property /$defs/nfr/properties/p95LatencyMs
+schema-property /$defs/nfr/properties/throughputRps
+schema-property /$defs/observability/properties/exporters
+schema-property /$defs/observability/properties/profile
+schema-property /$defs/products/items/properties/enabled
+schema-property /$defs/products/items/properties/name
+schema-property /$defs/providersFull/properties/auth
+schema-property /$defs/providersFull/properties/broker
+schema-property /$defs/providersFull/properties/cache
+schema-property /$defs/providersFull/properties/db
+schema-property /$defs/providersServiceOverride/properties/cache
+schema-property /$defs/providersServiceOverride/properties/db
+schema-property /$defs/providersWorker/properties/auth
+schema-property /$defs/specs/properties/asyncapi
+schema-property /$defs/specs/properties/openapi
+schema-property /allOf/0/if/properties/kind
+schema-property /allOf/0/then/properties/architecture
+schema-property /allOf/0/then/properties/features
+schema-property /allOf/0/then/properties/modules
+schema-property /allOf/0/then/properties/nfr
+schema-property /allOf/0/then/properties/observability
+schema-property /allOf/0/then/properties/products
+schema-property /allOf/0/then/properties/providers
+schema-property /allOf/1/if/properties/features
+schema-property /allOf/1/if/properties/features/properties/campaign
+schema-property /allOf/1/if/properties/kind
+schema-property /allOf/1/then/properties/providers
+schema-property /allOf/1/then/properties/providers/properties/broker
+schema-property /allOf/2/if/properties/kind
+schema-property /allOf/2/then/properties/boundedContext
+schema-property /allOf/2/then/properties/externalSystems
+schema-property /allOf/2/then/properties/features
+schema-property /allOf/2/then/properties/modules
+schema-property /allOf/2/then/properties/nfr
+schema-property /allOf/2/then/properties/observability
+schema-property /allOf/2/then/properties/products
+schema-property /allOf/2/then/properties/providers
+schema-property /allOf/2/then/properties/specs
+schema-property /allOf/3/if/properties/kind
+schema-property /allOf/3/then/properties/codeOrg
+schema-property /allOf/4/if/properties/kind
+schema-property /allOf/4/then/properties/features
+schema-property /allOf/4/then/properties/nfr
+schema-property /allOf/4/then/properties/providers
+schema-property /allOf/4/then/properties/trigger
+schema-property /allOf/4/then/properties/trigger/properties/cron
+schema-property /allOf/4/then/properties/trigger/properties/queue
+schema-property /allOf/4/then/properties/trigger/properties/topic
+schema-property /allOf/4/then/properties/workerType
+schema-property /allOf/5/if/properties/kind
+schema-property /allOf/5/then/properties/autoRegisterServices
+schema-property /properties/description
+schema-property /properties/kind
+schema-property /properties/name
+schema-property /properties/owner
+schema-property /properties/schemaVersion
+template-choice goldpath-solution auth apikey
+template-choice goldpath-solution auth none
+template-choice goldpath-solution auth openid
+template-choice goldpath-solution broker none
+template-choice goldpath-solution broker rabbitmq
+template-choice goldpath-solution db postgresql
+template-choice goldpath-solution db sqlserver
+template-choice goldpath-solution features approvals
+template-choice goldpath-solution features archival
+template-choice goldpath-solution features audittrail
+template-choice goldpath-solution features bulk
+template-choice goldpath-solution features caching
+template-choice goldpath-solution features campaign
+template-choice goldpath-solution features dataprotection
+template-choice goldpath-solution features fileexchange
+template-choice goldpath-solution features idempotency
+template-choice goldpath-solution features locking
+template-choice goldpath-solution features multitenancy
+template-choice goldpath-solution features notification
+template-choice goldpath-solution features softdelete
+template-choice goldpath-solution layout clean-architecture
+template-choice goldpath-solution layout vertical-slice
+template-choice goldpath-worker auth apikey
+template-choice goldpath-worker auth none
+template-choice goldpath-worker auth openid
+template-choice goldpath-worker db postgresql
+template-choice goldpath-worker db sqlserver
+template-choice goldpath-worker features audittrail
+template-choice goldpath-worker features dataprotection
+template-choice goldpath-worker features fileexchange
+template-choice goldpath-worker features locking
+template-choice goldpath-worker features multitenancy
+template-choice goldpath-worker features notification
+template-choice goldpath-worker features softdelete
+template-choice goldpath-worker trigger jobs
+template-choice goldpath-worker trigger queue
+template-choice goldpath-worker trigger schedule
+template-param goldpath-solution auth
+template-param goldpath-solution broker
+template-param goldpath-solution db
+template-param goldpath-solution features
+template-param goldpath-solution layout
+template-param goldpath-worker auth
+template-param goldpath-worker db
+template-param goldpath-worker features
+template-param goldpath-worker trigger
