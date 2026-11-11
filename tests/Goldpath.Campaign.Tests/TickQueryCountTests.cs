@@ -22,8 +22,13 @@ public class TickQueryCountTests(ITestOutputHelper output)
     private static readonly TimeSpan Tick = TimeSpan.FromMilliseconds(250);
     private const int SliceTicks = 12;
 
-    /// <summary>The steady-state commands per tick, measured on 2026-11-10 (the same on main and on #285's branch).</summary>
-    private const int CommandsPerSteadyTick = 7;
+    /// <summary>
+    /// The steady-state commands per tick. Measured as 7 on 2026-11-10 (the same on main and on #285's branch), then 8
+    /// once R3-S8 (#290, #529) landed beside it on 2026-11-11: the pacer reads the live ceilings (the global row and every
+    /// declared target system's) in ONE query a tick, by design (campaign RFC R3.2), so a ceiling edited by an operator
+    /// bites within one tick.
+    /// </summary>
+    private const int CommandsPerSteadyTick = 8;
 
     [Fact]
     public async Task One_hungry_campaign_costs_a_fixed_number_of_commands_per_tick()
