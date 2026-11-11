@@ -321,12 +321,14 @@ public sealed class GoldpathCampaignAdminService<TContext>
         // The order is fixed HERE, not left to the database: providers disagree on where NULL sorts
         // and on how text collates. The database ranks by count and brings one code more than the page
         // holds (the truncation flag); the final order — count descending, code ordinal, no code last
-        // among equal counts — is applied below.
+        // among equal counts — is applied below. Where the database puts NULL among equal counts cannot
+        // change the answer: there is one NULL group, and the extra row it may take is the one the page
+        // drops. Which of several equal counts straddling the last place are listed is the database's
+        // collation's choice (open-threads T69).
         var codes = await items.Where(i => i.State == GoldpathCampaignItemState.Failed)
             .GroupBy(i => i.ErrorCode)
             .Select(g => new { Code = g.Key, Count = g.LongCount() })
             .OrderByDescending(g => g.Count)
-            .ThenBy(g => g.Code == null ? 1 : 0)
             .ThenBy(g => g.Code)
             .Take(MaxFailedCodes + 1)
             .ToListAsync(ct);

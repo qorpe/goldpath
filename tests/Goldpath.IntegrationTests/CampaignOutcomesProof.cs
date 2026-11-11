@@ -37,7 +37,11 @@ public static class CampaignOutcomesProof
                 {
                     db.Set<GoldpathCampaignItem>().Add(new GoldpathCampaignItem
                     {
-                        CampaignId = id, Seq = ++seq, TargetJson = "{}", State = state, ErrorCode = code,
+                        CampaignId = id,
+                        Seq = ++seq,
+                        TargetJson = "{}",
+                        State = state,
+                        ErrorCode = code,
                         Error = state == GoldpathCampaignItemState.Failed ? "refused" : null,
                     });
                 }

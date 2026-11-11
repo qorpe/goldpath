@@ -161,9 +161,15 @@ public class R4FailuresAndOutcomesTests
         Assert.NotNull(outcomes);
         Assert.Equal(new Dictionary<string, long>
         {
-            ["Pending"] = 7, ["Released"] = 2, ["Processing"] = 1, ["Succeeded"] = 5, ["Failed"] = 8, ["AwaitingRetry"] = 1,
+            ["Pending"] = 7,
+            ["Released"] = 2,
+            ["Processing"] = 1,
+            ["Succeeded"] = 5,
+            ["Failed"] = 8,
+            ["AwaitingRetry"] = 1,
         }, outcomes.ByState);
         Assert.DoesNotContain("Aborted", outcomes.ByState.Keys);   // a state with no items is omitted
+        Assert.Equal(["Pending", "Released", "Processing", "Succeeded", "Failed", "AwaitingRetry"], outcomes.ByState.Keys);   // in state order
         Assert.Equal(
             [new("ACK_TIMEOUT", 4), new("DEVICE_OFFLINE", 2), new("HANDLER_EXCEPTION", 1), new GoldpathCampaignCodeCount(null, 1)],
             outcomes.FailedByCode);
