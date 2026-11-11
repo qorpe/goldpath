@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -572,6 +573,151 @@ public sealed class GoldpathCampaignEngine<TContext>
             .ExecuteUpdateAsync(s => s.SetProperty(c => c.AwaitingAckCount, c => db.Set<GoldpathCampaignItem>()
                 .LongCount(i => i.CampaignId == c.Id && i.State == GoldpathCampaignItemState.AwaitingAck)), cancellationToken);
 
+    /// <summary>Who a ceiling row names as its last writer when the leader seeded it from code (R3.2).</summary>
+    internal const string CeilingSeedActor = "system";
+
+    /// <summary>
+    /// Reconciles the seed rows of <see cref="GoldpathCampaignCeiling"/> with code (R3.2), once per
+    /// leadership slice: one row per declared target system and the global row from
+    /// <see cref="GoldpathCampaignOptions.GlobalTps"/>. A missing row is inserted from code. A
+    /// changed code value is followed only while the operator has never moved the row
+    /// (<c>MaxTps == SeedMaxTps</c>, owner decision Q4), by an update guarded on exactly the values
+    /// it read, so an operator's change landing in between is never overwritten; otherwise the
+    /// operator's value stays and the disagreement is logged. An insert that meets a row someone
+    /// else inserted first (a primary-key conflict) re-reads and applies the same rule to it. An
+    /// insert that still fails on the second pass (not a conflict: a missing grant, an adopter's
+    /// trigger or constraint, a deadlock) is logged at Warning with its exception, naming the row;
+    /// the code seed binds until the row exists, and the next slice tries again.
+    /// Rows code no longer declares are left alone: nothing reads them.
+    /// </summary>
+    internal async Task ReconcileCeilingsAsync(TContext db, CancellationToken cancellationToken)
+    {
+        var desired = new List<(GoldpathCampaignCeilingKind Kind, string Name, int? Code)>
+        {
+            (GoldpathCampaignCeilingKind.Global, GoldpathCampaignCeiling.GlobalName, _options.GlobalTps),
+        };
+        desired.AddRange(_options.TargetSystems.Select(t => (GoldpathCampaignCeilingKind.TargetSystem, t.Key, (int?)t.Value)));
+
+        // Two passes at most: the second only re-reads the rows whose insert met a concurrent one.
+        var failed = new List<(GoldpathCampaignCeilingKind Kind, string Name, DbUpdateException Error)>();
+        for (var attempt = 0; attempt < 2 && desired.Count > 0; attempt++)
+        {
+            var rows = await db.Set<GoldpathCampaignCeiling>().AsNoTracking().ToListAsync(cancellationToken);
+            var conflicted = new List<(GoldpathCampaignCeilingKind Kind, string Name, int? Code)>();
+            failed.Clear();
+            foreach (var (kind, name, code) in desired)
+            {
+                var row = rows.FirstOrDefault(r => r.Kind == kind && string.Equals(r.Name, name, StringComparison.Ordinal));
+                if (row is null)
+                {
+                    if (await TryInsertCeilingAsync(db, kind, name, code, cancellationToken) is { } error)
+                    {
+                        conflicted.Add((kind, name, code));
+                        failed.Add((kind, name, error));
+                    }
+
+                    continue;
+                }
+
+                if (row.SeedMaxTps == code)
+                {
+                    continue;   // code did not move: whatever the row holds is in force
+                }
+
+                if (row.MaxTps != row.SeedMaxTps)
+                {
+                    _logger.LogWarning(
+                        "Campaign ceiling {Kind} '{Name}': code now seeds {Code}, but an operator set {Live} (seeded {Seed}); the operator's value stays.",
+                        kind, name, Describe(code), Describe(row.MaxTps), Describe(row.SeedMaxTps));
+                    continue;
+                }
+
+                var seeded = row.SeedMaxTps;
+                var now = _time.GetUtcNow();
+                var moved = await db.Set<GoldpathCampaignCeiling>()
+                    .Where(c => c.Kind == kind && c.Name == name && c.SeedMaxTps == seeded && c.MaxTps == seeded)
+                    .ExecuteUpdateAsync(u => u
+                        .SetProperty(c => c.MaxTps, code)
+                        .SetProperty(c => c.SeedMaxTps, code)
+                        .SetProperty(c => c.UpdatedAt, now)
+                        .SetProperty(c => c.UpdatedBy, CeilingSeedActor), cancellationToken);
+                if (moved == 1)
+                {
+                    _logger.LogInformation("Campaign ceiling {Kind} '{Name}' follows code: {Seed} -> {Code}.", kind, name, Describe(seeded), Describe(code));
+                }
+            }
+
+            desired = conflicted;
+        }
+
+        // A conflict is quiet: the second pass found the other writer's row. A row still missing after
+        // it was refused for another reason, and the operator must hear why the verbs see no row.
+        foreach (var (kind, name, error) in failed)
+        {
+            _logger.LogWarning(
+                error,
+                "Campaign ceiling {Kind} '{Name}': its seed row could not be written ({Error}); the code seed binds until the row exists, and the next slice tries again.",
+                kind, name, error.GetBaseException().Message);
+        }
+    }
+
+    /// <summary>Inserts one seed row; null when it landed, else the failure (usually another writer's row took its key first).</summary>
+    private async Task<DbUpdateException?> TryInsertCeilingAsync(
+        TContext db, GoldpathCampaignCeilingKind kind, string name, int? code, CancellationToken cancellationToken)
+    {
+        var row = new GoldpathCampaignCeiling
+        {
+            Kind = kind,
+            Name = name,
+            MaxTps = code,
+            SeedMaxTps = code,
+            UpdatedAt = _time.GetUtcNow(),
+            UpdatedBy = CeilingSeedActor,
+        };
+        db.Add(row);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            return null;
+        }
+        catch (DbUpdateException error)
+        {
+            // Usually the key exists now (the admin verb, or another leader's last slice): the next pass
+            // re-reads it. Anything else is still missing after that pass and is logged by the caller.
+            return error;
+        }
+        finally
+        {
+            db.Entry(row).State = EntityState.Detached;
+        }
+    }
+
+    private static string Describe(int? tps) => tps is { } value ? value.ToString(CultureInfo.InvariantCulture) : "off";
+
+    /// <summary>
+    /// The live ceilings this tick (R3.2), in ONE query over a handful of rows: the global ceiling and
+    /// each declared target system's. A row missing (deleted since the slice's reconcile) or a target
+    /// system's row holding no value falls back to the code seed, so a ceiling never silently opens;
+    /// the next slice inserts the row again. A value below zero, which only an edit outside the
+    /// module can write, reads as zero: that ceiling releases nothing until it is corrected, and its
+    /// bucket carries no debt into the correction.
+    /// </summary>
+    internal async Task<GoldpathCampaignLiveCeilings> ReadCeilingsAsync(TContext db, CancellationToken cancellationToken)
+    {
+        var rows = await db.Set<GoldpathCampaignCeiling>().AsNoTracking().ToListAsync(cancellationToken);
+        var global = rows.FirstOrDefault(r => r.Kind == GoldpathCampaignCeilingKind.Global
+            && string.Equals(r.Name, GoldpathCampaignCeiling.GlobalName, StringComparison.Ordinal));
+        var targets = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var (name, seed) in _options.TargetSystems)
+        {
+            var row = rows.FirstOrDefault(r => r.Kind == GoldpathCampaignCeilingKind.TargetSystem && string.Equals(r.Name, name, StringComparison.Ordinal));
+            targets[name] = Math.Max(0, row?.MaxTps ?? seed);
+        }
+
+        var globalTps = global is null ? _options.GlobalTps : global.MaxTps;
+        return new GoldpathCampaignLiveCeilings(globalTps is { } value ? Math.Max(0, value) : null, targets);
+    }
+
     /// <summary>
     /// Applies one BATCH of outcomes (the sink's flush, constraint 4): set-based item
     /// updates + relative campaign counters — never a write per item. R2.1 adds the
@@ -973,3 +1119,6 @@ public sealed class GoldpathCampaignEngine<TContext>
         await ApplyOutcomesAsync(db, campaignId, [OutcomeFor(campaignId, seq, attempt, result)], cancellationToken);
     }
 }
+
+/// <summary>The ceilings in force for one tick (R3.2): the global one (null = off) and each declared target system's.</summary>
+internal sealed record GoldpathCampaignLiveCeilings(int? GlobalTps, IReadOnlyDictionary<string, int> TargetSystems);

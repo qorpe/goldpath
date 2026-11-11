@@ -315,3 +315,9 @@ Goldpath.GoldpathCampaignThrottle.ClearMaxAwaitingAck.get -> bool
 Goldpath.GoldpathCampaignThrottle.ClearMaxAwaitingAck.init -> void
 Goldpath.GoldpathCampaignThrottle.MaxAwaitingAck.get -> int?
 Goldpath.GoldpathCampaignThrottle.MaxAwaitingAck.init -> void
+Goldpath.GoldpathCampaignInfo.TargetSystem.get -> string?
+Goldpath.GoldpathCampaignInfo.TargetSystem.init -> void
+Goldpath.GoldpathCampaignOptions.AddTargetSystem(string! name, int maxTps) -> Goldpath.GoldpathCampaignOptions!
+Goldpath.GoldpathCampaignOptions.TargetSystems.get -> System.Collections.Generic.IReadOnlyDictionary<string!, int>!
+Goldpath.GoldpathCampaignType.TargetSystem.get -> string?
+Goldpath.GoldpathCampaignTypeBuilder<TTarget>.TargetSystem(string! name) -> Goldpath.GoldpathCampaignTypeBuilder<TTarget!>!

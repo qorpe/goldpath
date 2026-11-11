@@ -37,6 +37,7 @@ public class MetricsExportTests
         ["goldpath_campaign_awaiting_ack"] = (null, ["campaign", "type"]),   // R3.4
         ["goldpath_campaign_tps_ceiling"] = (null, ["campaign", "type"]),
         ["goldpath_campaign_type_max_tps"] = (null, ["type"]),
+        ["goldpath_campaign_target_system_max_tps"] = (null, ["target_system"]),   // R3.2
         ["goldpath_campaign_global_tps"] = (null, []),
         ["goldpath_campaign_binding_constraint"] = (null, ["campaign", "type", "constraint"]),
         ["goldpath_campaign_released_today"] = (null, ["campaign", "type"]),
@@ -46,6 +47,9 @@ public class MetricsExportTests
 
     /// <summary>The type this class registers — no other test uses it, so its type-tagged series are this class's alone.</summary>
     private const string ProbeType = "metricsprobe";
+
+    /// <summary>The target system this class's type names — no other test declares it (R3.2).</summary>
+    private const string ProbeTargetSystem = "metricsprobe-core";
 
     /// <summary>A GlobalTps no other test configures, so its measurement is recognisably this test's.</summary>
     private const int ProbeGlobalTps = 4321;
@@ -64,7 +68,8 @@ public class MetricsExportTests
         {
             Fast(o);
             o.GlobalTps = ProbeGlobalTps;
-            o.AddCampaign<TestTarget>(ProbeType, c => c.MaxTargets(100).MaxTps(777).Targets((_, _) => Targets(4)));
+            o.AddTargetSystem(ProbeTargetSystem, 888);
+            o.AddCampaign<TestTarget>(ProbeType, c => c.MaxTargets(100).MaxTps(777).TargetSystem(ProbeTargetSystem).Targets((_, _) => Targets(4)));
         });
         fixture.FailIds.Add(3);
         // Two attempts, so the item that throws walks the ladder: its outcome is a retry.
@@ -97,7 +102,7 @@ public class MetricsExportTests
         foreach (var (name, (_, tags)) in Contract)
         {
             var mine = probe.Seen(name, m => tags.Length == 0
-                || Equals(m.Tag("campaign"), id) || Equals(m.Tag("type"), ProbeType));
+                || Equals(m.Tag("campaign"), id) || Equals(m.Tag("type"), ProbeType) || Equals(m.Tag("target_system"), ProbeTargetSystem));
             Assert.True(mine.Count > 0, $"{name}: no measurement from this test");
             foreach (var measurement in mine)
             {
@@ -110,6 +115,7 @@ public class MetricsExportTests
         Assert.Equal(50, probe.Last("goldpath_campaign_daily_quota", id));
         Assert.Equal(4, probe.Last("goldpath_campaign_released_today", id));
         Assert.Contains(probe.Seen("goldpath_campaign_type_max_tps", m => Equals(m.Tag("type"), ProbeType)), m => m.Value == 777);
+        Assert.Contains(probe.Seen("goldpath_campaign_target_system_max_tps", m => Equals(m.Tag("target_system"), ProbeTargetSystem)), m => m.Value == 888);
         Assert.Contains(probe.Seen("goldpath_campaign_global_tps", _ => true), m => m.Value == ProbeGlobalTps);
         Assert.Contains(probe.Seen("goldpath_campaign_leader_last_tick", _ => true),
             m => m.Value >= startedAt.ToUnixTimeMilliseconds() / 1000d - 1);
@@ -321,14 +327,17 @@ public class MetricsExportTests
         => Assert.Equal(expected, GoldpathCampaignPacerJob<CampaignTestContext>.OwnLimit(tps, inFlight, quota));
 
     [Theory]
-    [InlineData("tps", 10, 10, 10, 4, "none")]       // granted 10, released 4: nothing more was ready
-    [InlineData("tps", 10, 10, 10, 10, "tps")]
-    [InlineData("in_flight", 0, 0, 0, 0, "in_flight")]
-    [InlineData("tps", 10, 6, 6, 6, "type")]
-    [InlineData("tps", 10, 6, 3, 3, "global")]
-    [InlineData("tps", 10, 10, 3, 3, "global")]
-    public void BindingConstraint_NamesWhatCutTheTick(string own, int demand, int afterType, int grant, int spent, string expected)
-        => Assert.Equal(expected, GoldpathCampaignPacerJob<CampaignTestContext>.BindingConstraint(own, demand, afterType, grant, spent));
+    [InlineData("tps", 10, 10, 10, 10, 4, "none")]       // granted 10, released 4: nothing more was ready
+    [InlineData("tps", 10, 10, 10, 10, 10, "tps")]
+    [InlineData("in_flight", 0, 0, 0, 0, 0, "in_flight")]
+    [InlineData("tps", 10, 6, 6, 6, 6, "type")]
+    [InlineData("tps", 10, 6, 6, 3, 3, "global")]
+    [InlineData("tps", 10, 10, 10, 3, 3, "global")]
+    [InlineData("tps", 10, 10, 5, 5, 5, "target_system")]   // R3.2: the target system's bucket cut it
+    [InlineData("tps", 10, 6, 4, 4, 4, "target_system")]    // nested under a type ceiling, the later cut names it
+    [InlineData("tps", 10, 6, 4, 2, 2, "global")]
+    public void BindingConstraint_NamesWhatCutTheTick(string own, int demand, int afterType, int afterTarget, int grant, int spent, string expected)
+        => Assert.Equal(expected, GoldpathCampaignPacerJob<CampaignTestContext>.BindingConstraint(own, demand, afterType, afterTarget, grant, spent));
 
     [Fact]
     public void ErrorCodes_AreBoundedPerType_WithAnOtherOverflow()
