@@ -145,6 +145,53 @@ so on a fast consumer most settled items carry `ReleasedAt = null`. A first smok
 the stamps counted 18,494 releases in its window, against 63,480 items executed overall. The
 bench therefore stamps every item message at the bus with a publish observer.
 
+## S-FLEET-02a after batched publishing (#285, 2026-11-10) — still RED on this profile
+
+Part 3 of 3. Every publish path of the pacer — a tick's new releases, the ripe retries, the orphan re-releases — hands its
+messages to the seam's internal batch member as one batch (at most 64 publishes outstanding on the wire with no outbox)
+instead of awaiting one broker round trip per item. The bench and its thresholds are unchanged:
+`scripts/bench-campaign.sh smoke` (2 minutes) and `scripts/bench-campaign.sh broker` (15 minutes), at the package
+defaults (continuous leadership since #284).
+
+**Profile:** the overnight agent's cloud sandbox, Linux x64, 4 logical CPUs / 15 GB, Docker Engine 29, everything
+co-located. It is the same profile as the baseline above. The runs were sequential, with nothing else running.
+**Run id: none.** These are local runs; CI does not run the broker bench.
+**Code:** `main` at `2782d3c` (before), and `agent/285-batched-release` at `86615f6` (after).
+
+| Run | Code | Mean | p50 / p95 / min / max | Within ±5% of 1000 | Above 1000 | Exactly-once |
+|---|---|---|---|---|---|---|
+| smoke, 120 s | before (`2782d3c`) | **584.4/s** | 598 / 752 / 273 / 849 | **0 / 120 = 0.0%** | 0 | 71,179 = 71,179 = 71,179, 0 twice |
+| smoke, 120 s | after (`86615f6`) | **969.2/s** | 1000 / 1036 / 619 / 1250 | **87 / 120 = 72.5%** | **10** | 97,328 = 97,328 = 97,328, 0 twice |
+| broker, 900 s | after (`86615f6`) | **809.0/s** | 808 / 1058 / 250 / 1250 | **338 / 900 = 37.6%** | **50** | 724,500 = 724,500 = 724,500, 0 twice |
+
+The 15-minute "before" number is the 2026-10-22 baseline above, 524.1/s. It was measured at the 50-second slice that
+#284 has since replaced, and it was not re-run tonight.
+
+**Per-tick database commands:** **7** per steady tick for one hungry, fully enumerated campaign, on `main` and on this
+branch alike. `TickQueryCountTests` measures this on a tick-exact clock and pins it. This part removes no query, because
+the publish was the round trip that dominated.
+
+### Reading the numbers
+
+- **The publish path is no longer the binding constraint.**
+  - Over two minutes, the leader releases at the configured rate: p50 exactly 1000, from 598.
+  - Before, a 250-item tick was 250 sequential confirm round trips. Now it is four windows of at most 64.
+- **It does not hold for 15 minutes on this profile.** The mean falls to 809/s, and the minimum to 250, one tick's worth.
+  - In the smoke, 20,172 items were still queued at the pause; the 32 consumers executed 811/s against 1000 released.
+  - Bench process, broker and database share 4 CPUs, and the item consumers' work grows with the backlog. With that
+    load, the pacer's ticks run late.
+  - Nothing in the publish path explains the decay. The co-located profile can be told apart from the code only by a
+    run with the consumers on their own host: the CI reference profile, or the owner's Lima VM.
+- **The windows above 1000 are the governor's tick arithmetic, not the publish.**
+  - A tick refills by the time since the last one, and #292 allows a one-tick bank. A tick that runs late releases
+    what it missed.
+  - A one-second wall-clock window can therefore hold five tick bursts: the maximum, 1250, is exactly 5 × 250.
+  - #292's burst rule, which S-FLEET-02a cites, is stated over a second OF TICKS (`BurstControlTests`), and it holds.
+    This bench counts wall-clock seconds.
+  - Before this change, the leader never released fast enough to show it.
+  - Whether S-FLEET-02a's "zero windows above 1000" means wall-clock seconds, and so a smoother pacer, or seconds of
+    ticks, is the owner's question in open-threads T67.
+
 ## S-FLEET-04 — pause stops every worker within three seconds (2026-10-23)
 
 `ScenarioFleet04Tests` (#286; not a bench — it runs with the integration suite and asserts the

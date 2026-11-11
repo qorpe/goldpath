@@ -116,4 +116,34 @@ here and never answers another part's lines.
     No admin route returns it: `MapGoldpathBulkAdmin` maps definitions, upload, batches, one batch, its errors, approve and
     reject. The only public way to the raw bytes is `GoldpathBulkFileStore<TContext>.OpenRead`, which the Bulk table removes.
     The owner decides whether the RFC sentence or a route is the fix.
-
+- **API-4 (#393), P1 applied to the unprefixed types.** P1 keeps the flat `Goldpath` namespace *because* every name
+  in it is module-prefixed. Ten public types in this group are not, and API-4 renames them with the prefix their
+  siblings carry: in Abstractions `TenantId` → `GoldpathTenantId`, `ITenantContext` → `IGoldpathTenantContext`,
+  `IUserContext` → `IGoldpathUserContext`, `IMultiTenant` → `IGoldpathMultiTenant`, `ISoftDeletable` →
+  `IGoldpathSoftDeletable`, `IAuditedEntity` → `IGoldpathAuditedEntity`, `IAuditLogged` → `IGoldpathAuditLogged` and
+  `IIntegrationEvent` → `IGoldpathIntegrationEvent`; in Idempotency `IdempotencyConflictBehavior` and
+  `IdempotencyFingerprintMode` gain `Goldpath`. Two more unprefixed types, `StoredHttpResponse` and
+  `SoftDeleteContributor`, need no public name at all and are `remove` rows (internal).
+  - **The cost is the widest of the review**, and it is stated so the owner weighs it rather than meets it in API-14.
+    Measured at 2782d3c: the Abstractions types appear on 11 live lines of other packages' ledgers (`TenantId` on
+    Goldpath.Data, Goldpath.Messaging and Goldpath.MultiTenancy lines, `ITenantContext` on one Goldpath.Locking line),
+    which API-7 (#396) renames the same way; and every generated entity, the template docs (`IIntegrationEvent` is in
+    the generated CLAUDE.md's GP0401/GP0402 rule) and the analyzers that recognise these interfaces name them. The
+    rename is a template, analyzer and upgrade-guide change in API-14 (#403), not only a ledger line.
+  - **If the owner keeps the unprefixed names instead,** P1's reason has to change ("names are module-prefixed" is not
+    true of them), and the 38 Abstractions, 1 Caching and 8 Idempotency `rename` rows flip to `keep` with that reason.
+    The two `remove` rows do not depend on this: they go internal because nothing outside their package needs them.
+- **API-4 (#393), P2 confirmed: `GoldpathAdminResult` joins the Abstractions table when API-14 moves it.** No
+  Abstractions row is written for it now: its 14 lines (the type, its members and those its record synthesizes, all
+  `remove` rows in the Jobs table) are not live in the Abstractions ledger yet, and the gate
+  reads a `keep` for a line that is not live as stale. API-14 (#403) adds the 14 rows as `keep` in the same change
+  that moves the type.
+- **API-4 (#393), the idempotent-replay header moves to `GoldpathHeaders`.** `GoldpathIdempotencyMiddleware` goes
+  internal (AddGoldpathIdempotency adds it through its own startup filter, and its constructor puts Mediant's
+  `IIdempotentOperationCoordinator` into Goldpath's surface). Its `ReplayHeader` constant is the one part an adopter
+  needs, so API-14 adds `const Goldpath.GoldpathHeaders.IdempotentReplay = "Goldpath-Idempotent-Replay" -> string!`
+  to the Abstractions ledger beside `IdempotencyKey`, with a `keep` row. The header's value does not change.
+- **API-4 (#393), the shared policies applied.** Notification's five `ct` parameters are renamed to
+  `cancellationToken` (API-2's ct policy), and `GoldpathNotificationMetrics` with its writer `SetQueueSnapshot` is a
+  `remove` (API-3's metrics policy): `SetQueueSnapshot` sets the gauge the notification runbook pages on. Notification's
+  model extension `AddGoldpathNotification` is kept as written, waiting on API-3's model-extension spelling finding.

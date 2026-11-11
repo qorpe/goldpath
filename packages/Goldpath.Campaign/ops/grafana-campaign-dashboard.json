@@ -50,6 +50,10 @@
           "legendFormat": "MaxTps {{type}} (the type's shared ceiling)"
         },
         {
+          "expr": "max by (target_system) (goldpath_campaign_target_system_max_tps)",
+          "legendFormat": "MaxTps target system {{target_system}} (shared by every type naming it; binding_constraint = target_system)"
+        },
+        {
           "expr": "max by (job) (goldpath_campaign_global_tps)",
           "legendFormat": "GlobalTps {{job}}"
         }

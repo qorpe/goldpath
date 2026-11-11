@@ -15,26 +15,42 @@ namespace Goldpath;
 /// delivers it; with none, it goes straight to the broker. Tenant and correlation are stamped from the ambient
 /// context as the default engine stamps them.
 /// </summary>
-internal sealed class WolverineIntegrationEventPublisher(IServiceProvider services, GoldpathWire wire, WolverineEngineState state) : IIntegrationEventPublisher
+internal sealed class WolverineIntegrationEventPublisher(IServiceProvider services, GoldpathWire wire, WolverineEngineState state)
+    : IIntegrationEventPublisher, IGoldpathBatchPublisher
 {
     private OutboxState? _outbox;
+
+    /// <summary>
+    /// The batch (#285): with no outbox, every envelope is built first and the wire publishes them with bounded
+    /// concurrency on its one confirming channel; with an outbox, each is a row in the one scoped context, added in order.
+    /// </summary>
+    public async Task PublishBatchAsync<TEvent>(IReadOnlyList<TEvent> integrationEvents, CancellationToken cancellationToken)
+        where TEvent : class, IIntegrationEvent
+    {
+        ArgumentNullException.ThrowIfNull(integrationEvents);
+        if (state.OutboxContext is not null)
+        {
+            await GoldpathBatchPublishing.OneAtATimeAsync(this, integrationEvents, cancellationToken);
+            return;
+        }
+
+        var exchange = GoldpathWire.ExchangeOf(typeof(TEvent));
+        var messages = new List<(Guid MessageId, byte[] Envelope)>(integrationEvents.Count);
+        foreach (var integrationEvent in integrationEvents)
+        {
+            ArgumentNullException.ThrowIfNull(integrationEvent, nameof(integrationEvents));
+            var messageId = Guid.NewGuid();
+            messages.Add((messageId, wire.Envelope(typeof(TEvent), integrationEvent, messageId, HeadersOfTheAmbientContext(), DateTimeOffset.UtcNow)));
+        }
+
+        await wire.PublishBatchAsync(exchange, messages, cancellationToken);
+    }
 
     public async Task PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken cancellationToken = default)
         where TEvent : class, IIntegrationEvent
     {
         ArgumentNullException.ThrowIfNull(integrationEvent);
-        var headers = new Dictionary<string, string>(StringComparer.Ordinal);
-        if (services.GetService<ITenantContext>()?.Current is { } tenant)
-        {
-            headers[GoldpathHeaders.TenantId] = tenant.Value;
-        }
-
-        if (CorrelationOf(Activity.Current) is { } correlationId)
-        {
-            headers[GoldpathHeaders.CorrelationId] = correlationId;
-        }
-
-        GoldpathWire.StampTrace(headers);
+        var headers = HeadersOfTheAmbientContext();
         var messageId = Guid.NewGuid();
         var now = DateTimeOffset.UtcNow;
         var envelope = wire.Envelope(typeof(TEvent), integrationEvent, messageId, headers, now);
@@ -67,6 +83,24 @@ internal sealed class WolverineIntegrationEventPublisher(IServiceProvider servic
             SentTime = now.UtcDateTime,
             DestinationAddress = wire.AddressOf(GoldpathWire.ExchangeOf(typeof(TEvent))),
         });
+    }
+
+    /// <summary>Tenant and correlation from the ambient context, and the trace, stamped as the default engine stamps them.</summary>
+    private Dictionary<string, string> HeadersOfTheAmbientContext()
+    {
+        var headers = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (services.GetService<ITenantContext>()?.Current is { } tenant)
+        {
+            headers[GoldpathHeaders.TenantId] = tenant.Value;
+        }
+
+        if (CorrelationOf(Activity.Current) is { } correlationId)
+        {
+            headers[GoldpathHeaders.CorrelationId] = correlationId;
+        }
+
+        GoldpathWire.StampTrace(headers);
+        return headers;
     }
 
     // The tag sits on the request (or consume) activity, possibly some levels up: walk to it, as the default engine does.

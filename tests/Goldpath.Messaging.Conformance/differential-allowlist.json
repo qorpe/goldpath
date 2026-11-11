@@ -163,5 +163,15 @@
     "fact": "*",
     "path": "error-queue.*.message-type.urn:message:Goldpath:IIntegrationEvent",
     "reason": "The oracle's parked envelope lists the event's interface URN (urn:message:Goldpath:IIntegrationEvent) after the event's own; the candidate's lists the event's own only. This entry excuses that one URN's line and nothing else: the event's own type, an empty list and an unreadable envelope are each a line of their own that no entry excuses. Every Goldpath endpoint binds the event's own exchange, which both name, and S4.5 proves the parked message is handled by the oracle once shovelled back; open-threads T51 records the difference."
+  },
+  {
+    "fact": "S2_23_*",
+    "path": "store.outbox-state.rows",
+    "reason": "The number of OutboxState rows left after a 200-event batch committed in ONE transaction (#285). Measured 2026-11-10 by bisection: below 100 messages in one outbox the oracle removes its state row once it has delivered, as the candidate always does, and the records are equal (1, 2, 50 and 99 events); from 100 the oracle's delivery pass stops at its MessageDeliveryLimit (100) and keeps the row, marked delivered, until its duplicate-detection window expires. It is the engine's own bookkeeping: what the seam promises for this fact, that every event commits with the caller's transaction and is delivered exactly once, is compared line by line in the deliveries and holds on both."
+  },
+  {
+    "fact": "S2_23_*",
+    "path": "store.outbox-state.delivered",
+    "reason": "The same oracle row, counted as delivered: the oracle keeps a delivered OutboxState row once one outbox held 100 or more messages, the candidate removes it (see the store.outbox-state.rows entry for S2_23)."
   }
 ]
