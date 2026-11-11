@@ -172,6 +172,42 @@ internal sealed class GoldpathWire : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Publishes many 8.x envelopes to one exchange (#285) and returns when the broker has confirmed every one. They go
+    /// out on the one confirming channel with at most <see cref="GoldpathBatchPublishing.MaxConcurrency"/> confirms
+    /// outstanding (RabbitMQ.Client 7 publishes concurrently on a channel and tracks each confirm), so a batch costs a
+    /// few confirm round trips instead of one per message. The gate is held for the whole batch, as for one publish.
+    /// </summary>
+    public async Task PublishBatchAsync(string exchange, IReadOnlyList<(Guid MessageId, byte[] Envelope)> messages, CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            var channel = await ChannelAsync(cancellationToken);
+            await DeclareExchangeAsync(channel, exchange, cancellationToken);
+            await GoldpathBatchPublishing.BoundedAsync(messages, async (message, ct) =>
+            {
+                var properties = new BasicProperties
+                {
+                    ContentType = ContentType,
+                    MessageId = message.MessageId.ToString(),
+                    DeliveryMode = DeliveryModes.Persistent,
+                };
+                await channel.BasicPublishAsync(exchange, "", mandatory: false, properties, message.Envelope, ct);
+            }, cancellationToken);
+        }
+        catch when (_channel is { IsOpen: false })
+        {
+            // As for one publish: a broken channel is rebuilt on the next call, and the caller retries.
+            _channel = null;
+            throw;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     /// <summary>Publishes an 8.x envelope to the exchange named <paramref name="exchange"/> and waits for the broker's confirm.</summary>
     public async Task PublishAsync(string exchange, Guid messageId, byte[] envelope, CancellationToken cancellationToken)
     {

@@ -39,7 +39,6 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
     /// <inheritdoc />
     public async Task ExecuteChunkAsync(GoldpathJobChunk chunk, GoldpathJobContext context, CancellationToken cancellationToken)
     {
-        var sliceEnd = _time.GetUtcNow() + _options.LeadershipSlice;
         // Leader-local state (D3's cache tier at single-leader): fractional TPS budgets
         // and open enumeration streams live HERE; the durable rows stay the truth.
         var tpsBudgets = new Dictionary<Guid, double>();
@@ -48,6 +47,8 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
         var globalBudget = 0d;
         // R2.4: one bucket per campaign TYPE that declares a ceiling — the target system's rate.
         var typeBudgets = new Dictionary<string, double>(StringComparer.Ordinal);
+        // R3.2: one bucket per declared target system, shared by every type that names it; its ceiling is a row.
+        var targetBudgets = new Dictionary<string, double>(StringComparer.Ordinal);
         // R2.5: each shared bucket's fair-share credit, per campaign, carried tick to tick —
         // the fractional part of a share that a whole unit could not pay this tick.
         var fairCredit = new Dictionary<string, Dictionary<Guid, double>>(StringComparer.Ordinal);
@@ -58,8 +59,15 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
         // so the new leader corrects whatever a crashed flush left behind before it paces on it.
         using (var recountScope = context.Services.CreateScope())
         {
-            await _engine.RecountAwaitingAckAsync(recountScope.ServiceProvider.GetRequiredService<TContext>(), cancellationToken);
+            var sliceDb = recountScope.ServiceProvider.GetRequiredService<TContext>();
+            await _engine.RecountAwaitingAckAsync(sliceDb, cancellationToken);
+            // R3.2: the ceiling rows follow code at every slice start, under owner decision Q4's seed rule.
+            await _engine.ReconcileCeilingsAsync(sliceDb, cancellationToken);
         }
+
+        // The slice is measured from here, after its start-of-slice bookkeeping: the first slice in a process pays for
+        // compiling those statements, and that time must not come out of the ticks the slice leads.
+        var sliceEnd = _time.GetUtcNow() + _options.LeadershipSlice;
 
         try
         {
@@ -76,9 +84,20 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
                 var db = tickScope.ServiceProvider.GetRequiredService<TContext>();
                 var campaigns = await _engine.LoadWorkableAsync(db, cancellationToken);
                 db.ChangeTracker.Clear();
-                if (_options.GlobalTps is { } globalTps)
+                // R3.2: one query a tick reads the live ceilings, so an operator's change bites on the next tick.
+                var ceilings = await _engine.ReadCeilingsAsync(db, cancellationToken);
+                if (ceilings.GlobalTps is { } globalTps)
                 {
                     globalBudget = Refill(globalBudget, globalTps, _options.LeaderTick);
+                }
+                else
+                {
+                    globalBudget = 0;   // off: a ceiling switched on later starts empty, never with a debt or a bank from before
+                }
+
+                foreach (var (system, maxTps) in ceilings.TargetSystems)
+                {
+                    targetBudgets[system] = Refill(targetBudgets.GetValueOrDefault(system), maxTps, _options.LeaderTick);
                 }
 
                 foreach (var type in _options.Types)
@@ -99,8 +118,8 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
                 }
 
                 // Phase 2 — the shared ceilings, split by weighted fair share (R2.4 + R2.5).
-                var grants = Allocate(campaigns, demands, typeBudgets, _options.GlobalTps is null ? null : globalBudget, tick, fairCredit,
-                    out var afterType);
+                var grants = Allocate(campaigns, demands, typeBudgets, TargetSystemOf, targetBudgets,
+                    ceilings.GlobalTps is null ? null : globalBudget, tick, fairCredit, out var afterType, out var afterTarget);
 
                 // Phase 3 — release under the grant, then the sweeps and the completion math.
                 var swept = new HashSet<Guid>();
@@ -119,12 +138,20 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
 
                     var spent = await ReleaseTickAsync(tickScope.ServiceProvider, campaigns[i], grants[i], tpsBudgets, chunk, cancellationToken);
                     facts[campaigns[i].Id] = FactsOf(campaigns[i],
-                        BindingConstraint(ownLimits[campaigns[i].Id], demands[i], afterType[i], grants[i], spent));
+                        BindingConstraint(ownLimits[campaigns[i].Id], demands[i], afterType[i], afterTarget[i], grants[i], spent));
                     swept.Add(campaigns[i].Id);
-                    globalBudget -= spent;
+                    if (ceilings.GlobalTps is not null)
+                    {
+                        globalBudget -= spent;   // only a ceiling in force is charged (R3.2: the row may turn it on mid-slice)
+                    }
                     if (typeBudgets.ContainsKey(campaigns[i].Type))
                     {
                         typeBudgets[campaigns[i].Type] -= spent;
+                    }
+
+                    if (TargetSystemOf(campaigns[i].Type) is { } system && targetBudgets.ContainsKey(system))
+                    {
+                        targetBudgets[system] -= spent;
                     }
                 }
 
@@ -140,7 +167,10 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
                 await EnumerateAheadAsync(tickScope.ServiceProvider, campaigns, streams, tickStart,
                     releasing: demands.Any(d => d >= 0), cancellationToken);
                 GoldpathCampaignMetrics.Tick(_options,
-                    new GoldpathCampaignTickState(facts, TypeCeilings(), _options.GlobalTps, _time.GetUtcNow()));
+                    new GoldpathCampaignTickState(facts, TypeCeilings(), ceilings.GlobalTps, _time.GetUtcNow())
+                    {
+                        TargetSystemCeilings = ceilings.TargetSystems,
+                    });
 
                 var elapsed = _time.GetElapsedTime(tickStart);
                 if (elapsed < _options.LeaderTick)
@@ -163,14 +193,16 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
 
     /// <summary>
     /// Caps each campaign's own allowance by the shared ceilings: first the type bucket
-    /// among the campaigns of that type, then the global bucket among everyone — each a
+    /// among the campaigns of that type, then the target-system bucket among the campaigns of
+    /// every type naming that system (R3.2), then the global bucket among everyone — each a
     /// weighted max-min split, so a High campaign cannot be starved by a Low one that
     /// happened to be created first, and a Low one still moves on a small budget (R2.5:
     /// the bucket's credit carries what a whole unit could not pay).
     /// </summary>
     private static int[] Allocate(
-        List<GoldpathCampaign> campaigns, int[] demands, Dictionary<string, double> typeBudgets, double? globalBudget, int tick,
-        Dictionary<string, Dictionary<Guid, double>> fairCredit, out int[] afterType)
+        List<GoldpathCampaign> campaigns, int[] demands, Dictionary<string, double> typeBudgets,
+        Func<string, string?> targetSystemOf, Dictionary<string, double> targetBudgets, double? globalBudget, int tick,
+        Dictionary<string, Dictionary<Guid, double>> fairCredit, out int[] afterType, out int[] afterTarget)
     {
         var capped = new int[campaigns.Count];
         for (var i = 0; i < campaigns.Count; i++)
@@ -197,6 +229,27 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
         }
 
         afterType = (int[])capped.Clone();
+        foreach (var group in campaigns.Select((campaign, index) => (campaign, index))
+                     .Where(x => targetSystemOf(x.campaign.Type) is not null)
+                     .GroupBy(x => targetSystemOf(x.campaign.Type)!, StringComparer.Ordinal))
+        {
+            if (!targetBudgets.TryGetValue(group.Key, out var budget))
+            {
+                continue;
+            }
+
+            var members = group.ToArray();
+            var claims = members
+                .Select(m => new GoldpathCampaignFairShareClaim(GoldpathCampaignFairShare.WeightOf(m.campaign.Priority), capped[m.index]))
+                .ToArray();
+            var granted = Share("target:" + group.Key, members.Select(m => m.campaign.Id).ToArray(), claims, budget, tick, fairCredit);
+            for (var k = 0; k < members.Length; k++)
+            {
+                capped[members[k].index] = granted[k];
+            }
+        }
+
+        afterTarget = (int[])capped.Clone();
         if (globalBudget is { } shared)
         {
             var claims = campaigns
@@ -428,23 +481,36 @@ public sealed class GoldpathCampaignPacerJob<TContext> : IGoldpathJob, IGoldpath
     /// <summary>
     /// The limit that bound a released tick (RFC §7): <c>none</c> when the campaign released less
     /// than it was granted (nothing more was ready, so no limit held it back); otherwise the
-    /// shared ceiling that cut the allowance last — <c>global</c>, then <c>type</c> — and when
-    /// neither cut it, its own limit. A tick granted nothing names the limit that zeroed it.
+    /// shared ceiling that cut the allowance last — <c>global</c>, then <c>target_system</c> (R3.2),
+    /// then <c>type</c> — and when none cut it, its own limit. A tick granted nothing names the
+    /// limit that zeroed it.
     /// </summary>
-    internal static string BindingConstraint(string ownLimit, int demand, int afterType, int grant, int spent)
+    internal static string BindingConstraint(string ownLimit, int demand, int afterType, int afterTarget, int grant, int spent)
     {
         if (spent < grant)
         {
             return "none";
         }
 
-        if (grant < afterType)
+        if (grant < afterTarget)
         {
             return "global";
         }
 
+        if (afterTarget < afterType)
+        {
+            return BindingTargetSystem;
+        }
+
         return afterType < demand ? "type" : ownLimit;
     }
+
+    /// <summary>The binding constraint of a campaign held by its target system's shared ceiling (R3.2).</summary>
+    internal const string BindingTargetSystem = "target_system";
+
+    /// <summary>The target system a campaign type names (R3.2); null when it names none or is not registered.</summary>
+    private string? TargetSystemOf(string type)
+        => _options.TypeMap.TryGetValue(type, out var registered) ? registered.TargetSystem : null;
 
     private static GoldpathCampaignTickFacts FactsOf(GoldpathCampaign campaign, string binding)
     {

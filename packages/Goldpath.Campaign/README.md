@@ -81,8 +81,8 @@ target system is struggling:
   never `0,5`). The last valid values stay in force, a warning names `Goldpath:Campaign:<key>`,
   and `goldpath_campaign_tuning_reload_refused_total` counts it. An invalid section at startup is
   refused the same way and the code values hold. An empty or whitespace-only value reads as unset.
-- **Not reloaded:** `GlobalTps`, `LeaderTick`, `LeadershipSlice` and the batch sizes are startup
-  values.
+- **Not reloaded:** `LeaderTick`, `LeadershipSlice` and the batch sizes are startup values.
+  `GlobalTps` is not an option the pacer reads any more: it seeds the global ceiling row (R3.2, below).
 
 ## R2: a target that answers later, a shared ceiling, a keyset takeover
 
@@ -135,6 +135,38 @@ verb — and a contended ceiling (`GlobalTps`, a type's `MaxTps`) splits 3 : 2 :
 fair share, the fractional part carried from tick to tick so a Low campaign on a small
 ceiling still moves; alone under its own policy a campaign runs at its own TPS whatever its
 priority.
+
+## R3: target systems as data
+
+Which target systems exist, and which types call them, is code. How fast one may be called is a
+row in `GoldpathCampaignCeilings`, which the leader seeds from code and an operator changes live:
+
+```csharp
+builder.AddGoldpathCampaign<WebApplicationBuilder, OrdersDbContext>(campaign =>
+{
+    campaign.AddTargetSystem("device-core", maxTps: 200);   // the seed, not the live value
+    campaign.GlobalTps = 1_000;                              // also a seed now: the pacer reads the global row
+    campaign.AddCampaign<DeviceTarget>("config-push", c => c.TargetSystem("device-core") /* … */);
+    campaign.AddCampaign<DeviceTarget>("firmware-push", c => c.TargetSystem("device-core") /* … */);
+});
+```
+
+- **One bucket per system.** Campaigns of every type that names a system share its ceiling by the same
+  weighted fair share as above, with its own carried credit. The buckets nest: a type's own `.MaxTps(...)`
+  binds first, then its target system's, then `GlobalTps`. A type that names no system keeps its `MaxTps`
+  from code, exactly as in R2. Like the others, the bucket banks at most one tick's worth (#292).
+- **Startup check.** A type naming a system that the same `configure` delegate never declares refuses at
+  startup and names the declared ones. The declaration may come after the type. Names compare exactly, and
+  two declarations that differ only in case are refused, because a database collation may treat them as one.
+- **The rows.** At the start of every leadership slice, the leader inserts a missing row from code: one per
+  system, plus the global row (`Name = "*"`; `MaxTps` null = off). A changed code value is followed only
+  while nobody moved the row (`MaxTps == SeedMaxTps`). Otherwise the operator's value stays, and a warning
+  names both values. A row edited between ticks bites on the next tick, because one query a tick reads them.
+- **Not yet:** the audited admin verbs and routes, and the governor's editor, are R3-S9 (#318). Until then a
+  row is changed in the database by an operator who has the rights to do so.
+- **Seen in:** the detail's `targetSystem`, the gauge `goldpath_campaign_target_system_max_tps{target_system}`,
+  `goldpath_campaign_global_tps` (now read from the row), and `target_system` as a value of
+  `goldpath_campaign_binding_constraint`.
 
 ## R3: a scheduled start
 

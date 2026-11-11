@@ -1,1 +1,15 @@
 line	verdict	target	reason
+Goldpath.GoldpathCacheKeys	keep		
+Goldpath.GoldpathCacheKeys.For(string! area, string! key) -> string!	keep		
+Goldpath.GoldpathCacheKeys.GoldpathCacheKeys(Goldpath.ITenantContext? tenant = null) -> void	rename	Goldpath.GoldpathCacheKeys.GoldpathCacheKeys(Goldpath.IGoldpathTenantContext? tenant = null) -> void	follows Abstractions' P1 rename of ITenantContext to IGoldpathTenantContext (API-4); the parameter's meaning and position do not change
+Goldpath.GoldpathCachingExtensions	keep		
+Goldpath.GoldpathCachingOptions	keep		
+Goldpath.GoldpathCachingOptions.DefaultTtlSeconds.get -> int	keep		
+Goldpath.GoldpathCachingOptions.DefaultTtlSeconds.set -> void	keep		
+Goldpath.GoldpathCachingOptions.GoldpathCachingOptions() -> void	keep		
+Goldpath.GoldpathCachingOptions.Levels.get -> string![]?	keep		
+Goldpath.GoldpathCachingOptions.Levels.set -> void	keep		
+Goldpath.GoldpathCachingOptions.RedisConnectionName.get -> string!	keep		
+Goldpath.GoldpathCachingOptions.RedisConnectionName.set -> void	keep		
+static Goldpath.GoldpathCacheKeys.Compose(string? tenant, string! area, string! key) -> string!	keep		
+static Goldpath.GoldpathCachingExtensions.AddGoldpathCaching<TBuilder>(this TBuilder builder, System.Action<Goldpath.GoldpathCachingOptions!>? configure = null) -> TBuilder	keep		

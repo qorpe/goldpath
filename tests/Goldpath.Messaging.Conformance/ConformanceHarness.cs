@@ -470,12 +470,13 @@ public sealed class ConformanceContainers : IAsyncLifetime
     /// the suite references is in this process, so <paramref name="engine"/> names the one this host runs on;
     /// <paramref name="compose"/> adds to the composition after the defaults, and <paramref name="services"/> to the host's services.
     /// A host built with <paramref name="consumes"/> false registers no handler: in a mixed fleet it is the process that only
-    /// publishes, so what it sends can only be handled by the other engine.
+    /// publishes, so what it sends can only be handled by the other engine. A host built with <paramref name="outbox"/>
+    /// false composes no outbox, so a publish goes straight to the broker.
     /// </summary>
     public async Task<GoldpathMessagingTestHost> BuildHostAsync(
         string engine, Observed observed, Action<GoldpathMessagingOptions>? options = null, string? tenant = null,
         (BatchesObserved Observed, GoldpathBatchOptions Grouping)? batches = null, Action<GoldpathMessagingBuilder>? compose = null,
-        Action<IServiceCollection>? services = null, bool consumes = true)
+        Action<IServiceCollection>? services = null, bool consumes = true, bool outbox = true)
     {
         var host = GoldpathMessagingTestHost.Create(
             messaging =>
@@ -491,7 +492,11 @@ public sealed class ConformanceContainers : IAsyncLifetime
                     messaging.AddBatchHandler<Tick, TickBatchHandler>(batch.Grouping);
                 }
 
-                messaging.AddOutbox<ConformanceDb>();
+                if (outbox)
+                {
+                    messaging.AddOutbox<ConformanceDb>();
+                }
+
                 messaging.UseRabbitMq();
                 messaging.Options.Retry.ImmediateCount = 2;
                 messaging.Options.Retry.RedeliveryIntervals.Clear();   // the suite proves the immediate ladder; delayed redelivery needs the scheduler plugin
