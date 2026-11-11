@@ -211,6 +211,11 @@ def selftest():
                     os.makedirs(os.path.join(tmp, "packages", package), exist_ok=True)
                     shutil.copy(src, os.path.join(tmp, "packages", package, name))
         shutil.copytree(TABLES, os.path.join(tmp, TABLES))
+        # The fixture package starts UNREVIEWED in every scratch copy, whatever its real table holds: every planted
+        # fault below is written against an empty table, and API-4 (#393) reviewing Goldpath.Caching would otherwise
+        # hide "an uncovered line in the one package --package names" behind real, complete rows.
+        with open(os.path.join(tmp, TABLES, f"{P}.tsv"), "w", encoding="utf-8") as f:
+            f.write("\t".join(HEADER) + "\n")
         return tmp
 
     def add_row(root, package, line, verdict="keep", target="", reason=""):

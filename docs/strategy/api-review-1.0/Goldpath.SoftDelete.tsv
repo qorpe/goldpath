@@ -1,1 +1,11 @@
 line	verdict	target	reason
+Goldpath.GoldpathSoftDelete	keep		
+Goldpath.GoldpathSoftDeleteExtensions	keep		
+Goldpath.SoftDeleteContributor	remove		method Q1 and P1: the save contributor AddGoldpathSoftDelete registers as IEntitySaveContributor (AddScoped<IEntitySaveContributor, SoftDeleteContributor>); an adopter never names it, DI builds an internal type, and it is unprefixed in the flat namespace. Internal; GoldpathSoftDelete.Suppress() stays the adopter's control
+Goldpath.SoftDeleteContributor.OnSaving(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry! entry, Goldpath.GoldpathSaveContext! context) -> void	remove		method Q1 and P1: the save contributor AddGoldpathSoftDelete registers as IEntitySaveContributor (AddScoped<IEntitySaveContributor, SoftDeleteContributor>); an adopter never names it, DI builds an internal type, and it is unprefixed in the flat namespace. Internal; GoldpathSoftDelete.Suppress() stays the adopter's control
+Goldpath.SoftDeleteContributor.Order.get -> int	remove		method Q1 and P1: the save contributor AddGoldpathSoftDelete registers as IEntitySaveContributor (AddScoped<IEntitySaveContributor, SoftDeleteContributor>); an adopter never names it, DI builds an internal type, and it is unprefixed in the flat namespace. Internal; GoldpathSoftDelete.Suppress() stays the adopter's control
+Goldpath.SoftDeleteContributor.SoftDeleteContributor() -> void	remove		method Q1 and P1: the save contributor AddGoldpathSoftDelete registers as IEntitySaveContributor (AddScoped<IEntitySaveContributor, SoftDeleteContributor>); an adopter never names it, DI builds an internal type, and it is unprefixed in the flat namespace. Internal; GoldpathSoftDelete.Suppress() stays the adopter's control
+static Goldpath.GoldpathSoftDelete.IsSuppressed.get -> bool	keep		
+static Goldpath.GoldpathSoftDelete.Suppress() -> System.IDisposable!	keep		
+static Goldpath.GoldpathSoftDeleteExtensions.AddGoldpathSoftDelete<TBuilder>(this TBuilder builder) -> TBuilder	keep		
+static Goldpath.GoldpathSoftDeleteExtensions.ApplyGoldpathSoftDelete(this Microsoft.EntityFrameworkCore.ModelBuilder! modelBuilder) -> Microsoft.EntityFrameworkCore.ModelBuilder!	keep		

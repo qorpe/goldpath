@@ -1,1 +1,280 @@
 line	verdict	target	reason
+Goldpath.GoldpathChannelTemplate	keep		
+Goldpath.GoldpathChannelTemplate.GoldpathChannelTemplate() -> void	keep		
+Goldpath.GoldpathChannelTemplate.Render(string! culture, System.Collections.Generic.IReadOnlyDictionary<string!, string!>! tokens) -> (string? Subject, string! Body, string! Culture)	keep		
+Goldpath.GoldpathChannelTemplateBuilder	keep		
+Goldpath.GoldpathChannelTemplateBuilder.Body(string! culture, string! text) -> Goldpath.GoldpathChannelTemplateBuilder!	keep		
+Goldpath.GoldpathChannelTemplateBuilder.Subject(string! culture, string! text) -> Goldpath.GoldpathChannelTemplateBuilder!	keep		
+Goldpath.GoldpathEmailChannel	keep		a built-in IGoldpathNotificationChannel, registered by type (TryAddEnumerable): an adopter who replaces or decorates one channel names it (method Q1)
+Goldpath.GoldpathEmailChannel.BuildMessage(Goldpath.GoldpathNotificationMessage! message) -> MimeKit.MimeMessage!	remove		method Q1: the email channel's own MIME assembly, called only by its SendAsync and by Goldpath.Notification.Tests (ModelAndChannelTests). It is the only line in the group that puts a dependency's type (MimeKit.MimeMessage) into the public surface, which would freeze MimeKit's major version into Goldpath's 1.x promise
+Goldpath.GoldpathEmailChannel.GoldpathEmailChannel(Goldpath.GoldpathNotificationOptions! options) -> void	keep		a built-in IGoldpathNotificationChannel, registered by type (TryAddEnumerable): an adopter who replaces or decorates one channel names it (method Q1)
+Goldpath.GoldpathEmailChannel.Name.get -> string!	keep		a built-in IGoldpathNotificationChannel, registered by type (TryAddEnumerable): an adopter who replaces or decorates one channel names it (method Q1)
+Goldpath.GoldpathEmailChannel.SendAsync(Goldpath.GoldpathNotificationMessage! message, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!	keep		a built-in IGoldpathNotificationChannel, registered by type (TryAddEnumerable): an adopter who replaces or decorates one channel names it (method Q1)
+Goldpath.GoldpathEmailOptions	keep		
+Goldpath.GoldpathEmailOptions.AllowInsecureTransport.get -> bool	keep		
+Goldpath.GoldpathEmailOptions.AllowInsecureTransport.set -> void	keep		
+Goldpath.GoldpathEmailOptions.From.get -> string!	keep		
+Goldpath.GoldpathEmailOptions.From.set -> void	keep		
+Goldpath.GoldpathEmailOptions.GoldpathEmailOptions() -> void	keep		
+Goldpath.GoldpathEmailOptions.Host.get -> string!	keep		
+Goldpath.GoldpathEmailOptions.Host.set -> void	keep		
+Goldpath.GoldpathEmailOptions.Password.get -> string!	keep		
+Goldpath.GoldpathEmailOptions.Password.set -> void	keep		
+Goldpath.GoldpathEmailOptions.Port.get -> int	keep		
+Goldpath.GoldpathEmailOptions.Port.set -> void	keep		
+Goldpath.GoldpathEmailOptions.UseSsl.get -> bool	keep		
+Goldpath.GoldpathEmailOptions.UseSsl.set -> void	keep		
+Goldpath.GoldpathEmailOptions.User.get -> string!	keep		
+Goldpath.GoldpathEmailOptions.User.set -> void	keep		
+Goldpath.GoldpathNotification	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it
+Goldpath.GoldpathNotification.Attempts.get -> int	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.Attempts.set -> void	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.Body.get -> string?	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.Body.set -> void	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.BodyDeletedAt.get -> System.DateTimeOffset?	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.BodyDeletedAt.set -> void	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.Channel.get -> string!	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.Channel.set -> void	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.ClaimedAt.get -> System.DateTimeOffset?	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.ClaimedAt.set -> void	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.CorrelationId.get -> string?	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.CorrelationId.set -> void	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.Culture.get -> string!	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.Culture.set -> void	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.DedupKey.get -> string!	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.DedupKey.set -> void	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.Detail.get -> string?	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.Detail.set -> void	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.FailedAt.get -> System.DateTimeOffset?	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.FailedAt.set -> void	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.GoldpathNotification() -> void	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.Id.get -> System.Guid	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.Id.set -> void	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.NotBefore.get -> System.DateTimeOffset?	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.NotBefore.set -> void	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.Recipient.get -> string!	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.Recipient.set -> void	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.RequestedAt.get -> System.DateTimeOffset	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.RequestedAt.set -> void	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.SentAt.get -> System.DateTimeOffset?	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.SentAt.set -> void	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.State.get -> Goldpath.GoldpathNotificationState	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.State.set -> void	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.Subject.get -> string?	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.Subject.set -> void	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.Template.get -> string!	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.Template.set -> void	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.TemplateHash.get -> string!	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.TemplateHash.set -> void	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.Tenant.get -> string?	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotification.Tenant.set -> void	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotificationAdminEndpoints	keep		
+Goldpath.GoldpathNotificationAdminService<TContext>	keep		
+Goldpath.GoldpathNotificationAdminService<TContext>.GetFailuresAsync(string? tenant, int take, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathNotificationInfo!>!>!	rename	Goldpath.GoldpathNotificationAdminService<TContext>.GetFailuresAsync(string? tenant, int take, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathNotificationInfo!>!>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Notification signature this review keeps names it cancellationToken (the Findings' ct policy, API-2). Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathNotificationAdminService<TContext>.GetNotificationAsync(System.Guid id, string? tenant, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathNotificationInfo?>!	rename	Goldpath.GoldpathNotificationAdminService<TContext>.GetNotificationAsync(System.Guid id, string? tenant, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathNotificationInfo?>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Notification signature this review keeps names it cancellationToken (the Findings' ct policy, API-2). Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathNotificationAdminService<TContext>.GetNotificationsAsync(string![]? state, string![]? template, string? tenant, int take, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathNotificationInfo!>!>!	rename	Goldpath.GoldpathNotificationAdminService<TContext>.GetNotificationsAsync(string![]? state, string![]? template, string? tenant, int take, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathNotificationInfo!>!>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Notification signature this review keeps names it cancellationToken (the Findings' ct policy, API-2). Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathNotificationAdminService<TContext>.GetSuppressionsAsync(string? tenant, int take, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathNotificationInfo!>!>!	rename	Goldpath.GoldpathNotificationAdminService<TContext>.GetSuppressionsAsync(string? tenant, int take, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathNotificationInfo!>!>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Notification signature this review keeps names it cancellationToken (the Findings' ct policy, API-2). Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathNotificationAdminService<TContext>.GetTemplatesAsync(System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathNotificationTemplateStatus!>!>!	rename	Goldpath.GoldpathNotificationAdminService<TContext>.GetTemplatesAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathNotificationTemplateStatus!>!>!	method Q3: the token is the last parameter but named ct; every other public Goldpath.Notification signature this review keeps names it cancellationToken (the Findings' ct policy, API-2). Binary-compatible; breaks only a caller passing it by name
+Goldpath.GoldpathNotificationAdminService<TContext>.GoldpathNotificationAdminService(Goldpath.GoldpathNotificationOptions! options, Microsoft.Extensions.DependencyInjection.IServiceScopeFactory! scopeFactory, System.TimeProvider! time) -> void	keep		
+Goldpath.GoldpathNotificationAttachment	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it
+Goldpath.GoldpathNotificationAttachment.Content.get -> byte[]?	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotificationAttachment.Content.set -> void	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotificationAttachment.ContentType.get -> string!	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotificationAttachment.ContentType.set -> void	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotificationAttachment.GoldpathNotificationAttachment() -> void	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotificationAttachment.Id.get -> long	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotificationAttachment.Id.set -> void	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotificationAttachment.Name.get -> string!	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotificationAttachment.Name.set -> void	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotificationAttachment.NotificationId.get -> System.Guid	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotificationAttachment.NotificationId.set -> void	keep		an EF entity of AddGoldpathNotification's model: the adopter's migrations name it; its set accessors stay because EF materializes it (method Q5)
+Goldpath.GoldpathNotificationAttachmentContent	keep		
+Goldpath.GoldpathNotificationAttachmentContent.<Clone>$() -> Goldpath.GoldpathNotificationAttachmentContent!	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+Goldpath.GoldpathNotificationAttachmentContent.Content.get -> byte[]!	keep		
+Goldpath.GoldpathNotificationAttachmentContent.Content.init -> void	keep		
+Goldpath.GoldpathNotificationAttachmentContent.ContentType.get -> string!	keep		
+Goldpath.GoldpathNotificationAttachmentContent.ContentType.init -> void	keep		
+Goldpath.GoldpathNotificationAttachmentContent.Deconstruct(out string! Name, out string! ContentType, out byte[]! Content) -> void	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+Goldpath.GoldpathNotificationAttachmentContent.Equals(Goldpath.GoldpathNotificationAttachmentContent? other) -> bool	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+Goldpath.GoldpathNotificationAttachmentContent.GoldpathNotificationAttachmentContent(string! Name, string! ContentType, byte[]! Content) -> void	keep		
+Goldpath.GoldpathNotificationAttachmentContent.Name.get -> string!	keep		
+Goldpath.GoldpathNotificationAttachmentContent.Name.init -> void	keep		
+Goldpath.GoldpathNotificationExtensions	keep		
+Goldpath.GoldpathNotificationInfo	keep		
+Goldpath.GoldpathNotificationInfo.<Clone>$() -> Goldpath.GoldpathNotificationInfo!	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+Goldpath.GoldpathNotificationInfo.Attempts.get -> int	keep		
+Goldpath.GoldpathNotificationInfo.Attempts.init -> void	keep		
+Goldpath.GoldpathNotificationInfo.BodyDeletedAt.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathNotificationInfo.BodyDeletedAt.init -> void	keep		
+Goldpath.GoldpathNotificationInfo.Channel.get -> string!	keep		
+Goldpath.GoldpathNotificationInfo.Channel.init -> void	keep		
+Goldpath.GoldpathNotificationInfo.ClaimedAt.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathNotificationInfo.ClaimedAt.init -> void	keep		
+Goldpath.GoldpathNotificationInfo.CorrelationId.get -> string?	keep		
+Goldpath.GoldpathNotificationInfo.CorrelationId.init -> void	keep		
+Goldpath.GoldpathNotificationInfo.Culture.get -> string!	keep		
+Goldpath.GoldpathNotificationInfo.Culture.init -> void	keep		
+Goldpath.GoldpathNotificationInfo.Deconstruct(out System.Guid Id, out string! DedupKey, out string! Template, out string! TemplateHash, out string! Channel, out string! MaskedRecipient, out string! Culture, out string! State, out int Attempts, out string? Detail, out System.DateTimeOffset RequestedAt, out System.DateTimeOffset? NotBefore, out System.DateTimeOffset? ClaimedAt, out System.DateTimeOffset? SentAt, out System.DateTimeOffset? FailedAt, out System.DateTimeOffset? BodyDeletedAt, out string? Tenant, out string? CorrelationId) -> void	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+Goldpath.GoldpathNotificationInfo.DedupKey.get -> string!	keep		
+Goldpath.GoldpathNotificationInfo.DedupKey.init -> void	keep		
+Goldpath.GoldpathNotificationInfo.Detail.get -> string?	keep		
+Goldpath.GoldpathNotificationInfo.Detail.init -> void	keep		
+Goldpath.GoldpathNotificationInfo.Equals(Goldpath.GoldpathNotificationInfo? other) -> bool	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+Goldpath.GoldpathNotificationInfo.FailedAt.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathNotificationInfo.FailedAt.init -> void	keep		
+Goldpath.GoldpathNotificationInfo.GoldpathNotificationInfo(System.Guid Id, string! DedupKey, string! Template, string! TemplateHash, string! Channel, string! MaskedRecipient, string! Culture, string! State, int Attempts, string? Detail, System.DateTimeOffset RequestedAt, System.DateTimeOffset? NotBefore, System.DateTimeOffset? ClaimedAt, System.DateTimeOffset? SentAt, System.DateTimeOffset? FailedAt, System.DateTimeOffset? BodyDeletedAt, string? Tenant, string? CorrelationId) -> void	keep		
+Goldpath.GoldpathNotificationInfo.Id.get -> System.Guid	keep		
+Goldpath.GoldpathNotificationInfo.Id.init -> void	keep		
+Goldpath.GoldpathNotificationInfo.MaskedRecipient.get -> string!	keep		
+Goldpath.GoldpathNotificationInfo.MaskedRecipient.init -> void	keep		
+Goldpath.GoldpathNotificationInfo.NotBefore.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathNotificationInfo.NotBefore.init -> void	keep		
+Goldpath.GoldpathNotificationInfo.RequestedAt.get -> System.DateTimeOffset	keep		
+Goldpath.GoldpathNotificationInfo.RequestedAt.init -> void	keep		
+Goldpath.GoldpathNotificationInfo.SentAt.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathNotificationInfo.SentAt.init -> void	keep		
+Goldpath.GoldpathNotificationInfo.State.get -> string!	keep		
+Goldpath.GoldpathNotificationInfo.State.init -> void	keep		
+Goldpath.GoldpathNotificationInfo.Template.get -> string!	keep		
+Goldpath.GoldpathNotificationInfo.Template.init -> void	keep		
+Goldpath.GoldpathNotificationInfo.TemplateHash.get -> string!	keep		
+Goldpath.GoldpathNotificationInfo.TemplateHash.init -> void	keep		
+Goldpath.GoldpathNotificationInfo.Tenant.get -> string?	keep		
+Goldpath.GoldpathNotificationInfo.Tenant.init -> void	keep		
+Goldpath.GoldpathNotificationMessage	keep		
+Goldpath.GoldpathNotificationMessage.<Clone>$() -> Goldpath.GoldpathNotificationMessage!	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+Goldpath.GoldpathNotificationMessage.Attachments.get -> System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathNotificationAttachmentContent!>!	keep		
+Goldpath.GoldpathNotificationMessage.Attachments.init -> void	keep		
+Goldpath.GoldpathNotificationMessage.Body.get -> string!	keep		
+Goldpath.GoldpathNotificationMessage.Body.init -> void	keep		
+Goldpath.GoldpathNotificationMessage.CorrelationId.get -> string?	keep		
+Goldpath.GoldpathNotificationMessage.CorrelationId.init -> void	keep		
+Goldpath.GoldpathNotificationMessage.Deconstruct(out System.Guid NotificationId, out string! Recipient, out string? Subject, out string! Body, out System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathNotificationAttachmentContent!>! Attachments, out string! Template, out string? Tenant, out string? CorrelationId) -> void	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+Goldpath.GoldpathNotificationMessage.Equals(Goldpath.GoldpathNotificationMessage? other) -> bool	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+Goldpath.GoldpathNotificationMessage.GoldpathNotificationMessage(System.Guid NotificationId, string! Recipient, string? Subject, string! Body, System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathNotificationAttachmentContent!>! Attachments, string! Template, string? Tenant, string? CorrelationId) -> void	keep		
+Goldpath.GoldpathNotificationMessage.NotificationId.get -> System.Guid	keep		
+Goldpath.GoldpathNotificationMessage.NotificationId.init -> void	keep		
+Goldpath.GoldpathNotificationMessage.Recipient.get -> string!	keep		
+Goldpath.GoldpathNotificationMessage.Recipient.init -> void	keep		
+Goldpath.GoldpathNotificationMessage.Subject.get -> string?	keep		
+Goldpath.GoldpathNotificationMessage.Subject.init -> void	keep		
+Goldpath.GoldpathNotificationMessage.Template.get -> string!	keep		
+Goldpath.GoldpathNotificationMessage.Template.init -> void	keep		
+Goldpath.GoldpathNotificationMessage.Tenant.get -> string?	keep		
+Goldpath.GoldpathNotificationMessage.Tenant.init -> void	keep		
+Goldpath.GoldpathNotificationMetrics	remove		public-metrics question (Findings for API-13, API-3's proposed policy): the meter and instrument names are the contract (API-8, #397), not this class; SetQueueSnapshot is a public WRITER of the goldpath_notification_queue and goldpath_notification_oldest_requested_age_seconds gauges, so any caller could overwrite the age the runbook pages on (ops/runbooks.md). Its only callers are GoldpathNotificationAdminService and GoldpathNotificationSendJob, inside Goldpath.Notification — internal, as GoldpathArchivalMetrics and GoldpathJobsMetrics already are
+Goldpath.GoldpathNotificationModel	keep		
+Goldpath.GoldpathNotificationOptions	keep		
+Goldpath.GoldpathNotificationOptions.AddTemplate(string! key, System.Action<Goldpath.GoldpathNotificationTemplateBuilder!>! configure) -> Goldpath.GoldpathNotificationOptions!	keep		
+Goldpath.GoldpathNotificationOptions.ChunkSize.get -> int	keep		
+Goldpath.GoldpathNotificationOptions.ChunkSize.set -> void	keep		
+Goldpath.GoldpathNotificationOptions.Email(System.Action<Goldpath.GoldpathEmailOptions!>! configure) -> Goldpath.GoldpathNotificationOptions!	keep		
+Goldpath.GoldpathNotificationOptions.EmailOptions.get -> Goldpath.GoldpathEmailOptions!	keep		
+Goldpath.GoldpathNotificationOptions.GoldpathNotificationOptions() -> void	keep		
+Goldpath.GoldpathNotificationOptions.MaxAttempts.get -> int	keep		
+Goldpath.GoldpathNotificationOptions.MaxAttempts.set -> void	keep		
+Goldpath.GoldpathNotificationOptions.MaySend(System.Func<Goldpath.GoldpathNotificationRequest!, System.IServiceProvider!, System.Threading.Tasks.Task<bool>!>! hook) -> Goldpath.GoldpathNotificationOptions!	keep		
+Goldpath.GoldpathNotificationOptions.MaySendHook.get -> System.Func<Goldpath.GoldpathNotificationRequest!, System.IServiceProvider!, System.Threading.Tasks.Task<bool>!>!	keep		
+Goldpath.GoldpathNotificationOptions.RetryDelay.get -> System.TimeSpan	keep		
+Goldpath.GoldpathNotificationOptions.RetryDelay.set -> void	keep		
+Goldpath.GoldpathNotificationOptions.StaleClaimAfter.get -> System.TimeSpan	keep		
+Goldpath.GoldpathNotificationOptions.StaleClaimAfter.set -> void	keep		
+Goldpath.GoldpathNotificationOptions.Template(string! key) -> Goldpath.GoldpathNotificationTemplate!	keep		
+Goldpath.GoldpathNotificationOptions.Templates.get -> System.Collections.Generic.IReadOnlyCollection<Goldpath.GoldpathNotificationTemplate!>!	keep		
+Goldpath.GoldpathNotificationOptions.Webhook(System.Action<Goldpath.GoldpathWebhookOptions!>! configure) -> Goldpath.GoldpathNotificationOptions!	keep		
+Goldpath.GoldpathNotificationOptions.WebhookOptions.get -> Goldpath.GoldpathWebhookOptions!	keep		
+Goldpath.GoldpathNotificationRequest	keep		
+Goldpath.GoldpathNotificationRequest.Attachments.get -> System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathNotificationAttachmentContent!>!	keep		
+Goldpath.GoldpathNotificationRequest.Attachments.init -> void	keep		
+Goldpath.GoldpathNotificationRequest.Channel.get -> string!	keep		
+Goldpath.GoldpathNotificationRequest.CorrelationId.get -> string?	keep		
+Goldpath.GoldpathNotificationRequest.CorrelationId.init -> void	keep		
+Goldpath.GoldpathNotificationRequest.Culture.get -> string!	keep		
+Goldpath.GoldpathNotificationRequest.DedupKey.get -> string!	keep		
+Goldpath.GoldpathNotificationRequest.GoldpathNotificationRequest(string! template, string! channel, string! recipient, string! culture, System.Collections.Generic.IReadOnlyDictionary<string!, string!>! tokens, string! dedupKey) -> void	keep		
+Goldpath.GoldpathNotificationRequest.NotBefore.get -> System.DateTimeOffset?	keep		
+Goldpath.GoldpathNotificationRequest.NotBefore.init -> void	keep		
+Goldpath.GoldpathNotificationRequest.Recipient.get -> string!	keep		
+Goldpath.GoldpathNotificationRequest.Template.get -> string!	keep		
+Goldpath.GoldpathNotificationRequest.Tenant.get -> string?	keep		
+Goldpath.GoldpathNotificationRequest.Tenant.init -> void	keep		
+Goldpath.GoldpathNotificationRequest.Tokens.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>!	keep		
+Goldpath.GoldpathNotificationRetentionJob<TContext>	keep		a job's key is its type name (GoldpathJobDefinition.Name = jobType.Name): schedules, run history and the goldpath.job span tag carry it, so it stays public and unrenamed, as Archival's jobs do
+Goldpath.GoldpathNotificationRetentionJob<TContext>.ExecuteChunkAsync(Goldpath.GoldpathJobChunk! chunk, Goldpath.GoldpathJobContext! context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!	keep		a job's key is its type name (GoldpathJobDefinition.Name = jobType.Name): schedules, run history and the goldpath.job span tag carry it, so it stays public and unrenamed, as Archival's jobs do
+Goldpath.GoldpathNotificationRetentionJob<TContext>.GoldpathNotificationRetentionJob(Goldpath.GoldpathNotificationOptions! options, System.TimeProvider! time) -> void	keep		a job's key is its type name (GoldpathJobDefinition.Name = jobType.Name): schedules, run history and the goldpath.job span tag carry it, so it stays public and unrenamed, as Archival's jobs do
+Goldpath.GoldpathNotificationRetentionJob<TContext>.PlanAsync(Goldpath.GoldpathJobContext! context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathJobPlan!>!	keep		a job's key is its type name (GoldpathJobDefinition.Name = jobType.Name): schedules, run history and the goldpath.job span tag carry it, so it stays public and unrenamed, as Archival's jobs do
+Goldpath.GoldpathNotificationSendJob<TContext>	keep		a job's key is its type name (GoldpathJobDefinition.Name = jobType.Name): schedules, run history and the goldpath.job span tag carry it, so it stays public and unrenamed, as Archival's jobs do
+Goldpath.GoldpathNotificationSendJob<TContext>.ExecuteChunkAsync(Goldpath.GoldpathJobChunk! chunk, Goldpath.GoldpathJobContext! context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!	keep		a job's key is its type name (GoldpathJobDefinition.Name = jobType.Name): schedules, run history and the goldpath.job span tag carry it, so it stays public and unrenamed, as Archival's jobs do
+Goldpath.GoldpathNotificationSendJob<TContext>.GoldpathNotificationSendJob(Goldpath.GoldpathNotificationOptions! options, System.Collections.Generic.IEnumerable<Goldpath.IGoldpathNotificationChannel!>! channels, System.TimeProvider! time, Microsoft.Extensions.Logging.ILogger<Goldpath.GoldpathNotificationSendJob<TContext!>!>! logger) -> void	keep		a job's key is its type name (GoldpathJobDefinition.Name = jobType.Name): schedules, run history and the goldpath.job span tag carry it, so it stays public and unrenamed, as Archival's jobs do
+Goldpath.GoldpathNotificationSendJob<TContext>.PlanAsync(Goldpath.GoldpathJobContext! context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathJobPlan!>!	keep		a job's key is its type name (GoldpathJobDefinition.Name = jobType.Name): schedules, run history and the goldpath.job span tag carry it, so it stays public and unrenamed, as Archival's jobs do
+Goldpath.GoldpathNotificationSendJob<TContext>.ReplayItemAsync(string! itemKey, Goldpath.GoldpathJobContext! context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!	keep		a job's key is its type name (GoldpathJobDefinition.Name = jobType.Name): schedules, run history and the goldpath.job span tag carry it, so it stays public and unrenamed, as Archival's jobs do
+Goldpath.GoldpathNotificationState	keep		
+Goldpath.GoldpathNotificationState.Failed = 3 -> Goldpath.GoldpathNotificationState	keep		
+Goldpath.GoldpathNotificationState.Requested = 0 -> Goldpath.GoldpathNotificationState	keep		
+Goldpath.GoldpathNotificationState.Sent = 2 -> Goldpath.GoldpathNotificationState	keep		
+Goldpath.GoldpathNotificationState.Suppressed = 1 -> Goldpath.GoldpathNotificationState	keep		
+Goldpath.GoldpathNotificationTemplate	keep		
+Goldpath.GoldpathNotificationTemplate.ChannelTemplate(string! channel) -> Goldpath.GoldpathChannelTemplate!	keep		
+Goldpath.GoldpathNotificationTemplate.DeleteBodyAfter.get -> System.TimeSpan?	keep		
+Goldpath.GoldpathNotificationTemplate.Hash.get -> string!	keep		
+Goldpath.GoldpathNotificationTemplate.Key.get -> string!	keep		
+Goldpath.GoldpathNotificationTemplateBuilder	keep		
+Goldpath.GoldpathNotificationTemplateBuilder.Channel(string! name, System.Action<Goldpath.GoldpathChannelTemplateBuilder!>! configure) -> Goldpath.GoldpathNotificationTemplateBuilder!	keep		
+Goldpath.GoldpathNotificationTemplateBuilder.DeleteBodyAfter(System.TimeSpan period) -> Goldpath.GoldpathNotificationTemplateBuilder!	keep		
+Goldpath.GoldpathNotificationTemplateStatus	keep		
+Goldpath.GoldpathNotificationTemplateStatus.<Clone>$() -> Goldpath.GoldpathNotificationTemplateStatus!	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+Goldpath.GoldpathNotificationTemplateStatus.ByState.get -> System.Collections.Generic.IReadOnlyDictionary<string!, int>!	keep		
+Goldpath.GoldpathNotificationTemplateStatus.ByState.init -> void	keep		
+Goldpath.GoldpathNotificationTemplateStatus.Deconstruct(out string! Key, out string! Hash, out System.TimeSpan? DeleteBodyAfter, out System.Collections.Generic.IReadOnlyDictionary<string!, int>! ByState, out double? OldestRequestedSeconds) -> void	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+Goldpath.GoldpathNotificationTemplateStatus.DeleteBodyAfter.get -> System.TimeSpan?	keep		
+Goldpath.GoldpathNotificationTemplateStatus.DeleteBodyAfter.init -> void	keep		
+Goldpath.GoldpathNotificationTemplateStatus.Equals(Goldpath.GoldpathNotificationTemplateStatus? other) -> bool	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+Goldpath.GoldpathNotificationTemplateStatus.GoldpathNotificationTemplateStatus(string! Key, string! Hash, System.TimeSpan? DeleteBodyAfter, System.Collections.Generic.IReadOnlyDictionary<string!, int>! ByState, double? OldestRequestedSeconds) -> void	keep		
+Goldpath.GoldpathNotificationTemplateStatus.Hash.get -> string!	keep		
+Goldpath.GoldpathNotificationTemplateStatus.Hash.init -> void	keep		
+Goldpath.GoldpathNotificationTemplateStatus.Key.get -> string!	keep		
+Goldpath.GoldpathNotificationTemplateStatus.Key.init -> void	keep		
+Goldpath.GoldpathNotificationTemplateStatus.OldestRequestedSeconds.get -> double?	keep		
+Goldpath.GoldpathNotificationTemplateStatus.OldestRequestedSeconds.init -> void	keep		
+Goldpath.GoldpathNotifier<TContext>	remove		method Q1: adopters request through IGoldpathNotifier, which AddGoldpathNotification registers with this as its implementation (TryAddScoped<IGoldpathNotifier, GoldpathNotifier<TContext>>); DI builds an internal type, and no public member takes or returns it. Goldpath's own NotificationFixture and NotificationBenchTests construct it, so API-14 (#403) adds InternalsVisibleTo for Goldpath.IntegrationTests
+Goldpath.GoldpathNotifier<TContext>.GoldpathNotifier(TContext! db, Goldpath.GoldpathNotificationOptions! options, System.IServiceProvider! services, System.TimeProvider! time, Microsoft.Extensions.Logging.ILogger<Goldpath.GoldpathNotifier<TContext!>!>! logger) -> void	remove		method Q1: adopters request through IGoldpathNotifier, which AddGoldpathNotification registers with this as its implementation (TryAddScoped<IGoldpathNotifier, GoldpathNotifier<TContext>>); DI builds an internal type, and no public member takes or returns it. Goldpath's own NotificationFixture and NotificationBenchTests construct it, so API-14 (#403) adds InternalsVisibleTo for Goldpath.IntegrationTests
+Goldpath.GoldpathNotifier<TContext>.RequestAsync(Goldpath.GoldpathNotificationRequest! request, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathNotification!>!	remove		method Q1: adopters request through IGoldpathNotifier, which AddGoldpathNotification registers with this as its implementation (TryAddScoped<IGoldpathNotifier, GoldpathNotifier<TContext>>); DI builds an internal type, and no public member takes or returns it. Goldpath's own NotificationFixture and NotificationBenchTests construct it, so API-14 (#403) adds InternalsVisibleTo for Goldpath.IntegrationTests
+Goldpath.GoldpathWebhookChannel	keep		a built-in IGoldpathNotificationChannel, registered by type (TryAddEnumerable): an adopter who replaces or decorates one channel names it (method Q1)
+Goldpath.GoldpathWebhookChannel.GoldpathWebhookChannel(Goldpath.GoldpathNotificationOptions! options, System.Net.Http.IHttpClientFactory! httpClientFactory) -> void	keep		a built-in IGoldpathNotificationChannel, registered by type (TryAddEnumerable): an adopter who replaces or decorates one channel names it (method Q1)
+Goldpath.GoldpathWebhookChannel.Name.get -> string!	keep		a built-in IGoldpathNotificationChannel, registered by type (TryAddEnumerable): an adopter who replaces or decorates one channel names it (method Q1)
+Goldpath.GoldpathWebhookChannel.SendAsync(Goldpath.GoldpathNotificationMessage! message, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!	keep		a built-in IGoldpathNotificationChannel, registered by type (TryAddEnumerable): an adopter who replaces or decorates one channel names it (method Q1)
+Goldpath.GoldpathWebhookOptions	keep		
+Goldpath.GoldpathWebhookOptions.GoldpathWebhookOptions() -> void	keep		
+Goldpath.GoldpathWebhookOptions.Url.get -> string!	keep		
+Goldpath.GoldpathWebhookOptions.Url.set -> void	keep		
+Goldpath.IGoldpathNotificationChannel	keep		
+Goldpath.IGoldpathNotificationChannel.Name.get -> string!	keep		
+Goldpath.IGoldpathNotificationChannel.SendAsync(Goldpath.GoldpathNotificationMessage! message, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!	keep		
+Goldpath.IGoldpathNotifier	keep		
+Goldpath.IGoldpathNotifier.RequestAsync(Goldpath.GoldpathNotificationRequest! request, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Goldpath.GoldpathNotification!>!	keep		
+override Goldpath.GoldpathNotificationAttachmentContent.Equals(object? obj) -> bool	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+override Goldpath.GoldpathNotificationAttachmentContent.GetHashCode() -> int	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+override Goldpath.GoldpathNotificationAttachmentContent.ToString() -> string!	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+override Goldpath.GoldpathNotificationInfo.Equals(object? obj) -> bool	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+override Goldpath.GoldpathNotificationInfo.GetHashCode() -> int	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+override Goldpath.GoldpathNotificationInfo.ToString() -> string!	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+override Goldpath.GoldpathNotificationMessage.Equals(object? obj) -> bool	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+override Goldpath.GoldpathNotificationMessage.GetHashCode() -> int	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+override Goldpath.GoldpathNotificationMessage.ToString() -> string!	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+override Goldpath.GoldpathNotificationTemplateStatus.Equals(object? obj) -> bool	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+override Goldpath.GoldpathNotificationTemplateStatus.GetHashCode() -> int	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+override Goldpath.GoldpathNotificationTemplateStatus.ToString() -> string!	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+static Goldpath.GoldpathNotificationAdminEndpoints.MapGoldpathNotificationAdmin<TContext>(this Microsoft.AspNetCore.Routing.IEndpointRouteBuilder! endpoints, string! prefix = "/goldpath/admin/notification", bool exposeUnsecured = false) -> Microsoft.AspNetCore.Routing.IEndpointRouteBuilder!	keep		
+static Goldpath.GoldpathNotificationAdminService<TContext>.MaskRecipient(string! recipient) -> string!	remove		method Q1: the admin service's own masking of a recipient before it leaves GoldpathNotificationInfo; nothing outside the class calls it but Goldpath.Notification.Tests (AdminServiceTests), which API-14 (#403) serves with InternalsVisibleTo. A public helper here is a promise about the mask's exact shape that no adopter needs
+static Goldpath.GoldpathNotificationAttachmentContent.operator !=(Goldpath.GoldpathNotificationAttachmentContent? left, Goldpath.GoldpathNotificationAttachmentContent? right) -> bool	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+static Goldpath.GoldpathNotificationAttachmentContent.operator ==(Goldpath.GoldpathNotificationAttachmentContent? left, Goldpath.GoldpathNotificationAttachmentContent? right) -> bool	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+static Goldpath.GoldpathNotificationExtensions.AddGoldpathNotification<TBuilder, TContext>(this TBuilder builder, System.Action<Goldpath.GoldpathNotificationOptions!>! configure) -> TBuilder	keep		
+static Goldpath.GoldpathNotificationExtensions.AddGoldpathNotificationJobs<TContext>(this Goldpath.GoldpathJobsOptions! jobs, string! sendCron = "0/30 * * * * ?", string! retentionCron = "0 30 3 * * ?", System.TimeSpan? deadline = null) -> Goldpath.GoldpathJobsOptions!	keep		
+static Goldpath.GoldpathNotificationInfo.operator !=(Goldpath.GoldpathNotificationInfo? left, Goldpath.GoldpathNotificationInfo? right) -> bool	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+static Goldpath.GoldpathNotificationInfo.operator ==(Goldpath.GoldpathNotificationInfo? left, Goldpath.GoldpathNotificationInfo? right) -> bool	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+static Goldpath.GoldpathNotificationMessage.operator !=(Goldpath.GoldpathNotificationMessage? left, Goldpath.GoldpathNotificationMessage? right) -> bool	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+static Goldpath.GoldpathNotificationMessage.operator ==(Goldpath.GoldpathNotificationMessage? left, Goldpath.GoldpathNotificationMessage? right) -> bool	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+static Goldpath.GoldpathNotificationMetrics.SetQueueSnapshot(string! template, System.Collections.Generic.IReadOnlyDictionary<string!, int>! byState, double oldestRequestedSeconds) -> void	remove		public-metrics question (Findings for API-13, API-3's proposed policy): the meter and instrument names are the contract (API-8, #397), not this class; SetQueueSnapshot is a public WRITER of the goldpath_notification_queue and goldpath_notification_oldest_requested_age_seconds gauges, so any caller could overwrite the age the runbook pages on (ops/runbooks.md). Its only callers are GoldpathNotificationAdminService and GoldpathNotificationSendJob, inside Goldpath.Notification — internal, as GoldpathArchivalMetrics and GoldpathJobsMetrics already are
+static Goldpath.GoldpathNotificationModel.AddGoldpathNotification(this Microsoft.EntityFrameworkCore.ModelBuilder! modelBuilder) -> Microsoft.EntityFrameworkCore.ModelBuilder!	keep		kept as written pending the model-extension spelling finding (Findings for API-13, API-3); every generated DbContext calls it
+static Goldpath.GoldpathNotificationTemplateStatus.operator !=(Goldpath.GoldpathNotificationTemplateStatus? left, Goldpath.GoldpathNotificationTemplateStatus? right) -> bool	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
+static Goldpath.GoldpathNotificationTemplateStatus.operator ==(Goldpath.GoldpathNotificationTemplateStatus? left, Goldpath.GoldpathNotificationTemplateStatus? right) -> bool	keep		record-synthesized (#335): it follows its record's declaration, and P3 (record §4) keeps a positional record where the shape is the contract
