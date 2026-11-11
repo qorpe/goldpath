@@ -74,7 +74,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The hosted-fit twenty-two: every gated package, every night. Until 2026-10-20 the six
+        # The hosted-fit twenty-three: every gated package, every night. Until 2026-10-20 the six
         # long-running ones (Jobs, Archival, Bulk, Notification, Campaign, Caching) lived only in
         # mutation-heavy.yml — they OOMed the 16 GB runners (issue #20), because Stryker's
         # solution mode ran every referencing test project. Scoped to their own suites they
@@ -82,7 +82,7 @@ jobs:
         # mutation-heavy.yml stays as the on-demand rerun of those six.
         package: [Goldpath.Abstractions, Goldpath.Data, Goldpath.Idempotency, Goldpath.AuditTrail,
                   Goldpath.SoftDelete, Goldpath.DataProtection, Goldpath.MultiTenancy,
-                  Goldpath.Locking, Goldpath.Auth, Goldpath.Cli, Goldpath.Approvals, Goldpath.FileExchange,
+                  Goldpath.Locking, Goldpath.Locking.Oracle, Goldpath.Auth, Goldpath.Cli, Goldpath.Approvals, Goldpath.FileExchange,
                   Goldpath.Console, Goldpath.Messaging, Goldpath.ServiceDefaults,
                   Goldpath.Analyzers, Goldpath.Jobs, Goldpath.Archival, Goldpath.Bulk,
                   Goldpath.Notification, Goldpath.Campaign, Goldpath.Caching]

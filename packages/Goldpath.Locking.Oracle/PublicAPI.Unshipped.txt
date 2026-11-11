@@ -1,0 +1,3 @@
+#nullable enable
+Goldpath.GoldpathOracleLockingExtensions
+static Goldpath.GoldpathOracleLockingExtensions.AddGoldpathOracleLocking<TBuilder>(this TBuilder builder, System.Action<Goldpath.GoldpathLockingOptions!>? configure = null) -> TBuilder
