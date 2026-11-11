@@ -44,9 +44,28 @@ public interface IIntegrationEventPublisher
 /// tenant/correlation propagation — already lives in the pipeline filters, where it applies
 /// to every publish regardless of who called it.
 /// </summary>
-internal sealed class MassTransitIntegrationEventPublisher(IPublishEndpoint endpoint) : IIntegrationEventPublisher
+internal sealed class MassTransitIntegrationEventPublisher(IPublishEndpoint endpoint, MassTransitPublishMode? mode = null)
+    : IIntegrationEventPublisher, IGoldpathBatchPublisher
 {
     public Task PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken cancellationToken = default)
         where TEvent : class, IIntegrationEvent
         => endpoint.Publish(integrationEvent, cancellationToken);
+
+    /// <summary>
+    /// The batch (#285): concurrent on the wire only when the engine composed NO outbox. With the bus outbox the scoped
+    /// <c>IPublishEndpoint</c> adds <c>OutboxMessage</c> rows to the scope's <c>DbContext</c>, which cannot be touched
+    /// concurrently; and a registration that did not come through the engine (the <c>configureBus</c> overload, where an
+    /// adopter may call <c>UseBusOutbox</c> themselves) carries no mode, so it is never assumed outbox-free.
+    /// </summary>
+    public Task PublishBatchAsync<TEvent>(IReadOnlyList<TEvent> integrationEvents, CancellationToken cancellationToken)
+        where TEvent : class, IIntegrationEvent
+        => mode is { ConcurrentOnTheWire: true }
+            ? GoldpathBatchPublishing.BoundedAsync(integrationEvents, (e, ct) => endpoint.Publish(e, ct), cancellationToken)
+            : GoldpathBatchPublishing.OneAtATimeAsync(this, integrationEvents, cancellationToken);
 }
+
+/// <summary>
+/// What the MassTransit engine composed, as the batch publish needs to know it (#285): <see cref="ConcurrentOnTheWire"/>
+/// is true only when no outbox is composed, so a publish goes straight to the broker.
+/// </summary>
+internal sealed record MassTransitPublishMode(bool ConcurrentOnTheWire);

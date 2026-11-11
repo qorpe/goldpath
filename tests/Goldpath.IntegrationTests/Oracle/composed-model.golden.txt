@@ -1,5 +1,6 @@
 GoldpathApprovalDelegations.From: NVARCHAR2(128) not null
 GoldpathApprovalDelegations.Id: NUMBER(19) not null
+GoldpathApprovalDelegations.Role: NVARCHAR2(128) null
 GoldpathApprovalDelegations.To: NVARCHAR2(128) not null
 GoldpathApprovalDelegations.Until: TIMESTAMP(7) WITH TIME ZONE not null
 GoldpathApprovalSignatures.At: TIMESTAMP(7) WITH TIME ZONE not null

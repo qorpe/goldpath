@@ -99,6 +99,32 @@ the dynamic-assembly filter, the scan's catch branches, the kebab formatter on t
 builder names every endpoint), the test host's dispose branches, and its body guard, which the engine's
 own guard now makes equivalent.
 
+**Messaging, diff mode on the #285 branch (2026-11-10)**: `GOLDPATH_MUTATE_SINCE=origin/main mutation-gate.sh
+Goldpath.Messaging` at 499f74b, the publish seam's internal batch member. **92.11 %, gate green.** It tested 73 mutants
+in 43.5 minutes in the agent sandbox; 725 were unchanged since `origin/main` and skipped. Diff mode is not the
+authoritative score; the next full run is. On the lines #285 adds, two survived:
+- `start < items.Count` → `<=` in `BoundedAsync` was a real gap. When the count is an exact multiple of the bound, a
+  cancellation arriving during the last window would fail a batch whose every publish had completed.
+  `BatchPublishTests.A_cancellation_during_the_last_window_does_not_fail_a_completed_batch` kills it; I planted it
+  and saw it red.
+- Removing the empty-batch early return is equivalent: either path publishes nothing for an empty list.
+
+The rest of the run's survivors and uncovered mutants are lines this branch did not change, in
+`MassTransitMessagingEngine.cs`, which diff mode mutates whole: two message strings, a test-hook statement, and
+`"Stryker was here!"` on a refusal text.
+
+**Approvals was re-measured 2026-11-05**, a full run of `mutation-gate.sh Goldpath.Approvals` on the #479 branch
+(a delegation names the rung it delegates: `DelegateRoleAsync`, a nullable `Role` on the delegation and its row, and
+the rung check in `DecideAsync` and the worklist), on the local sandbox: 77.87 % → 77.35 % (2.8 minutes, the
+sandbox's, not the CI profile's; 353 mutants tested).
+- **The first run scored 77.05 %.** Its survivors on the new lines were a blank-role guard that the rung lookup made
+  redundant (a blank role matches no rung, and is refused with the same `fromRole` parameter), now removed, and the
+  refusal's wording, now asserted.
+- **Survivor left on the new lines:** removing `e.Property(x => x.Role).HasMaxLength(128)` from the delegation row's
+  model. It is the same class as the surviving `modelBuilder.Entity<GoldpathApprovalDelegationRow>` and `ToTable`
+  statements beside it, which were already there: the model the shape tests read is cached by EF across the run, so
+  a mutant in the model builder does not reach it. The Oracle model golden holds the column's type and length.
+
 **Archival in diff mode, 2026-11-10** (#547, `GOLDPATH_MUTATE_SINCE=origin/main`, the local sandbox; the full run
 stays the authoritative score, so the table below is unchanged): 98.61 % (72 mutants; diff mode mutates the whole of
 `ArchiveModel.cs`). Every mutant on the Oracle-only genesis mapping (the `IsOracle` test, the two `IsRequired(false)`
@@ -199,7 +225,7 @@ at f459fe2, so its row carries it (minutes not recorded).
 | Notification | 81.23 % | 11.23 | 5.9 | never finished (OOM) |
 | DataProtection | 78.95 % | 8.95 | 1.5 | 78.95 %, 33.0 |
 | ServiceDefaults | 78.48 % (72.15) | 8.48 | 1.4 | 72.15 %, 4.3 |
-| Approvals | 77.87 % (74.84) | 7.87 | 2.8 | 74.84 %, 217.7 |
+| Approvals | 77.35 % (74.84) | 7.35 | 2.8 | 74.84 %, 217.7 |
 | Data | 80.00 % | 10.00 | 3.8 | 77.38 %, 38.0 |
 | FileExchange | 76.92 % | 6.92 | 3.6 | 76.92 %, 31.8 |
 | Archival | 79.90 % (74.49) | 9.90 | 7.9 | never finished (OOM) |
@@ -357,6 +383,23 @@ On the lines R3-S10 changed: 153 killed, 37 survived, 4 without coverage (78.9 %
   instead of "B (100%)"). The score above was not re-run for it.
 
 These are the next facts to add for this package (T39's proof for R3-S10).
+
+**Campaign after R3-S8, target-system ceilings (#290), 2026-11-05.**
+- **The run:** a diff-mode run, `GOLDPATH_MUTATE_SINCE=origin/main mutation-gate.sh Goldpath.Campaign`, on the #290 branch at 8997b6c. It mutated the four changed files whole: 1,298 mutants, 487 tests, 113.6 minutes in the agent sandbox, scoring **79.40 %** (gate green). This is diff mode, so the full run stays the authoritative score, and the table row above is unchanged.
+- **On the lines R3-S8 added:** 72 killed, 23 survived, 1 without coverage, 43 compile errors.
+- **Killed since the run:** five of the survivors are killed by facts added after the run, each planted by hand and seen red:
+  - the follow's guard with `&&` turned into `||` (`OfTwoSystemsSeededAlike_OnlyTheOneWhoseCodeMoved_Follows`);
+  - the `continue` for an unmoved code value (`ACodeValueThatDidNotMove_…`);
+  - the reconcile's and the read's row match with `&&` turned into `||` (`ASystemNamedLikeTheGlobalRow_IsStillItsOwnRow`);
+  - the missing-global-row fallback (`WithNoRowsYet_TheLiveCeilingsAreTheCodeSeeds`).
+- **The rest, read one by one:**
+  - **Equivalent:** the two-pass loop's bounds (`<=`, `||`, `--`). Once `desired` is empty a further pass changes nothing.
+  - **Equivalent:** the `continue` after the disagreement warning. The guarded update that follows matches no row.
+  - **Equivalent within one conflict:** the insert's `true`/`false` and its `finally` detach. A second pass re-reads the row, and no later `SaveChanges` runs on that context.
+  - **Equivalent:** the global bucket's reset while off. The charge guard alone already prevents the debt (planted: both together go red, either alone does not).
+  - **Unreachable through a host that passed the startup check:** the target step's `continue` for an undeclared system.
+  - **A collision only with a system named `global`:** the `"target:"` ledger prefix.
+  - **Log text only:** the `moved == 1` log and the message strings.
 
 ## Excluded files
 

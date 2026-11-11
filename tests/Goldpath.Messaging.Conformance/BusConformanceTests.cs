@@ -451,6 +451,64 @@ public abstract class BusConformanceTests(ConformanceContainers containers, stri
         await host.StopAsync();
     }
 
+    /// <summary>
+    /// #285: the seam's internal batch member, with NO outbox — the engine keeps up to 64 publishes outstanding on the
+    /// wire. Every event of a 300-event batch is delivered exactly once, each carrying the ambient tenant, once the
+    /// returned task completes.
+    /// </summary>
+    [Fact]
+    public async Task S2_22_a_batch_published_straight_to_the_broker_delivers_every_event_once()
+    {
+        var observed = new Observed();
+        await using var host = await containers.BuildHostAsync(engine, observed, tenant: "tenant-batch", outbox: false);
+        await host.StartAsync();
+        var ids = Enumerable.Range(0, 300).Select(_ => Guid.NewGuid()).ToList();
+
+        using (var scope = host.Services.CreateScope())
+        {
+            var publisher = scope.ServiceProvider.GetRequiredService<IIntegrationEventPublisher>();
+            Assert.IsAssignableFrom<IGoldpathBatchPublisher>(publisher);
+            await publisher.PublishBatchAsync([.. ids.Select(id => new Ping { Id = id, Payload = "batch" })], CancellationToken.None);
+        }
+
+        await observed.WaitForPingsAsync(ids.Count, Wait);
+        await Task.Delay(TimeSpan.FromSeconds(2));   // grace for a wrong second delivery
+        Assert.Equal(ids.Order(), observed.Pings.Select(p => p.Event.Id).Order());
+        Assert.All(observed.Pings, p => Assert.Equal("tenant-batch", p.Context.Headers[GoldpathHeaders.TenantId]));
+        await host.StopAsync();
+    }
+
+    /// <summary>
+    /// #285: a batch WITH the outbox — the rows go into the one scoped context, commit with the caller's transaction, and
+    /// every event is delivered exactly once. With an outbox composed the seam's publisher is the size guard, which has
+    /// no batch member, so the batch is published one event at a time by construction (<c>BatchPublishTests</c> pins
+    /// that the guard is what an outbox host resolves); this fact proves the result on a real broker and database.
+    /// </summary>
+    [Fact]
+    public async Task S2_23_a_batch_through_the_outbox_commits_with_the_transaction_and_delivers_every_event_once()
+    {
+        var observed = new Observed();
+        await using var host = await containers.BuildHostAsync(engine, observed);
+        await host.StartAsync();
+        var ids = Enumerable.Range(0, 200).Select(_ => Guid.NewGuid()).ToList();
+
+        using (var scope = host.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ConformanceDb>();
+            var publisher = scope.ServiceProvider.GetRequiredService<IIntegrationEventPublisher>();
+            await using var transaction = await db.Database.BeginTransactionAsync();
+            db.Rows.Add(new Row { Id = Guid.NewGuid(), Note = "batch" });
+            await publisher.PublishBatchAsync([.. ids.Select(id => new Ping { Id = id, Payload = "outbox-batch" })], CancellationToken.None);
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
+        }
+
+        await observed.WaitForPingsAsync(ids.Count, Wait);
+        await Task.Delay(TimeSpan.FromSeconds(2));
+        Assert.Equal(ids.Order(), observed.Pings.Select(p => p.Event.Id).Order());
+        await host.StopAsync();
+    }
+
     [Fact]
     public async Task S2_16_publish_and_consume_are_one_trace_whose_consume_span_carries_tenant_and_correlation()
     {

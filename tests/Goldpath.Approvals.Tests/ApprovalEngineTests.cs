@@ -114,13 +114,128 @@ public class ApprovalEngineTests
         var (engine, _, _, store) = Build();
         var request = await engine.RequestAsync("credit-limit", "K26-7", 500_000m, "maker");
 
-        await engine.DelegateAsync("expert-user", "stand-in", TimeSpan.FromDays(3));
+        await engine.DelegateRoleAsync("expert-user", "expert", "stand-in", TimeSpan.FromDays(3));
         Assert.Equal(GoldpathApprovalDecisionOutcome.Applied,
             await engine.DecideAsync(request.Id, "stand-in", "no-role", true, "delegated decision"));
 
         // The stand-in holds a delegation — re-delegating would be a chain; refused.
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => engine.DelegateAsync("stand-in", "third", TimeSpan.FromDays(1)));
+            () => engine.DelegateRoleAsync("stand-in", "expert", "third", TimeSpan.FromDays(1)));
+    }
+
+    [Fact]
+    public async Task A_delegate_of_a_lower_rung_is_refused_at_a_higher_rung()
+    {
+        // #479 (T-APR-05): an expert's stand-in decides the expert rung, never the general manager's.
+        var (engine, _, _, store) = Build();
+        var expertRung = await engine.RequestAsync("credit-limit", "K26-7a", 500_000m, "maker");
+        var topRung = await engine.RequestAsync("credit-limit", "K26-7b", 99_000_000m, "maker");
+        await engine.DelegateRoleAsync("expert-user", "expert", "stand-in", TimeSpan.FromDays(3));
+
+        Assert.Equal(GoldpathApprovalDecisionOutcome.WrongRole,
+            await engine.DecideAsync(topRung.Id, "stand-in", "no-role", true, "beyond the delegated rung"));
+        Assert.Equal(GoldpathApprovalStatus.Pending, (await Reload(store, topRung.Id)).Status);
+        Assert.Equal(GoldpathApprovalDecisionOutcome.Applied,
+            await engine.DecideAsync(expertRung.Id, "stand-in", "no-role", true, "the delegated rung"));
+    }
+
+    [Fact]
+    public async Task A_delegation_admits_its_role_however_the_role_is_cased_and_on_every_ladder_with_that_rung()
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-08-18T09:00:00Z"));
+        var options = Options().AddLadder("overdraft", ladder => ladder
+            .Rung("expert", 10_000m, RungDeadline)
+            .TopRung("general-manager", TimeSpan.FromHours(24)));
+        var store = new GoldpathInMemoryApprovalStore();
+        var engine = new GoldpathApprovalEngine(options, store, clock,
+            NullLogger<GoldpathApprovalEngine>.Instance, new RecordingPublisher());
+        var overdraft = await engine.RequestAsync("overdraft", "OD-1", 5_000m, "maker");
+        await engine.DelegateRoleAsync("expert-user", "EXPERT", "stand-in", TimeSpan.FromDays(1));
+        Assert.Equal("expert", Assert.Single(await store.GetDelegationsAsync(clock.GetUtcNow())).Role);   // the ladder's spelling
+
+        Assert.Equal(GoldpathApprovalDecisionOutcome.Applied,
+            await engine.DecideAsync(overdraft.Id, "STAND-IN", "no-role", true, "same rung, another ladder"));
+    }
+
+    [Fact]
+    public async Task A_delegation_admits_its_rung_on_a_ladder_that_spells_the_rung_differently()
+    {
+        // The role is recorded in the FIRST matching ladder's spelling ("expert"); a second ladder that declares
+        // "Expert" must still admit the delegate, in the decision and in the worklist alike.
+        var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-08-18T09:00:00Z"));
+        var options = Options().AddLadder("overdraft", ladder => ladder
+            .Rung("Expert", 10_000m, RungDeadline)
+            .TopRung("general-manager", TimeSpan.FromHours(24)));
+        var store = new GoldpathInMemoryApprovalStore();
+        var engine = new GoldpathApprovalEngine(options, store, clock,
+            NullLogger<GoldpathApprovalEngine>.Instance, new RecordingPublisher());
+        var creditLimit = await engine.RequestAsync("credit-limit", "K26-7g", 500_000m, "maker");
+        var overdraft = await engine.RequestAsync("overdraft", "OD-2", 5_000m, "maker");
+        await engine.DelegateRoleAsync("expert-user", "expert", "stand-in", TimeSpan.FromDays(1));
+        Assert.Equal("expert", Assert.Single(await store.GetDelegationsAsync(clock.GetUtcNow())).Role);
+
+        Assert.Equal(new[] { creditLimit.Id, overdraft.Id }.Order(), (await engine.WorklistAsync("stand-in", "no-role")).Select(r => r.Id).Order());
+        Assert.Equal(GoldpathApprovalDecisionOutcome.Applied,
+            await engine.DecideAsync(overdraft.Id, "stand-in", "no-role", true, "the rung spelled Expert"));
+        Assert.Equal(GoldpathApprovalDecisionOutcome.Applied,
+            await engine.DecideAsync(creditLimit.Id, "stand-in", "no-role", true, "the rung spelled expert"));
+    }
+
+    [Fact]
+    public async Task The_worklist_shows_a_delegate_only_the_delegated_rung()
+    {
+        var (engine, _, _, _) = Build();
+        var expertRung = await engine.RequestAsync("credit-limit", "K26-7c", 500_000m, "maker");
+        await engine.RequestAsync("credit-limit", "K26-7d", 9_000_000m, "maker");     // manager rung
+        await engine.RequestAsync("credit-limit", "K26-7e", 99_000_000m, "maker");    // general-manager rung
+        await engine.DelegateRoleAsync("expert-user", "expert", "stand-in", TimeSpan.FromDays(3));
+
+        var worklist = await engine.WorklistAsync("stand-in", "no-role");
+
+        Assert.Equal(expertRung.Id, Assert.Single(worklist).Id);
+    }
+
+    [Fact]
+    public async Task A_delegation_recorded_without_a_role_admits_its_delegate_to_nothing()
+    {
+        // A row written before preview.10 has no role; it must not keep the old identity-level reach.
+        var (engine, clock, _, store) = Build();
+        var request = await engine.RequestAsync("credit-limit", "K26-7f", 500_000m, "maker");
+        await store.AddDelegationAsync(new GoldpathApprovalDelegation("expert-user", "stand-in", clock.GetUtcNow() + TimeSpan.FromDays(1)));
+
+        Assert.Equal(GoldpathApprovalDecisionOutcome.WrongRole,
+            await engine.DecideAsync(request.Id, "stand-in", "no-role", true, "role-less delegation"));
+        Assert.Empty(await engine.WorklistAsync("stand-in", "no-role"));
+    }
+
+    [Fact]
+    public async Task The_role_less_delegate_verb_refuses_with_teaching_text_and_records_nothing()
+    {
+        var (engine, clock, _, store) = Build();
+
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => engine.DelegateAsync("expert-user", "stand-in", TimeSpan.FromDays(1)));
+
+        Assert.Contains("#479", refused.Message, StringComparison.Ordinal);
+        Assert.Contains("DelegateRoleAsync(from, fromRole, to, window)", refused.Message, StringComparison.Ordinal);
+        Assert.Contains("never from a request body", refused.Message, StringComparison.Ordinal);
+        Assert.Empty(await store.GetDelegationsAsync(clock.GetUtcNow()));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("auditor")]       // no rung of any declared ladder
+    public async Task A_delegation_of_a_role_that_decides_nothing_is_refused(string role)
+    {
+        var (engine, clock, _, store) = Build();
+
+        var refused = await Assert.ThrowsAsync<ArgumentException>(
+            () => engine.DelegateRoleAsync("expert-user", role, "stand-in", TimeSpan.FromDays(1)));
+
+        Assert.Equal("fromRole", refused.ParamName);
+        Assert.StartsWith($"'{role}' is no rung of any declared ladder, so a delegation of it would admit to nothing.", refused.Message, StringComparison.Ordinal);
+        Assert.Empty(await store.GetDelegationsAsync(clock.GetUtcNow()));
     }
 
     [Fact]
@@ -128,7 +243,7 @@ public class ApprovalEngineTests
     {
         var (engine, clock, _, store) = Build();
         var request = await engine.RequestAsync("credit-limit", "K26-8", 500_000m, "maker");
-        await engine.DelegateAsync("expert-user", "stand-in", TimeSpan.FromDays(3));
+        await engine.DelegateRoleAsync("expert-user", "expert", "stand-in", TimeSpan.FromDays(3));
         clock.Advance(TimeSpan.FromDays(3) + TimeSpan.FromSeconds(1));
         Assert.Equal(GoldpathApprovalDecisionOutcome.WrongRole,
             await engine.DecideAsync(request.Id, "stand-in", "no-role", true, "too late"));

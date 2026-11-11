@@ -45,6 +45,53 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     configuration check removed. Mutation gate for `Goldpath.Locking`: 91.67 % → 92.00 % (`stryker/README.md`).
     `Goldpath.Locking.Oracle` joins the nightly mutation matrix for its name mapping, scored by
     `OracleLockNameTests` (no container): 100.00 %.
+- **Campaign: target-system ceilings as data (campaign RFC R3.2, part a, slice R3-S8, #290).**
+  - **API (additive):**
+    - `GoldpathCampaignOptions.AddTargetSystem(name, maxTps)` and `TargetSystems`;
+    - `GoldpathCampaignTypeBuilder<T>.TargetSystem(name)`;
+    - `GoldpathCampaignType.TargetSystem`;
+    - `GoldpathCampaignInfo.TargetSystem`, which is init-only, so no positional constructor changes.
+  - **The startup check (owner decision Q7, no analyzer):** `AddGoldpathCampaign` refuses a type that
+    names an undeclared system once the whole `configure` delegate has run, with teaching text. That text
+    names the declared systems, or the near spelling. Declaring a name twice is refused, compared ignoring
+    case, and so are an empty name, a name over 128 characters and a non-positive ceiling.
+  - **The rows (owner decision Q4):** at every leadership slice start, the leader reconciles
+    `GoldpathCampaignCeilings`, with one row per declared system plus the global row seeded from
+    `GlobalTps`.
+    - A missing row is inserted.
+    - A changed code value is followed only while `MaxTps == SeedMaxTps`. The update is guarded on the
+      values it read, so an operator's change landing in between stands.
+    - Otherwise the operator's value stays, and a warning names both values.
+    - An insert that loses the key to a concurrent writer re-reads that row and applies the same rule.
+    - An insert refused for any other reason (a missing grant, an adopter's trigger or constraint, a
+      deadlock) is logged at Warning with its exception and the row's name. The code seed binds until
+      the row exists, and the next slice tries again.
+  - **The pacer:**
+    - One query per tick reads the rows. A deleted row, or a system row holding no value, falls back to
+      the code seed, so the ceiling never silently opens.
+    - `Allocate` gains the target-system step between the type split and the global split. That step
+      uses R2.5's weighted fair share, with its own credit ledger (`target:<name>`) and #292's
+      one-tick bank.
+    - The global ceiling is read from its row. While it is off, it is charged nothing and holds
+      nothing, so turning it on mid-slice starts an empty bucket, not one in debt for what went out
+      meanwhile.
+    - A row value below zero, which only an edit outside the module can write, reads as zero.
+    - A leadership slice is now measured from after its start-of-slice bookkeeping (the re-count and
+      the ceiling reconcile). The first slice in a process otherwise spent part of its length
+      compiling those statements instead of ticking.
+  - **Signals:**
+    - a new gauge, `goldpath_campaign_target_system_max_tps{target_system}`;
+    - `goldpath_campaign_global_tps` now reports the row;
+    - `goldpath_campaign_binding_constraint` gains `target_system`.
+    - the campaign dashboard's "Release rate vs the TPS ceilings" panel draws each target system's
+      ceiling beside the type and global ones.
+  - **Proof:**
+    - `R3TargetSystemTests` (SQLite), every fact red with its fault planted.
+    - `CampaignCeilingProof` (PostgreSQL 17) and `CampaignCeilingOracleProof` (the Oracle lane): eight
+      leaders seeding at once, the global row's NULL seed followed, the operator's value standing, and a
+      pacer slice bound by the row rather than by code.
+  - **Not in this slice:** the audited verbs, the routes under admin-contract R4 and the governor's
+    editor (R3-S9, #318).
 - **The S-FLEET-02 rig: 30M targets, an hour at 2,000 TPS, headroom every 10 seconds (GA gate G10c, #349).** Tests,
   scripts and a dispatch-only workflow; no package changes. Nothing is measured yet: the run is the owner's overnight
   slot, tracked in open-threads T59.
@@ -747,6 +794,34 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   registration and names `Goldpath.Locking.Oracle` and `AddGoldpathOracleLocking()`, as `SqlServer` already
   was. A value that names no provider at all (an out-of-range cast) is refused in words; before, it was built
   as PostgreSQL. Proof: `LockingRegistrationTests` (three facts), red with the old registration.
+- **Campaign: a tick's releases are published as one batch, not one awaited broker round trip per item (#285, campaign
+  throughput Part 3/3).** No public API change: no line in any `PublicAPI.*.txt` moves, and an adopter changes nothing.
+  - **The seam gains an INTERNAL batch member** (`IGoldpathBatchPublisher`, owner decision on #285, 2026-11-09), reached
+    by `Goldpath.Campaign` and implemented by the second engine through `InternalsVisibleTo`. Both engines implement
+    it. With no outbox composed, a batch goes to the broker with at most 64 publishes outstanding: MassTransit through
+    the scoped `IPublishEndpoint`, and Wolverine on its one confirming channel. With an outbox, every publish is a row
+    in the one scoped `DbContext`, so the rows are added one at a time. The outbox's size guard has no batch member, so
+    that holds by construction. A publisher without the member, such as a decorator or a registration through the
+    `configureBus` overload, is published through one event at a time.
+  - **The pacer's three publish paths use it:** a tick's new releases, the ripe retries and the orphan re-releases.
+    Publish-then-mark is unchanged. The batch completes before the durable mark, and a batch that faults part way marks
+    nothing; `EngineTests.CrashBetweenPublishAndMarkRepublishesButNeverDoubleClaims` now runs through the batch member.
+  - **Measured** (`ops/campaign-benchmarks.md`, S-FLEET-02a). These are local sandbox runs, not CI.
+    - The 2-minute smoke: 584.4/s on `main` against 969.2/s with this change, and windows within ±5% of 1000 went
+      from 0% to 72.5%.
+    - The 15-minute run: 809.0/s mean with this change, against the 2026-10-22 baseline of 524.1/s.
+    - **S-FLEET-02a is still RED on this profile**: 37.6% of windows are in band against ≥95%, and 50 windows are
+      above 1000. Open-threads T67 holds what remains.
+    - Exactly-once held over 724,500 items.
+    - The pacer's steady tick issues 7 database commands for one hungry campaign, before and after; `TickQueryCountTests`
+      pins that.
+  - **Proof:**
+    - `BatchedReleaseTests`: each path publishes one batch, and goes red with the per-item loops put back.
+    - `BatchPublishTests`: the bound is reached and never exceeded; with an outbox, or without the engine's mode, the
+      batch goes one at a time; a failure is rethrown only after every started publish has settled; cancellation
+      starts no further window; and the engine composes the mode from the outbox (wiring).
+    - Conformance S2_22 and S2_23, on both engines, on real RabbitMQ and PostgreSQL: a 300-event batch straight to the
+      broker and a 200-event batch through the outbox, each delivered exactly once.
 - **Console: TypeScript 5.9.3 → 7.0.2, the native compiler (#493, replaces Dependabot #243).** A dev dependency, pinned
   exactly (`"typescript": "7.0.2"`, no range; the newest 7.0.x, published 2026-07-08). The console uses TypeScript only
   for `pnpm typecheck` (`tsc --noEmit`): Vite and Vitest transpile without loading the TypeScript API, and the console
@@ -841,6 +916,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **`api-review-gate.sh --selftest` no longer depends on its fixture package being unreviewed (API-4, #393).** The
+  selftest plants its faults against `Goldpath.Caching`'s table and assumed it was empty, so the first review part to
+  fill that table (API-4) turned "an uncovered line in the one package --package names" into a fault it could not
+  plant, and CI's `gates` job red. Every scratch copy now resets the fixture's table to its header, whatever the real
+  table holds; the gate's checks of the real tables are unchanged.
+- **[schema]** **Approvals: a delegation admits its delegate to the delegator's rung only (#479, threat model T-APR-05).**
+  A delegation carried no role, so an active one admitted its delegate to every rung of every ladder — the amount
+  ladder did not hold for a delegate.
+  - **API (additive):** `GoldpathApprovalEngine.DelegateRoleAsync(from, fromRole, to, window)`;
+    `GoldpathApprovalDelegation.Role` (init-only; the positional constructor is unchanged);
+    `GoldpathApprovalDelegationRow.Role`.
+  - **Behaviour:** `DecideAsync` and `WorklistAsync` admit a delegate only to a rung whose role equals the delegation's
+    (ignoring case). A delegation with no role — every one recorded before this release — admits to nothing.
+  - **Breaking at run time:** `DelegateAsync(from, to, window)` refuses with an `InvalidOperationException` that names
+    `DelegateRoleAsync`, and records nothing. `DelegateRoleAsync` refuses a blank role and a role that is no rung of any
+    declared ladder. The role must come from the authenticated delegator's claims, never from a request body.
+  - **Schema:** `GoldpathApprovalDelegations` gains a nullable `Role` (max 128). The upgrade guide has the migration
+    step and a query for the delegations it leaves without reach.
 - **Archival on Oracle: a definition's first archive is stored, and its chain verifies (#547).** The chain's genesis
   anchor is the empty hash, and Oracle stores `''` as NULL, so the `NOT NULL` anchor columns refused it (ORA-01400):
   nothing archived on Oracle, so retention and erasure had nothing to act on. On Oracle alone

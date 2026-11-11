@@ -87,7 +87,11 @@ S-FLEET-02a — One leader sustains 1000 TPS on a real broker (local profile of 
   needs:    local (thresholds approved by the owner on #283, 2026-10-20)
   evidence: CampaignBrokerBenchTests via scripts/bench-campaign.sh broker; numbers in
             packages/Goldpath.Campaign/ops/campaign-benchmarks.md. RED on today's release
-            path (2026-10-22 baseline): the rate thresholds fail, exactly-once holds
+            path (2026-10-22 baseline): the rate thresholds fail, exactly-once holds.
+            Still RED after batched publishing (#285; local run, no run id, 2026-11-10,
+            agent/285-batched-release@86615f6): 809.0/s over 900 s, 37.6% of windows in
+            band, 50 above 1000, exactly-once over 724,500 items; the 2-minute smoke
+            reached 969.2/s and 72.5%. What remains: open-threads T67
 
 S-FLEET-03 — Two campaigns under one GlobalTps never jointly exceed it
   modules:  campaign R1.4

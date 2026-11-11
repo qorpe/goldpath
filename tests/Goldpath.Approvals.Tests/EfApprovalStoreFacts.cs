@@ -122,7 +122,7 @@ public abstract class EfApprovalStoreFacts : IAsyncLifetime
         var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-08-18T09:00:00Z"));
         var engine = BuildEngine(clock);
         var request = await engine.RequestAsync("credit-limit", "K26-102", 500_000m, "maker");
-        await engine.DelegateAsync("expert-user", "stand-in", TimeSpan.FromDays(2));
+        await engine.DelegateRoleAsync("expert-user", "expert", "stand-in", TimeSpan.FromDays(2));
 
         // A restarted engine honors the persisted delegation...
         var restarted = BuildEngine(clock);

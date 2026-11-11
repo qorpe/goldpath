@@ -145,6 +145,10 @@ Reference profile, `scripts/bench-campaign.sh` → `ops/campaign-benchmarks.md`:
 - End-to-end 100k-item campaign on RabbitMQ: wall time, exactly-once-or-repair
   reconciliation (sink counts == durable counts == consumer executions).
 - Counter warmup: reconcile 1M-item campaign state from tables (seconds).
+- One leader at `Tps = 1000` on a real broker (S-FLEET-02a, measured 2026-11-10 after #285's batched publishing, the
+  overnight sandbox, 4 CPUs, co-located): 969.2/s over a 2-minute smoke with 72.5% of one-second windows within ±5%,
+  and 809.0/s over 15 minutes with 37.6% in band and 50 windows above 1000. The bar is ≥95% in band and none above,
+  so it is **not met on that profile**; exactly-once held over 724,500 items. Open-threads T67 holds the rest.
 
 ## 7. Observability (shipped)
 
@@ -167,13 +171,14 @@ added, renamed or re-tagged without this table changing fails that test.
 | `goldpath_campaign_awaiting_ack` | gauge | `campaign`, `type` | items awaiting a callback (R3.4): the row's `AwaitingAckCount`, held inside [0, in flight] as the detail reads it |
 | `goldpath_campaign_tps_ceiling` | gauge | `campaign`, `type` | the running campaign's `Tps` — the ceiling `rate(goldpath_campaign_released_total)` is read against |
 | `goldpath_campaign_type_max_tps` | gauge | `type` | a type's `MaxTps` (R2.4); absent for a type without one |
-| `goldpath_campaign_global_tps` | gauge | — | `GlobalTps` (R1.4); absent when not configured |
-| `goldpath_campaign_binding_constraint` | gauge (1) | `campaign`, `type`, `constraint` | the limit that bound the running campaign's last tick: `tps`, `in_flight`, `awaiting_ack` (R3.4: the acknowledgement room is strictly smaller than the live-work room; a tie reads `in_flight`), `quota`, `window`, `type`, `global`, or `none` (it released less than it was granted — nothing more was ready). A shared ceiling that cut the allowance wins over the campaign's own limits; among those, a tie names `quota`, then `in_flight`, then `tps`, the one that will not lift by itself. A tick granted nothing names the limit that zeroed it |
+| `goldpath_campaign_target_system_max_tps` | gauge | `target_system` | a declared target system's live ceiling, read from its `GoldpathCampaignCeilings` row (R3.2) |
+| `goldpath_campaign_global_tps` | gauge | — | the global ceiling (R1.4), read from its row since R3.2 (`GlobalTps` is its seed); absent when off |
+| `goldpath_campaign_binding_constraint` | gauge (1) | `campaign`, `type`, `constraint` | the limit that bound the running campaign's last tick: `tps`, `in_flight`, `awaiting_ack` (R3.4: the acknowledgement room is strictly smaller than the live-work room; a tie reads `in_flight`), `quota`, `window`, `type`, `target_system` (R3.2), `global`, or `none` (it released less than it was granted — nothing more was ready). A shared ceiling that cut the allowance wins over the campaign's own limits; among those, a tie names `quota`, then `in_flight`, then `tps`, the one that will not lift by itself. A tick granted nothing names the limit that zeroed it |
 | `goldpath_campaign_released_today`, `…_daily_quota` | gauge | `campaign`, `type` | quota consumption: what the quota day released, against `DailyQuota` (absent without one) |
 | `goldpath_campaign_leader_last_tick` | gauge, s | — | when this process's pacer last ticked, in Unix seconds. Every process that ever led keeps its last value, so liveness is `time() - max(goldpath_campaign_leader_last_tick)` |
 
 The per-campaign gauges (`tps_ceiling`, `binding_constraint`, `released_today`, `daily_quota`) and
-the shared ceilings (`type_max_tps`, `global_tps`) come from the last tick of a leadership slice that
+the shared ceilings (`type_max_tps`, `target_system_max_tps`, `global_tps`) come from the last tick of a leadership slice that
 is still running: a campaign that stops running (paused, finished, expired) leaves them with the
 next tick, and when a slice ends they all leave with it, because leadership may move. A process
 that no longer leads therefore exports none of them, and only the leader's live view is scraped;

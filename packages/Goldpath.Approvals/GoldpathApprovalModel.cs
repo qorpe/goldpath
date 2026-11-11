@@ -95,8 +95,19 @@ public sealed class GoldpathApprovalRequest
 /// <summary>One audited lifecycle step.</summary>
 public sealed record GoldpathApprovalTrailEntry(DateTimeOffset At, string Actor, string Action, string Detail);
 
-/// <summary>An active delegation: <c>From</c>'s pending items may be decided by <c>To</c>.</summary>
-public sealed record GoldpathApprovalDelegation(string From, string To, DateTimeOffset Until);
+/// <summary>
+/// An active delegation: <c>To</c> may decide what <c>From</c> may decide — the pending items on the rung of
+/// <see cref="Role"/>, and no other rung (#479).
+/// </summary>
+public sealed record GoldpathApprovalDelegation(string From, string To, DateTimeOffset Until)
+{
+    /// <summary>
+    /// The delegator's role: the one rung this delegation admits its delegate to (#479). Taken from the
+    /// authenticated delegator's claims when the delegation is granted, so the authority is fixed at that moment.
+    /// Null on a delegation recorded before 0.1.0-preview.10, which admits its delegate to nothing.
+    /// </summary>
+    public string? Role { get; init; }
+}
 
 /// <summary>
 /// One collected grant toward a rung's quorum. <c>Role</c> is the RUNG the signature counts
