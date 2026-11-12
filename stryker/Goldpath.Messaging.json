@@ -6,7 +6,7 @@
       "../../tests/Goldpath.Messaging.Conformance/Goldpath.Messaging.Conformance.csproj",
       "../../tests/Goldpath.IntegrationTests/Goldpath.IntegrationTests.csproj"
     ],
-    "test-case-filter": "FullyQualifiedName!~Goldpath.Tests.Integration.|FullyQualifiedName~Goldpath.Tests.Integration.OutboxAtomicityTests.",
+    "test-case-filter": "(FullyQualifiedName!~Goldpath.Tests.Integration.|FullyQualifiedName~Goldpath.Tests.Integration.OutboxAtomicityTests.)&Category!=Differential",
     "target-framework": "net10.0",
     "reporters": [
       "progress",

@@ -936,6 +936,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **The nightly Messaging mutation gate gave no verdict: it hit the job's 300-minute timeout (#562).** Since the S3
+  differential run joined `Goldpath.Messaging.Conformance` (#526), Stryker ran `BusDifferentialTests` (every conformance
+  fact again on both engines, on real containers) against every mutant: 216 tests found instead of 155, 441 mutants to
+  test instead of 348, and an initial test run of 7.8 minutes instead of 3.6. Nightly 42789231201 was cancelled at 300
+  minutes with no score. `stryker/Goldpath.Messaging.json` now also filters out `Category=Differential`. The differential
+  run compares engine outcomes; it is not the unit-level killer set, and it still runs on every pull request in `ci.yml`.
+  The threshold (break 70), the timeout and the concurrency cap are unchanged.
 - **Generated apps with an AppHost failed restore on an Aspire advisory published 2026-11-10 (GHSA-f7vh-h5g3-7jrh,
   CVE-2026-120006, high: Aspire elevation of privilege, fixed in 13.6.5).** `Aspire.Hosting` and `Aspire.Hosting.AppHost`
   below 13.6.5 are affected. Under TreatWarningsAsErrors NU1903 is a restore failure, so every golden-manifest shape with an
