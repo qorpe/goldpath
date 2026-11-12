@@ -10,6 +10,14 @@ on:
   schedule:
     - cron: "0 3 1 * *"   # 03:00 UTC on the 1st — the monthly reference re-measure
   workflow_dispatch:
+    inputs:
+      provider:
+        # #556 (G7 Oracle 8/12): `oracle` runs the Bulk and Jobs benches on the Oracle Free image the oracle lane pins
+        # (OracleFixture.Image), the intake at 1,000,000 rows. The monthly schedule stays PostgreSQL-only.
+        description: "Database the benches run on (postgres = the monthly reference set; oracle = Bulk and Jobs on Oracle Free)"
+        type: choice
+        options: [postgres, oracle]
+        default: postgres
 
 jobs:
   bench:
@@ -23,17 +31,34 @@ jobs:
             8.0.x
             10.0.x
       - name: benches (real containers, Category=Bench)
+        if: ${{ (inputs.provider || 'postgres') == 'postgres' }}
         run: |
           # detailed console logger: without it VSTest swallows the tests' BENCH- lines
-          # (the local bench-*.sh scripts run with the same flag).
+          # (the local bench-*.sh scripts run with the same flag). Category!=Oracle: the Oracle twins (#556) run only
+          # when dispatched with provider=oracle, so the monthly reference set is the one it was before them.
           dotnet test tests/Goldpath.IntegrationTests/Goldpath.IntegrationTests.csproj \
-            --filter "Category=Bench" --nologo --logger "console;verbosity=detailed" 2>&1 | tee bench.log
+            --filter "Category=Bench&Category!=Oracle" --nologo --logger "console;verbosity=detailed" 2>&1 | tee bench.log
+      - name: Bulk and Jobs benches on Oracle (dispatch only, #556)
+        if: ${{ inputs.provider == 'oracle' }}
+        env:
+          GOLDPATH_BENCH_PROVIDER: oracle
+          GOLDPATH_BENCH_BULK_INTAKE_ROWS: "1000000"
+        run: |
+          # The scripts refuse a run that printed no `provider=oracle` line, so this step cannot pass on PostgreSQL.
+          # Both run whatever the first says, and the step fails if either did: Bulk on Oracle is red until #559
+          # (the file chunk column is RAW(2000)), and the Jobs numbers must still be taken.
+          set +e
+          scripts/bench-bulk.sh > bulk.log 2>&1; bulk=$?
+          scripts/bench-jobs.sh > jobs.log 2>&1; jobs=$?
+          cat bulk.log jobs.log | tee bench.log
+          echo "bench-bulk exit $bulk, bench-jobs exit $jobs"
+          [ "$bulk" -eq 0 ] && [ "$jobs" -eq 0 ]
       - name: reference numbers → job summary
         if: always()
         run: |
-          echo '## Reference profile (ubuntu-latest, 4 vCPU / 16 GB)' >> "$GITHUB_STEP_SUMMARY"
+          echo "## Reference profile (ubuntu-latest, 4 vCPU / 16 GB), provider: ${{ inputs.provider || 'postgres' }}" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          grep -a "BENCH-" bench.log >> "$GITHUB_STEP_SUMMARY" || echo "no BENCH- lines found" >> "$GITHUB_STEP_SUMMARY"
+          grep -aE "BENCH[- ]" bench.log >> "$GITHUB_STEP_SUMMARY" || echo "no BENCH lines found" >> "$GITHUB_STEP_SUMMARY"   # "BENCH " too: the Jobs bench prints `BENCH items=`
           echo '```' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
         # Convenience upload: capped retention; a storage-quota hiccup never paints the run red.
