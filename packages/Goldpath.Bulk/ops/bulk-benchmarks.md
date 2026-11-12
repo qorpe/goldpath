@@ -76,3 +76,30 @@ within the file" findings.
   for the rows read before that repeat twice. The bench's row type is not such a definition.
 - **Validation dominates, upload does not.** The 162 MiB file uploaded in under 10 s; the
   ~12,000 rows/s of validation is the per-row staging write (10M rows → 1.2 GiB of database).
+
+## Oracle column (G7 Oracle 8/12, #556): not measurable yet, blocked by #559
+
+`GOLDPATH_BENCH_PROVIDER=oracle scripts/bench-bulk.sh` runs the same facts on Oracle: `BulkBenchOracleTests` (the 10k
+intake and the 100k execute) and `BulkIntakeBenchOracleTests` (set `GOLDPATH_BENCH_BULK_INTAKE_ROWS=1000000` for the
+1M-row intake). The image is `gvenzl/oracle-free:23.26.3-slim-faststart` (`OracleFixture.Image`), in the 19c SQL form.
+
+**No Oracle number exists yet.** On 2026-11-10 (the overnight sandbox, 4 CPUs, Debug build, `3a75a9c`), both card facts
+failed on their first save:
+`ORA-01460: unimplemented or unreasonable conversion requested`, at `GoldpathBulkFileStore.SaveAsync`.
+
+The cause is in the model, not in the bench:
+- On Oracle, `GoldpathBulkFileChunks.Data` is `RAW(2000)`. The store-type golden `Oracle/composed-model.golden.txt`
+  pins it that way.
+- The file store writes 256 KB chunks.
+- So every upload over 2,000 bytes is refused. The Oracle lane's `BulkOracleTests` uploads files of a few hundred
+  bytes, which is why it stays green.
+
+[#559](https://github.com/qorpe/goldpath/issues/559) tracks the fix. The 1M-row intake goes through the same store, so it
+was not run.
+
+### What "Reading the numbers" will need to say (oracle RFC §2.6)
+
+The engine writes intake rows through EF batches and `ExecuteUpdate`, with no `COPY` or `SqlBulkCopy`. On Oracle, EF
+batches those inserts with ODP.NET array binding. Once #559 lets a real file in, the comparison to make is the 10k
+upload, and the 1M intake's rows/s against PostgreSQL's on the same machine. Array binding is what should keep the
+intake within the same order of magnitude. A gap of ten times or more gets its own diagnosis, as #556 asks.

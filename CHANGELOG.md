@@ -5,6 +5,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **The Bulk and Jobs benches run on Oracle behind a provider switch (G7 Oracle 8/12, Part 1/2 of #411, #556).**
+  Tests, scripts and `bench.yml`; no package change.
+  - `scripts/bench-bulk.sh` and `scripts/bench-jobs.sh` take `GOLDPATH_BENCH_PROVIDER=postgres|oracle`, defaulting to
+    PostgreSQL.
+    - With Oracle, the same facts run on the Oracle collection's pinned container: `BulkBenchOracleTests`,
+      `BulkIntakeBenchOracleTests` and `JobsBenchOracleTests`, written once on `SuiteStore`.
+    - An Oracle run is refused unless every bench line it printed ends in `provider=oracle`. With the Oracle class wired
+      to PostgreSQL, the script exits 1 and says nothing was measured on Oracle.
+    - PostgreSQL's output is unchanged. `bench-jobs.sh` on PostgreSQL filters `Category!=Oracle`, so it runs the set
+      it ran before.
+  - Each Oracle twin carries `Category=Bench` and `Category=Oracle`, so neither the `integration` lane nor the `oracle`
+    lane runs it. That was checked by running both lanes' filters, which match no Oracle bench.
+  - `bench.yml` gains a `provider` dispatch input, which runs Bulk (1,000,000-row intake) and Jobs on Oracle. The
+    monthly schedule stays PostgreSQL-only. The job summary now also carries the Jobs bench's `BENCH items=` line.
+  - On Oracle the facts assert correctness and print their numbers; the budgets bind PostgreSQL only (oracle RFC §6:
+    measured, not promised).
+  - **Jobs on Oracle** (`ops/jobs-benchmarks.md`, the sandbox, 2026-11-10): plan → complete 1.7–1.8 s against
+    PostgreSQL's 1.5 s, and 8.3–9.2 ms of checkpoint per chunk against 7.6 ms.
+  - **Bulk on Oracle is not measurable yet.** Every upload over 2,000 bytes fails with ORA-01460, because
+    `GoldpathBulkFileChunks.Data` is `RAW(2000)` on Oracle and the store writes 256 KB chunks. #559 tracks it, and
+    open-threads T68 holds the Bulk column.
 - **Locking on Oracle: the optional `Goldpath.Locking.Oracle` package (G7, slice O-4, #407; RFC goldpath-oracle
   §2.9).**
   - **API (additive):** `AddGoldpathOracleLocking<TBuilder>(configure)` in the new package, and

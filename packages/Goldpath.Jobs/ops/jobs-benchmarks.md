@@ -41,3 +41,37 @@ On 4 shared vCPUs the RELATIVE degradation is CPU contention by construction; wh
 telco card actually asks — the operator's point-read staying interactive while a bulk
 job runs full-tilt — holds with p95 ≈ 10 ms. The plan/checkpoint proofs assert their
 budgets inside the same green run without printing a measurement line.
+
+## Oracle column (G7 Oracle 8/12, #556): 2026-11-10
+
+`GOLDPATH_BENCH_PROVIDER=oracle scripts/bench-jobs.sh` runs `JobsBenchOracleTests`: the same two facts on a fresh schema of
+the Oracle collection's pinned container, with the Quartz store unused (the runner only). PostgreSQL ran on the same
+machine the same night, so the two columns are comparable. The columns above are not.
+
+**Reference profile:** the overnight agent's cloud sandbox, Linux x64, 4 logical CPUs / 15 GB, Docker Engine 29, the
+bench process and the database co-located. **Debug build**, as `scripts/bench-jobs.sh` runs. Oracle Database Free
+`gvenzl/oracle-free:23.26.3-slim-faststart` (`OracleFixture.Image`), ODP.NET 23.26.301, Oracle EF 10.23.26301, in the
+19c SQL form; PostgreSQL `postgres:17-alpine`. **Code:** `agent/556-oracle-bulk-jobs-benches` at `3a75a9c` (the first Oracle run), and the
+same tree with the next commit's Oracle-only budget guard (the other runs; asserts only, nothing measured moves). No package change. **Run id: none.** These are local runs. The Oracle job takes 27 s end to end, container start included.
+
+| Proof | Budget (§6) | PostgreSQL 17 | Oracle Free 23.26.3 (three runs) |
+|---|---|---|---|
+| 100k-item no-op run, plan → complete (200 chunks × 500) | < 5 min | **1.5 s** | **1.8 s / 1.7 s / 1.7 s** |
+| Checkpoint cost per chunk (vs naked loop, absolute) | < 25 ms | **7.6 ms** | **9.2 ms / 8.3 ms / 8.4 ms** |
+| Interactive point-read p95 under a full-tilt write-heavy job | < 10% degradation | **1.5 ms → 3.4 ms** (128 %) | **1.5 → 5.1 ms / 3.3 → 7.5 ms / 1.2 → 6.9 ms** |
+
+No budget is promised on Oracle (oracle RFC §6: measured, not promised). The Oracle facts assert correctness (the run
+completes, every item once) and print their numbers. Only PostgreSQL's facts assert the budgets.
+
+### Reading the numbers
+
+- **Checkpointing costs about the same on Oracle as on PostgreSQL** on one machine: 8–9 ms a chunk against 7.6 ms. A
+  plan of 200 chunks completes in under two seconds on both. Nothing here is an order of magnitude apart.
+- **The interactive proof fails its own budget on this profile, on PostgreSQL too.**
+  - PostgreSQL: 1.5 → 3.4 ms against the 1.25× + 1 ms allowance. The fact's PostgreSQL code is unchanged by #556.
+  - The write-heavy job and the point reads share four CPUs with the database, as on the CI profile above (2.4 → 10.0 ms),
+    where the relative degradation is CPU contention by construction.
+  - Oracle stays interactive under the same load: the p95 is under 8 ms in all three runs. The relative figure swings
+    between runs (124 %–470 %) because its baseline is one or two milliseconds.
+- **The 25 ms checkpoint budget holds on Oracle** with room, so the runner's checkpoint path needs no Oracle-specific
+  change.

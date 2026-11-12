@@ -3,7 +3,6 @@ using Goldpath.Jobs.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
-using Testcontainers.PostgreSql;
 using Xunit;
 
 namespace Goldpath.Tests.Integration;
@@ -11,11 +10,23 @@ namespace Goldpath.Tests.Integration;
 /// <summary>
 /// The jobs RFC §6 performance proofs, runnable on demand (scripts/bench-jobs.sh — results
 /// recorded in ops/jobs-benchmarks.md). Trait-gated out of the normal suite: benchmarks are
-/// evidence, not regression tests.
+/// evidence, not regression tests. Written once: PostgreSQL here, Oracle in <see cref="JobsBenchOracleTests"/> (#556);
+/// <c>scripts/bench-jobs.sh</c> picks one with <c>GOLDPATH_BENCH_PROVIDER</c>.
 /// </summary>
 [Trait("Category", "Bench")]
-public sealed class JobsBenchTests : IAsyncLifetime
+public class JobsBenchTests : IAsyncLifetime
 {
+    private readonly SuiteStore _store;
+
+    /// <summary>The PostgreSQL bench: a container of its own, as before #556.</summary>
+    public JobsBenchTests()
+        : this(SuiteStore.PostgreSql())
+    {
+    }
+
+    /// <summary>The same bench on <paramref name="store"/>.</summary>
+    protected JobsBenchTests(SuiteStore store) => _store = store;
+
     private sealed class NoopJob : IGoldpathJob
     {
         public long Items { get; init; }
@@ -37,17 +48,9 @@ public sealed class JobsBenchTests : IAsyncLifetime
         }
     }
 
-    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17-alpine").Build();
+    public Task InitializeAsync() => _store.StartAsync<ClusterDb>(options => new(options));
 
-    public async Task InitializeAsync()
-    {
-        await _postgres.StartAsync();
-        await using var db = new ClusterDb(new DbContextOptionsBuilder<ClusterDb>()
-            .UseNpgsql(_postgres.GetConnectionString()).Options);
-        await db.Database.EnsureCreatedAsync();
-    }
-
-    public async Task DisposeAsync() => await _postgres.DisposeAsync();
+    public Task DisposeAsync() => _store.StopAsync();
 
     [Fact]
     public async Task Bench_100k_items_checkpointed_vs_naked_loop()
@@ -56,7 +59,7 @@ public sealed class JobsBenchTests : IAsyncLifetime
         const int chunkSize = 500;
 
         var services = new ServiceCollection();
-        services.AddDbContext<ClusterDb>(o => o.UseNpgsql(_postgres.GetConnectionString()));
+        services.AddDbContext<ClusterDb>(_store.Use);
         await using var provider = services.BuildServiceProvider();
         var runner = new GoldpathJobRunner<ClusterDb>(
             provider.GetRequiredService<IServiceScopeFactory>(),
@@ -90,7 +93,13 @@ public sealed class JobsBenchTests : IAsyncLifetime
             : 0;
         Console.WriteLine($"BENCH items={items} chunks={plan.ChunkPayloads.Count} " +
             $"checkpointed={watch.Elapsed.TotalSeconds:F1}s naked={nakedWatch.Elapsed.TotalSeconds:F1}s " +
-            $"checkpoint-cost-per-chunk={overhead / plan.ChunkPayloads.Count:F1}ms");
+            $"checkpoint-cost-per-chunk={overhead / plan.ChunkPayloads.Count:F1}ms{BenchProvider.Tag(_store)}");
+
+        // #556: Oracle's numbers are measured, not promised (oracle RFC §6), so the budgets bind PostgreSQL only.
+        if (_store.IsOracle)
+        {
+            return;
+        }
 
         // RFC §6: plan→complete < 5 min on the reference profile.
         Assert.True(watch.Elapsed < TimeSpan.FromMinutes(5),
@@ -107,11 +116,10 @@ public sealed class JobsBenchTests : IAsyncLifetime
         // The telco card's number at the layer where the contention actually lives (the
         // shared database): point-read p95 with NO job vs DURING a write-heavy run.
         var services = new ServiceCollection();
-        services.AddDbContext<ClusterDb>(o => o.UseNpgsql(_postgres.GetConnectionString()));
+        services.AddDbContext<ClusterDb>(_store.Use);
         await using var provider = services.BuildServiceProvider();
 
-        await using (var seed = new ClusterDb(new DbContextOptionsBuilder<ClusterDb>()
-            .UseNpgsql(_postgres.GetConnectionString()).Options))
+        await using (var seed = new ClusterDb(_store.Options<ClusterDb>()))
         {
             for (var i = 0; i < 500; i++)
             {
@@ -126,8 +134,7 @@ public sealed class JobsBenchTests : IAsyncLifetime
             var samples = new List<double>();
             for (var i = 0; i < 200 && !ct.IsCancellationRequested; i++)
             {
-                await using var db = new ClusterDb(new DbContextOptionsBuilder<ClusterDb>()
-                    .UseNpgsql(_postgres.GetConnectionString()).Options);
+                await using var db = new ClusterDb(_store.Options<ClusterDb>());
                 var start = Stopwatch.GetTimestamp();
                 _ = await db.Sink.AsNoTracking().FirstOrDefaultAsync(s => s.ChunkIndex == i % 500 && s.JobName == "seed", ct);
                 samples.Add(Stopwatch.GetElapsedTime(start).TotalMilliseconds);
@@ -163,10 +170,11 @@ public sealed class JobsBenchTests : IAsyncLifetime
         }
 
         var degradation = baseline <= 0 ? 0 : (underLoad - baseline) / baseline;
-        Console.WriteLine($"BENCH-INTERACTIVE baseline-p95={baseline:F1}ms under-load-p95={underLoad:F1}ms degradation={degradation:P0}");
+        Console.WriteLine($"BENCH-INTERACTIVE baseline-p95={baseline:F1}ms under-load-p95={underLoad:F1}ms degradation={degradation:P0}{BenchProvider.Tag(_store)}");
         // Budget (telco card): < 10% at the reference profile. Dev-machine noise gets a
         // small allowance; the recorded numbers in ops/jobs-benchmarks.md are the evidence.
-        Assert.True(underLoad < baseline * 1.25 + 1.0,
+        // #556: on Oracle the numbers are measured, not promised (oracle RFC §6), so the budget binds PostgreSQL only.
+        Assert.True(_store.IsOracle || underLoad < baseline * 1.25 + 1.0,
             $"interactive p95 degraded {degradation:P0} (baseline {baseline:F1}ms → {underLoad:F1}ms)");
     }
 
@@ -199,3 +207,12 @@ public sealed class JobsBenchTests : IAsyncLifetime
         }
     }
 }
+
+/// <summary>
+/// <see cref="JobsBenchTests"/> on Oracle (#556): a fresh schema on the Oracle collection's pinned container. Both traits
+/// are on the class so the per-PR <c>oracle</c> lane (<c>Category=Oracle&amp;Category!=Bench</c>) never runs it.
+/// </summary>
+[Trait("Category", "Bench")]
+[Trait("Category", "Oracle")]
+[Collection(OracleCollection.Name)]
+public sealed class JobsBenchOracleTests(OracleFixture oracle) : JobsBenchTests(SuiteStore.Oracle(oracle, "GP_JBENCH"));

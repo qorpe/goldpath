@@ -4,7 +4,6 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
-using Testcontainers.PostgreSql;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -17,10 +16,12 @@ namespace Goldpath.Tests.Integration;
 /// the run, the process's peak working set and the database's size. Rows come from
 /// <c>GOLDPATH_BENCH_BULK_INTAKE_ROWS</c> (default 10,000,000); every 100th row repeats an
 /// earlier, already written device, so duplicates are found and confirmed throughout the file.
+/// Written once: PostgreSQL here, Oracle in <see cref="BulkIntakeBenchOracleTests"/> (#556), where the database size
+/// is the bench schema's segments (<c>user_segments</c>), since the container's database holds other schemas too.
 /// </summary>
 [Trait("Category", "Bench")]
 [Collection(BulkIntakeBenchCollection.Name)]
-public sealed class BulkIntakeBenchTests : IAsyncLifetime
+public class BulkIntakeBenchTests : IAsyncLifetime
 {
     /// <summary>One line of an uploaded device list.</summary>
     public sealed class DeviceRow
@@ -31,28 +32,33 @@ public sealed class BulkIntakeBenchTests : IAsyncLifetime
     private static readonly int Rows = int.TryParse(Environment.GetEnvironmentVariable("GOLDPATH_BENCH_BULK_INTAKE_ROWS"),
         NumberStyles.Integer, CultureInfo.InvariantCulture, out var rows) && rows > 0 ? rows : 10_000_000;
 
-    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17-alpine").Build();
+    private readonly SuiteStore _store;
     private readonly ITestOutputHelper _output;
     private readonly string _file = Path.Combine(Path.GetTempPath(), $"goldpath-bulk-intake-{Guid.NewGuid():N}.csv");
     private ServiceProvider _services = null!;
     private GoldpathBulkEngine<BulkTests.BulkDb> _engine = null!;
 
-    public BulkIntakeBenchTests(ITestOutputHelper output) => _output = output;
+    /// <summary>The PostgreSQL bench: a container of its own, as before #556.</summary>
+    public BulkIntakeBenchTests(ITestOutputHelper output)
+        : this(SuiteStore.PostgreSql(), output)
+    {
+    }
+
+    /// <summary>The same bench on <paramref name="store"/>.</summary>
+    protected BulkIntakeBenchTests(SuiteStore store, ITestOutputHelper output) => (_store, _output) = (store, output);
 
     public async Task InitializeAsync()
     {
-        await _postgres.StartAsync();
+        await _store.StartAsync<BulkTests.BulkDb>(options => new(options));
         var options = new GoldpathBulkOptions();
         options.AddBatch<DeviceRow>("devices", b => b
             .MaxRows(Rows)
             .RowKey(r => r.DeviceId));
 
         var services = new ServiceCollection();
-        services.AddDbContext<BulkTests.BulkDb>(o => o.UseNpgsql(_postgres.GetConnectionString()));
+        services.AddDbContext<BulkTests.BulkDb>(_store.Use);
         services.AddSingleton(TimeProvider.System);
         _services = services.BuildServiceProvider();
-        using var scope = _services.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<BulkTests.BulkDb>().Database.EnsureCreatedAsync();
 
         _engine = new GoldpathBulkEngine<BulkTests.BulkDb>(
             options, new GoldpathBulkFileStore<BulkTests.BulkDb>(TimeProvider.System),
@@ -62,7 +68,7 @@ public sealed class BulkIntakeBenchTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _services.DisposeAsync();
-        await _postgres.DisposeAsync();
+        await _store.StopAsync();
         File.Delete(_file);
     }
 
@@ -132,17 +138,20 @@ public sealed class BulkIntakeBenchTests : IAsyncLifetime
         var validated = await db.Set<GoldpathBulkBatch>().AsNoTracking().SingleAsync(b => b.Id == batchId);
         var duplicateFindings = await db.Set<GoldpathBulkRowError>().AsNoTracking()
             .CountAsync(e => e.BatchId == batchId && e.Field == "(row key)");
-        var databaseBytes = await db.Database.SqlQueryRaw<long>("SELECT pg_database_size(current_database()) AS \"Value\"").SingleAsync();
+        var databaseBytes = await db.Database.SqlQueryRaw<long>(_store.IsOracle
+            ? "SELECT CAST(NVL(SUM(bytes), 0) AS NUMBER(19)) AS \"Value\" FROM user_segments"
+            : "SELECT pg_database_size(current_database()) AS \"Value\"").SingleAsync();
+        var tag = BenchProvider.Tag(_store);
         var validate = watch.Elapsed - upload;
 
         _output.WriteLine(string.Create(CultureInfo.InvariantCulture,
-            $"BENCH-BULK intake: {Rows:N0} rows ({fileBytes / 1_048_576.0:F0} MiB CSV), {repeats:N0} repeated devices, {Environment.ProcessorCount} logical CPUs"));
+            $"BENCH-BULK intake: {Rows:N0} rows ({fileBytes / 1_048_576.0:F0} MiB CSV), {repeats:N0} repeated devices, {Environment.ProcessorCount} logical CPUs{tag}"));
         _output.WriteLine(string.Create(CultureInfo.InvariantCulture,
-            $"BENCH-BULK intake: upload {upload.TotalSeconds:F1} s, validate {validate.TotalSeconds:F1} s, total {watch.Elapsed.TotalSeconds:F1} s = {Rows / watch.Elapsed.TotalSeconds:F0} rows/s"));
+            $"BENCH-BULK intake: upload {upload.TotalSeconds:F1} s, validate {validate.TotalSeconds:F1} s, total {watch.Elapsed.TotalSeconds:F1} s = {Rows / watch.Elapsed.TotalSeconds:F0} rows/s{tag}"));
         _output.WriteLine(string.Create(CultureInfo.InvariantCulture,
-            $"BENCH-BULK intake: peak managed heap {peakHeap / 1_048_576.0:F0} MiB (baseline {baselineHeap / 1_048_576.0:F0} MiB), peak working set {Process.GetCurrentProcess().PeakWorkingSet64 / 1_048_576.0:F0} MiB, database {databaseBytes / 1_048_576.0:F0} MiB"));
+            $"BENCH-BULK intake: peak managed heap {peakHeap / 1_048_576.0:F0} MiB (baseline {baselineHeap / 1_048_576.0:F0} MiB), peak working set {Process.GetCurrentProcess().PeakWorkingSet64 / 1_048_576.0:F0} MiB, {(_store.IsOracle ? "schema segments" : "database")} {databaseBytes / 1_048_576.0:F0} MiB{tag}"));
         _output.WriteLine(string.Create(CultureInfo.InvariantCulture,
-            $"BENCH-BULK intake: valid {validated.ValidRows:N0}, invalid {validated.InvalidRows:N0}, duplicate findings {duplicateFindings:N0}"));
+            $"BENCH-BULK intake: valid {validated.ValidRows:N0}, invalid {validated.InvalidRows:N0}, duplicate findings {duplicateFindings:N0}{tag}"));
 
         // The report must be right before the numbers mean anything.
         Assert.Equal(GoldpathBulkBatchState.Validated, validated.State);
@@ -152,6 +161,17 @@ public sealed class BulkIntakeBenchTests : IAsyncLifetime
         Assert.Equal(Rows - repeats, validated.ValidRows);
     }
 }
+
+/// <summary>
+/// <see cref="BulkIntakeBenchTests"/> on Oracle (#556), in the Oracle collection, which runs alone after every parallel
+/// collection, so the load stays as isolated as the PostgreSQL bench's own collection keeps it. Both traits are on the
+/// class so the per-PR <c>oracle</c> lane (<c>Category=Oracle&amp;Category!=Bench</c>) never runs it.
+/// </summary>
+[Trait("Category", "Bench")]
+[Trait("Category", "Oracle")]
+[Collection(OracleCollection.Name)]
+public sealed class BulkIntakeBenchOracleTests(OracleFixture oracle, ITestOutputHelper output)
+    : BulkIntakeBenchTests(SuiteStore.Oracle(oracle, "GP_BINTAKE"), output);
 
 /// <summary>
 /// Runs <see cref="BulkIntakeBenchTests"/> ALONE: bench.yml runs every <c>Category=Bench</c>
