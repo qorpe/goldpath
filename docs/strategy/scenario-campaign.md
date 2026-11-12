@@ -72,7 +72,10 @@ S-FLEET-02 — 30M inventory: one campaign sustains the configured TPS for an ho
             lane). The run itself is #349. The rig is built: CampaignFleet02BenchTests via
             scripts/bench-campaign.sh fleet02 (the Mac lane) and bench-fleet02.yml (the runner
             lane); it has not run for a result (open-threads T59), so this claims nothing
-  evidence: —
+  evidence: — for the hour. The enumeration leg alone is measured on Oracle too (#557, 2026-11-12,
+            packages/Goldpath.Campaign/ops/campaign-benchmarks.md, "Oracle column"): 1M targets
+            through the pacer at 8,177 rows/s against PostgreSQL's 17,868 on one machine. That is
+            the snapshot's rate, not this scenario's verdict
 
 S-FLEET-02a — One leader sustains 1000 TPS on a real broker (local profile of S-FLEET-02)
   modules:  campaign (pacer, item consumer, outcome sink), jobs, broker, store
