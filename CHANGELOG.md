@@ -622,8 +622,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   - **The smoke host** files a second approval request at startup, so this spec never races
     the approvals journey for one quorum.
 - **The 1.0 API review: Goldpath.Approvals and Goldpath.FileExchange (GA gate G4, API-5, #394).** Repository only,
-  no package change. All 635 live lines carry a verdict (376 Approvals, 259 FileExchange, at c9d23ae): 611
-  `experimental`, 24 `remove`, no `rename`. The removals are the two EF stores (`GoldpathEfApprovalStore<TContext>`,
+  no package change. All 635 live lines carry a verdict (376 Approvals, 259 FileExchange, at c9d23ae): 588
+  `experimental`, 24 `remove`, 23 `rename`. The renames are one record, `GoldpathQuarantinedRow` →
+  `GoldpathFileQuarantinedLine` (the File prefix its siblings carry, and not the `…Row` suffix the review reserves for EF
+  entities), with the five lines whose signatures name it. The removals are the two EF stores (`GoldpathEfApprovalStore<TContext>`,
   `GoldpathEfFileLedger<TContext>`), which only their `AddGoldpath…<TBuilder, TContext>` registers behind the store
   interface, and the two public metrics classes, which have no public member. The record's §4 states the lift condition
   once (open-threads T21, T22).

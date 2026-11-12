@@ -102,6 +102,10 @@ None. The review changes no manifest value. The manifest schema's freeze is API-
 - **`GPEXP001`** for `Goldpath.Approvals`;
 - **`GPEXP002`** for `Goldpath.FileExchange`.
 
+There is one id per package so an adopter opts in to each separately. Neither collides: the analyzer
+release files (`AnalyzerReleases.Shipped.md` and `AnalyzerReleases.Unshipped.md`) hold 50 `GP…` ids
+today and no `GPEXP` id. API-11 (#400) applies them.
+
 **The lift condition, stated once (API-5, #394).** `[Experimental]` comes off a package in a 1.x minor when
 its open thread's proof has run: [T21](../strategy/open-threads.md) for `Goldpath.Approvals` (one real
 amount-laddered approval flow from an adopter runs end to end on the module, with its audit trail) and
@@ -109,10 +113,6 @@ amount-laddered approval flow from an adopter runs end to end on the module, wit
 failure reprocessing and its ops runbook; the thread also still holds the transport adapters). From that minor, the lines the review marked `experimental` are SemVer-bound
 under the name and shape they carry, so every rename the review wanted is made before the lift, in API-14 (#403),
 not after it.
-
-There is one id per package so an adopter opts in to each separately. Neither collides: the analyzer
-release files (`AnalyzerReleases.Shipped.md` and `AnalyzerReleases.Unshipped.md`) hold 50 `GP…` ids
-today and no `GPEXP` id. API-11 (#400) applies them.
 
 **The method.** Each review part asks every line the same questions, and writes the answer only when
 the verdict is not `keep`:

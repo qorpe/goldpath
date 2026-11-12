@@ -147,9 +147,9 @@ here and never answers another part's lines.
   `cancellationToken` (API-2's ct policy), and `GoldpathNotificationMetrics` with its writer `SetQueueSnapshot` is a
   `remove` (API-3's metrics policy): `SetQueueSnapshot` sets the gauge the notification runbook pages on. Notification's
   model extension `AddGoldpathNotification` is kept as written, waiting on API-3's model-extension spelling finding.
-- **API-5 (#394), the experimental packages answered: every line `experimental` or `remove`; no `rename` was needed.**
+- **API-5 (#394), the experimental packages answered: every line `experimental`, `remove` or (one record) `rename`.**
   Measured at c9d23ae: 376 Approvals lines and 259 FileExchange lines, 635 in all (the issue's 462 was taken at 0186ca3,
-  before #479 and #480 grew Approvals). 611 are `experimental` under `GPEXP001`/`GPEXP002`, and 24 are `remove`. The
+  before #479 and #480 grew Approvals). 588 are `experimental` under `GPEXP001`/`GPEXP002`, 24 are `remove` and 23 are `rename`. The
   issue's four questions, answered:
   - **The EF stores go internal.** `GoldpathEfApprovalStore<TContext>` and `GoldpathEfFileLedger<TContext>` are
     registered only by `AddGoldpathApprovals<TBuilder, TContext>` and `AddGoldpathFileExchange<TBuilder, TContext>`,
@@ -171,10 +171,17 @@ here and never answers another part's lines.
     breaks it, `GoldpathApprovalModelExtensions.AddGoldpathApprovalModel`, is the ModelBuilder extension, which waits on
     API-3's spelling finding, so it is `experimental` as written. `GoldpathApprovalEscalationJob` keeps its name
     because a job's type name is its key.
+  - **One rename, for the owner to sign or overrule: `GoldpathQuarantinedRow` → `GoldpathFileQuarantinedLine`.**
+    FileExchange has three types for one quarantined line: `GoldpathFileQuarantineRow` (the EF entity),
+    `GoldpathQuarantinedRow` (the record `IGoldpathFileLedger.GetQuarantineAsync` and `GoldpathFileRailResult.Quarantined`
+    return) and `GoldpathFileQuarantineInfo` (the admin DTO). The record alone lacks the `File` prefix every other
+    FileExchange data type carries, and it takes the `…Row` suffix this review uses for EF entities, so it reads as a
+    second entity. The 23 rows are its 18 own lines and the 5 lines whose signatures name it (`GoldpathFileRailResult`'s
+    constructor, `Quarantined` and `Deconstruct`, `IGoldpathFileLedger.GetQuarantineAsync` and the in-memory ledger's; the EF ledger's is a
+    `remove`). Renaming it now is cheap; after the T22 lift it is a major.
   - **The metrics policy applied:** `GoldpathApprovalsMetrics` and `GoldpathFileExchangeMetrics` are `remove`. Both
     are public static classes with no public member at all.
   - **Two kept shapes, said so the owner can overrule them:** `GoldpathApprovalRequest`'s five `set` accessors stay
     `set` (the engine moves the state on the request it read, and a custom store outside the assembly materializes
     it, which neither `init` nor an internal setter serves); and no `ct` parameter exists in either package (measured),
     so API-2's ct policy changes nothing here.
-
