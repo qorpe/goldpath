@@ -211,6 +211,43 @@ public class R4FailuresAndOutcomesTests
         Assert.Equal(30, first.ByState["Failed"]);   // 3 + 3 + 2 + 22: the truncation hides codes, never counts
     }
 
+    /// <summary>
+    /// Equal counts straddling the twentieth place: the contract's ordinal order gives the place to
+    /// "B-UPPER", so the query must FETCH it, not only re-sort what it fetched. SQLite is bytewise by
+    /// default; the PostgreSQL (ICU) and Oracle (linguistic session) halves are CampaignOutcomesProof.
+    /// </summary>
+    [Fact]
+    public async Task ATieAcrossTheTwentiethPlace_IsBrokenOrdinally()
+    {
+        using var fixture = new CampaignFixture();
+        var campaign = await fixture.CreateAsync();
+        var seq = 0;
+        var rows = new List<GoldpathCampaignItem>();
+        foreach (var (code, count) in Enumerable.Range(0, 19).Select(n => (string.Create(CultureInfo.InvariantCulture, $"C{n:00}"), 10))
+                     .Concat([("a-lower", 1), ("a-second", 1), ("B-UPPER", 1)]))
+        {
+            rows.AddRange(Enumerable.Range(0, count).Select(_ => Item(campaign.Id, ++seq, GoldpathCampaignItemState.Failed, code)));
+        }
+
+        Seed(fixture, campaign.Id, rows);
+
+        var outcomes = await fixture.Admin().GetOutcomesAsync(campaign.Id, CancellationToken.None);
+
+        Assert.True(outcomes!.FailedCodesTruncated);
+        Assert.Equal(20, outcomes.FailedByCode.Count);
+        Assert.Equal(new GoldpathCampaignCodeCount("B-UPPER", 1), outcomes.FailedByCode[^1]);
+    }
+
+    /// <summary>The tie-break's collation is the provider's bytewise one, named by provider.</summary>
+    [Theory]
+    [InlineData("Npgsql.EntityFrameworkCore.PostgreSQL", "C")]
+    [InlineData("Oracle.EntityFrameworkCore", "BINARY")]
+    [InlineData("Microsoft.EntityFrameworkCore.Sqlite", null)]
+    [InlineData("Microsoft.EntityFrameworkCore.SqlServer", null)]
+    [InlineData(null, null)]
+    public void TheTieBreakCollation_IsTheProvidersBytewiseOne(string? provider, string? expected)
+        => Assert.Equal(expected, GoldpathCampaignAdminService<CampaignTestContext>.BinaryCollation(provider));
+
     [Fact]
     public async Task ExactlyTwentyCodes_AreNotTruncated()
     {

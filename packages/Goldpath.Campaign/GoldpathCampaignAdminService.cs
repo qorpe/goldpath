@@ -320,18 +320,23 @@ public sealed class GoldpathCampaignAdminService<TContext>
             .Select(g => new { State = g.Key, Count = g.LongCount() })
             .ToListAsync(ct);
 
-        // The order is fixed HERE, not left to the database: providers disagree on where NULL sorts
-        // and on how text collates. The database ranks by count and brings one code more than the page
-        // holds (the truncation flag); the final order — count descending, code ordinal, no code last
-        // among equal counts — is applied below. Where the database puts NULL among equal counts cannot
-        // change the answer: there is one NULL group, and the extra row it may take is the one the page
-        // drops. Which of several equal counts straddling the last place are listed is the database's
-        // collation's choice (open-threads T69).
-        var codes = await items.Where(i => i.State == GoldpathCampaignItemState.Failed)
+        // The order is fixed HERE, not left to the database's collation. The database ranks by count and
+        // breaks ties by the code under a BINARY collation (the provider's bytewise one: PostgreSQL "C",
+        // Oracle BINARY, SQLite's default), so the 21 rows it returns are the contract's first 21 rather
+        // than whichever equal counts a linguistic collation (ICU en-US, an Oracle session's NLS_SORT)
+        // happens to put first — a tie straddling the twentieth place included. It brings one code more
+        // than the page holds (the truncation flag); the final order — count descending, code ordinal,
+        // no code last among equal counts — is applied below. Where the database puts NULL among equal
+        // counts cannot change the answer: there is one NULL group, and the extra row it may take is the
+        // one the page drops.
+        var failed = items.Where(i => i.State == GoldpathCampaignItemState.Failed)
             .GroupBy(i => i.ErrorCode)
             .Select(g => new { Code = g.Key, Count = g.LongCount() })
-            .OrderByDescending(g => g.Count)
-            .ThenBy(g => g.Code)
+            .OrderByDescending(g => g.Count);
+        var collation = BinaryCollation(db.Database.ProviderName);
+        var codes = await (collation is null
+                ? failed.ThenBy(g => g.Code)
+                : failed.ThenBy(g => EF.Functions.Collate(g.Code, collation)))
             .Take(MaxFailedCodes + 1)
             .ToListAsync(ct);
 
@@ -347,6 +352,20 @@ public sealed class GoldpathCampaignAdminService<TContext>
             .ToList();
         return new GoldpathCampaignOutcomes(byState, failedByCode, codes.Count > MaxFailedCodes);
     }
+
+    /// <summary>
+    /// The bytewise collation the outcomes' tie-break is ordered under, so that which equal counts reach
+    /// the twentieth place is the same on every provider (admin-contract R4.3). Null where the provider's
+    /// default is already bytewise (SQLite) and for a provider Campaign has no proof on (SQL Server among
+    /// them), where the database's own collation still breaks that one tie (open-threads T69).
+    /// </summary>
+    internal static string? BinaryCollation(string? providerName) => providerName switch
+    {
+        null => null,
+        _ when providerName.Contains("Npgsql", StringComparison.Ordinal) => "C",
+        _ when providerName.Contains("Oracle", StringComparison.Ordinal) => "BINARY",
+        _ => null,
+    };
 
     /// <summary>The audit trail of one campaign (who did what, newest first).</summary>
     public async Task<IReadOnlyList<GoldpathCampaignAudit>> GetAuditAsync(Guid id, int take, CancellationToken ct)
