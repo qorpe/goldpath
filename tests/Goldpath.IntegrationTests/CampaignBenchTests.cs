@@ -2,7 +2,6 @@ using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
-using Testcontainers.PostgreSql;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -12,10 +11,11 @@ namespace Goldpath.Tests.Integration;
 /// Campaign RFC §6 performance proofs (scripts/bench-campaign.sh →
 /// ops/campaign-benchmarks.md). Trait-gated: evidence, not regression tests.
 /// The pacer's PRECISION is the product here — a governor that cannot hold its
-/// ceiling is not a governor.
+/// ceiling is not a governor. Written once: PostgreSQL here, Oracle in <see cref="CampaignBenchOracleTests"/> (#557);
+/// <c>scripts/bench-campaign.sh</c> picks one with <c>GOLDPATH_BENCH_PROVIDER</c>.
 /// </summary>
 [Trait("Category", "Bench")]
-public sealed class CampaignBenchTests : IAsyncLifetime
+public class CampaignBenchTests : IAsyncLifetime
 {
     public sealed record BenchTarget(long Id);
 
@@ -32,17 +32,28 @@ public sealed class CampaignBenchTests : IAsyncLifetime
         }
     }
 
-    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17-alpine").Build();
+    private readonly SuiteStore _store;
     private readonly ITestOutputHelper _output;
     private ServiceProvider _services = null!;
     private GoldpathCampaignOptions _options = null!;
     private CountingPublisher _publisher = null!;
 
-    public CampaignBenchTests(ITestOutputHelper output) => _output = output;
+    /// <summary>The PostgreSQL bench: a container of its own, as before #557.</summary>
+    public CampaignBenchTests(ITestOutputHelper output)
+        : this(SuiteStore.PostgreSql(), output)
+    {
+    }
+
+    /// <summary>The same bench on <paramref name="store"/>.</summary>
+    protected CampaignBenchTests(SuiteStore store, ITestOutputHelper output)
+    {
+        _store = store;
+        _output = output;
+    }
 
     public async Task InitializeAsync()
     {
-        await _postgres.StartAsync();
+        await _store.StartAsync();
         _options = new GoldpathCampaignOptions();
         _options.AddCampaign<BenchTarget>("bench", c => c
             .MaxTargets(2_000_000)
@@ -50,7 +61,7 @@ public sealed class CampaignBenchTests : IAsyncLifetime
 
         _publisher = new CountingPublisher();
         var services = new ServiceCollection();
-        services.AddDbContext<CampaignTests.CampDb>(o => o.UseNpgsql(_postgres.GetConnectionString()));
+        services.AddDbContext<CampaignTests.CampDb>(_store.Use);
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton(_options);
         services.AddSingleton<IIntegrationEventPublisher>(_publisher);
@@ -58,15 +69,12 @@ public sealed class CampaignBenchTests : IAsyncLifetime
             _options, TimeProvider.System, NullLogger<GoldpathCampaignEngine<CampaignTests.CampDb>>.Instance));
         services.AddLogging();
         _services = services.BuildServiceProvider();
-
-        using var scope = _services.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<CampaignTests.CampDb>().Database.EnsureCreatedAsync();
     }
 
     public async Task DisposeAsync()
     {
         await _services.DisposeAsync();
-        await _postgres.DisposeAsync();
+        await _store.StopAsync();
     }
 
     private GoldpathCampaignEngine<CampaignTests.CampDb> Engine
@@ -96,7 +104,7 @@ public sealed class CampaignBenchTests : IAsyncLifetime
 
         watch.Stop();
         var rate = campaign.EnumeratedThrough / watch.Elapsed.TotalSeconds;
-        _output.WriteLine($"BENCH-CAMPAIGN enumeration: 1,000,000 targets materialized in {watch.Elapsed.TotalSeconds:F1} s = {rate:F0} rows/s");
+        _output.WriteLine($"BENCH-CAMPAIGN enumeration: 1,000,000 targets materialized in {watch.Elapsed.TotalSeconds:F1} s = {rate:F0} rows/s{BenchProvider.Tag(_store)}");
         Assert.Equal(1_000_000, campaign.EnumeratedThrough);
     }
 
@@ -120,7 +128,7 @@ public sealed class CampaignBenchTests : IAsyncLifetime
         await pacer.ExecuteChunkAsync(CampaignFixtureLike.MakeChunk(0, "lead"), context, CancellationToken.None);
         var afterPhase1 = await ReloadAsync(campaign.Id);
         var phase1Rate = afterPhase1.ReleasedThrough / 15.0;
-        _output.WriteLine($"BENCH-CAMPAIGN pacer: configured 200 TPS, measured {phase1Rate:F1} released/s over 15 s ({afterPhase1.ReleasedThrough} items)");
+        _output.WriteLine($"BENCH-CAMPAIGN pacer: configured 200 TPS, measured {phase1Rate:F1} released/s over 15 s ({afterPhase1.ReleasedThrough} items){BenchProvider.Tag(_store)}");
 
         // Phase 2: LIVE throttle to 50 on the row; next slice must hold the NEW ceiling.
         using (var throttleScope = _services.CreateScope())
@@ -134,7 +142,15 @@ public sealed class CampaignBenchTests : IAsyncLifetime
         await pacer.ExecuteChunkAsync(CampaignFixtureLike.MakeChunk(0, "lead"), context, CancellationToken.None);
         var afterPhase2 = await ReloadAsync(campaign.Id);
         var phase2Rate = (afterPhase2.ReleasedThrough - beforePhase2) / 15.0;
-        _output.WriteLine($"BENCH-CAMPAIGN throttle: live-throttled to 50 TPS, measured {phase2Rate:F1} released/s over the next 15 s");
+        _output.WriteLine($"BENCH-CAMPAIGN throttle: live-throttled to 50 TPS, measured {phase2Rate:F1} released/s over the next 15 s{BenchProvider.Tag(_store)}");
+
+        // #557: on Oracle the numbers are measured, not promised (oracle RFC §6), so the precision band binds PostgreSQL
+        // only. That the live throttle BIT is still asserted: a slower second phase than the first.
+        if (_store.IsOracle)
+        {
+            Assert.True(phase2Rate < phase1Rate, $"the live throttle did not bite: {phase1Rate:F1}/s then {phase2Rate:F1}/s");
+            return;
+        }
 
         Assert.InRange(phase1Rate, 180, 210);   // ±10% on the loose side; the report carries the real number
         Assert.InRange(phase2Rate, 40, 60);
@@ -183,7 +199,7 @@ public sealed class CampaignBenchTests : IAsyncLifetime
 
         watch.Stop();
         var rate = 100_000 / watch.Elapsed.TotalSeconds;
-        _output.WriteLine($"BENCH-CAMPAIGN sink: 100,000 outcomes flushed (batches of 200) in {watch.Elapsed.TotalSeconds:F1} s = {rate:F0} outcomes/s");
+        _output.WriteLine($"BENCH-CAMPAIGN sink: 100,000 outcomes flushed (batches of 200) in {watch.Elapsed.TotalSeconds:F1} s = {rate:F0} outcomes/s{BenchProvider.Tag(_store)}");
         var row = await ReloadAsync(campaign.Id);
         Assert.Equal(100_000, row.SucceededCount);
     }
@@ -205,6 +221,16 @@ public sealed class CampaignBenchTests : IAsyncLifetime
         await Task.CompletedTask;
     }
 }
+
+/// <summary>
+/// <see cref="CampaignBenchTests"/> on Oracle (#557): a fresh schema on the Oracle collection's pinned container. Both
+/// traits are on the class so the per-PR <c>oracle</c> lane (<c>Category=Oracle&amp;Category!=Bench</c>) never runs it.
+/// </summary>
+[Trait("Category", "Bench")]
+[Trait("Category", "Oracle")]
+[Collection(OracleCollection.Name)]
+public sealed class CampaignBenchOracleTests(OracleFixture oracle, ITestOutputHelper output)
+    : CampaignBenchTests(SuiteStore.Oracle(oracle, "GP_CBENCH"), output);
 
 /// <summary>The unit fixture's reflection helpers, needed here too (internal jobs ctors).</summary>
 internal static class CampaignFixtureLike
