@@ -161,6 +161,19 @@ public class CampaignTests : IAsyncLifetime
         }
     }
 
+    /// <summary>The campaign row's watermarks and counters, and its items by state: where a campaign that did not finish stopped (#571).</summary>
+    private string Dump(Guid id)
+    {
+        var row = Query(db => db.Set<GoldpathCampaign>().AsNoTracking().Single(c => c.Id == id));
+        var states = Query(db => db.Set<GoldpathCampaignItem>().AsNoTracking().Where(i => i.CampaignId == id)
+            .GroupBy(i => i.State).Select(g => new { State = g.Key, Count = g.Count() }).ToList());
+        return $"state={row.State} tps={row.Tps} maxInFlight={row.MaxInFlight} enumerated={row.EnumeratedThrough} "
+            + $"complete={row.EnumerationComplete} released={row.ReleasedThrough} succeeded={row.SucceededCount} "
+            + $"failed={row.FailedCount} awaitingAck={row.AwaitingAckCount} policyVersion={row.PolicyVersion}; items: "
+            + string.Join(", ", states.OrderBy(x => x.State).Select(x => $"{x.State}={x.Count}"))
+            + $"; executions={WinbackHandler.Executions.Count}";
+    }
+
     [Fact]
     public async Task Thousands_release_paced_across_leader_handovers_and_a_live_throttle_lifts_the_ceiling()
     {
@@ -192,7 +205,29 @@ public class CampaignTests : IAsyncLifetime
         }
 
         // Completion inside the timeout IS the throttle proof (10 TPS could not get there).
-        var done = await WaitForStateAsync(campaign.Id, GoldpathCampaignState.Completed, timeout.Token);
+        GoldpathCampaign done;
+        try
+        {
+            done = await WaitForStateAsync(campaign.Id, GoldpathCampaignState.Completed, timeout.Token);
+        }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+        {
+            // #571: a hang about half the time on Oracle. Say where the campaign stopped, not only that it did. The dump
+            // reads the same database, so on the worst run (the sessions exhausted) it can fail too; the timeout is still
+            // the failure reported, with why the dump could not be taken.
+            string where;
+            try
+            {
+                where = Dump(campaign.Id);
+            }
+            catch (Exception error)
+            {
+                where = $"(the state could not be read: {error.GetType().Name}: {error.Message})";
+            }
+
+            throw new Xunit.Sdk.XunitException("the campaign did not complete within 4 minutes. " + where);
+        }
+
         Assert.Equal(3_000, done.EnumeratedThrough);
         Assert.Equal(3_000, done.ReleasedThrough);
         Assert.Equal(3_000, done.SucceededCount);

@@ -957,6 +957,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **The `oracle` lane no longer runs the shared Oracle Free container out of sessions (#571).** Since #529 and #558,
+  `CampaignOracleTests.Thousands_release_paced_across_leader_handovers_and_a_live_throttle_lifts_the_ceiling` hung about
+  half the time in the lane and never alone. Measured on 2026-11-12: the container runs with `processes=200`, about 85 of
+  them its own; the campaign host held 90 sessions while classes that had already finished still held 15 in their idle
+  pools. Consumers then met ORA-12516 after claiming, and their items stayed `Processing` until the ten-minute stale-claim
+  sweep, past the test's four minutes (the new dump on timeout: `Processing=7`). Test infrastructure only:
+  `OracleFixture.CreateSchemaAsync` releases every idle pooled session before it creates the next class's schema, and
+  bounds each schema's pool at 48 (`OracleSessionBudgetTests`). The engine is unchanged; a consumer that fails after its
+  claim is still repaired by the stale-claim sweep, as designed.
 - **Generated apps with an AppHost failed restore on an Aspire advisory published 2026-11-10 (GHSA-f7vh-h5g3-7jrh,
   CVE-2026-120006, high: Aspire elevation of privilege, fixed in 13.6.5).** `Aspire.Hosting` and `Aspire.Hosting.AppHost`
   below 13.6.5 are affected. Under TreatWarningsAsErrors NU1903 is a restore failure, so every golden-manifest shape with an

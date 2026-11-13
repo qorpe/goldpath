@@ -34,11 +34,27 @@ public sealed class OracleFixture : IAsyncLifetime
     public Task DisposeAsync() => _oracle.DisposeAsync().AsTask();
 
     /// <summary>
+    /// The most pooled sessions one schema's connection string may hold (#571). Oracle Free runs with
+    /// <c>processes=200</c>, of which about 85 are the database's own background processes, and every class in the
+    /// collection shares this one container. Measured in the lane on 2026-11-12: the campaign suite's host alone held 90
+    /// sessions while suites that had already finished still held 15, and a consumer that could not get a session after
+    /// its claim left the item Processing until the ten-minute stale-claim sweep. Bounded, one suite cannot take the
+    /// container's last sessions; a burst past the bound waits for a pooled session instead of failing on ORA-12516.
+    /// </summary>
+    public const int MaxPoolSize = 48;
+
+    /// <summary>
     /// A fresh, empty schema (an Oracle user) on the container, created as SYSTEM, so a test that needs an empty
-    /// database does not depend on another test's order. Returns its ODP.NET connection string.
+    /// database does not depend on another test's order. Returns its ODP.NET connection string, its pool bounded by
+    /// <see cref="MaxPoolSize"/>. Creating one first releases every idle pooled session the process holds: the classes
+    /// before it in the collection have finished (it runs one class at a time), and their idle sessions would otherwise
+    /// count against the container's limit until the pool's own idle timer closed them (#571). It is also called
+    /// mid-class, per test or per twin, so it releases the current class's idle sessions too; those are reopened on
+    /// demand, and a connection in use is never closed under its holder (it is closed, not re-pooled, when returned).
     /// </summary>
     public async Task<string> CreateSchemaAsync(string name)
     {
+        OracleConnection.ClearAllPools();
         var app = new OracleConnectionStringBuilder(ConnectionString);
         var system = new OracleConnectionStringBuilder(ConnectionString) { UserID = "system" };
         await using (var connection = new OracleConnection(system.ConnectionString))
@@ -56,7 +72,7 @@ public sealed class OracleFixture : IAsyncLifetime
             }
         }
 
-        return new OracleConnectionStringBuilder(ConnectionString) { UserID = name }.ConnectionString;
+        return new OracleConnectionStringBuilder(ConnectionString) { UserID = name, MaxPoolSize = MaxPoolSize }.ConnectionString;
     }
 }
 
