@@ -188,6 +188,58 @@ public sealed class CampaignBenchTests : IAsyncLifetime
         Assert.Equal(100_000, row.SucceededCount);
     }
 
+    /// <summary>
+    /// Admin-contract R4.3's measured cost (#296): <c>GET /{id}/outcomes</c> on a 1M-item campaign — two grouped
+    /// counts over one campaign's items. The items are seeded set-based (60% succeeded, 30% failed under 25 codes and
+    /// none, 10% pending); a warm-up call, then the median and the slowest of five.
+    /// </summary>
+    [Fact]
+    public async Task Outcomes_on_a_one_million_item_campaign()
+    {
+        Guid id;
+        using (var scope = _services.CreateScope())
+        {
+            var campaign = await Engine.CreateAsync(scope.ServiceProvider, "bench", "outcomes-1m",
+                new Dictionary<string, string> { ["count"] = "0" },
+                new GoldpathCampaignPolicy(1, null, 1, null, null, "UTC"), null, "bench", CancellationToken.None);
+            id = campaign.Id;
+            var db = scope.ServiceProvider.GetRequiredService<CampaignTests.CampDb>();
+            db.Database.SetCommandTimeout(TimeSpan.FromMinutes(5));
+            var succeeded = (int)GoldpathCampaignItemState.Succeeded;
+            var failed = (int)GoldpathCampaignItemState.Failed;
+            var pending = (int)GoldpathCampaignItemState.Pending;
+            await db.Database.ExecuteSqlInterpolatedAsync($$"""
+                INSERT INTO "GoldpathCampaignItems" ("CampaignId", "Seq", "TargetJson", "State", "Attempts", "ErrorCode")
+                SELECT {{id}}, g, '{}',
+                       CASE WHEN g % 10 < 6 THEN {{succeeded}} WHEN g % 10 < 9 THEN {{failed}} ELSE {{pending}} END,
+                       1,
+                       CASE WHEN g % 10 BETWEEN 6 AND 8 AND g % 26 < 25 THEN 'CODE_' || (g % 26) END
+                FROM generate_series(1, 1000000) AS g
+                """);
+            await db.Database.ExecuteSqlRawAsync("ANALYZE \"GoldpathCampaignItems\"");
+        }
+
+        var admin = new GoldpathCampaignAdminService<CampaignTests.CampDb>(_options, Engine, _services.GetRequiredService<IServiceScopeFactory>(),
+            TimeProvider.System, NullLogger<GoldpathCampaignAdminService<CampaignTests.CampDb>>.Instance);
+        var outcomes = await admin.GetOutcomesAsync(id, CancellationToken.None);   // warm-up
+        var timings = new List<double>();
+        for (var run = 0; run < 5; run++)
+        {
+            var watch = Stopwatch.StartNew();
+            outcomes = await admin.GetOutcomesAsync(id, CancellationToken.None);
+            timings.Add(watch.Elapsed.TotalMilliseconds);
+        }
+
+        timings.Sort();
+        _output.WriteLine($"BENCH-CAMPAIGN outcomes: 1,000,000 items, two grouped counts — median {timings[2]:F0} ms, slowest {timings[^1]:F0} ms of 5");
+        Assert.NotNull(outcomes);
+        Assert.Equal(600_000, outcomes.ByState["Succeeded"]);
+        Assert.Equal(300_000, outcomes.ByState["Failed"]);
+        Assert.Equal(100_000, outcomes.ByState["Pending"]);
+        Assert.True(outcomes.FailedCodesTruncated);   // 25 codes and none: 26 groups, 20 shown
+        Assert.Equal(20, outcomes.FailedByCode.Count);
+    }
+
     private async Task<GoldpathCampaign> ReloadAsync(Guid id)
     {
         using var scope = _services.CreateScope();

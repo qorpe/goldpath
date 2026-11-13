@@ -321,3 +321,37 @@ Goldpath.GoldpathCampaignOptions.AddTargetSystem(string! name, int maxTps) -> Go
 Goldpath.GoldpathCampaignOptions.TargetSystems.get -> System.Collections.Generic.IReadOnlyDictionary<string!, int>!
 Goldpath.GoldpathCampaignType.TargetSystem.get -> string?
 Goldpath.GoldpathCampaignTypeBuilder<TTarget>.TargetSystem(string! name) -> Goldpath.GoldpathCampaignTypeBuilder<TTarget!>!
+Goldpath.GoldpathCampaignAdminService<TContext>.GetFailedItemsAsync(System.Guid id, long afterSeq, int take, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathCampaignFailedItem!>!>!
+Goldpath.GoldpathCampaignAdminService<TContext>.GetOutcomesAsync(System.Guid id, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathCampaignOutcomes?>!
+Goldpath.GoldpathCampaignCodeCount
+Goldpath.GoldpathCampaignCodeCount.<Clone>$() -> Goldpath.GoldpathCampaignCodeCount!
+Goldpath.GoldpathCampaignCodeCount.Code.get -> string?
+Goldpath.GoldpathCampaignCodeCount.Code.init -> void
+Goldpath.GoldpathCampaignCodeCount.Count.get -> long
+Goldpath.GoldpathCampaignCodeCount.Count.init -> void
+Goldpath.GoldpathCampaignCodeCount.Deconstruct(out string? Code, out long Count) -> void
+Goldpath.GoldpathCampaignCodeCount.Equals(Goldpath.GoldpathCampaignCodeCount? other) -> bool
+Goldpath.GoldpathCampaignCodeCount.GoldpathCampaignCodeCount(string? Code, long Count) -> void
+Goldpath.GoldpathCampaignFailedItem.ErrorCode.get -> string?
+Goldpath.GoldpathCampaignFailedItem.ErrorCode.init -> void
+Goldpath.GoldpathCampaignOutcomes
+Goldpath.GoldpathCampaignOutcomes.<Clone>$() -> Goldpath.GoldpathCampaignOutcomes!
+Goldpath.GoldpathCampaignOutcomes.ByState.get -> System.Collections.Generic.IReadOnlyDictionary<string!, long>!
+Goldpath.GoldpathCampaignOutcomes.ByState.init -> void
+Goldpath.GoldpathCampaignOutcomes.Deconstruct(out System.Collections.Generic.IReadOnlyDictionary<string!, long>! ByState, out System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathCampaignCodeCount!>! FailedByCode, out bool FailedCodesTruncated) -> void
+Goldpath.GoldpathCampaignOutcomes.Equals(Goldpath.GoldpathCampaignOutcomes? other) -> bool
+Goldpath.GoldpathCampaignOutcomes.FailedByCode.get -> System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathCampaignCodeCount!>!
+Goldpath.GoldpathCampaignOutcomes.FailedByCode.init -> void
+Goldpath.GoldpathCampaignOutcomes.FailedCodesTruncated.get -> bool
+Goldpath.GoldpathCampaignOutcomes.FailedCodesTruncated.init -> void
+Goldpath.GoldpathCampaignOutcomes.GoldpathCampaignOutcomes(System.Collections.Generic.IReadOnlyDictionary<string!, long>! ByState, System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathCampaignCodeCount!>! FailedByCode, bool FailedCodesTruncated) -> void
+override Goldpath.GoldpathCampaignCodeCount.Equals(object? obj) -> bool
+override Goldpath.GoldpathCampaignCodeCount.GetHashCode() -> int
+override Goldpath.GoldpathCampaignCodeCount.ToString() -> string!
+override Goldpath.GoldpathCampaignOutcomes.Equals(object? obj) -> bool
+override Goldpath.GoldpathCampaignOutcomes.GetHashCode() -> int
+override Goldpath.GoldpathCampaignOutcomes.ToString() -> string!
+static Goldpath.GoldpathCampaignCodeCount.operator !=(Goldpath.GoldpathCampaignCodeCount? left, Goldpath.GoldpathCampaignCodeCount? right) -> bool
+static Goldpath.GoldpathCampaignCodeCount.operator ==(Goldpath.GoldpathCampaignCodeCount? left, Goldpath.GoldpathCampaignCodeCount? right) -> bool
+static Goldpath.GoldpathCampaignOutcomes.operator !=(Goldpath.GoldpathCampaignOutcomes? left, Goldpath.GoldpathCampaignOutcomes? right) -> bool
+static Goldpath.GoldpathCampaignOutcomes.operator ==(Goldpath.GoldpathCampaignOutcomes? left, Goldpath.GoldpathCampaignOutcomes? right) -> bool

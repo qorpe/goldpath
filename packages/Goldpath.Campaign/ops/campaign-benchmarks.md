@@ -348,3 +348,33 @@ same night on the same sandbox, was red on rate as its baseline is: 654.6/s mean
 0 of 120 seconds in band and 0 above the ceiling. Exactly-once held over 79,250 items, and the run reached 179 peak
 concurrent handler calls against a knob of 32. `main`@`259bd53`, before the extraction, gave 649.2/s, p50 647, p95 771,
 max 851, 0 in band and 0 above, with exactly-once over 78,770 items.
+
+## Admin-contract R4.3 — `GET /{id}/outcomes` on a 1M-item campaign (2026-11-11)
+
+The first admin read that scans more than one page (admin-contract R4.3, #296): two grouped counts
+over one campaign's items, `GROUP BY State` and, over the failed items, `GROUP BY ErrorCode`.
+`CampaignBenchTests.Outcomes_on_a_one_million_item_campaign` via `scripts/bench-campaign.sh`
+seeds 1,000,000 items set-based (60% `Succeeded`, 30% `Failed` under 25 codes plus no code, 10%
+`Pending`), runs `ANALYZE`, makes one warm-up call, then times five calls of
+`GoldpathCampaignAdminService.GetOutcomesAsync`.
+
+**Profile:** the overnight agent's cloud sandbox, Linux x64, 4 logical CPUs (Intel Xeon @ 2.10 GHz)
+/ 15 GB, Docker Engine 29.9.2, PostgreSQL 17 (`postgres:17-alpine`) in Testcontainers, co-located.
+Release build. **Commit:** `abbd4c9` (2026-11-11, 21:00 UTC). **Run:** local, `dotnet test tests/Goldpath.IntegrationTests -c
+Release --filter "FullyQualifiedName~CampaignBenchTests.Outcomes_on_a_one_million_item_campaign"`,
+twice.
+
+| Run | Median of 5 | Slowest of 5 |
+|---|---|---|
+| 1 | **104 ms** | 129 ms |
+| 2 | **118 ms** | 124 ms |
+
+- **Against the governor's poll:** R4.3 says that if the call takes longer than the poll interval
+  (5 s), the console polls it less often than the detail. At about 110 ms it does not, so the
+  console may poll both on the same interval.
+- **What it scales with:** the campaign's item count, not the page size. The `(CampaignId, State, …)`
+  indexes serve the campaign predicate; no index was added for it (R3's one-migration rule). The
+  scan grows with the campaign, and no 30M figure is claimed here: it is measured on the S-FLEET-02
+  rig before anyone promises one.
+- **Not measured here:** Oracle, SQL Server, and the CI reference profile.
+
