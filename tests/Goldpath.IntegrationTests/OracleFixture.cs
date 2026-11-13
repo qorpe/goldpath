@@ -48,7 +48,9 @@ public sealed class OracleFixture : IAsyncLifetime
     /// database does not depend on another test's order. Returns its ODP.NET connection string, its pool bounded by
     /// <see cref="MaxPoolSize"/>. Creating one first releases every idle pooled session the process holds: the classes
     /// before it in the collection have finished (it runs one class at a time), and their idle sessions would otherwise
-    /// count against the container's limit until the pool's own idle timer closed them (#571).
+    /// count against the container's limit until the pool's own idle timer closed them (#571). It is also called
+    /// mid-class, per test or per twin, so it releases the current class's idle sessions too; those are reopened on
+    /// demand, and a connection in use is never closed under its holder (it is closed, not re-pooled, when returned).
     /// </summary>
     public async Task<string> CreateSchemaAsync(string name)
     {

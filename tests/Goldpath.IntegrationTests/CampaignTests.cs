@@ -212,8 +212,20 @@ public class CampaignTests : IAsyncLifetime
         }
         catch (OperationCanceledException) when (timeout.IsCancellationRequested)
         {
-            // #571: a hang about half the time on Oracle. Say where the campaign stopped, not only that it did.
-            throw new Xunit.Sdk.XunitException("the campaign did not complete within 4 minutes. " + Dump(campaign.Id));
+            // #571: a hang about half the time on Oracle. Say where the campaign stopped, not only that it did. The dump
+            // reads the same database, so on the worst run (the sessions exhausted) it can fail too; the timeout is still
+            // the failure reported, with why the dump could not be taken.
+            string where;
+            try
+            {
+                where = Dump(campaign.Id);
+            }
+            catch (Exception error)
+            {
+                where = $"(the state could not be read: {error.GetType().Name}: {error.Message})";
+            }
+
+            throw new Xunit.Sdk.XunitException("the campaign did not complete within 4 minutes. " + where);
         }
 
         Assert.Equal(3_000, done.EnumeratedThrough);
