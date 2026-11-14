@@ -235,8 +235,8 @@ settle on a forged word.
   tick, S-FLEET-03 extended), with no restart. Releases already on the wire drain.
 - The change is audited: `GET /ceilings/audit` lists `ceiling` rows with your name and `MaxTps old -> new`.
 - The operator's value **stands across deploys**: a release that changes the code value does not move a row an
-  operator moved. To hand the row back to code, set it to `codeMaxTps`; the next release that changes the code
-  value moves it again.
+  operator moved. To hand the row back to code, set it to `codeMaxTps` — the value code seeds now, even if code
+  changed while you held the row; the next release that changes the code value moves it again.
 - Refusals, in the server's words: an undeclared name (the refusal names the declared ones; a name differing
   only in case is another name); `clearMaxTps` on a target system (a system without a ceiling is a typo, so
   set a high number instead); a value below 1 (to stop releases altogether, pause the campaigns).

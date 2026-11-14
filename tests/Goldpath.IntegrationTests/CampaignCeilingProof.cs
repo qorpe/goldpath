@@ -156,6 +156,13 @@ internal sealed class CampaignCeilingScenario<TContext> : IAsyncDisposable
         Assert.Equal([$"target system '{System}': MaxTps 40/s -> 25/s", "global: MaxTps off -> 700/s", "global: MaxTps 5000/s -> off"],
             audit.Select(a => a.Detail));
         Assert.All(audit, a => Assert.Equal((Guid.Empty, "ceiling", "ops@example.test"), (a.CampaignId, a.Action, a.Actor)));
+
+        // 6) The hand-back on this provider: code moved (seeded 300, code now 400) while the operator held the row, and
+        //    setting the current code value resets the seed with it — the update guarded on the seed it read too.
+        var handBack = await admin.ThrottleCeilingAsync(GoldpathCampaignCeilingKind.TargetSystem, System,
+            new GoldpathCampaignCeilingPatch(MaxTps: 400), "ops@example.test", CancellationToken.None);
+        Assert.True(handBack.Ok, handBack.Message);
+        Assert.Equal((400, 400), Values(await RowsAsync(), GoldpathCampaignCeilingKind.TargetSystem));
     }
 
     private static GoldpathCampaignOptions Options(int systemTps, int? globalTps, TimeSpan? slice = null)

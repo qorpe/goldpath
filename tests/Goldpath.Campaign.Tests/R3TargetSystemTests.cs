@@ -49,6 +49,41 @@ public class R3TargetSystemTests
 
     // ---- the declaration ----
 
+    /// <summary>
+    /// A name is a path segment of the ceiling route, and ASP.NET Core leaves an encoded slash encoded in a route value:
+    /// a declared 'core/eu' would be listed by GET /ceilings and refused as undeclared by every change. It is refused at
+    /// declaration instead, with the reason; the other characters the console escapes do decode, so 'a b' still binds.
+    /// </summary>
+    [Theory]
+    [InlineData("core/eu")]
+    [InlineData("/")]
+    [InlineData("core/")]
+    public void ATargetSystemNameCannotCarryASlash(string name)
+    {
+        var refused = Assert.Throws<ArgumentException>(() => new GoldpathCampaignOptions().AddTargetSystem(name, 10));
+        Assert.StartsWith($"The target system's name '{name}' contains '/'", refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ANameTheConsoleEscapes_StillReachesTheVerb_ThroughTheRoute()
+    {
+        using var fixture = new CampaignFixture(FastTicks(o => o.AddTargetSystem("çekirdek İ a%b", 50)));
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseTestServer();
+        builder.Services.AddDbContext<CampaignTestContext>(o => o.UseSqlite(fixture.Connection));
+        builder.Services.AddSingleton(fixture.Admin());
+        await using var app = builder.Build();
+        app.MapGoldpathCampaignAdmin<CampaignTestContext>(exposeUnsecured: true);
+        await app.StartAsync();
+        using var client = app.GetTestClient();
+
+        using var set = await client.PostAsJsonAsync(
+            $"/goldpath/admin/campaign/ceilings/target-systems/{Uri.EscapeDataString("çekirdek İ a%b")}/throttle",
+            JsonDocument.Parse("""{"maxTps":9}""").RootElement);
+        Assert.Equal(HttpStatusCode.OK, set.StatusCode);
+        Assert.Equal(9, Rows(fixture).Single(r => r.Kind == GoldpathCampaignCeilingKind.TargetSystem).MaxTps);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
@@ -802,6 +837,62 @@ public class R3TargetSystemTests
         Assert.Equal(300, Rows(fixture).Single(r => r.Kind == GoldpathCampaignCeilingKind.TargetSystem).MaxTps);
     }
 
+    /// <summary>
+    /// The hand-back holds when code moved while the operator held the row: seeded 200, moved to 100, a release seeds
+    /// 300 (the operator's 100 stands), the operator sets the new code value 300 as the runbook says, and the next
+    /// release's 400 is followed, with no operator-disagreement warning. Without resetting the seed the row read
+    /// 300 / 200 — still "moved" — and stayed at 300 with a warning on every slice.
+    /// </summary>
+    [Theory]
+    [InlineData(GoldpathCampaignCeilingKind.TargetSystem)]
+    [InlineData(GoldpathCampaignCeilingKind.Global)]
+    public async Task SettingTheCodeValueBack_AfterCodeMoved_HandsTheRowBackToCode(GoldpathCampaignCeilingKind kind)
+    {
+        var name = kind == GoldpathCampaignCeilingKind.Global ? GoldpathCampaignCeiling.GlobalName : System;
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200, o => o.GlobalTps = 200));
+        await ReconcileAsync(fixture);
+        Assert.True((await fixture.Admin().ThrottleCeilingAsync(kind, name, new GoldpathCampaignCeilingPatch(MaxTps: 100), "ops", CancellationToken.None)).Ok);
+
+        var release = Reseeded(fixture.Options, systemTps: 300, globalTps: 300);
+        await ReconcileAsync(fixture, release);
+        Assert.Equal(100, RowOf(fixture, kind).MaxTps);   // the operator's value stands over the release
+
+        var admin = new GoldpathCampaignAdminService<CampaignTestContext>(release,
+            new GoldpathCampaignEngine<CampaignTestContext>(release, TimeProvider.System, NullLogger<GoldpathCampaignEngine<CampaignTestContext>>.Instance),
+            fixture.Services.GetRequiredService<IServiceScopeFactory>(), TimeProvider.System,
+            NullLogger<GoldpathCampaignAdminService<CampaignTestContext>>.Instance);
+        Assert.True((await admin.ThrottleCeilingAsync(kind, name, new GoldpathCampaignCeilingPatch(MaxTps: 300), "ops", CancellationToken.None)).Ok);
+        var handedBack = RowOf(fixture, kind);
+        Assert.Equal((300, 300), (handedBack.MaxTps, handedBack.SeedMaxTps));
+
+        var logger = new ListLogger<GoldpathCampaignEngine<CampaignTestContext>>();
+        await ReconcileAsync(fixture, Reseeded(fixture.Options, systemTps: 400, globalTps: 400), logger);
+
+        var followed = RowOf(fixture, kind);
+        Assert.Equal((400, 400, "system"), (followed.MaxTps, followed.SeedMaxTps, followed.UpdatedBy));
+        Assert.DoesNotContain(logger.Entries, e => e.Level == LogLevel.Warning);
+    }
+
+    /// <summary>
+    /// A value other than the code value keeps the seed: the row stays moved, and the next release is not followed. Its audit
+    /// row is stamped with the row's own <c>UpdatedAt</c>.
+    /// </summary>
+    [Fact]
+    public async Task SettingAValueOtherThanCode_KeepsTheSeed_AndTheRowStaysMoved()
+    {
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200));
+        await ReconcileAsync(fixture);
+        Assert.True((await fixture.Admin().ThrottleCeilingAsync(GoldpathCampaignCeilingKind.TargetSystem, System,
+            new GoldpathCampaignCeilingPatch(MaxTps: 150), "ops", CancellationToken.None)).Ok);
+        var moved = RowOf(fixture, GoldpathCampaignCeilingKind.TargetSystem);
+        Assert.Equal((150, 200), (moved.MaxTps, moved.SeedMaxTps));
+        // The audit carries the instant the change applied, so it lists changes in the order they applied.
+        Assert.Equal(moved.UpdatedAt, fixture.Query(db => db.Set<GoldpathCampaignAudit>().AsNoTracking().Single()).At);
+
+        await ReconcileAsync(fixture, Reseeded(fixture.Options, systemTps: 300, globalTps: null));
+        Assert.Equal(150, RowOf(fixture, GoldpathCampaignCeilingKind.TargetSystem).MaxTps);
+    }
+
     [Fact]
     public async Task ALongActor_IsBoundedToTheColumns()
     {
@@ -1011,6 +1102,9 @@ public class R3TargetSystemTests
 
         return next;
     }
+
+    private static GoldpathCampaignCeiling RowOf(CampaignFixture fixture, GoldpathCampaignCeilingKind kind)
+        => Rows(fixture).Single(r => r.Kind == kind);
 
     private static List<GoldpathCampaignCeiling> Rows(CampaignFixture fixture)
         => fixture.Query(db => db.Set<GoldpathCampaignCeiling>().AsNoTracking().ToList());

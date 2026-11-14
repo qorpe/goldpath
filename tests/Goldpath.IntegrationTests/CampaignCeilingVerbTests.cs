@@ -81,6 +81,16 @@ public sealed class CampaignCeilingVerbTests : IAsyncLifetime
         await Task.WhenAll(_store.StopAsync(), _rabbit.DisposeAsync().AsTask());
     }
 
+    /// <summary>Polls a condition every 200 ms until it holds; the test's own deadline bounds it.</summary>
+    private static async Task UntilAsync(Func<bool> condition, CancellationToken token)
+    {
+        while (!condition())
+        {
+            token.ThrowIfCancellationRequested();
+            await Task.Delay(200, token);
+        }
+    }
+
     private T Query<T>(Func<CampaignTests.CampDb, T> query)
     {
         using var scope = _host.Services.CreateScope();
@@ -121,7 +131,10 @@ public sealed class CampaignCeilingVerbTests : IAsyncLifetime
             await Task.Delay(200, token);
         }
 
+        // At least six seconds (a span crossing a slice boundary), and then until enough releases were sampled for the
+        // bound to have been tested: under CPU load the slices start late, so a fixed window alone sampled too few.
         await Task.Delay(TimeSpan.FromSeconds(6), token);
+        await UntilAsync(() => Stamps().Count >= SeedTps * 2, token);
 
         // Tonight the device core takes eight: through the verb, not the row.
         DateTimeOffset committed;
@@ -135,6 +148,7 @@ public sealed class CampaignCeilingVerbTests : IAsyncLifetime
         }
 
         await Task.Delay(TimeSpan.FromSeconds(8), token);
+        await UntilAsync(() => Stamps().Count(s => s >= committed + Tick) >= LoweredTps * 3, token);
         var stamps = Stamps();
         var before = stamps.Where(s => s < committed).ToList();
         var after = stamps.Where(s => s >= committed + Tick).ToList();

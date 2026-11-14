@@ -505,7 +505,7 @@ public sealed class GoldpathCampaignOptions
     /// how fast one may be called is the row, so changing <paramref name="maxTps"/> here moves the
     /// live value only while an operator has never changed it.
     /// </summary>
-    /// <exception cref="ArgumentException">The name is empty, longer than 128 characters, or already declared (compared ignoring case, because a database collation may).</exception>
+    /// <exception cref="ArgumentException">The name is empty, longer than 128 characters, contains <c>/</c> (it is a path segment of the ceiling route), or already declared (compared ignoring case, because a database collation may).</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxTps"/> is not positive.</exception>
     public GoldpathCampaignOptions AddTargetSystem(string name, int maxTps)
     {
@@ -518,6 +518,14 @@ public sealed class GoldpathCampaignOptions
         {
             throw new ArgumentException(
                 $"The target system's name is {name.Length} characters; its ceiling row holds at most {MaxTargetSystemNameLength}.", nameof(name));
+        }
+
+        // The name is a path segment of POST /ceilings/target-systems/{name}/throttle, and ASP.NET Core leaves an
+        // encoded slash (%2F) encoded in a route value, so a name carrying '/' could be listed but never changed.
+        if (name.Contains('/', StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                $"The target system's name '{name}' contains '/': it is a path segment of the ceiling route, which cannot carry one. Use '-', '.' or ':' instead.", nameof(name));
         }
 
         if (maxTps <= 0)

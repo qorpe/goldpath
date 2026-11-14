@@ -341,7 +341,8 @@ public sealed class GoldpathCampaignAdminService<TContext>
     /// <see cref="GoldpathCampaignCeiling.GlobalName"/>) or a declared target system. The pacer reads the
     /// rows every tick, so the change bites on the leader's next tick with no restart. Every applied change
     /// is audited with <c>CampaignId = Guid.Empty</c>, action <c>ceiling</c>, the actor and old → new.
-    /// Setting a value equal to the code value hands the row back to code: later releases move it again.
+    /// Setting a value equal to this process's code value hands the row back to code, whatever code seeded while
+    /// the row was moved: the seed is reset to that value too, so later releases move the row again.
     /// Clearing is refused on a target system, and an undeclared name is refused naming the declared ones.
     /// </summary>
     public async Task<GoldpathAdminResult> ThrottleCeilingAsync(
@@ -403,10 +404,17 @@ public sealed class GoldpathCampaignAdminService<TContext>
                 // verb or the leader's follow in between is re-read, never overwritten blind.
                 before = kind == GoldpathCampaignCeilingKind.TargetSystem ? row.MaxTps ?? code : row.MaxTps;
                 var read = row.MaxTps;
+                var readSeed = row.SeedMaxTps;
+                // Setting this process's code value hands the row back to code (owner decision Q4's "never moved"):
+                // the seed becomes that code value too, so MaxTps == SeedMaxTps and the next release's value is
+                // followed. Keeping the old seed would leave a row the leader still reads as moved whenever code
+                // changed while the operator held it, and the next release would be silently ignored.
+                var seed = target == code ? code : readSeed;
                 var applied = await db.Set<GoldpathCampaignCeiling>()
-                    .Where(c => c.Kind == kind && c.Name == name && c.MaxTps == read)
+                    .Where(c => c.Kind == kind && c.Name == name && c.MaxTps == read && c.SeedMaxTps == readSeed)
                     .ExecuteUpdateAsync(u => u
                         .SetProperty(c => c.MaxTps, target)
+                        .SetProperty(c => c.SeedMaxTps, seed)
                         .SetProperty(c => c.UpdatedAt, now)
                         .SetProperty(c => c.UpdatedBy, who), ct);
                 if (applied != 1)
@@ -417,7 +425,9 @@ public sealed class GoldpathCampaignAdminService<TContext>
 
             var subject = kind == GoldpathCampaignCeilingKind.Global ? "global" : $"target system '{name}'";
             var detail = $"{subject}: MaxTps {DescribeTps(before)} -> {DescribeTps(target)}";
-            await AuditAsync(db, Guid.Empty, "ceiling", who, Bound(detail, 1024), ct);
+            // Stamped with the instant the change applied (the row's UpdatedAt), so the audit lists changes in the order
+            // they applied even when two verbs land close together.
+            await AuditAsync(db, Guid.Empty, "ceiling", who, Bound(detail, 1024), ct, now);
             _logger.LogInformation("Campaign ceiling {Kind} '{Name}': {Before} -> {After} by {Actor}.",
                 kind, name, DescribeTps(before), DescribeTps(target), who);
             return new GoldpathAdminResult(true, $"ceiling: {subject} is now {DescribeTps(target)}.");
@@ -893,11 +903,12 @@ public sealed class GoldpathCampaignAdminService<TContext>
         return new GoldpathAdminResult(true, $"{action}: '{campaign.Name}' is now {campaign.State}.");
     }
 
-    private async Task AuditAsync(TContext db, Guid campaignId, string action, string actor, string? detail, CancellationToken ct)
+    private async Task AuditAsync(
+        TContext db, Guid campaignId, string action, string actor, string? detail, CancellationToken ct, DateTimeOffset? at = null)
     {
         db.Set<GoldpathCampaignAudit>().Add(new GoldpathCampaignAudit
         {
-            At = _time.GetUtcNow(),
+            At = at ?? _time.GetUtcNow(),
             Actor = actor,
             Action = action,
             CampaignId = campaignId,
