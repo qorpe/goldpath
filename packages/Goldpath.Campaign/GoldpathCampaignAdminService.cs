@@ -341,8 +341,9 @@ public sealed class GoldpathCampaignAdminService<TContext>
     /// <see cref="GoldpathCampaignCeiling.GlobalName"/>) or a declared target system. The pacer reads the
     /// rows every tick, so the change bites on the leader's next tick with no restart. Every applied change
     /// is audited with <c>CampaignId = Guid.Empty</c>, action <c>ceiling</c>, the actor and old → new.
-    /// Setting a value equal to this process's code value hands the row back to code, whatever code seeded while
-    /// the row was moved: the seed is reset to that value too, so later releases move the row again.
+    /// The row's seed is recorded as this process's code value on every change. Setting a value equal to it hands the
+    /// row back to code, whatever code seeded while the row was moved, so later releases move the row again; any other
+    /// value stays the operator's across deploys, each release that disagrees with it logging a warning.
     /// Clearing is refused on a target system, and an undeclared name is refused naming the declared ones.
     /// </summary>
     public async Task<GoldpathAdminResult> ThrottleCeilingAsync(
@@ -401,20 +402,21 @@ public sealed class GoldpathCampaignAdminService<TContext>
             else
             {
                 // Guarded on the value this call read, so the audit's old -> new is the change it made: a concurrent
-                // verb or the leader's follow in between is re-read, never overwritten blind.
+                // verb or the leader's follow in between is re-read, never overwritten blind. The leader's follow always
+                // moves MaxTps with the seed, so the MaxTps guard is the one that catches it; the seed this call read
+                // plays no part in what it writes, so it is not compared.
                 before = kind == GoldpathCampaignCeilingKind.TargetSystem ? row.MaxTps ?? code : row.MaxTps;
                 var read = row.MaxTps;
-                var readSeed = row.SeedMaxTps;
-                // Setting this process's code value hands the row back to code (owner decision Q4's "never moved"):
-                // the seed becomes that code value too, so MaxTps == SeedMaxTps and the next release's value is
-                // followed. Keeping the old seed would leave a row the leader still reads as moved whenever code
-                // changed while the operator held it, and the next release would be silently ignored.
-                var seed = target == code ? code : readSeed;
+                // The seed is ALWAYS the code value this verb ran against, as the insert path records it, so "moved"
+                // means exactly MaxTps != that code value (owner decision Q4). Setting the code value hands the row back
+                // (MaxTps == SeedMaxTps, so the next release is followed); any other value stays moved. Keeping a stale
+                // seed was wrong both ways: a hand-back after code moved still read as moved, and an operator value that
+                // happened to equal the stale seed read as "never moved", so the leader's next slice replaced it.
                 var applied = await db.Set<GoldpathCampaignCeiling>()
-                    .Where(c => c.Kind == kind && c.Name == name && c.MaxTps == read && c.SeedMaxTps == readSeed)
+                    .Where(c => c.Kind == kind && c.Name == name && c.MaxTps == read)
                     .ExecuteUpdateAsync(u => u
                         .SetProperty(c => c.MaxTps, target)
-                        .SetProperty(c => c.SeedMaxTps, seed)
+                        .SetProperty(c => c.SeedMaxTps, code)
                         .SetProperty(c => c.UpdatedAt, now)
                         .SetProperty(c => c.UpdatedBy, who), ct);
                 if (applied != 1)

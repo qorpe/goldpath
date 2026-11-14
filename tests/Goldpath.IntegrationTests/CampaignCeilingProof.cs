@@ -149,7 +149,8 @@ internal sealed class CampaignCeilingScenario<TContext> : IAsyncDisposable
 
         rows = await RowsAsync();
         Assert.Equal((700, 5_000), Values(rows, GoldpathCampaignCeilingKind.Global));
-        Assert.Equal((25, 300), Values(rows, GoldpathCampaignCeilingKind.TargetSystem));
+        // The seed is the code value the verb ran against (400), not the stale 300: 25 stays moved, never "never moved".
+        Assert.Equal((25, 400), Values(rows, GoldpathCampaignCeilingKind.TargetSystem));
         var ceilings = await admin.GetCeilingsAsync(CancellationToken.None);
         Assert.Equal([(700, 5_000), (25, 400)], ceilings.Select(c => (c.MaxTps, c.CodeMaxTps)));
         var audit = await admin.GetCeilingAuditAsync(10, CancellationToken.None);
@@ -158,7 +159,7 @@ internal sealed class CampaignCeilingScenario<TContext> : IAsyncDisposable
         Assert.All(audit, a => Assert.Equal((Guid.Empty, "ceiling", "ops@example.test"), (a.CampaignId, a.Action, a.Actor)));
 
         // 6) The hand-back on this provider: code moved (seeded 300, code now 400) while the operator held the row, and
-        //    setting the current code value resets the seed with it — the update guarded on the seed it read too.
+        //    setting the current code value hands the row back: MaxTps == SeedMaxTps == 400.
         var handBack = await admin.ThrottleCeilingAsync(GoldpathCampaignCeilingKind.TargetSystem, System,
             new GoldpathCampaignCeilingPatch(MaxTps: 400), "ops@example.test", CancellationToken.None);
         Assert.True(handBack.Ok, handBack.Message);

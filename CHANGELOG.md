@@ -16,11 +16,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   - A change is a guarded update of the row (re-read on a lost race, so the audit's old → new is the change made), or
     an insert carrying the code seed when the leader has not seeded the row yet. It is audited with
     `CampaignId = Guid.Empty`, action `ceiling`, the actor and old → new (stamped with the row's own `UpdatedAt`), and
-    binds the pacer's next tick. Setting the current code value hands the row back to code: its seed is reset to
-    that value too, so the next release is followed even when code changed while the operator held the row.
+    binds the pacer's next tick. Every change records the current code value as the row's seed, so setting that
+    value hands the row back to code (the next release is followed even when code changed while the operator held the
+    row), and any other value stays moved — including one equal to an older code value, which the leader's next slice
+    used to replace.
   - Refused with teaching text: clearing a target system (set a high number instead), an undeclared name (the
     declared ones are named; `400`, not `404`), a value below 1, and a patch naming both or neither field.
-    `AddTargetSystem` refuses a name containing `/`, which the ceiling route cannot carry.
+    `AddTargetSystem` refuses a name containing `/` or made only of dots (`.`, `..`), which the ceiling route cannot
+    carry.
   - The console governor shows the target-system ceiling that binds a campaign — live value, code value, the types
     sharing it, who moved it — and edits it.
   - Runbook item 15: changing a target-system ceiling during an incident.

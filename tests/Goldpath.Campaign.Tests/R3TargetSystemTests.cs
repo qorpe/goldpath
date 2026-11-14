@@ -64,6 +64,21 @@ public class R3TargetSystemTests
         Assert.StartsWith($"The target system's name '{name}' contains '/'", refused.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// '.' and '..' are dot-segments: <c>encodeURIComponent</c> leaves them as they are and the request path is normalised
+    /// before it is sent, so the verb would answer 404 for a name GET /ceilings lists. A dot inside a name is fine.
+    /// </summary>
+    [Theory]
+    [InlineData(".")]
+    [InlineData("..")]
+    [InlineData("...")]
+    public void ATargetSystemNameOfOnlyDots_IsRefused(string name)
+    {
+        var refused = Assert.Throws<ArgumentException>(() => new GoldpathCampaignOptions().AddTargetSystem(name, 10));
+        Assert.StartsWith($"The target system's name '{name}' is only dots", refused.Message, StringComparison.Ordinal);
+        new GoldpathCampaignOptions().AddTargetSystem("core.eu", 10);
+    }
+
     [Fact]
     public async Task ANameTheConsoleEscapes_StillReachesTheVerb_ThroughTheRoute()
     {
@@ -874,11 +889,11 @@ public class R3TargetSystemTests
     }
 
     /// <summary>
-    /// A value other than the code value keeps the seed: the row stays moved, and the next release is not followed. Its audit
-    /// row is stamped with the row's own <c>UpdatedAt</c>.
+    /// A value other than the code value records the code value as the seed: the row stays moved, and the next release is
+    /// not followed. Its audit row is stamped with the row's own <c>UpdatedAt</c>.
     /// </summary>
     [Fact]
-    public async Task SettingAValueOtherThanCode_KeepsTheSeed_AndTheRowStaysMoved()
+    public async Task SettingAValueOtherThanCode_RecordsTheCodeSeed_AndTheRowStaysMoved()
     {
         using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200));
         await ReconcileAsync(fixture);
@@ -891,6 +906,45 @@ public class R3TargetSystemTests
 
         await ReconcileAsync(fixture, Reseeded(fixture.Options, systemTps: 300, globalTps: null));
         Assert.Equal(150, RowOf(fixture, GoldpathCampaignCeilingKind.TargetSystem).MaxTps);
+    }
+
+    /// <summary>
+    /// An operator's value that happens to equal the row's STALE seed still stays: seeded 200, moved to 100, a release seeds
+    /// 300 (the operator's 100 stands and the seed stays 200), and during an incident the operator sets 200. Recording the
+    /// stale seed made the row read 200 / 200 — "never moved" — and the leader's next slice of the same release replaced
+    /// it with 300 by "system", silently, while the audit said the operator set 200. The seed is the code value the verb
+    /// ran against, so the row reads 200 / 300: moved, the operator's 200 binds, and the release's disagreement is warned.
+    /// </summary>
+    [Theory]
+    [InlineData(GoldpathCampaignCeilingKind.TargetSystem)]
+    [InlineData(GoldpathCampaignCeilingKind.Global)]
+    public async Task AnOperatorValueEqualToTheStaleSeed_StaysMoved_AndTheSameReleaseDoesNotRevertIt(GoldpathCampaignCeilingKind kind)
+    {
+        var name = kind == GoldpathCampaignCeilingKind.Global ? GoldpathCampaignCeiling.GlobalName : System;
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200, o => o.GlobalTps = 200));
+        await ReconcileAsync(fixture);
+        Assert.True((await fixture.Admin().ThrottleCeilingAsync(kind, name, new GoldpathCampaignCeilingPatch(MaxTps: 100), "ops", CancellationToken.None)).Ok);
+
+        var release = Reseeded(fixture.Options, systemTps: 300, globalTps: 300);
+        await ReconcileAsync(fixture, release);
+        Assert.Equal((100, 200), (RowOf(fixture, kind).MaxTps, RowOf(fixture, kind).SeedMaxTps));
+
+        var admin = new GoldpathCampaignAdminService<CampaignTestContext>(release,
+            new GoldpathCampaignEngine<CampaignTestContext>(release, TimeProvider.System, NullLogger<GoldpathCampaignEngine<CampaignTestContext>>.Instance),
+            fixture.Services.GetRequiredService<IServiceScopeFactory>(), TimeProvider.System,
+            NullLogger<GoldpathCampaignAdminService<CampaignTestContext>>.Instance);
+        Assert.True((await admin.ThrottleCeilingAsync(kind, name, new GoldpathCampaignCeilingPatch(MaxTps: 200), "ops", CancellationToken.None)).Ok);
+        Assert.Equal((200, 300), (RowOf(fixture, kind).MaxTps, RowOf(fixture, kind).SeedMaxTps));
+
+        var logger = new ListLogger<GoldpathCampaignEngine<CampaignTestContext>>();
+        await ReconcileAsync(fixture, release, logger);   // the same release, its next slice
+
+        var held = RowOf(fixture, kind);
+        Assert.Equal((200, 300, "ops"), (held.MaxTps, held.SeedMaxTps, held.UpdatedBy));
+
+        await ReconcileAsync(fixture, Reseeded(fixture.Options, systemTps: 400, globalTps: 400), logger);   // the next release
+        Assert.Equal((200, "ops"), (RowOf(fixture, kind).MaxTps, RowOf(fixture, kind).UpdatedBy));
+        Assert.Contains(logger.Entries, e => e.Level == LogLevel.Warning);
     }
 
     [Fact]
