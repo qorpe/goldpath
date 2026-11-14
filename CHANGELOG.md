@@ -5,6 +5,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **Campaign: the ceiling verbs — an operator changes a target system's or the global ceiling live, audited, from
+  the API or the governor (R3-S9, #318; admin-contract R4.5).**
+  - `GoldpathCampaignAdminService` gains `GetCeilingsAsync`, `ThrottleCeilingAsync` and `GetCeilingAuditAsync`, with
+    the records `GoldpathCampaignCeilingInfo` and `GoldpathCampaignCeilingPatch` (campaign RFC R3.2's API block,
+    additions only).
+  - Four routes under the campaign mount: `GET /ceilings`, `POST /ceilings/global/throttle`,
+    `POST /ceilings/target-systems/{name}/throttle` and `GET /ceilings/audit`. A viewer reads them; changing one
+    needs `goldpath-ops` (R4.1). `RouteContractTests` freezes the four.
+  - A change is a guarded update of the row (re-read on a lost race, so the audit's old → new is the change made), or
+    an insert carrying the code seed when the leader has not seeded the row yet. It is audited with
+    `CampaignId = Guid.Empty`, action `ceiling`, the actor and old → new, and binds the pacer's next tick.
+  - Refused with teaching text: clearing a target system (set a high number instead), an undeclared name (the
+    declared ones are named; `400`, not `404`), a value below 1, and a patch naming both or neither field.
+  - The console governor shows the target-system ceiling that binds a campaign — live value, code value, the types
+    sharing it, who moved it — and edits it.
+  - Runbook item 15: changing a target-system ceiling during an incident.
+  - **Proof:** `R3TargetSystemTests` (SQLite: the verbs, the refusals, the seed rule both ways, the two races, the
+    routes over HTTP); `CampaignCeilingVerbTests` (S-FLEET-03 extended, RabbitMQ 4 + PostgreSQL 17: two types on one
+    system never above its ceiling in any second of ticks, a lowered ceiling binding from one tick after the commit,
+    the actor in the audit); `AdminReadRoleSurfaceTests` (a viewer reads `/ceilings`, every verb refused);
+    `CampaignPanel.test.tsx`, `adminClient.test.ts`, and the console smoke's governor journey and axe scan.
 - **The Bulk and Jobs benches run on Oracle behind a provider switch (G7 Oracle 8/12, Part 1/2 of #411, #556).**
   Tests, scripts and `bench.yml`; no package change.
   - `scripts/bench-bulk.sh` and `scripts/bench-jobs.sh` take `GOLDPATH_BENCH_PROVIDER=postgres|oracle`, defaulting to

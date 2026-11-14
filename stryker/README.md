@@ -401,6 +401,18 @@ These are the next facts to add for this package (T39's proof for R3-S10).
   - **A collision only with a system named `global`:** the `"target:"` ledger prefix.
   - **Log text only:** the `moved == 1` log and the message strings.
 
+**Campaign after R3-S9, the ceiling verbs (#318), 2026-11-14.**
+- **The run:** Stryker 5.0.0 with `stryker/Goldpath.Campaign.json` and its `mutate` narrowed to the character span of
+  the three new admin methods and their helpers in `GoldpathCampaignAdminService.cs` (`GetCeilingsAsync` through
+  `DescribeTps`), in the agent sandbox, on the #318 branch before commit (base `58589e1`). The endpoints file stays
+  excluded, as above. A scoped run is not the package score: the table row above is unchanged until a full run.
+- **First pass:** 111 mutants tested in 7 minutes, **84.96 %**. The survivors named eleven facts the slice lacked.
+- **Second pass, with them added:** 114 mutants, 113 killed, 1 survived, **99.12 %**. The survivor (the guarded
+  update's key with `&&` turned into `||`) is killed since by giving the global row and a system named `*` the same
+  value (`ASystemNamedLikeTheGlobalRow_IsItsOwnRow_ForTheListAndTheVerb`), planted by hand and seen red.
+- **Equivalent, removed rather than kept:** `ClearMaxTps ? null : MaxTps`. A patch naming both is refused first, so a
+  clear always carries no value; the line is now `var target = patch.MaxTps;`.
+
 ## Excluded files
 
 | Package | Excluded file | Why it is not scored |

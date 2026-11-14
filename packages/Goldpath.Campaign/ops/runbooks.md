@@ -42,6 +42,8 @@ and a `runbook_url` to the item below that answers it:
 
 - `POST /{id}/throttle {"tps": <lower>}` — the LIVE row is re-read every leader tick;
   the new ceiling takes effect within ~250ms, no restart, no redeploy (D6).
+- Several campaign types call the same struggling system: lower that target system's shared
+  ceiling instead (item 15), one change for every campaign that calls it.
 - The old→new policy lands in `LastVerb` AND the audit trail; the released items already
   on the wire drain through the sink.
 - Provider hard-down: `POST /{id}/pause` — in-flight items drain, nothing new releases;
@@ -219,3 +221,26 @@ settle on a forged word.
 - The alert resolves on the first tick after recovery. Then read item 1: the release rate climbs
   back to the configured TPS within a tick or two, and no bucket bursts — it never holds more than
   one tick's refill.
+
+## 15. Changing a target-system ceiling during an incident (R3.2)
+
+- **When:** a target system several campaign types call (a device core, a gateway) is struggling, and every
+  campaign that calls it must slow down at once. One campaign's `tps` (item 3) slows only that campaign; the
+  target system's ceiling is shared by every campaign of every type that names it.
+- `GET /ceilings` — the global row (`name` `*`) and every declared target system: `maxTps` is what the pacer
+  binds now, `codeMaxTps` what code seeds, `types` the types it binds, and `updatedBy` who moved it last
+  (`system` is the leader's seed).
+- `POST /ceilings/target-systems/{name}/throttle {"maxTps": <lower>}` — the pacer reads the rows every tick, so
+  the new ceiling binds every tick that starts after the change commits (measured on a real broker: one leader
+  tick, S-FLEET-03 extended), with no restart. Releases already on the wire drain.
+- The change is audited: `GET /ceilings/audit` lists `ceiling` rows with your name and `MaxTps old -> new`.
+- The operator's value **stands across deploys**: a release that changes the code value does not move a row an
+  operator moved. To hand the row back to code, set it to `codeMaxTps`; the next release that changes the code
+  value moves it again.
+- Refusals, in the server's words: an undeclared name (the refusal names the declared ones; a name differing
+  only in case is another name); `clearMaxTps` on a target system (a system without a ceiling is a typo, so
+  set a high number instead); a value below 1 (to stop releases altogether, pause the campaigns).
+- `POST /ceilings/global/throttle {"maxTps": n}` or `{"clearMaxTps": true}` moves or switches off the global
+  ceiling the same way. It is platform protection over every campaign, not one system's.
+- A viewer (`goldpath-ops-read`) reads the ceilings and their audit; changing one needs `goldpath-ops`.
+

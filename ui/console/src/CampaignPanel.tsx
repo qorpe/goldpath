@@ -5,6 +5,7 @@ import type { VerbOutcome } from "@qorpe/ui";
 import type {
   AdminClient,
   CampaignAuditEntry,
+  CampaignCeilingInfo,
   CampaignFailedItem,
   CampaignInfo,
   CampaignThrottle,
@@ -269,6 +270,20 @@ export function describeThrottle(patch: CampaignThrottle, timeZone = "UTC"): str
   return parts.join(", ");
 }
 
+/** A positive whole number of releases per second, or null: the ceiling verb refuses anything else. */
+export function toCeiling(raw: string): number | null {
+  const text = raw.trim();
+  if (!/^[0-9]+$/.test(text)) return null;
+  const value = Number(text);
+  return value >= 1 && value <= 2_147_483_647 ? value : null;
+}
+
+/** The ceiling's last change in words; the leader's seed before it has written the row. */
+export function ceilingProvenance(ceiling: CampaignCeilingInfo): string {
+  if (ceiling.updatedAt.startsWith("0001-01-01")) return "the code value — the leader has not written its row yet";
+  return ceiling.updatedBy === "system" ? `seeded from code at ${ceiling.updatedAt}` : `${ceiling.updatedAt} by ${ceiling.updatedBy}`;
+}
+
 /**
  * The campaign governor (console RFC §3): the pacer's numbers, the policy in force, and
  * the live verbs — pause, resume, abort, and a throttle that takes effect on the next
@@ -281,6 +296,9 @@ export function CampaignPanel({ client }: CampaignPanelProps) {
   const [failures, setFailures] = useState<CampaignFailedItem[]>([]);
   const [audit, setAudit] = useState<CampaignAuditEntry[]>([]);
   const [draft, setDraft] = useState<ThrottleDraft>(EMPTY_DRAFT);
+  // R3.2: the target system's shared ceiling that binds the open campaign, and the operator's new value for it.
+  const [ceiling, setCeiling] = useState<CampaignCeilingInfo | null>(null);
+  const [ceilingDraft, setCeilingDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
@@ -307,6 +325,7 @@ export function CampaignPanel({ client }: CampaignPanelProps) {
   useEffect(() => {
     setOutcome(null);   // a verb's answer belongs to the campaign it was aimed at
     setDraft(EMPTY_DRAFT);
+    setCeilingDraft("");
   }, [selectedId]);
 
   // The open campaign RE-FETCHES on refresh instead of closing — a governor watches
@@ -332,6 +351,26 @@ export function CampaignPanel({ client }: CampaignPanelProps) {
       live = false;
     };
   }, [client, selectedId, refreshToken]);
+
+  // R3.2: a campaign whose type names a target system is bound by that system's shared ceiling. A server that
+  // cannot answer the ceilings route (an older train) leaves the section saying so, never a wrong number.
+  const system = selected?.targetSystem ?? null;
+  useEffect(() => {
+    if (!system) {
+      setCeiling(null);
+      return;
+    }
+
+    let live = true;
+    client
+      .campaignCeilings()
+      .then((ceilings) => live && setCeiling(ceilings.find((c) => c.kind === "TargetSystem" && c.name === system) ?? null))
+      .catch(() => live && setCeiling(null));
+    return () => {
+      live = false;
+    };
+  }, [client, system, refreshToken]);
+  const newCeiling = toCeiling(ceilingDraft);
 
   const zone = selected?.timeZoneId ?? "UTC";
   // Once a refresh shows the campaign started, a start still in the draft is ignored: the server would refuse it.
@@ -546,6 +585,55 @@ export function CampaignPanel({ client }: CampaignPanelProps) {
               ]}
             />
           </DetailSection>
+
+          {selected.targetSystem && (
+            <DetailSection title="Target-system ceiling">
+              <KeyValueRows
+                rows={[
+                  { key: "Target system", value: selected.targetSystem, mono: true },
+                  {
+                    key: "Ceiling",
+                    value: ceiling
+                      ? `${ceiling.maxTps ?? "—"}/s, shared by ${ceiling.types.join(", ")} (code seeds ${ceiling.codeMaxTps ?? "—"}/s)`
+                      : "not available from this server",
+                  },
+                  ...(ceiling ? [{ key: "Last changed", value: ceilingProvenance(ceiling) }] : []),
+                ]}
+              />
+              {ceiling && (
+                <div className="mt-2 flex flex-wrap items-end gap-3">
+                  <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                    new ceiling, releases per second <span className="text-faint">(binds every campaign of these types on the next pacer tick)</span>
+                    <input
+                      type="number"
+                      min={1}
+                      aria-label="target-system ceiling"
+                      className="control w-28"
+                      value={ceilingDraft}
+                      onChange={(event) => setCeilingDraft(event.target.value)}
+                    />
+                  </label>
+                  {ceilingDraft.trim() !== "" && newCeiling === null && (
+                    <p role="alert" className="w-full text-xs text-danger">
+                      A ceiling is a whole number of at least 1. To leave the system effectively open, set a high number.
+                    </p>
+                  )}
+                  {newCeiling !== null && (
+                    <VerbButton
+                      label="set ceiling"
+                      confirm={`Change ${selected.targetSystem}'s ceiling from ${ceiling.maxTps ?? "—"}/s to ${newCeiling}/s? It binds every campaign of ${ceiling.types.join(", ")}.`}
+                      execute={() => asOutcome(client.throttleCampaignCeiling({ targetSystem: selected.targetSystem! }, { maxTps: newCeiling }))}
+                      onDone={(result) => {
+                        if (result.kind === "ok") setCeilingDraft("");
+                        settle(result);
+                      }}
+                      quiet
+                    />
+                  )}
+                </div>
+              )}
+            </DetailSection>
+          )}
 
           {LIVE.has(selected.state) && (
             <div className="row-card mt-4">

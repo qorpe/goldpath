@@ -303,6 +303,30 @@ export interface CampaignInfo {
   maxAwaitingAck?: number | null;
   /** R3.4: acceptances waiting for their callback, held by the server inside [0, inFlight]. */
   awaitingAck?: number;
+  /** R3.2: the target system this campaign's type names, whose shared ceiling binds it; null when it names none. */
+  targetSystem?: string | null;
+}
+
+/**
+ * One live release ceiling (campaign R3.2, admin-contract R4.5): the global row (`name` is `*`) or a declared
+ * target system. `maxTps` is what the pacer binds — null on the global row means off; `codeMaxTps` is the value
+ * code seeds, which the live value follows only while nobody moved the row.
+ */
+export interface CampaignCeilingInfo {
+  kind: "Global" | "TargetSystem" | string;
+  name: string;
+  maxTps?: number | null;
+  codeMaxTps?: number | null;
+  types: string[];
+  /** `0001-01-01T00:00:00+00:00` until the leader has seeded the row. */
+  updatedAt: string;
+  updatedBy: string;
+}
+
+/** The live ceiling patch: a new value, or — on the global row only — off. */
+export interface CampaignCeilingPatch {
+  maxTps?: number;
+  clearMaxTps?: boolean;
 }
 
 /** One failed item — the drill-down; REPLAY belongs to the jobs console. */
@@ -835,6 +859,24 @@ export class AdminClient {
 
   throttleCampaign(id: string, patch: CampaignThrottle): Promise<AdminResult> {
     return this.verb(`/goldpath/admin/campaign/${encodeURIComponent(id)}/throttle`, patch);
+  }
+
+  /** R4.5: the global ceiling and every declared target system, with live and code values. */
+  campaignCeilings(): Promise<CampaignCeilingInfo[]> {
+    return this.get<CampaignCeilingInfo[]>("/goldpath/admin/campaign/ceilings");
+  }
+
+  /** R4.5: changes one live ceiling — the global row, or a declared target system (which cannot be cleared). */
+  throttleCampaignCeiling(target: { global: true } | { targetSystem: string }, patch: CampaignCeilingPatch): Promise<AdminResult> {
+    const route = "global" in target
+      ? "/goldpath/admin/campaign/ceilings/global/throttle"
+      : `/goldpath/admin/campaign/ceilings/target-systems/${encodeURIComponent(target.targetSystem)}/throttle`;
+    return this.verb(route, patch);
+  }
+
+  /** R4.5: the ceiling changes, newest first. */
+  campaignCeilingAudit(take = 100): Promise<CampaignAuditEntry[]> {
+    return this.get<CampaignAuditEntry[]>(`/goldpath/admin/campaign/ceilings/audit?take=${Math.min(500, Math.max(1, take))}`);
   }
 
   /** Recent approval requests, newest first (R3: repeated ?status=/?ladder= OR within, AND across). */

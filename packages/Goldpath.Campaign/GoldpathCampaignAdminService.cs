@@ -92,6 +92,35 @@ public sealed record GoldpathCampaignInfo(
 /// <param name="Stale">True when the refusal is a stale expected version.</param>
 public sealed record GoldpathCampaignThrottleResult(bool Ok, string Message, long PolicyVersion, bool Stale);
 
+/// <summary>
+/// One live release ceiling as the console shows it (campaign RFC R3.2, admin-contract R4.5): the
+/// global row or a declared target system, with the value the pacer binds and the value code seeds.
+/// </summary>
+/// <param name="Kind"><c>Global</c> or <c>TargetSystem</c> (<see cref="GoldpathCampaignCeilingKind"/>'s names).</param>
+/// <param name="Name">The target system's declared name; <see cref="GoldpathCampaignCeiling.GlobalName"/> on the global row.</param>
+/// <param name="MaxTps">The live ceiling the pacer binds, releases per second; null on the global row = off.
+/// Before the leader has seeded the row, the code value, which is what the pacer binds meanwhile.</param>
+/// <param name="CodeMaxTps">The value code seeds (<c>GlobalTps</c> or <c>AddTargetSystem</c>'s); the live value follows it only while nobody moved the row.</param>
+/// <param name="Types">The campaign types this ceiling binds: every type for the global row, the types naming the system otherwise.</param>
+/// <param name="UpdatedAt">When the row last changed (UTC); <see cref="DateTimeOffset.MinValue"/> before the leader has seeded it.</param>
+/// <param name="UpdatedBy">Who changed it last: an operator's principal, or <c>system</c> for the leader's seed.</param>
+public sealed record GoldpathCampaignCeilingInfo(
+    string Kind,
+    string Name,
+    int? MaxTps,
+    int? CodeMaxTps,
+    IReadOnlyList<string> Types,
+    DateTimeOffset UpdatedAt,
+    string UpdatedBy);
+
+/// <summary>
+/// The live ceiling patch (R3.2): a new value, or — on the global row only — off. Exactly one of
+/// the two is named; a target system is never cleared (a system without a ceiling is a typo, so set a high number).
+/// </summary>
+/// <param name="MaxTps">The new ceiling, releases per second; positive.</param>
+/// <param name="ClearMaxTps">Switch the global ceiling off.</param>
+public sealed record GoldpathCampaignCeilingPatch(int? MaxTps = null, bool ClearMaxTps = false);
+
 /// <summary>One failed item (the drill-down; REPLAY delegates to the jobs console).</summary>
 public sealed record GoldpathCampaignFailedItem(long Seq, string? Error, DateTimeOffset? CompletedAt);
 
@@ -269,6 +298,196 @@ public sealed class GoldpathCampaignAdminService<TContext>
             .Take(AdminPaging.Clamp(take))
             .ToListAsync(ct);
     }
+
+    /// <summary>
+    /// The live ceilings (R3.2, admin-contract R4.5): the global row, then every declared target
+    /// system by name (ordinal), each with its live and code value and the types it binds. The live
+    /// value is the pacer's reading: a row the leader has not seeded yet, or a target system's row
+    /// holding no value, reads as its code value, and a value below zero reads as zero. A row left
+    /// behind by a system no longer declared binds nothing and is not listed.
+    /// </summary>
+    public async Task<IReadOnlyList<GoldpathCampaignCeilingInfo>> GetCeilingsAsync(CancellationToken ct)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TContext>();
+        var rows = await db.Set<GoldpathCampaignCeiling>().AsNoTracking().ToListAsync(ct);
+        var ceilings = new List<GoldpathCampaignCeilingInfo>(_options.TargetSystems.Count + 1)
+        {
+            Info(GoldpathCampaignCeilingKind.Global, GoldpathCampaignCeiling.GlobalName, _options.GlobalTps, rows,
+                _options.Types.Select(t => t.Key).Order(StringComparer.Ordinal).ToArray()),
+        };
+        foreach (var (name, seed) in _options.TargetSystems.OrderBy(t => t.Key, StringComparer.Ordinal))
+        {
+            ceilings.Add(Info(GoldpathCampaignCeilingKind.TargetSystem, name, seed, rows,
+                _options.Types.Where(t => string.Equals(t.TargetSystem, name, StringComparison.Ordinal))
+                    .Select(t => t.Key).Order(StringComparer.Ordinal).ToArray()));
+        }
+
+        return ceilings;
+    }
+
+    private static GoldpathCampaignCeilingInfo Info(
+        GoldpathCampaignCeilingKind kind, string name, int? code, List<GoldpathCampaignCeiling> rows, IReadOnlyList<string> types)
+    {
+        var row = rows.FirstOrDefault(r => r.Kind == kind && string.Equals(r.Name, name, StringComparison.Ordinal));
+        // The pacer's reading (ReadCeilingsAsync): a target system's row without a value falls back to code; the global row's null is off.
+        var live = row is null ? code : kind == GoldpathCampaignCeilingKind.TargetSystem ? row.MaxTps ?? code : row.MaxTps;
+        return new GoldpathCampaignCeilingInfo(kind.ToString(), name, live is { } value ? Math.Max(0, value) : null, code, types,
+            row?.UpdatedAt ?? DateTimeOffset.MinValue, row?.UpdatedBy ?? GoldpathCampaignEngine<TContext>.CeilingSeedActor);
+    }
+
+    /// <summary>
+    /// Changes one live ceiling (R3.2, admin-contract R4.5): the global row (<paramref name="name"/> is
+    /// <see cref="GoldpathCampaignCeiling.GlobalName"/>) or a declared target system. The pacer reads the
+    /// rows every tick, so the change bites on the leader's next tick with no restart. Every applied change
+    /// is audited with <c>CampaignId = Guid.Empty</c>, action <c>ceiling</c>, the actor and old → new.
+    /// Setting a value equal to the code value hands the row back to code: later releases move it again.
+    /// Clearing is refused on a target system, and an undeclared name is refused naming the declared ones.
+    /// </summary>
+    public async Task<GoldpathAdminResult> ThrottleCeilingAsync(
+        GoldpathCampaignCeilingKind kind, string name, GoldpathCampaignCeilingPatch patch, string actor, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(patch);
+        if (CeilingRefusal(kind, name, patch) is { } refusal)
+        {
+            return new GoldpathAdminResult(false, refusal);
+        }
+
+        var code = kind == GoldpathCampaignCeilingKind.Global ? _options.GlobalTps : _options.TargetSystems[name];
+        var target = patch.MaxTps;   // a clear names no value: a patch naming both is refused above
+        var who = Bound(actor, 256);
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TContext>();
+        var insertFailed = false;
+        for (var attempt = 0; attempt < ThrottleAttempts; attempt++)
+        {
+            var row = await db.Set<GoldpathCampaignCeiling>().AsNoTracking()
+                .SingleOrDefaultAsync(c => c.Kind == kind && c.Name == name, ct);
+            var now = _time.GetUtcNow();
+            int? before;
+            if (row is null)
+            {
+                // Not seeded yet (the leader seeds at its next slice): the verb inserts the row with the code seed beside
+                // the operator's value, so the leader's seed rule sees an operator's row. A leader that won the key in
+                // between is a primary-key conflict: re-read and update its row instead.
+                before = code;
+                var inserted = new GoldpathCampaignCeiling
+                {
+                    Kind = kind,
+                    Name = name,
+                    MaxTps = target,
+                    SeedMaxTps = code,
+                    UpdatedAt = now,
+                    UpdatedBy = who,
+                };
+                db.Add(inserted);
+                try
+                {
+                    await db.SaveChangesAsync(ct);
+                }
+                catch (DbUpdateException) when (!insertFailed)
+                {
+                    // Once: a row that is still missing after the re-read was refused for another reason, and that
+                    // second failure reaches the caller rather than reading as a lost race.
+                    insertFailed = true;
+                    continue;
+                }
+                finally
+                {
+                    db.Entry(inserted).State = EntityState.Detached;
+                }
+            }
+            else
+            {
+                // Guarded on the value this call read, so the audit's old -> new is the change it made: a concurrent
+                // verb or the leader's follow in between is re-read, never overwritten blind.
+                before = kind == GoldpathCampaignCeilingKind.TargetSystem ? row.MaxTps ?? code : row.MaxTps;
+                var read = row.MaxTps;
+                var applied = await db.Set<GoldpathCampaignCeiling>()
+                    .Where(c => c.Kind == kind && c.Name == name && c.MaxTps == read)
+                    .ExecuteUpdateAsync(u => u
+                        .SetProperty(c => c.MaxTps, target)
+                        .SetProperty(c => c.UpdatedAt, now)
+                        .SetProperty(c => c.UpdatedBy, who), ct);
+                if (applied != 1)
+                {
+                    continue;
+                }
+            }
+
+            var subject = kind == GoldpathCampaignCeilingKind.Global ? "global" : $"target system '{name}'";
+            var detail = $"{subject}: MaxTps {DescribeTps(before)} -> {DescribeTps(target)}";
+            await AuditAsync(db, Guid.Empty, "ceiling", who, Bound(detail, 1024), ct);
+            _logger.LogInformation("Campaign ceiling {Kind} '{Name}': {Before} -> {After} by {Actor}.",
+                kind, name, DescribeTps(before), DescribeTps(target), who);
+            return new GoldpathAdminResult(true, $"ceiling: {subject} is now {DescribeTps(target)}.");
+        }
+
+        return new GoldpathAdminResult(false, string.Create(CultureInfo.InvariantCulture,
+            $"The ceiling change lost {ThrottleAttempts} races in a row to concurrent changes on that row — nothing was applied; re-read and retry."));
+    }
+
+    /// <summary>The ceiling changes (R3.2), newest first: audit rows with <c>CampaignId = Guid.Empty</c> and action <c>ceiling</c>.</summary>
+    public async Task<IReadOnlyList<GoldpathCampaignAudit>> GetCeilingAuditAsync(int take, CancellationToken ct)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TContext>();
+        return await db.Set<GoldpathCampaignAudit>().AsNoTracking()
+            .Where(a => a.CampaignId == Guid.Empty && a.Action == "ceiling")
+            .OrderByDescending(a => a.At)
+            .ThenByDescending(a => a.Id)
+            .Take(AdminPaging.Clamp(take))
+            .ToListAsync(ct);
+    }
+
+    /// <summary>Why a ceiling patch is refused before any row is read, or null.</summary>
+    private string? CeilingRefusal(GoldpathCampaignCeilingKind kind, string name, GoldpathCampaignCeilingPatch patch)
+    {
+        if (kind == GoldpathCampaignCeilingKind.Global)
+        {
+            if (!string.Equals(name, GoldpathCampaignCeiling.GlobalName, StringComparison.Ordinal))
+            {
+                return $"The global ceiling's name is '{GoldpathCampaignCeiling.GlobalName}'.";
+            }
+        }
+        else if (kind == GoldpathCampaignCeilingKind.TargetSystem)
+        {
+            if (name is null || !_options.TargetSystems.ContainsKey(name))
+            {
+                var declared = _options.TargetSystems.Count == 0
+                    ? "No target system is declared (AddTargetSystem in code)."
+                    : "The declared ones: " + string.Join(", ", _options.TargetSystems.Keys.Order(StringComparer.Ordinal).Select(k => $"'{k}'")) + ".";
+                return $"No target system '{Bound(name ?? "", 128)}' is declared. {declared}";
+            }
+
+            if (patch.ClearMaxTps)
+            {
+                return $"A target system's ceiling cannot be cleared: a system without one is a typo. To leave '{name}' effectively open, set a high number instead.";
+            }
+        }
+        else
+        {
+            return $"Unknown ceiling kind {(int)kind}.";
+        }
+
+        if (patch.ClearMaxTps && patch.MaxTps is not null)
+        {
+            return "Name either maxTps or clearMaxTps, not both.";
+        }
+
+        if (!patch.ClearMaxTps && patch.MaxTps is null)
+        {
+            return kind == GoldpathCampaignCeilingKind.Global
+                ? "The patch changes nothing: name maxTps, or clearMaxTps to switch the global ceiling off."
+                : "The patch changes nothing: name maxTps.";
+        }
+
+        return patch.MaxTps is <= 0
+            ? "A ceiling must be positive; to stop releases, pause the campaigns, and to leave a system effectively open, set a high number."
+            : null;
+    }
+
+    private static string DescribeTps(int? tps) => tps is { } value ? value.ToString(CultureInfo.InvariantCulture) + "/s" : "off";
 
     /// <summary>Pauses a live campaign (a Ready one too, R3.1): the pacer skips it next tick; in-flight items drain.</summary>
     public Task<GoldpathAdminResult> PauseAsync(Guid id, string actor, CancellationToken ct)

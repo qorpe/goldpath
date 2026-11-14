@@ -131,6 +131,31 @@ internal sealed class CampaignCeilingScenario<TContext> : IAsyncDisposable
         var released = await ReleasedAsync(first, second) - before;
         // 40/s for a 2 s slice is 80, plus one 250 ms tick's bank (10); at code's 400/s it would be about 800.
         Assert.True(released is > 0 and <= 90, $"released {released} in {elapsed.TotalSeconds:F1} s against a ceiling of 40/s");
+
+        // 5) The verbs on this provider (R3-S9, #318): the global row off and back on — the guarded update compares the
+        //    NULL it read — and the target system moved, each audited with Guid.Empty and listed newest first.
+        var admin = new GoldpathCampaignAdminService<TContext>(running, engine, _services.GetRequiredService<IServiceScopeFactory>(),
+            TimeProvider.System, NullLogger<GoldpathCampaignAdminService<TContext>>.Instance);
+        foreach (var (kind, name, patch) in new[]
+                 {
+                     (GoldpathCampaignCeilingKind.Global, GoldpathCampaignCeiling.GlobalName, new GoldpathCampaignCeilingPatch(ClearMaxTps: true)),
+                     (GoldpathCampaignCeilingKind.Global, GoldpathCampaignCeiling.GlobalName, new GoldpathCampaignCeilingPatch(MaxTps: 700)),
+                     (GoldpathCampaignCeilingKind.TargetSystem, System, new GoldpathCampaignCeilingPatch(MaxTps: 25)),
+                 })
+        {
+            var result = await admin.ThrottleCeilingAsync(kind, name, patch, "ops@example.test", CancellationToken.None);
+            Assert.True(result.Ok, result.Message);
+        }
+
+        rows = await RowsAsync();
+        Assert.Equal((700, 5_000), Values(rows, GoldpathCampaignCeilingKind.Global));
+        Assert.Equal((25, 300), Values(rows, GoldpathCampaignCeilingKind.TargetSystem));
+        var ceilings = await admin.GetCeilingsAsync(CancellationToken.None);
+        Assert.Equal([(700, 5_000), (25, 400)], ceilings.Select(c => (c.MaxTps, c.CodeMaxTps)));
+        var audit = await admin.GetCeilingAuditAsync(10, CancellationToken.None);
+        Assert.Equal([$"target system '{System}': MaxTps 40/s -> 25/s", "global: MaxTps off -> 700/s", "global: MaxTps 5000/s -> off"],
+            audit.Select(a => a.Detail));
+        Assert.All(audit, a => Assert.Equal((Guid.Empty, "ceiling", "ops@example.test"), (a.CampaignId, a.Action, a.Actor)));
     }
 
     private static GoldpathCampaignOptions Options(int systemTps, int? globalTps, TimeSpan? slice = null)
