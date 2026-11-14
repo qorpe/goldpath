@@ -1,4 +1,10 @@
 using System.Data.Common;
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
@@ -42,6 +48,41 @@ public class R3TargetSystemTests
         }, sliceMs);
 
     // ---- the declaration ----
+
+    /// <summary>
+    /// A name is a path segment of the ceiling route, and ASP.NET Core leaves an encoded slash encoded in a route value:
+    /// a declared 'core/eu' would be listed by GET /ceilings and refused as undeclared by every change. It is refused at
+    /// declaration instead, with the reason; the other characters the console escapes do decode, so 'a b' still binds.
+    /// </summary>
+    [Theory]
+    [InlineData("core/eu")]
+    [InlineData("/")]
+    [InlineData("core/")]
+    public void ATargetSystemNameCannotCarryASlash(string name)
+    {
+        var refused = Assert.Throws<ArgumentException>(() => new GoldpathCampaignOptions().AddTargetSystem(name, 10));
+        Assert.StartsWith($"The target system's name '{name}' contains '/'", refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ANameTheConsoleEscapes_StillReachesTheVerb_ThroughTheRoute()
+    {
+        using var fixture = new CampaignFixture(FastTicks(o => o.AddTargetSystem("çekirdek İ a%b", 50)));
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseTestServer();
+        builder.Services.AddDbContext<CampaignTestContext>(o => o.UseSqlite(fixture.Connection));
+        builder.Services.AddSingleton(fixture.Admin());
+        await using var app = builder.Build();
+        app.MapGoldpathCampaignAdmin<CampaignTestContext>(exposeUnsecured: true);
+        await app.StartAsync();
+        using var client = app.GetTestClient();
+
+        using var set = await client.PostAsJsonAsync(
+            $"/goldpath/admin/campaign/ceilings/target-systems/{Uri.EscapeDataString("çekirdek İ a%b")}/throttle",
+            JsonDocument.Parse("""{"maxTps":9}""").RootElement);
+        Assert.Equal(HttpStatusCode.OK, set.StatusCode);
+        Assert.Equal(9, Rows(fixture).Single(r => r.Kind == GoldpathCampaignCeilingKind.TargetSystem).MaxTps);
+    }
 
     [Theory]
     [InlineData("")]
@@ -538,6 +579,505 @@ public class R3TargetSystemTests
         Assert.Null((await admin.GetAsync(plain.Id, CancellationToken.None))!.TargetSystem);
     }
 
+    // ---- the verb (R3-S9, #318; admin-contract R4.5) ----
+
+    [Fact]
+    public async Task TheCeilingsList_NamesTheGlobalRowAndEverySystem_WithLiveAndCodeValues_AndTheTypesEachBinds()
+    {
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200, o =>
+        {
+            o.GlobalTps = 1_000;
+            o.AddTargetSystem("billing", 50);
+        }));
+        var admin = fixture.Admin();
+
+        // Before any slice: no rows yet, and each ceiling reads as its code value, as the pacer binds it meanwhile.
+        var unseeded = await admin.GetCeilingsAsync(CancellationToken.None);
+        Assert.Equal(["Global *", "TargetSystem billing", "TargetSystem device-core"], unseeded.Select(c => $"{c.Kind} {c.Name}"));
+        Assert.All(unseeded, c => Assert.Equal((c.CodeMaxTps, DateTimeOffset.MinValue, "system"), (c.MaxTps, c.UpdatedAt, c.UpdatedBy)));
+
+        await ReconcileAsync(fixture);
+        MoveSystemRow(fixture, 40, "ops@example.test");
+        var ceilings = await admin.GetCeilingsAsync(CancellationToken.None);
+        var global = ceilings[0];
+        Assert.Equal((1_000, 1_000), (global.MaxTps, global.CodeMaxTps));
+        Assert.Equal(["config-push", "firmware-push", "winback"], global.Types);
+        var system = ceilings[2];
+        Assert.Equal((40, 200, "ops@example.test"), (system.MaxTps, system.CodeMaxTps, system.UpdatedBy));
+        Assert.Equal(["config-push", "firmware-push"], system.Types);
+        Assert.Empty(ceilings[1].Types);   // declared, named by no type
+        Assert.NotEqual(DateTimeOffset.MinValue, system.UpdatedAt);
+    }
+
+    [Fact]
+    public async Task ARowLeftByASystemNoLongerDeclared_IsNotListed()
+    {
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200));
+        await ReconcileAsync(fixture);
+        fixture.Mutate(db => db.Add(new GoldpathCampaignCeiling
+        {
+            Kind = GoldpathCampaignCeilingKind.TargetSystem,
+            Name = "retired",
+            MaxTps = 9,
+            SeedMaxTps = 9,
+            UpdatedBy = "system",
+        }));
+        var ceilings = await fixture.Admin().GetCeilingsAsync(CancellationToken.None);
+        Assert.DoesNotContain(ceilings, c => c.Name == "retired");
+    }
+
+    [Fact]
+    public async Task ThrottlingATargetSystem_MovesItsRow_StampsTheActor_AndAuditsOldToNew()
+    {
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200));
+        await ReconcileAsync(fixture);
+        var admin = fixture.Admin();
+
+        var result = await admin.ThrottleCeilingAsync(GoldpathCampaignCeilingKind.TargetSystem, System, new GoldpathCampaignCeilingPatch(MaxTps: 100), "ops@example.test", CancellationToken.None);
+
+        Assert.True(result.Ok, result.Message);
+        Assert.Equal("ceiling: target system 'device-core' is now 100/s.", result.Message);
+        var row = Rows(fixture).Single(r => r.Kind == GoldpathCampaignCeilingKind.TargetSystem);
+        Assert.Equal((100, 200, "ops@example.test"), (row.MaxTps, row.SeedMaxTps, row.UpdatedBy));
+        var audit = Assert.Single(fixture.Query(db => db.Set<GoldpathCampaignAudit>().AsNoTracking().ToList()));
+        Assert.Equal((Guid.Empty, "ceiling", "ops@example.test", "target system 'device-core': MaxTps 200/s -> 100/s"),
+            (audit.CampaignId, audit.Action, audit.Actor, audit.Detail));
+
+        // The release after seeds 300: the operator's row stands (owner decision Q4).
+        await ReconcileAsync(fixture, Reseeded(fixture.Options, systemTps: 300, globalTps: null));
+        Assert.Equal(100, Rows(fixture).Single(r => r.Kind == GoldpathCampaignCeilingKind.TargetSystem).MaxTps);
+    }
+
+    [Fact]
+    public async Task AThrottledCeiling_BindsThePacersNextSlice_WithNoRestart()
+    {
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(2_000));
+        var (a, b) = await CreateTwoAsync(fixture, ("config-push", GoldpathCampaignPriority.Normal), ("firmware-push", GoldpathCampaignPriority.Normal));
+        await ReconcileAsync(fixture);
+        Assert.True((await fixture.Admin().ThrottleCeilingAsync(GoldpathCampaignCeilingKind.TargetSystem, System,
+            new GoldpathCampaignCeilingPatch(MaxTps: 20), "ops@example.test", CancellationToken.None)).Ok);
+
+        await fixture.RunPacerSliceAsync();
+
+        // 20/s over the 0.4 s slice is 8, plus one 20 ms tick's bank; at code's 2,000/s it would be about 800.
+        Assert.InRange(fixture.Reload(a).ReleasedThrough + fixture.Reload(b).ReleasedThrough, 1, 9);
+    }
+
+    [Fact]
+    public async Task BeforeTheLeaderSeeds_TheVerbInsertsTheRow_WithTheCodeSeed_SoTheSeedRuleSeesAnOperatorsRow()
+    {
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200));
+        var result = await fixture.Admin().ThrottleCeilingAsync(GoldpathCampaignCeilingKind.TargetSystem, System,
+            new GoldpathCampaignCeilingPatch(MaxTps: 75), "ops@example.test", CancellationToken.None);
+
+        Assert.True(result.Ok, result.Message);
+        var row = Assert.Single(Rows(fixture));
+        Assert.Equal((75, 200, "ops@example.test"), (row.MaxTps, row.SeedMaxTps, row.UpdatedBy));
+        Assert.Equal("target system 'device-core': MaxTps 200/s -> 75/s",
+            fixture.Query(db => db.Set<GoldpathCampaignAudit>().AsNoTracking().Single().Detail));
+
+        await ReconcileAsync(fixture);   // the leader's slice inserts the missing global row and leaves this one alone
+        var rows = Rows(fixture);
+        Assert.Equal(2, rows.Count);
+        Assert.Equal(75, rows.Single(r => r.Kind == GoldpathCampaignCeilingKind.TargetSystem).MaxTps);
+    }
+
+    [Fact]
+    public async Task AnInsertThatMeetsTheLeadersRow_ReReadsIt_AndUpdatesIt()
+    {
+        // The verb read no row; before its INSERT lands, the leader seeds the key. The verb must update that row, not fail.
+        var interceptor = new InsertFirst(
+            $"INSERT INTO \"GoldpathCampaignCeilings\" (\"Kind\", \"Name\", \"MaxTps\", \"SeedMaxTps\", \"UpdatedAt\", \"UpdatedBy\") VALUES (1, '{System}', 200, 200, '2026-11-14 00:00:00+00:00', 'system')");
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200),
+            extraServices: services => services.ConfigureDbContext<CampaignTestContext>(o => o.AddInterceptors(interceptor)));
+
+        var result = await fixture.Admin().ThrottleCeilingAsync(GoldpathCampaignCeilingKind.TargetSystem, System,
+            new GoldpathCampaignCeilingPatch(MaxTps: 60), "ops@example.test", CancellationToken.None);
+
+        Assert.True(interceptor.Fired);
+        Assert.True(result.Ok, result.Message);
+        var row = Assert.Single(Rows(fixture));
+        Assert.Equal((60, 200, "ops@example.test"), (row.MaxTps, row.SeedMaxTps, row.UpdatedBy));
+        Assert.Single(fixture.Query(db => db.Set<GoldpathCampaignAudit>().AsNoTracking().ToList()));
+    }
+
+    [Fact]
+    public async Task AChangeThatLandsBetweenTheReadAndTheUpdate_IsReRead_SoTheAuditNamesTheValueItReplaced()
+    {
+        var interceptor = new BeforeUpdate("UPDATE \"GoldpathCampaignCeilings\" SET \"MaxTps\" = 50, \"UpdatedBy\" = 'other@example.test' WHERE \"Kind\" = 1");
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200),
+            extraServices: services => services.ConfigureDbContext<CampaignTestContext>(o => o.AddInterceptors(interceptor)));
+        await ReconcileAsync(fixture);   // the leader's seed updates nothing: its rows are inserted, so the interceptor waits for the verb
+
+        var result = await fixture.Admin().ThrottleCeilingAsync(GoldpathCampaignCeilingKind.TargetSystem, System,
+            new GoldpathCampaignCeilingPatch(MaxTps: 120), "ops@example.test", CancellationToken.None);
+
+        Assert.True(interceptor.Fired);
+        Assert.True(result.Ok, result.Message);
+        Assert.Equal((120, "ops@example.test"), Rows(fixture).Single(r => r.Kind == GoldpathCampaignCeilingKind.TargetSystem) is var r ? (r.MaxTps, r.UpdatedBy) : default);
+        Assert.Equal("target system 'device-core': MaxTps 50/s -> 120/s",
+            fixture.Query(db => db.Set<GoldpathCampaignAudit>().AsNoTracking().Single().Detail));
+    }
+
+    [Fact]
+    public async Task TheGlobalCeiling_IsSetAndSwitchedOff()
+    {
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200, o => o.GlobalTps = 1_000));
+        await ReconcileAsync(fixture);
+        var admin = fixture.Admin();
+
+        Assert.True((await admin.ThrottleCeilingAsync(GoldpathCampaignCeilingKind.Global, GoldpathCampaignCeiling.GlobalName,
+            new GoldpathCampaignCeilingPatch(MaxTps: 300), "ops@example.test", CancellationToken.None)).Ok);
+        var off = await admin.ThrottleCeilingAsync(GoldpathCampaignCeilingKind.Global, GoldpathCampaignCeiling.GlobalName,
+            new GoldpathCampaignCeilingPatch(ClearMaxTps: true), "ops@example.test", CancellationToken.None);
+
+        Assert.True(off.Ok, off.Message);
+        Assert.Equal("ceiling: global is now off.", off.Message);
+        var global = Rows(fixture).Single(r => r.Kind == GoldpathCampaignCeilingKind.Global);
+        Assert.Equal(((int?)null, 1_000), (global.MaxTps, global.SeedMaxTps));
+        Assert.Null((await admin.GetCeilingsAsync(CancellationToken.None))[0].MaxTps);
+        using var scope = fixture.Services.CreateScope();
+        Assert.Null((await fixture.Engine.ReadCeilingsAsync(scope.ServiceProvider.GetRequiredService<CampaignTestContext>(), CancellationToken.None)).GlobalTps);
+
+        // From off back on: the update's guard compares the NULL it read, and must still match the row.
+        var on = await admin.ThrottleCeilingAsync(GoldpathCampaignCeilingKind.Global, GoldpathCampaignCeiling.GlobalName,
+            new GoldpathCampaignCeilingPatch(MaxTps: 250), "ops@example.test", CancellationToken.None);
+        Assert.True(on.Ok, on.Message);
+        Assert.Equal(250, Rows(fixture).Single(r => r.Kind == GoldpathCampaignCeilingKind.Global).MaxTps);
+
+        // Newest first, ceiling rows only.
+        await fixture.CreateAsync(Generous());
+        var audit = await admin.GetCeilingAuditAsync(10, CancellationToken.None);
+        Assert.Equal(["global: MaxTps off -> 250/s", "global: MaxTps 300/s -> off", "global: MaxTps 1000/s -> 300/s"], audit.Select(a => a.Detail));
+    }
+
+    [Fact]
+    public async Task ATargetSystemIsNeverCleared_AndTheRefusalSaysToSetAHighNumber()
+    {
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200));
+        await ReconcileAsync(fixture);
+        var result = await fixture.Admin().ThrottleCeilingAsync(GoldpathCampaignCeilingKind.TargetSystem, System,
+            new GoldpathCampaignCeilingPatch(ClearMaxTps: true), "ops@example.test", CancellationToken.None);
+
+        Assert.False(result.Ok);
+        Assert.Contains("cannot be cleared", result.Message, StringComparison.Ordinal);
+        Assert.Contains("set a high number instead", result.Message, StringComparison.Ordinal);
+        AssertUnchanged(fixture, 200);
+    }
+
+    [Theory]
+    [InlineData("billing")]
+    [InlineData("DEVICE-CORE")]   // the row's key is the declared spelling: another case is another name
+    [InlineData("")]
+    public async Task AnUndeclaredSystem_IsRefused_NamingTheDeclaredOnes(string name)
+    {
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200));
+        await ReconcileAsync(fixture);
+        var result = await fixture.Admin().ThrottleCeilingAsync(GoldpathCampaignCeilingKind.TargetSystem, name,
+            new GoldpathCampaignCeilingPatch(MaxTps: 10), "ops@example.test", CancellationToken.None);
+
+        Assert.False(result.Ok);
+        Assert.Equal($"No target system '{name}' is declared. The declared ones: 'device-core'.", result.Message);
+        AssertUnchanged(fixture, 200);
+    }
+
+    [Fact]
+    public async Task WithNoSystemDeclared_TheRefusalSaysSo_AndAHugeNameIsBoundedInIt()
+    {
+        using var fixture = new CampaignFixture();
+        var result = await fixture.Admin().ThrottleCeilingAsync(GoldpathCampaignCeilingKind.TargetSystem, new string('x', 5_000),
+            new GoldpathCampaignCeilingPatch(MaxTps: 10), "ops@example.test", CancellationToken.None);
+
+        Assert.False(result.Ok);
+        Assert.Equal($"No target system '{new string('x', 128)}' is declared. No target system is declared (AddTargetSystem in code).", result.Message);
+    }
+
+    [Theory]
+    [InlineData(0, false, "A ceiling must be positive")]
+    [InlineData(-1, false, "A ceiling must be positive")]
+    [InlineData(null, false, "The patch changes nothing: name maxTps.")]
+    [InlineData(5, true, "Name either maxTps or clearMaxTps, not both.")]
+    public async Task ANonsensePatch_IsRefused_AndNothingIsWritten(int? maxTps, bool clear, string refusal)
+    {
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200));
+        await ReconcileAsync(fixture);
+        var kind = clear ? GoldpathCampaignCeilingKind.Global : GoldpathCampaignCeilingKind.TargetSystem;
+        var name = clear ? GoldpathCampaignCeiling.GlobalName : System;
+        var result = await fixture.Admin().ThrottleCeilingAsync(kind, name, new GoldpathCampaignCeilingPatch(maxTps, clear), "ops@example.test", CancellationToken.None);
+
+        Assert.False(result.Ok);
+        Assert.StartsWith(refusal, result.Message, StringComparison.Ordinal);
+        AssertUnchanged(fixture, 200);
+    }
+
+    [Fact]
+    public async Task TheGlobalRow_IsAddressedOnlyByItsName_AndAnEmptyGlobalPatchTeachesTheClear()
+    {
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200));
+        var admin = fixture.Admin();
+        var named = await admin.ThrottleCeilingAsync(GoldpathCampaignCeilingKind.Global, System, new GoldpathCampaignCeilingPatch(MaxTps: 5), "ops", CancellationToken.None);
+        Assert.Equal((false, "The global ceiling's name is '*'."), (named.Ok, named.Message));
+        var empty = await admin.ThrottleCeilingAsync(GoldpathCampaignCeilingKind.Global, GoldpathCampaignCeiling.GlobalName, new GoldpathCampaignCeilingPatch(), "ops", CancellationToken.None);
+        Assert.Equal((false, "The patch changes nothing: name maxTps, or clearMaxTps to switch the global ceiling off."), (empty.Ok, empty.Message));
+        var kind = await admin.ThrottleCeilingAsync((GoldpathCampaignCeilingKind)7, System, new GoldpathCampaignCeilingPatch(MaxTps: 5), "ops", CancellationToken.None);
+        Assert.Equal((false, "Unknown ceiling kind 7."), (kind.Ok, kind.Message));
+        Assert.Empty(Rows(fixture));
+    }
+
+    [Fact]
+    public async Task SettingTheCodeValueBack_HandsTheRowBackToCode()
+    {
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200));
+        await ReconcileAsync(fixture);
+        var admin = fixture.Admin();
+        await admin.ThrottleCeilingAsync(GoldpathCampaignCeilingKind.TargetSystem, System, new GoldpathCampaignCeilingPatch(MaxTps: 40), "ops", CancellationToken.None);
+        await admin.ThrottleCeilingAsync(GoldpathCampaignCeilingKind.TargetSystem, System, new GoldpathCampaignCeilingPatch(MaxTps: 200), "ops", CancellationToken.None);
+
+        await ReconcileAsync(fixture, Reseeded(fixture.Options, systemTps: 300, globalTps: null));
+        Assert.Equal(300, Rows(fixture).Single(r => r.Kind == GoldpathCampaignCeilingKind.TargetSystem).MaxTps);
+    }
+
+    /// <summary>
+    /// The hand-back holds when code moved while the operator held the row: seeded 200, moved to 100, a release seeds
+    /// 300 (the operator's 100 stands), the operator sets the new code value 300 as the runbook says, and the next
+    /// release's 400 is followed, with no operator-disagreement warning. Without resetting the seed the row read
+    /// 300 / 200 — still "moved" — and stayed at 300 with a warning on every slice.
+    /// </summary>
+    [Theory]
+    [InlineData(GoldpathCampaignCeilingKind.TargetSystem)]
+    [InlineData(GoldpathCampaignCeilingKind.Global)]
+    public async Task SettingTheCodeValueBack_AfterCodeMoved_HandsTheRowBackToCode(GoldpathCampaignCeilingKind kind)
+    {
+        var name = kind == GoldpathCampaignCeilingKind.Global ? GoldpathCampaignCeiling.GlobalName : System;
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200, o => o.GlobalTps = 200));
+        await ReconcileAsync(fixture);
+        Assert.True((await fixture.Admin().ThrottleCeilingAsync(kind, name, new GoldpathCampaignCeilingPatch(MaxTps: 100), "ops", CancellationToken.None)).Ok);
+
+        var release = Reseeded(fixture.Options, systemTps: 300, globalTps: 300);
+        await ReconcileAsync(fixture, release);
+        Assert.Equal(100, RowOf(fixture, kind).MaxTps);   // the operator's value stands over the release
+
+        var admin = new GoldpathCampaignAdminService<CampaignTestContext>(release,
+            new GoldpathCampaignEngine<CampaignTestContext>(release, TimeProvider.System, NullLogger<GoldpathCampaignEngine<CampaignTestContext>>.Instance),
+            fixture.Services.GetRequiredService<IServiceScopeFactory>(), TimeProvider.System,
+            NullLogger<GoldpathCampaignAdminService<CampaignTestContext>>.Instance);
+        Assert.True((await admin.ThrottleCeilingAsync(kind, name, new GoldpathCampaignCeilingPatch(MaxTps: 300), "ops", CancellationToken.None)).Ok);
+        var handedBack = RowOf(fixture, kind);
+        Assert.Equal((300, 300), (handedBack.MaxTps, handedBack.SeedMaxTps));
+
+        var logger = new ListLogger<GoldpathCampaignEngine<CampaignTestContext>>();
+        await ReconcileAsync(fixture, Reseeded(fixture.Options, systemTps: 400, globalTps: 400), logger);
+
+        var followed = RowOf(fixture, kind);
+        Assert.Equal((400, 400, "system"), (followed.MaxTps, followed.SeedMaxTps, followed.UpdatedBy));
+        Assert.DoesNotContain(logger.Entries, e => e.Level == LogLevel.Warning);
+    }
+
+    /// <summary>
+    /// A value other than the code value keeps the seed: the row stays moved, and the next release is not followed. Its audit
+    /// row is stamped with the row's own <c>UpdatedAt</c>.
+    /// </summary>
+    [Fact]
+    public async Task SettingAValueOtherThanCode_KeepsTheSeed_AndTheRowStaysMoved()
+    {
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200));
+        await ReconcileAsync(fixture);
+        Assert.True((await fixture.Admin().ThrottleCeilingAsync(GoldpathCampaignCeilingKind.TargetSystem, System,
+            new GoldpathCampaignCeilingPatch(MaxTps: 150), "ops", CancellationToken.None)).Ok);
+        var moved = RowOf(fixture, GoldpathCampaignCeilingKind.TargetSystem);
+        Assert.Equal((150, 200), (moved.MaxTps, moved.SeedMaxTps));
+        // The audit carries the instant the change applied, so it lists changes in the order they applied.
+        Assert.Equal(moved.UpdatedAt, fixture.Query(db => db.Set<GoldpathCampaignAudit>().AsNoTracking().Single()).At);
+
+        await ReconcileAsync(fixture, Reseeded(fixture.Options, systemTps: 300, globalTps: null));
+        Assert.Equal(150, RowOf(fixture, GoldpathCampaignCeilingKind.TargetSystem).MaxTps);
+    }
+
+    [Fact]
+    public async Task ALongActor_IsBoundedToTheColumns()
+    {
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200));
+        await ReconcileAsync(fixture);
+        var actor = new string('a', 300);
+        Assert.True((await fixture.Admin().ThrottleCeilingAsync(GoldpathCampaignCeilingKind.TargetSystem, System,
+            new GoldpathCampaignCeilingPatch(MaxTps: 10), actor, CancellationToken.None)).Ok);
+        Assert.Equal(256, Rows(fixture).Single(r => r.Kind == GoldpathCampaignCeilingKind.TargetSystem).UpdatedBy.Length);
+        Assert.Equal(256, fixture.Query(db => db.Set<GoldpathCampaignAudit>().AsNoTracking().Single().Actor.Length));
+    }
+
+    [Fact]
+    public async Task TheCeilingRoutes_BindTheNameAndTheBody_AndAnUndeclaredNameAnswers400()
+    {
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200, o => o.GlobalTps = 1_000));
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseTestServer();
+        builder.Services.AddDbContext<CampaignTestContext>(o => o.UseSqlite(fixture.Connection));
+        builder.Services.AddSingleton(fixture.Admin());
+        await using var app = builder.Build();
+        app.MapGoldpathCampaignAdmin<CampaignTestContext>(exposeUnsecured: true);
+        await app.StartAsync();
+        using var client = app.GetTestClient();
+
+        using var set = await client.PostAsJsonAsync("/goldpath/admin/campaign/ceilings/target-systems/device-core/throttle",
+            JsonDocument.Parse("""{"maxTps":90}""").RootElement);
+        Assert.Equal(HttpStatusCode.OK, set.StatusCode);
+        using var off = await client.PostAsJsonAsync("/goldpath/admin/campaign/ceilings/global/throttle",
+            JsonDocument.Parse("""{"clearMaxTps":true}""").RootElement);
+        Assert.Equal(HttpStatusCode.OK, off.StatusCode);
+
+        using var unknown = await client.PostAsJsonAsync("/goldpath/admin/campaign/ceilings/target-systems/billing/throttle",
+            JsonDocument.Parse("""{"maxTps":90}""").RootElement);
+        Assert.Equal(HttpStatusCode.BadRequest, unknown.StatusCode);
+        using (var refusal = JsonDocument.Parse(await unknown.Content.ReadAsStringAsync()))
+        {
+            Assert.False(refusal.RootElement.GetProperty("ok").GetBoolean());
+            Assert.Equal("No target system 'billing' is declared. The declared ones: 'device-core'.", refusal.RootElement.GetProperty("message").GetString());
+        }
+
+        using var clear = await client.PostAsJsonAsync("/goldpath/admin/campaign/ceilings/target-systems/device-core/throttle",
+            JsonDocument.Parse("""{"clearMaxTps":true}""").RootElement);
+        Assert.Equal(HttpStatusCode.BadRequest, clear.StatusCode);
+
+        using var list = JsonDocument.Parse(await client.GetStringAsync("/goldpath/admin/campaign/ceilings"));
+        var rows = list.RootElement.EnumerateArray().ToList();
+        Assert.Equal(("Global", "*", JsonValueKind.Null, 1_000), (rows[0].GetProperty("kind").GetString(), rows[0].GetProperty("name").GetString(),
+            rows[0].GetProperty("maxTps").ValueKind, rows[0].GetProperty("codeMaxTps").GetInt32()));
+        Assert.Equal(("TargetSystem", System, 90, 200, "anonymous"), (rows[1].GetProperty("kind").GetString(), rows[1].GetProperty("name").GetString(),
+            rows[1].GetProperty("maxTps").GetInt32(), rows[1].GetProperty("codeMaxTps").GetInt32(), rows[1].GetProperty("updatedBy").GetString()));
+        Assert.Equal(["config-push", "firmware-push"], rows[1].GetProperty("types").EnumerateArray().Select(t => t.GetString()));
+
+        using var audit = JsonDocument.Parse(await client.GetStringAsync("/goldpath/admin/campaign/ceilings/audit?take=1"));
+        var newest = Assert.Single(audit.RootElement.EnumerateArray());
+        Assert.Equal("global: MaxTps 1000/s -> off", newest.GetProperty("detail").GetString());
+    }
+
+    [Fact]
+    public async Task ASystemNamedLikeTheGlobalRow_IsItsOwnRow_ForTheListAndTheVerb()
+    {
+        // Both rows hold 30, so only the row's key — never the guarded value — tells them apart.
+        using var fixture = new CampaignFixture(FastTicks(o =>
+        {
+            o.GlobalTps = 30;
+            o.AddTargetSystem(GoldpathCampaignCeiling.GlobalName, 30);
+        }));
+        await ReconcileAsync(fixture);
+        var admin = fixture.Admin();
+
+        Assert.True((await admin.ThrottleCeilingAsync(GoldpathCampaignCeilingKind.TargetSystem, GoldpathCampaignCeiling.GlobalName,
+            new GoldpathCampaignCeilingPatch(MaxTps: 12), "ops@example.test", CancellationToken.None)).Ok);
+
+        var rows = Rows(fixture);
+        Assert.Equal(30, rows.Single(r => r.Kind == GoldpathCampaignCeilingKind.Global).MaxTps);
+        Assert.Equal(12, rows.Single(r => r.Kind == GoldpathCampaignCeilingKind.TargetSystem).MaxTps);
+        var listed = await admin.GetCeilingsAsync(CancellationToken.None);
+        Assert.Equal([("Global", 30), ("TargetSystem", 12)], listed.Select(c => (c.Kind, c.MaxTps ?? -1)));
+    }
+
+    [Theory]
+    [InlineData(null, 200)]   // a target system's row holding no value: the pacer binds the code value
+    [InlineData(-5, 0)]       // a value below zero (only an edit outside the module writes one): the pacer binds zero
+    public async Task TheListReadsATargetSystemsRowAsThePacerDoes(int? rowValue, int listed)
+    {
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200));
+        await ReconcileAsync(fixture);
+        fixture.Mutate(db => db.Set<GoldpathCampaignCeiling>().Single(c => c.Kind == GoldpathCampaignCeilingKind.TargetSystem).MaxTps = rowValue);
+
+        var system = (await fixture.Admin().GetCeilingsAsync(CancellationToken.None)).Single(c => c.Name == System);
+        Assert.Equal(listed, system.MaxTps);
+        using var scope = fixture.Services.CreateScope();
+        Assert.Equal(listed, (await fixture.Engine.ReadCeilingsAsync(scope.ServiceProvider.GetRequiredService<CampaignTestContext>(), CancellationToken.None)).TargetSystems[System]);
+    }
+
+    [Fact]
+    public async Task AChangeFromARowHoldingNoValue_IsAuditedFromTheCodeValueItBound()
+    {
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200));
+        await ReconcileAsync(fixture);
+        fixture.Mutate(db => db.Set<GoldpathCampaignCeiling>().Single(c => c.Kind == GoldpathCampaignCeilingKind.TargetSystem).MaxTps = null);
+
+        Assert.True((await fixture.Admin().ThrottleCeilingAsync(GoldpathCampaignCeilingKind.TargetSystem, System,
+            new GoldpathCampaignCeilingPatch(MaxTps: 70), "ops@example.test", CancellationToken.None)).Ok);
+        Assert.Equal(70, Rows(fixture).Single(r => r.Kind == GoldpathCampaignCeilingKind.TargetSystem).MaxTps);
+        Assert.Equal("target system 'device-core': MaxTps 200/s -> 70/s",
+            fixture.Query(db => db.Set<GoldpathCampaignAudit>().AsNoTracking().Single().Detail));
+    }
+
+    [Fact]
+    public async Task ANullPatchOrName_IsRefused()
+    {
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200, o => o.AddTargetSystem("billing", 50)));
+        var admin = fixture.Admin();
+        await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            admin.ThrottleCeilingAsync(GoldpathCampaignCeilingKind.TargetSystem, System, null!, "ops", CancellationToken.None));
+        var unnamed = await admin.ThrottleCeilingAsync(GoldpathCampaignCeilingKind.TargetSystem, null!,
+            new GoldpathCampaignCeilingPatch(MaxTps: 5), "ops", CancellationToken.None);
+        Assert.Equal((false, "No target system '' is declared. The declared ones: 'billing', 'device-core'."), (unnamed.Ok, unnamed.Message));
+    }
+
+    [Fact]
+    public async Task AVerbThatLosesEveryRace_AppliesNothing_AndSaysSo()
+    {
+        var interceptor = new EveryUpdateRaced();
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200),
+            extraServices: services => services.ConfigureDbContext<CampaignTestContext>(o => o.AddInterceptors(interceptor)));
+        await ReconcileAsync(fixture);
+
+        var result = await fixture.Admin().ThrottleCeilingAsync(GoldpathCampaignCeilingKind.TargetSystem, System,
+            new GoldpathCampaignCeilingPatch(MaxTps: 10), "ops@example.test", CancellationToken.None);
+
+        Assert.False(result.Ok);
+        Assert.Equal("The ceiling change lost 8 races in a row to concurrent changes on that row — nothing was applied; re-read and retry.", result.Message);
+        Assert.Equal(8, interceptor.Raced);
+        Assert.NotEqual(10, Rows(fixture).Single(r => r.Kind == GoldpathCampaignCeilingKind.TargetSystem).MaxTps);
+        Assert.Empty(fixture.Query(db => db.Set<GoldpathCampaignAudit>().AsNoTracking().ToList()));
+    }
+
+    [Fact]
+    public async Task AnInsertRefusedForAnotherReason_ReachesTheCaller_AfterOneReRead()
+    {
+        var interceptor = new EveryInsertRefused();
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200),
+            extraServices: services => services.ConfigureDbContext<CampaignTestContext>(o => o.AddInterceptors(interceptor)));
+
+        await Assert.ThrowsAnyAsync<DbUpdateException>(() => fixture.Admin().ThrottleCeilingAsync(GoldpathCampaignCeilingKind.TargetSystem, System,
+            new GoldpathCampaignCeilingPatch(MaxTps: 10), "ops@example.test", CancellationToken.None));
+        Assert.Equal(2, interceptor.Refused);
+        Assert.Empty(Rows(fixture));
+    }
+
+    [Fact]
+    public async Task TheCeilingAudit_IsNewestFirst_EvenWithinOneInstant_AndHoldsOnlyCeilingChanges()
+    {
+        using var fixture = new CampaignFixture(TwoTypesOnOneSystem(200));
+        await ReconcileAsync(fixture);
+        var frozen = new FrozenClock(new DateTimeOffset(2026, 11, 14, 1, 0, 0, TimeSpan.Zero));
+        var admin = new GoldpathCampaignAdminService<CampaignTestContext>(fixture.Options, fixture.Engine,
+            fixture.Services.GetRequiredService<IServiceScopeFactory>(), frozen, NullLogger<GoldpathCampaignAdminService<CampaignTestContext>>.Instance);
+        // Another verb's row with no campaign, and another campaign's row that says "ceiling": neither is a ceiling change.
+        fixture.Mutate(db =>
+        {
+            db.Add(new GoldpathCampaignAudit { At = frozen.GetUtcNow(), Actor = "system", Action = "start", CampaignId = Guid.Empty });
+            db.Add(new GoldpathCampaignAudit { At = frozen.GetUtcNow(), Actor = "ops", Action = "ceiling", CampaignId = Guid.NewGuid(), Detail = "not this one" });
+        });
+
+        foreach (var tps in new[] { 11, 22, 33 })
+        {
+            Assert.True((await admin.ThrottleCeilingAsync(GoldpathCampaignCeilingKind.TargetSystem, System,
+                new GoldpathCampaignCeilingPatch(MaxTps: tps), "ops", CancellationToken.None)).Ok);
+        }
+
+        var audit = await admin.GetCeilingAuditAsync(10, CancellationToken.None);
+        Assert.Equal(["MaxTps 22/s -> 33/s", "MaxTps 11/s -> 22/s", "MaxTps 200/s -> 11/s"], audit.Select(a => a.Detail![(a.Detail!.IndexOf("MaxTps", StringComparison.Ordinal))..]));
+        Assert.All(audit, a => Assert.Equal(frozen.GetUtcNow(), a.At));
+    }
+
+    private static void AssertUnchanged(CampaignFixture fixture, int systemTps)
+    {
+        var row = Rows(fixture).Single(r => r.Kind == GoldpathCampaignCeilingKind.TargetSystem);
+        Assert.Equal((systemTps, "system"), (row.MaxTps, row.UpdatedBy));
+        Assert.Empty(fixture.Query(db => db.Set<GoldpathCampaignAudit>().AsNoTracking().ToList()));
+    }
+
     // ---- helpers ----
 
     private static async Task ReconcileAsync(
@@ -562,6 +1102,9 @@ public class R3TargetSystemTests
 
         return next;
     }
+
+    private static GoldpathCampaignCeiling RowOf(CampaignFixture fixture, GoldpathCampaignCeilingKind kind)
+        => Rows(fixture).Single(r => r.Kind == kind);
 
     private static List<GoldpathCampaignCeiling> Rows(CampaignFixture fixture)
         => fixture.Query(db => db.Set<GoldpathCampaignCeiling>().AsNoTracking().ToList());
@@ -652,6 +1195,57 @@ public class R3TargetSystemTests
 
             return result;
         }
+    }
+
+    /// <summary>Before every UPDATE of the ceilings table, another writer moves the row: every guarded update finds nothing.</summary>
+    private sealed class EveryUpdateRaced : DbCommandInterceptor
+    {
+        public int Raced { get; private set; }
+
+        public override async ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (command.CommandText.Contains("UPDATE \"GoldpathCampaignCeilings\"", StringComparison.Ordinal) && Raced < 50)
+            {
+                Raced++;
+                await using var concurrent = command.Connection!.CreateCommand();
+                concurrent.Transaction = command.Transaction;
+                concurrent.CommandText = "UPDATE \"GoldpathCampaignCeilings\" SET \"MaxTps\" = \"MaxTps\" + 1 WHERE \"Kind\" = 1";
+                await concurrent.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            return result;
+        }
+    }
+
+    /// <summary>Refuses every INSERT into the ceilings table, as a database refusing it for a reason other than a key conflict.</summary>
+    private sealed class EveryInsertRefused : DbCommandInterceptor
+    {
+        public int Refused { get; private set; }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+            => Refuse(command, result);
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+            => Refuse(command, result);
+
+        private ValueTask<T> Refuse<T>(DbCommand command, T result)
+        {
+            if (command.CommandText.Contains("INSERT INTO \"GoldpathCampaignCeilings\"", StringComparison.Ordinal))
+            {
+                Refused++;
+                throw new DbUpdateException("refused by the database");
+            }
+
+            return ValueTask.FromResult(result);
+        }
+    }
+
+    private sealed class FrozenClock(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
     }
 
     /// <summary>Counts publishes and, once <paramref name="after"/> have gone out, runs <paramref name="change"/> once on the publishing thread.</summary>

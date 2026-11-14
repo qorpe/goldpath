@@ -473,6 +473,41 @@ test.describe("the run console against a real Goldpath app", () => {
     await expect(detail.getByRole("status")).toBeVisible();
   });
 
+  test("campaign R3.2: the governor shows the target-system ceiling that binds a campaign, and an operator changes it", async ({ page, request }) => {
+    const created = await request.post(`${service}/goldpath/admin/campaign/`, {
+      data: { type: "config-push", name: "r3-ceiling", policy: { tps: 1, maxInFlight: 5 } },
+    });
+    expect(created.ok()).toBeTruthy();
+
+    await page.goto(`/?base=${encodeURIComponent(service)}`);
+    await page.getByTestId("shell-rail").getByRole("button", { name: "Campaigns", exact: true }).click();
+    await page.getByRole("button", { name: "r3-ceiling" }).click();
+    const detail = page.getByTestId("campaign-detail");
+    await expect(detail).toContainText("Target-system ceiling");
+    await expect(detail).toContainText(/\/s, shared by config-push \(code seeds 50\/s\)/);
+
+    await page.getByLabel("target-system ceiling").fill("30");
+    await page.getByRole("button", { name: "set ceiling" }).click();
+    const changing = page.getByRole("alertdialog", { name: "confirm set ceiling" });
+    await expect(changing).toContainText("to 30/s? It binds every campaign of config-push.");
+    await changing.getByRole("button", { name: "set ceiling" }).click();
+    await expect(detail).toContainText("ceiling: target system 'device-core' is now 30/s.");
+    await expect(detail).toContainText("30/s, shared by config-push (code seeds 50/s)");
+
+    // The change is on the server's own audit, with who made it.
+    const audit = await request.get(`${service}/goldpath/admin/campaign/ceilings/audit?take=1`);
+    expect((await audit.json())[0]).toMatchObject({ action: "ceiling", detail: expect.stringMatching(/-> 30\/s$/) });
+
+    // Back to the code value, so a re-run starts from the seed; and nothing left releasing behind the next test.
+    const reset = await request.post(`${service}/goldpath/admin/campaign/ceilings/target-systems/device-core/throttle`, { data: { maxTps: 50 } });
+    expect(reset.ok()).toBeTruthy();
+    await page.getByRole("button", { name: "abort" }).click();
+    const aborting = page.getByRole("alertdialog", { name: "confirm abort" });
+    await aborting.getByLabel("reason (required)").fill("smoke run finished");
+    await aborting.getByRole("button", { name: "abort" }).click();
+    await expect(detail.getByRole("status")).toBeVisible();
+  });
+
   test("campaign R3.1: a scheduled start waits in Ready, shows in the policy time zone, and moving it starts the campaign", async ({ page, request }) => {
     // Created half an hour out, in UTC so the wall time the console shows is the instant itself.
     const later = new Date(Date.now() + 30 * 60_000);

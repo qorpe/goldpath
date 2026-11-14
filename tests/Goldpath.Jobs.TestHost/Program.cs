@@ -176,6 +176,17 @@ static async Task RunConsoleHostAsync(
                     .OrderBy(x => x.Id)
                     .Select(x => new SmokeCustomer(x.Id, x.Email))
                     .AsAsyncEnumerable()));
+            // R3.2: a type that names a target system, so the governor has a shared ceiling to show and edit (#318).
+            campaign.AddTargetSystem("device-core", 50);
+            campaign.AddCampaign<SmokeCustomer>("config-push", c => c
+                .MaxTargets(1_000)
+                .TargetSystem("device-core")
+                .DefaultPolicy(policy => policy with { Tps = 2, MaxInFlight = 5 })
+                .Targets((services, _) => services.GetRequiredService<ClusterDb>()
+                    .CampaignCustomers.AsNoTracking()
+                    .OrderBy(x => x.Id)
+                    .Select(x => new SmokeCustomer(x.Id, x.Email))
+                    .AsAsyncEnumerable()));
         });
         web.Configuration["ConnectionStrings:messaging"] = brokerUri;
         web.AddGoldpathMessaging(messaging => messaging

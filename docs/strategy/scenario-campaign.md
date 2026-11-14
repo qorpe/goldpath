@@ -112,7 +112,15 @@ S-FLEET-03 — Two campaigns under one GlobalTps never jointly exceed it
             second of ticks of the run checked against 20 with no tolerance; replay with
             `dotnet test --filter FullyQualifiedName~CampaignR1Tests`). The broker test has not been
             seen red: its leadership slices start with empty buckets, so its runs held no idle
-            stretch inside one slice (2026-10-29, three runs on the old code)
+            stretch inside one slice (2026-10-29, three runs on the old code).
+            EXTENDED (R3.2, #318, 2026-11-14): tests/Goldpath.IntegrationTests/CampaignCeilingVerbTests.cs
+            — two campaigns of DIFFERENT types naming one target system (seed 20/s), on RabbitMQ 4 +
+            PostgreSQL 17, never above 20 in any second of ticks across both; an operator lowers the
+            system to 8/s through the admin verb mid-run, and every second of ticks from one leader
+            tick after the commit holds 8; the audit row carries the operator. Replay with
+            `dotnet test --filter FullyQualifiedName~CampaignCeilingVerbTests` (~18 s; green 4 runs of
+            4). Red with a bucket per type at the system's rate (24 and 22 in one second against 20),
+            and with a verb that leaves the row's value (15 in one second against 8)
 
 S-FLEET-04 — Pause stops every worker within three seconds
   modules:  campaign (R2.6 claim guard, pause/resume verbs, orphan sweep), broker, store

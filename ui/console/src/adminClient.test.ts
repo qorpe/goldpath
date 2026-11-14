@@ -148,6 +148,23 @@ describe("the admin client (the console's only door — the FROZEN contract)", (
     expect(calls[1].url).toContain("/goldpath/admin/campaign/c-1/pause");
   });
 
+  it("R4.5: the ceiling routes — the global row, a target system by its encoded name, and the audit", async () => {
+    const { fetcher, calls } = fakeFetch({ "/campaign/": json({ ok: true, message: "done" }) });
+    const client = new AdminClient({ fetcher });
+
+    await client.throttleCampaignCeiling({ global: true }, { clearMaxTps: true });
+    await client.throttleCampaignCeiling({ targetSystem: "device/core x" }, { maxTps: 40 });
+    await client.campaignCeilings();
+    await client.campaignCeilingAudit(9_999);
+
+    expect(calls[0].url).toContain("/goldpath/admin/campaign/ceilings/global/throttle");
+    expect(calls[0].init?.body).toBe(JSON.stringify({ clearMaxTps: true }));
+    expect(calls[1].url).toContain("/goldpath/admin/campaign/ceilings/target-systems/device%2Fcore%20x/throttle");
+    expect(calls[1].init?.body).toBe(JSON.stringify({ maxTps: 40 }));
+    expect(calls[2].url).toContain("/goldpath/admin/campaign/ceilings");
+    expect(calls[3].url).toContain("/goldpath/admin/campaign/ceilings/audit?take=500");
+  });
+
   it("ids with slashes and spaces are ENCODED — a key is data, never part of the path", async () => {
     const { fetcher, calls } = fakeFetch({ "/goldpath/admin/": json({}) });
     const client = new AdminClient({ fetcher });
