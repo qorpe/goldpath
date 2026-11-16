@@ -831,6 +831,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
 ### Changed
+- **T1 is closed: the console driving CorPay has its first green night (GA gate G11 met, #325).** Ledgers only; no
+  package change. The `corpay-console-smoke` nightly job passed 4 of 4 specs on 2026-11-10 (nightly run 154,
+  [job](https://github.com/qorpe/goldpath/actions/runs/42789231201/job/129738098092)), the first night after #540 merged, and on every nightly since. open-threads moves T1 to Closed
+  threads, ga-gate-status marks G11 met, and ai-sdlc-status says so. The nightly runs themselves end cancelled
+  for another job's timeout (#562), not this one.
 - **`AddGoldpathLocking` refuses a provider it does not build (#407).** `Provider = Oracle` is refused at
   registration and names `Goldpath.Locking.Oracle` and `AddGoldpathOracleLocking()`, as `SqlServer` already
   was. A value that names no provider at all (an out-of-range cast) is refused in words; before, it was built
