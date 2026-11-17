@@ -23,9 +23,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     measured, not promised).
   - **Jobs on Oracle** (`ops/jobs-benchmarks.md`, the sandbox, 2026-11-10): plan → complete 1.7–1.8 s against
     PostgreSQL's 1.5 s, and 8.3–9.2 ms of checkpoint per chunk against 7.6 ms.
-  - **Bulk on Oracle is not measurable yet.** Every upload over 2,000 bytes fails with ORA-01460, because
-    `GoldpathBulkFileChunks.Data` is `RAW(2000)` on Oracle and the store writes 256 KB chunks. #559 tracks it, and
-    open-threads T68 holds the Bulk column.
+  - **Bulk on Oracle was not measurable** when this landed: every upload over 2,000 bytes failed with ORA-01460, because
+    `GoldpathBulkFileChunks.Data` was `RAW(2000)` on Oracle and the store writes 256 KB chunks. #559 fixed the column
+    (see Fixed), and open-threads T68 holds the Bulk column until it is measured.
 - **Locking on Oracle: the optional `Goldpath.Locking.Oracle` package (G7, slice O-4, #407; RFC goldpath-oracle
   §2.9).**
   - **API (additive):** `AddGoldpathOracleLocking<TBuilder>(configure)` in the new package, and
@@ -962,6 +962,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **Bulk on Oracle takes a real file: `GoldpathBulkFileChunks.Data` is a `BLOB` there (#559).** The Oracle provider maps an
+  unshaped `byte[]` to `RAW(2000)`, and the file store writes chunks of 256 KiB, so every upload above 2,000 bytes failed
+  on its first save with ORA-01460 (the finance card's 10k-row file is about 200 KB). `AddGoldpathBulk` now shapes the
+  column as `BLOB` when the model is Oracle's, recognised by the provider's own annotations as the Jobs and Archival
+  models already are. PostgreSQL (`bytea`), SQL Server (`varbinary(max)`) and SQLite are unchanged
+  (`ModelContractTests`). The Oracle store-type golden pinned `RAW(2000)`, which is how the wrong type passed: it now pins
+  `BLOB`, and `BulkTests.A_file_larger_than_one_chunk_is_stored_and_read_back_byte_for_byte` (both lanes) stores a
+  file of one full and one partial chunk and reads back the same SHA-256 and bytes. Bulk on Oracle has not shipped on a
+  train, so no adopter migration changes. Bulk's Oracle bench column is still to be measured (open-threads T68).
 - **The `oracle` lane no longer runs the shared Oracle Free container out of sessions (#571).** Since #529 and #558,
   `CampaignOracleTests.Thousands_release_paced_across_leader_handovers_and_a_live_throttle_lifts_the_ceiling` hung about
   half the time in the lane and never alone. Measured on 2026-11-12: the container runs with `processes=200`, about 85 of

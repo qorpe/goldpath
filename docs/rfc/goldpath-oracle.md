@@ -213,7 +213,9 @@ differently by provider, and nobody would see why.
   LOCKED` natively.
 - **Bulk** (`Goldpath.Bulk`). The engine writes intake rows through EF batches and
   `ExecuteUpdate`, with no `COPY` or `SqlBulkCopy`, so it runs on Oracle as is. EF's Oracle
-  batching uses array binding. O-5 measures the 1M-row intake on Oracle and records it in
+  batching uses array binding. The one exception is the file store's chunk column: an unshaped
+  `byte[]` is `RAW(2000)` on Oracle and a chunk is 256 KiB, so the model shapes it as `BLOB`
+  there (#559, found when O-5's bench first uploaded a real file). O-5 measures the 1M-row intake on Oracle and records it in
   `ops/bulk-benchmarks.md`, with no budget promised until it is measured.
 
 ### 2.7 Hand-written SQL in the packages

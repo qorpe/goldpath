@@ -70,7 +70,7 @@ GoldpathBulkBatches.TotalRows: NUMBER(10) not null
 GoldpathBulkBatches.TraceParent: NVARCHAR2(55) null
 GoldpathBulkBatches.ValidRows: NUMBER(10) not null
 GoldpathBulkBatches.ValidatedAt: TIMESTAMP(7) WITH TIME ZONE null
-GoldpathBulkFileChunks.Data: RAW(2000) not null
+GoldpathBulkFileChunks.Data: BLOB not null
 GoldpathBulkFileChunks.FileId: RAW(16) not null
 GoldpathBulkFileChunks.Index: NUMBER(10) not null
 GoldpathBulkFiles.FileName: NVARCHAR2(260) not null
