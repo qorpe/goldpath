@@ -462,29 +462,39 @@ public sealed class GoldpathBulkEngine<TContext>
 
         await db.SaveChangesAsync(cancellationToken);
 
-        foreach (var row in fresh)
+        // The batch's tenant is the ambient tenant for every handler AND for the save that writes what the handlers
+        // added (#539): a multi-tenant app's write guard reads it there, and a handler does not wrap itself.
+        using (BatchTenant.Use(batch.Tenant))
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var context = new GoldpathBulkRowContext(batchId, row.RowNumber, batch.Tenant, replay: false, services);
-            try
+            foreach (var row in fresh)
             {
-                await definition.ExecuteRow(row.Payload, context, cancellationToken);
-                row.ExecutedAt = _time.GetUtcNow();
-                executed++;
+                cancellationToken.ThrowIfCancellationRequested();
+                var context = new GoldpathBulkRowContext(batchId, row.RowNumber, batch.Tenant, replay: false, services);
+                var tracked = TrackedEntities(db);
+                try
+                {
+                    await definition.ExecuteRow(row.Payload, context, cancellationToken);
+                    row.ExecutedAt = _time.GetUtcNow();
+                    executed++;
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;   // shutdown: the claim stays; the resumed attempt repairs it honestly
+                }
+                catch (Exception e)
+                {
+                    // A failed row leaves nothing behind: what its handler started tracking is not saved with the
+                    // chunk, so the repair queue's replay is the row's only write.
+                    Untrack(db, tracked);
+                    row.FailedAt = _time.GetUtcNow();
+                    failed++;
+                    chunk.ReportItemFailure(ItemKey(batchId, row.RowNumber), e.Message);
+                }
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;   // shutdown: the claim stays; the resumed attempt repairs it honestly
-            }
-            catch (Exception e)
-            {
-                row.FailedAt = _time.GetUtcNow();
-                failed++;
-                chunk.ReportItemFailure(ItemKey(batchId, row.RowNumber), e.Message);
-            }
+
+            await db.SaveChangesAsync(cancellationToken);
         }
 
-        await db.SaveChangesAsync(cancellationToken);
         await db.Set<GoldpathBulkBatch>().Where(b => b.Id == batchId)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(b => b.ExecutedRows, b => b.ExecutedRows + executed)
@@ -525,16 +535,32 @@ public sealed class GoldpathBulkEngine<TContext>
         activity?.SetTag("goldpath.row", rowNumber);
 
         var context = new GoldpathBulkRowContext(batchId, rowNumber, batch.Tenant, replay: true, services);
-        await definition.ExecuteRow(row.Payload, context, cancellationToken);
+        using (BatchTenant.Use(batch.Tenant))   // as the execute run: the handler and its save, as the batch's tenant (#539)
+        {
+            await definition.ExecuteRow(row.Payload, context, cancellationToken);
 
-        row.ExecutedAt = _time.GetUtcNow();
-        row.FailedAt = null;
-        await db.SaveChangesAsync(cancellationToken);
+            row.ExecutedAt = _time.GetUtcNow();
+            row.FailedAt = null;
+            await db.SaveChangesAsync(cancellationToken);
+        }
         await db.Set<GoldpathBulkBatch>().Where(b => b.Id == batchId)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(b => b.ExecutedRows, b => b.ExecutedRows + 1)
                 .SetProperty(b => b.FailedRows, b => b.FailedRows - 1), cancellationToken);
         await TryCompleteAsync(db, batchId, cancellationToken);
+    }
+
+    /// <summary>The entities the context tracks now, by reference: what a row's handler adds is what is not in here.</summary>
+    private static HashSet<object> TrackedEntities(TContext db)
+        => db.ChangeTracker.Entries().Select(e => e.Entity).ToHashSet(ReferenceEqualityComparer.Instance);
+
+    /// <summary>Stops tracking every entity that was not in <paramref name="before"/>, so the chunk's save skips it.</summary>
+    private static void Untrack(TContext db, HashSet<object> before)
+    {
+        foreach (var entry in db.ChangeTracker.Entries().Where(e => !before.Contains(e.Entity)).ToList())
+        {
+            entry.State = EntityState.Detached;
+        }
     }
 
     /// <summary>Deletes raw file bytes whose retention elapsed (terminal batches only, D6).</summary>

@@ -52,6 +52,17 @@ builder.AddGoldpathJobs<WebApplicationBuilder, OrdersDbContext>(jobs =>
 - **Row failures don't stop the batch:** they land in the jobs repair queue; the jobs
   `replay-items` verb retries them through your handler; the last cleared failure flips
   the batch to Completed.
+- **A row runs as its batch's tenant:** on a multi-tenant app the engine pins the batch's
+  tenant (the uploader's) as the ambient tenant around your row handler and around the
+  chunk's save, and around a replay. Your handler does not wrap itself in
+  `GoldpathTenant.Use(...)`: an entity it adds is stamped and guarded as that tenant. A
+  batch without a tenant (a single-tenant app) leaves the ambient tenant untouched.
+- **A failed row leaves nothing behind:** when your handler throws, what it added or
+  loaded on the engine's `DbContext` before throwing is untracked, so the chunk's save does
+  not write it; the row goes to the repair queue with your exception's message. What the
+  handler already SAVED itself, or sent to another system, is beyond the engine's reach,
+  which is why a handler should leave the save to the engine. A save that fails on one
+  row's data (a constraint) still fails the whole chunk today (open thread T70).
 
 Ops surface (admin API, metrics panel, runbooks) ships in S2; run views live in the JOBS
 console today — a bulk execution IS a jobs run.

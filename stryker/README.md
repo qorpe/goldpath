@@ -134,6 +134,13 @@ effect on a real Oracle is proven by `ArchivalOracleTests` instead, outside this
 - **One survivor, equivalent:** the chain state's `ToTable("GoldpathArchiveChainState")` removed. EF's default table
   name for an entity with no `DbSet` is its class name, which is the same string.
 
+**Bulk in diff mode, 2026-11-18** (#539, `GOLDPATH_MUTATE_SINCE=origin/main`, the local sandbox; the full run stays
+the authoritative score, so the table below is unchanged): 90.91 % (275 mutants). Every mutant on the lines the change
+touched is killed: `BatchTenant` (4 mutants) and the tenant scopes, the tracked-entity snapshot and `Untrack` in
+`ExecuteRangeAsync` and `ReplayRowAsync`, by `AmbientTenantTests`. The two left in the changed file are older: the
+shutdown `throw;` (no coverage) and the `GoldpathBulkMetrics.Executed` call (survived; the metrics file is outside the
+scope).
+
 **Archival, Bulk and Notification in diff mode, 2026-11-09** (#409, `GOLDPATH_MUTATE_SINCE=origin/main`, the local
 sandbox; diff mode mutates the whole changed file, and the full run stays the authoritative score, so the table below
 is unchanged): Archival 83.17 % (97 mutants), Bulk 84.75 %, Notification 81.82 %. Every mutant on the lines the
