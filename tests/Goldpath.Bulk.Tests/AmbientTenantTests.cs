@@ -12,7 +12,7 @@ namespace Goldpath.Bulk.Tests;
 /// </summary>
 public sealed class AmbientTenantTests : IDisposable
 {
-    private readonly BulkFixture _fixture = new();
+    private readonly BulkFixture _fixture = new(multiTenant: true);
 
     public void Dispose() => _fixture.Dispose();
 
@@ -92,8 +92,11 @@ public sealed class AmbientTenantTests : IDisposable
             var template = db.Set<GoldpathBulkBatch>().AsNoTracking().Single(b => b.Id == batch.Id);
             var ghost = new GoldpathBulkBatch
             {
-                Id = Guid.NewGuid(), Definition = $"ghost-{row.EndToEndId}", FileId = template.FileId,
-                State = GoldpathBulkBatchState.Rejected, ReceivedAt = template.ReceivedAt,
+                Id = Guid.NewGuid(),
+                Definition = $"ghost-{row.EndToEndId}",
+                FileId = template.FileId,
+                State = GoldpathBulkBatchState.Rejected,
+                ReceivedAt = template.ReceivedAt,
             };
             ghosts.Add(ghost.Id);
             db.Add(ghost);
@@ -104,6 +107,103 @@ public sealed class AmbientTenantTests : IDisposable
         var saved = _fixture.Query(db => db.Set<GoldpathBulkBatch>().AsNoTracking()
             .Where(b => ghosts.Contains(b.Id)).Select(b => b.Definition).OrderBy(d => d).ToList());
         Assert.Equal(["ghost-E1", "ghost-E3"], saved);
+    }
+
+    /// <summary>
+    /// The verifier's P1 on #587: a single-tenant app's batch label is free-form (AdminTenantScope passes it through), so
+    /// it is never parsed as a tenant id there, and the handler sees no ambient tenant — exactly as before #539.
+    /// </summary>
+    [Theory]
+    [InlineData("ACME")]
+    [InlineData("agency_1")]
+    [InlineData("Acme Corp")]
+    [InlineData("agency-1")]
+    public async Task A_single_tenant_apps_batch_runs_whatever_its_label_and_pins_no_ambient_tenant(string label)
+    {
+        using var single = new BulkFixture();
+        var batch = await single.IngestValidatedAsync(BulkFixture.Csv(("E1", "TR1", "10", null)), label);
+        using (var scope = single.Scope())
+        {
+            Assert.True((await single.Engine.ApproveAsync(scope.ServiceProvider, batch.Id, "treasurer", null, CancellationToken.None)).Ok);
+        }
+
+        var seen = new List<TenantId?>();
+        single.Handler.Probe = (_, _) => seen.Add(GoldpathAmbientTenant.Current);
+
+        var failures = (await single.ExecuteAllAsync(Guid.NewGuid())).SelectMany(Failures).ToList();
+
+        Assert.Empty(failures);
+        Assert.Equal([null], seen);
+        Assert.NotNull(single.Query(db => db.Set<GoldpathBulkRow>().AsNoTracking().Single(r => r.BatchId == batch.Id).ExecutedAt));
+    }
+
+    /// <summary>
+    /// On a multi-tenant app a stored tenant that is no tenant id fails each row, named, in the repair queue — never an
+    /// exception after the claim that files every row "interrupted mid-flight" — and its replay fails with the same reason.
+    /// </summary>
+    [Fact]
+    public async Task A_multi_tenant_batch_whose_stored_tenant_is_no_tenant_id_fails_each_row_by_name_and_its_replay_too()
+    {
+        await ApprovedAsync("Acme Corp", ("E1", "TR1", "10", null), ("E2", "TR2", "20", null));
+        var ran = 0;
+        _fixture.Handler.Probe = (_, _) => ran++;
+
+        var failures = (await _fixture.ExecuteAllAsync(Guid.NewGuid())).SelectMany(Failures).ToList();
+
+        Assert.Equal(0, ran);
+        Assert.Equal(2, failures.Count);
+        Assert.All(failures, f => Assert.Contains("'Acme Corp' is not a tenant id", f.Reason, StringComparison.Ordinal));
+        Assert.DoesNotContain(failures, f => f.Reason.Contains("interrupted", StringComparison.Ordinal));
+
+        using var scope = _fixture.Scope();
+        var replay = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _fixture.Engine.ReplayRowAsync(scope.ServiceProvider, failures[0].ItemKey, CancellationToken.None));
+        Assert.Contains("'Acme Corp' is not a tenant id", replay.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The scope itself, synchronously (the verifier's M2 on #587: an AsyncLocal write inside the async engine never flows
+    /// back to the awaiting test, so only a synchronous fact can see whether Dispose restores the previous value).
+    /// </summary>
+    [Fact]
+    public void The_scope_pins_the_tenant_and_restores_what_was_there_nested_or_not()
+    {
+        using (Ambient("outer"))
+        {
+            using (BatchTenant.Use(TenantId.Create("t1")))
+            {
+                Assert.Equal(TenantId.Create("t1"), GoldpathAmbientTenant.Current);
+                using (BatchTenant.Use(TenantId.Create("t2")))
+                {
+                    Assert.Equal(TenantId.Create("t2"), GoldpathAmbientTenant.Current);
+                }
+
+                Assert.Equal(TenantId.Create("t1"), GoldpathAmbientTenant.Current);
+                using (BatchTenant.Use(null))
+                {
+                    Assert.Equal(TenantId.Create("t1"), GoldpathAmbientTenant.Current);   // nothing to pin: left as it was
+                }
+
+                Assert.Equal(TenantId.Create("t1"), GoldpathAmbientTenant.Current);
+            }
+
+            Assert.Equal(TenantId.Create("outer"), GoldpathAmbientTenant.Current);
+        }
+
+        Assert.Null(GoldpathAmbientTenant.Current);
+    }
+
+    [Fact]
+    public void A_stored_tenant_resolves_to_a_pin_only_on_a_multi_tenant_app()
+    {
+        using var single = new BulkFixture();
+        Assert.Equal(BatchTenant.Pin.None, BatchTenant.Resolve(single.Services, "t1"));
+        Assert.Equal(BatchTenant.Pin.None, BatchTenant.Resolve(single.Services, "Acme Corp"));
+        Assert.Equal(BatchTenant.Pin.None, BatchTenant.Resolve(_fixture.Services, null));
+        Assert.Equal(TenantId.Create("t1"), BatchTenant.Resolve(_fixture.Services, "t1").Tenant);
+        var refused = BatchTenant.Resolve(_fixture.Services, new string('x', 500));
+        Assert.Null(refused.Tenant);
+        Assert.True(refused.Refusal!.Length < 300, "the refusal clips what it echoes");
     }
 
     /// <summary>An ambient tenant for the test's own flow (what an HTTP request or a consumer would have set).</summary>

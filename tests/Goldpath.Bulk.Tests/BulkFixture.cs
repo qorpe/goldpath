@@ -53,7 +53,7 @@ public sealed class BulkFixture : IDisposable
 {
     private readonly SqliteConnection _connection;
 
-    public BulkFixture(Action<GoldpathBulkBatchBuilder<PaymentRow>>? configure = null, int chunkSize = 500, int maxRows = 10_000)
+    public BulkFixture(Action<GoldpathBulkBatchBuilder<PaymentRow>>? configure = null, int chunkSize = 500, int maxRows = 10_000, bool multiTenant = false)
     {
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
@@ -76,6 +76,11 @@ public sealed class BulkFixture : IDisposable
         services.AddDbContext<BulkTestContext>(o => o.UseSqlite(_connection));
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IGoldpathBulkRowHandler<PaymentRow>>(_ => Handler);
+        if (multiTenant)
+        {
+            services.AddSingleton<GoldpathMultiTenancyMarker>();   // what AddGoldpathMultiTenancy composes
+        }
+
         Services = services.BuildServiceProvider();
 
         using var scope = Services.CreateScope();

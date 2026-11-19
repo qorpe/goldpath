@@ -967,10 +967,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   guard refused every row the handler added (`Adding '…' requires an ambient tenant`); the exception escaped the chunk,
   the retry found the rows claimed and unstamped, and filed every one as "interrupted mid-flight", so the repair queue
   never showed the real error and a replay failed the same way. `GoldpathBulkEngine` now pins the batch's `Tenant` as
-  the ambient tenant around every handler and the chunk's save, and around a replay's handler and save; a batch without
-  a tenant (a single-tenant app) leaves the ambient tenant as it was. A row whose handler throws no longer leaves behind
-  what the handler added before it threw: those entities are untracked, so the chunk's save does not write them and the
-  replay is the row's only write. `BulkTenantTests` (PostgreSQL, the real jobs runner): a two-row batch under `t1`
+  the ambient tenant around every handler and the chunk's save, and around a replay's handler and save, on a
+  multi-tenant app only (one that composes `AddGoldpathMultiTenancy`): a single-tenant app's batch label, free-form
+  there, pins nothing and its batches run exactly as before. On a multi-tenant app a stored tenant that is not a tenant
+  id fails each row by name in the repair queue (and its replay with the same reason) instead of escaping after the
+  claim. A row whose handler throws no longer has what it newly ADDED or LOADED saved with the chunk: those entities are
+  untracked. Its changes to entities tracked before it (another row's, or a shared one loaded earlier) are not undone:
+  open thread T71. `BulkTenantTests` (PostgreSQL, the real jobs runner): a two-row batch under `t1`
   stores both rows as `t1`; a throwing row is recorded on that row with its own message and leaves nothing; a replayed
   repair item runs as `t1`. Each was red on `main` with the issue's message. A chunk save that fails on one row's DATA
   (a constraint) still fails the chunk: open thread T70.

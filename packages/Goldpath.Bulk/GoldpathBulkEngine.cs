@@ -464,11 +464,22 @@ public sealed class GoldpathBulkEngine<TContext>
 
         // The batch's tenant is the ambient tenant for every handler AND for the save that writes what the handlers
         // added (#539): a multi-tenant app's write guard reads it there, and a handler does not wrap itself.
-        using (BatchTenant.Use(batch.Tenant))
+        var pin = BatchTenant.Resolve(services, batch.Tenant);
+        using (BatchTenant.Use(pin.Tenant))
         {
             foreach (var row in fresh)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (pin.Refusal is { } refusal)
+                {
+                    // A stored tenant that is no tenant id: each row fails, named, into the repair queue — never an
+                    // exception after the claim that would file every row "interrupted mid-flight".
+                    row.FailedAt = _time.GetUtcNow();
+                    failed++;
+                    chunk.ReportItemFailure(ItemKey(batchId, row.RowNumber), refusal);
+                    continue;
+                }
+
                 var context = new GoldpathBulkRowContext(batchId, row.RowNumber, batch.Tenant, replay: false, services);
                 var tracked = TrackedEntities(db);
                 try
@@ -483,8 +494,8 @@ public sealed class GoldpathBulkEngine<TContext>
                 }
                 catch (Exception e)
                 {
-                    // A failed row leaves nothing behind: what its handler started tracking is not saved with the
-                    // chunk, so the repair queue's replay is the row's only write.
+                    // What the failing row's handler newly started tracking (added or loaded) is not saved with the
+                    // chunk. Its changes to entities tracked BEFORE it are not undone (open thread T71).
                     Untrack(db, tracked);
                     row.FailedAt = _time.GetUtcNow();
                     failed++;
@@ -535,7 +546,13 @@ public sealed class GoldpathBulkEngine<TContext>
         activity?.SetTag("goldpath.row", rowNumber);
 
         var context = new GoldpathBulkRowContext(batchId, rowNumber, batch.Tenant, replay: true, services);
-        using (BatchTenant.Use(batch.Tenant))   // as the execute run: the handler and its save, as the batch's tenant (#539)
+        var pin = BatchTenant.Resolve(services, batch.Tenant);
+        if (pin.Refusal is { } refusal)
+        {
+            throw new InvalidOperationException($"Bulk row '{itemKey}' cannot be replayed: {refusal}.");
+        }
+
+        using (BatchTenant.Use(pin.Tenant))   // as the execute run: the handler and its save, as the batch's tenant (#539)
         {
             await definition.ExecuteRow(row.Payload, context, cancellationToken);
 
