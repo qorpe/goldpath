@@ -962,6 +962,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **Bulk executes a multi-tenant app's rows as the batch's tenant (#539).** The execute run and a replay are background
+  flows, and nothing set the ambient tenant around the row handler or the chunk's save. On a multi-tenant app the write
+  guard refused every row the handler added (`Adding '…' requires an ambient tenant`); the exception escaped the chunk,
+  the retry found the rows claimed and unstamped, and filed every one as "interrupted mid-flight", so the repair queue
+  never showed the real error and a replay failed the same way. `GoldpathBulkEngine` now pins the batch's `Tenant` as
+  the ambient tenant around every handler and the chunk's save, and around a replay's handler and save, on a
+  multi-tenant app only (one that composes `AddGoldpathMultiTenancy`): a single-tenant app's batch label, free-form
+  there, pins nothing and its batches run exactly as before. On a multi-tenant app a stored tenant that is not a tenant
+  id fails each row by name in the repair queue (and its replay with the same reason) instead of escaping after the
+  claim. A row whose handler throws no longer has what it newly ADDED or LOADED saved with the chunk: those entities are
+  untracked. Its changes to entities tracked before it (another row's, or a shared one loaded earlier) are not undone:
+  open thread T71. `BulkTenantTests` (PostgreSQL, the real jobs runner): a two-row batch under `t1`
+  stores both rows as `t1`; a throwing row is recorded on that row with its own message and leaves nothing; a replayed
+  repair item runs as `t1`. Each was red on `main` with the issue's message. A chunk save that fails on one row's DATA
+  (a constraint) still fails the chunk: open thread T70.
 - **The `oracle` lane no longer runs the shared Oracle Free container out of sessions (#571).** Since #529 and #558,
   `CampaignOracleTests.Thousands_release_paced_across_leader_handovers_and_a_live_throttle_lifts_the_ceiling` hung about
   half the time in the lane and never alone. Measured on 2026-11-12: the container runs with `processes=200`, about 85 of
