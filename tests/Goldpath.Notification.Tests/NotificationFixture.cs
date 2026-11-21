@@ -12,13 +12,16 @@ public sealed class RecordingChannel : IGoldpathNotificationChannel
 
     public int Throws { get; set; }
 
+    /// <summary>The refusal's text: the provider's own words, as a real channel's exception carries them.</summary>
+    public string FailureMessage { get; set; } = "the gateway refused";
+
     public string Name => "recording";
 
     public Task SendAsync(GoldpathNotificationMessage message, CancellationToken cancellationToken)
     {
         if (message.Body.Contains("FAIL", StringComparison.Ordinal) || Throws-- > 0)
         {
-            throw new InvalidOperationException("the gateway refused");
+            throw new InvalidOperationException(FailureMessage);
         }
 
         Accepted.Add(message);
