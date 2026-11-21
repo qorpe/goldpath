@@ -106,6 +106,10 @@ public sealed class FailureDetailMaskingTests : IDisposable
         // No whitespace at all: cut at the limit itself, and still bounded.
         var (solid, _, _, _) = await FailAsync(Email, new string('w', 10_000));
         Assert.Equal(new string('w', 1023) + "…", solid);
+
+        // Its only whitespace is its first character: that is no word boundary to cut at, so the limit is the cut.
+        var (leading, _, _, _) = await FailAsync(Email, " " + new string('w', 10_000));
+        Assert.Equal(" " + new string('w', 1022) + "…", leading);
     }
 
     [Fact]

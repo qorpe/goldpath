@@ -151,6 +151,17 @@ change touched (the three `ChunkedContains` filters and their guards) is killed 
 - The ChunkedContains call itself yields no mutant. Dropping the archived-keys filter is proven on a real database
   instead: the PostgreSQL `BatchSize = 600` fact goes red on the unique index.
 
+**Notification in diff mode, 2026-11-21** (#532, `GOLDPATH_MUTATE_SINCE=origin/main`, the local sandbox; diff mode
+mutates the whole changed files, so the full run stays the authoritative score and the table below is unchanged):
+72.38 % on the first pass, 80.48 % once `FailureDetailMaskingTests` pinned the masked text exactly (202 mutants
+tested, 4.8 minutes). The new `GoldpathNotificationFailureText.cs` kills 57 of its 61 tested mutants, and one more
+(`cut > 0` → `>= 0`) was killed afterwards by a planted check. The rest:
+- **Two are not covered:** the `RegexMatchTimeoutException` fallback that withholds the text. No input the three
+  linear patterns can be given reaches their one-second timeout in a test.
+- **One is equivalent:** `text.Length > MaxReadLength` → `>=`. A text of exactly 8,192 characters is cut either way to
+  the same first 1,023 characters and the marker.
+- The survivors left in `GoldpathNotificationAdminService.cs` are on lines this change did not touch.
+
 **Data was re-measured 2026-11-08**, a full run of `mutation-gate.sh Goldpath.Data` on the #408 branch
 (`GoldpathQueryableExtensions.ChunkedContains`, RFC goldpath-oracle §2.5), on the local sandbox: 77.38 % → 80.00 %
 (103 mutants tested, 3.8 minutes, the sandbox's, not the CI profile's).
