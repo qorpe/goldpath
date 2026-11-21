@@ -62,7 +62,8 @@ repair reason and the warning log line. A provider's words name who it refused: 
 address, an SMS gateway's the number. So that text is masked before any of the three sees it, and it fails closed.
 
 - **What is masked:**
-  - the row's recipient in any letter case, and its local part on its own;
+  - the row's recipient in any letter case, and its local part on its own when it is three characters or longer
+    (a shorter one would mask every such pair of letters in a sentence; the full address is still masked);
   - any other address (including `%40`-encoded ones);
   - any run of seven or more digits in any script, with single separators allowed (`+90 555 111 22 33`, `0555-111-22-33`);
   - a URL's query and its credentials. Host and path are kept, and `(credentials removed)` says so.

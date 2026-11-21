@@ -1476,7 +1476,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     number, so the recipient the admin surface masks reached every `goldpath-ops-read` holder and the logs. Measured
     on `main`: `550 5.1.1 <omer@example.test>: Recipient address rejected` lands on the failures view as is.
   - **What masks now (`Goldpath.Notification`, internal, no public API change), fail-closed:**
-    - the row's recipient in any letter case, and its local part on its own;
+    - the row's recipient in any letter case, and its local part on its own (three characters or longer);
     - any other address, `%40`-encoded included;
     - any run of seven or more digits in any script, with single separators between them;
     - a URL's query and credentials.
@@ -1488,7 +1488,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   - **The admin views also mask a `Detail` stored before this fix** as they read it.
   - **Changed: the warning log line** for an exhausted notification now carries the exception's type and the masked
     text instead of the exception object, so the provider's stack trace is no longer logged.
-  - **Proof:** `FailureDetailMaskingTests` (20 facts). The issue's fact is red on `main`.
+  - **Proof:** `FailureDetailMaskingTests` (31 facts). The issue's fact is red on `main`.
 - **Approvals and FileExchange admin surfaces demand the all-tenants privilege on a multi-tenant app (admin
   contract R1 rule 5, #481).** Neither store carries a tenant column, but neither group applied the rule campaign and
   archival apply. So an operator scoped to tenant A could read every tenant's approval requests and trails and

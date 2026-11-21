@@ -79,6 +79,52 @@ public sealed class FailureDetailMaskingTests : IDisposable
         }
     }
 
+    [Theory]
+    [InlineData(Email, "rejected recipient omer%40example.test", "rejected recipient o***@e***")]
+    [InlineData(Email, "mailbox omer unavailable", "mailbox o*** unavailable")]
+    [InlineData("ali@example.test", "mailbox ali unavailable", "mailbox a*** unavailable")]   // the shortest local part masked alone: three
+    [InlineData("al@example.test", "mailbox al unavailable", "mailbox al unavailable")]   // two letters would mask every "al" in a sentence
+    [InlineData(Phone, "number +90 555 111 22 33 is unreachable", "number +*** is unreachable")]
+    [InlineData(Phone, "code 550 5.1.1 for +905551112233", "code 550 5.1.1 for +***")]   // an SMTP status (six digits) is kept
+    [InlineData(Email, "POST https://hooks.example/send failed", "POST https://hooks.example/send failed")]   // nothing to remove
+    [InlineData(Email, "POST https://hooks.example/send#frag failed", "POST https://hooks.example/send?*** failed")]
+    [InlineData(Email, "connect http://hooks.example:99999/x refused", "connect *** refused")]   // a URL that does not parse is withheld whole
+    public async Task The_masked_text_keeps_the_diagnosis_and_only_the_diagnosis(string recipient, string providerText, string expected)
+    {
+        var (detail, reason, failures, one) = await FailAsync(recipient, providerText);
+        Assert.Equal([expected, expected, expected, expected], new[] { detail, reason, failures, one });
+    }
+
+    [Fact]
+    public async Task A_huge_text_is_cut_at_its_last_word_before_the_read_limit_so_no_half_token_is_masked_or_shown()
+    {
+        // A URL with a long query straddles the read limit: cut at the space before it, never through it.
+        var straddling = new string('x', 500) + " https://hooks.example/p?" + new string('q', 9_000) + $" <{Email}>";
+        var (detail, _, _, _) = await FailAsync(Email, straddling);
+        Assert.Equal(new string('x', 500) + " …", detail);
+
+        // No whitespace at all: cut at the limit itself, and still bounded.
+        var (solid, _, _, _) = await FailAsync(Email, new string('w', 10_000));
+        Assert.Equal(new string('w', 1023) + "…", solid);
+    }
+
+    [Fact]
+    public async Task A_row_without_a_detail_shows_none_and_an_empty_recipient_does_not_break_the_view()
+    {
+        var sent = await _fixture.RequestAsync(NotificationFixture.Renewal("renewal:fine"));
+        await _fixture.RunSendPassAsync();
+        Assert.Null((await _admin.GetNotificationAsync(sent.Id, null, CancellationToken.None))!.Detail);
+
+        _fixture.Mutate(db =>
+        {
+            var odd = db.Set<GoldpathNotification>().Single(n => n.Id == sent.Id);
+            odd.Recipient = "";
+            odd.Detail = "refused by +905551112233";
+        });
+        Assert.Equal("refused by +***", (await _admin.GetNotificationAsync(sent.Id, null, CancellationToken.None))!.Detail);
+        Assert.Equal("@***", GoldpathNotificationAdminService<NotificationTestContext>.MaskRecipient("@example.test"));   // no local part
+    }
+
     [Fact]
     public async Task A_url_keeps_its_host_and_path_and_says_its_credentials_were_removed()
     {
