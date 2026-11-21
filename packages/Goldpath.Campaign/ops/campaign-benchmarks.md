@@ -194,6 +194,55 @@ system's, in one query a tick. `TickQueryCountTests` pins 8.
   - Whether S-FLEET-02a's "zero windows above 1000" means wall-clock seconds, and so a smoother pacer, or seconds of
     ticks, is the owner's question in open-threads T67.
 
+## Oracle column (G7 Oracle 8/12 Part 2/2, #557): 2026-11-12
+
+`GOLDPATH_BENCH_PROVIDER=oracle scripts/bench-campaign.sh all` runs `CampaignBenchOracleTests` and
+`CampaignPacerEnumerationBenchOracleTests`: the same four facts, each on a fresh schema of the Oracle collection's pinned
+container. `enum` runs the enumeration leg alone. `broker`, `smoke` and `fleet02` are refused on Oracle in words, because
+they need a broker-on shape that Oracle does not have before G5 (#415, owner decision 2026-10-23). PostgreSQL ran the same
+facts on the same machine the same night, one after the other, so the two columns are comparable. The columns above are
+not.
+
+**Reference profile:** the overnight agent's cloud sandbox, Linux x64, 4 logical CPUs / 15 GB, Docker Engine 29.9, the
+bench process and the database co-located. **Debug build**, as `scripts/bench-campaign.sh` runs. Oracle Database Free
+`gvenzl/oracle-free:23.26.3-slim-faststart` (`OracleFixture.Image`), ODP.NET 23.26.301 and Oracle EF 10.23.26301, in the
+19c SQL form; PostgreSQL `postgres:17-alpine`. **Code:** `agent/557-campaign-oracle-benches` at `a326f1c` (no package
+change). **Run id: none.** These are one local run each. The Oracle `all` run takes about six minutes end to end,
+container start included.
+
+| Proof | Budget (§6) | PostgreSQL 17 | Oracle Free 23.26.3 |
+|---|---|---|---|
+| Enumeration: 1M targets materialized (the engine loop) | minutes, not hours | **53.7 s = 18,636 rows/s** | **117.4 s = 8,516 rows/s** |
+| Pacer: configured 200 TPS over 15 s | ±5% steady-state | **166.7 released/s** (2,500 items) | **166.7 released/s** (2,500 items) |
+| LIVE throttle: 200 → 50 TPS mid-run, the next 15 s | within one tick | **50.8 released/s** | **50.0 released/s** |
+| Outcome sink: 100k outcomes, batches of 200 | set-based writes | **9.1 s = 10,997 outcomes/s** | **7.9 s = 12,627 outcomes/s** |
+| **S-FLEET-02's enumeration leg** (#288): 1M targets through the pacer, package defaults | — | **56.0 s = 17,868 rows/s**, 1 slice; items 81 MiB + indexes 65 MiB (152 B/item); leader peak 156 / 348 MiB | **122.3 s = 8,177 rows/s**, 3 slices; items 72 MiB + indexes 167 MiB (251 B/item); leader peak 179 / 402 MiB |
+
+No budget is promised on Oracle (oracle RFC §6: measured, not promised). The Oracle facts assert correctness and print
+their numbers: every target enumerated, every outcome counted, and the throttled phase slower than the first. Only
+PostgreSQL's facts assert the precision band.
+
+### Reading the numbers
+
+- **Enumeration on Oracle runs at about half PostgreSQL's rate on one machine**, through the engine loop (8,516 against
+  18,636 rows/s) and through the pacer (8,177 against 17,868). That is not an order of magnitude. At that rate a 30M
+  snapshot through the pacer would take about an hour on this profile, against 37 minutes for 35M on PostgreSQL (#288
+  above). S-FLEET-02's enumeration leg on Oracle is therefore measured at 1M, the size #288 used. A 30M or 35M run on
+  Oracle is not taken here, for time: this sandbox runs one unit at a time overnight.
+- **The governor holds on Oracle as it does on PostgreSQL.** Both measured 166.7 released/s at 200 TPS: 2,500 items in
+  15 s, the same cold-start-limited window the PostgreSQL rows above explain. The live throttle took effect within the
+  next slice on both (50.0 and 50.8 released/s).
+- **The PostgreSQL pacer fact misses its own ±10% band on this profile.** 166.7 is below its 180 floor; the CI profile
+  above measured 140. That fact's PostgreSQL code is unchanged by #557, which only moved it onto `SuiteStore`. The
+  undershoot is the CPU-bound side the CI row explains: four CPUs shared with the database. The governor never
+  over-releases.
+- **The outcome sink is as fast on Oracle as on PostgreSQL** (12,627 against 10,997 outcomes/s). These are set-based
+  flushes of 200 outcomes each, so its cost is per statement, not per row.
+- **Oracle's item table carries larger indexes**: 167 MiB against 65 MiB at 1M, which is 251 against 152 bytes an item in
+  total. The Oracle figure is allocated extents from `USER_SEGMENTS` (the table, its LOB segments, its index segments),
+  which over-counts free space inside an extent. PostgreSQL's is `pg_table_size` + `pg_indexes_size`. The heaps are
+  close (72 against 81 MiB).
+
 ## S-FLEET-04 — pause stops every worker within three seconds (2026-10-23)
 
 `ScenarioFleet04Tests` (#286; not a bench — it runs with the integration suite and asserts the
