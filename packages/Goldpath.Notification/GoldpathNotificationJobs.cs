@@ -184,12 +184,18 @@ public sealed class GoldpathNotificationSendJob<TContext> : IGoldpathJob, IGoldp
             {
                 if (row.Attempts >= _options.MaxAttempts)
                 {
+                    // #532: the provider's words name who they refused. Masked once, before ANY surface: the row's Detail
+                    // (the admin views), the jobs console's repair reason and the log. The log carries the exception's
+                    // type and the masked text, not the exception object, whose message and inner messages are unmasked.
+                    var detail = GoldpathNotificationFailureText.Of(e, row.Recipient);
                     row.State = GoldpathNotificationState.Failed;
                     row.FailedAt = _time.GetUtcNow();
-                    row.Detail = e.Message;
+                    row.Detail = detail;
                     GoldpathNotificationMetrics.Failed(row.Template, row.Channel);
-                    chunk?.ReportItemFailure(row.Id.ToString("N"), e.Message);
-                    _logger.LogWarning(e, "Notification {NotificationId} exhausted its {Attempts} attempts.", row.Id, row.Attempts);
+                    chunk?.ReportItemFailure(row.Id.ToString("N"), detail);
+                    _logger.LogWarning(
+                        "Notification {NotificationId} exhausted its {Attempts} attempts: {FailureType}: {Detail}",
+                        row.Id, row.Attempts, e.GetType().FullName, detail);
                     return;
                 }
 
