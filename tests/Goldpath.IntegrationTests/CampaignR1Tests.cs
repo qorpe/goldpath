@@ -193,7 +193,7 @@ public class CampaignR1Tests : IAsyncLifetime
     /// it spans, so a window never holds more ticks than one second has. A re-released item keeps only its last stamp,
     /// which can hide a release but never invent one.
     /// </summary>
-    private static (DateTimeOffset From, int Released) WorstSecondOfTicks(List<DateTimeOffset> stamps)
+    internal static (DateTimeOffset From, int Released) WorstSecondOfTicks(List<DateTimeOffset> stamps)
     {
         var tick = TimeSpan.FromMilliseconds(100);   // the host's LeaderTick
         var perSecond = (int)(TimeSpan.FromSeconds(1).Ticks / tick.Ticks);

@@ -35,11 +35,15 @@ public class RouteContractTests
             "GET /goldpath/admin/campaign/{id:guid}",
             "GET /goldpath/admin/campaign/{id:guid}/audit",
             "GET /goldpath/admin/campaign/{id:guid}/failures",
+            "GET /goldpath/admin/campaign/ceilings",
+            "GET /goldpath/admin/campaign/ceilings/audit",
             "POST /goldpath/admin/campaign/",
             "POST /goldpath/admin/campaign/{id:guid}/abort",
             "POST /goldpath/admin/campaign/{id:guid}/pause",
             "POST /goldpath/admin/campaign/{id:guid}/resume",
             "POST /goldpath/admin/campaign/{id:guid}/throttle",
+            "POST /goldpath/admin/campaign/ceilings/global/throttle",
+            "POST /goldpath/admin/campaign/ceilings/target-systems/{name}/throttle",
         ];
         Assert.Equal(frozen, actual);
     }

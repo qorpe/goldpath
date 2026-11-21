@@ -321,3 +321,44 @@ Goldpath.GoldpathCampaignOptions.AddTargetSystem(string! name, int maxTps) -> Go
 Goldpath.GoldpathCampaignOptions.TargetSystems.get -> System.Collections.Generic.IReadOnlyDictionary<string!, int>!
 Goldpath.GoldpathCampaignType.TargetSystem.get -> string?
 Goldpath.GoldpathCampaignTypeBuilder<TTarget>.TargetSystem(string! name) -> Goldpath.GoldpathCampaignTypeBuilder<TTarget!>!
+Goldpath.GoldpathCampaignCeilingInfo
+Goldpath.GoldpathCampaignCeilingInfo.GoldpathCampaignCeilingInfo(string! Kind, string! Name, int? MaxTps, int? CodeMaxTps, System.Collections.Generic.IReadOnlyList<string!>! Types, System.DateTimeOffset UpdatedAt, string! UpdatedBy) -> void
+Goldpath.GoldpathCampaignCeilingInfo.Kind.get -> string!
+Goldpath.GoldpathCampaignCeilingInfo.Kind.init -> void
+Goldpath.GoldpathCampaignCeilingInfo.Name.get -> string!
+Goldpath.GoldpathCampaignCeilingInfo.Name.init -> void
+Goldpath.GoldpathCampaignCeilingInfo.MaxTps.get -> int?
+Goldpath.GoldpathCampaignCeilingInfo.MaxTps.init -> void
+Goldpath.GoldpathCampaignCeilingInfo.CodeMaxTps.get -> int?
+Goldpath.GoldpathCampaignCeilingInfo.CodeMaxTps.init -> void
+Goldpath.GoldpathCampaignCeilingInfo.Types.get -> System.Collections.Generic.IReadOnlyList<string!>!
+Goldpath.GoldpathCampaignCeilingInfo.Types.init -> void
+Goldpath.GoldpathCampaignCeilingInfo.UpdatedAt.get -> System.DateTimeOffset
+Goldpath.GoldpathCampaignCeilingInfo.UpdatedAt.init -> void
+Goldpath.GoldpathCampaignCeilingInfo.UpdatedBy.get -> string!
+Goldpath.GoldpathCampaignCeilingInfo.UpdatedBy.init -> void
+Goldpath.GoldpathCampaignCeilingPatch
+Goldpath.GoldpathCampaignCeilingPatch.GoldpathCampaignCeilingPatch(int? MaxTps = null, bool ClearMaxTps = false) -> void
+Goldpath.GoldpathCampaignCeilingPatch.MaxTps.get -> int?
+Goldpath.GoldpathCampaignCeilingPatch.MaxTps.init -> void
+Goldpath.GoldpathCampaignCeilingPatch.ClearMaxTps.get -> bool
+Goldpath.GoldpathCampaignCeilingPatch.ClearMaxTps.init -> void
+Goldpath.GoldpathCampaignAdminService<TContext>.GetCeilingsAsync(System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathCampaignCeilingInfo!>!>!
+Goldpath.GoldpathCampaignAdminService<TContext>.ThrottleCeilingAsync(Goldpath.GoldpathCampaignCeilingKind kind, string! name, Goldpath.GoldpathCampaignCeilingPatch! patch, string! actor, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<Goldpath.GoldpathAdminResult!>!
+Goldpath.GoldpathCampaignAdminService<TContext>.GetCeilingAuditAsync(int take, System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<Goldpath.GoldpathCampaignAudit!>!>!
+Goldpath.GoldpathCampaignCeilingInfo.<Clone>$() -> Goldpath.GoldpathCampaignCeilingInfo!
+Goldpath.GoldpathCampaignCeilingInfo.Deconstruct(out string! Kind, out string! Name, out int? MaxTps, out int? CodeMaxTps, out System.Collections.Generic.IReadOnlyList<string!>! Types, out System.DateTimeOffset UpdatedAt, out string! UpdatedBy) -> void
+Goldpath.GoldpathCampaignCeilingInfo.Equals(Goldpath.GoldpathCampaignCeilingInfo? other) -> bool
+Goldpath.GoldpathCampaignCeilingPatch.<Clone>$() -> Goldpath.GoldpathCampaignCeilingPatch!
+Goldpath.GoldpathCampaignCeilingPatch.Deconstruct(out int? MaxTps, out bool ClearMaxTps) -> void
+Goldpath.GoldpathCampaignCeilingPatch.Equals(Goldpath.GoldpathCampaignCeilingPatch? other) -> bool
+override Goldpath.GoldpathCampaignCeilingInfo.Equals(object? obj) -> bool
+override Goldpath.GoldpathCampaignCeilingInfo.GetHashCode() -> int
+override Goldpath.GoldpathCampaignCeilingInfo.ToString() -> string!
+override Goldpath.GoldpathCampaignCeilingPatch.Equals(object? obj) -> bool
+override Goldpath.GoldpathCampaignCeilingPatch.GetHashCode() -> int
+override Goldpath.GoldpathCampaignCeilingPatch.ToString() -> string!
+static Goldpath.GoldpathCampaignCeilingInfo.operator !=(Goldpath.GoldpathCampaignCeilingInfo? left, Goldpath.GoldpathCampaignCeilingInfo? right) -> bool
+static Goldpath.GoldpathCampaignCeilingInfo.operator ==(Goldpath.GoldpathCampaignCeilingInfo? left, Goldpath.GoldpathCampaignCeilingInfo? right) -> bool
+static Goldpath.GoldpathCampaignCeilingPatch.operator !=(Goldpath.GoldpathCampaignCeilingPatch? left, Goldpath.GoldpathCampaignCeilingPatch? right) -> bool
+static Goldpath.GoldpathCampaignCeilingPatch.operator ==(Goldpath.GoldpathCampaignCeilingPatch? left, Goldpath.GoldpathCampaignCeilingPatch? right) -> bool

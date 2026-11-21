@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AdminClient, type CampaignInfo } from "./adminClient";
-import { CampaignPanel, describeThrottle, formatInZone, inFlightRows, resolveStart, startProblem, toThrottle, zoneReadable } from "./CampaignPanel";
+import { CampaignPanel, ceilingProvenance, describeThrottle, formatInZone, inFlightRows, resolveStart, startProblem, toCeiling, toThrottle, zoneReadable } from "./CampaignPanel";
 
 const emptyDraft = {
   tps: "", dailyQuota: "", maxInFlight: "", windowStart: "", windowEnd: "", timeZoneId: "",
@@ -48,6 +48,8 @@ interface Routes {
   failures?: unknown;
   audit?: unknown;
   verb?: { status: number; body: unknown };
+  /** The ceilings route's answer; a number is a status to fail with. */
+  ceilings?: unknown;
 }
 
 function client(routes: Routes = {}) {
@@ -63,6 +65,9 @@ function client(routes: Routes = {}) {
       return json(verb.body, verb.status);
     }
 
+    if (url.includes("/campaign/ceilings")) {
+      return typeof routes.ceilings === "number" ? json({}, routes.ceilings) : json(routes.ceilings ?? []);
+    }
     if (url.includes("/failures")) return json(routes.failures ?? []);
     if (url.includes("/audit")) return json(routes.audit ?? []);
     if (url.includes("/campaign/?")) return json(routes.list ?? [campaign()]);
@@ -187,6 +192,84 @@ describe("R3.4: the acknowledgement ceiling in the governor", () => {
     await open();
     expect(await screen.findByLabelText("max awaiting ack")).toBeInTheDocument();
     expect(screen.queryByLabelText("clear max awaiting ack")).not.toBeInTheDocument();
+  });
+});
+
+describe("R3.2: the target-system ceiling that binds a campaign", () => {
+  const deviceCore = {
+    kind: "TargetSystem",
+    name: "device-core",
+    maxTps: 200,
+    codeMaxTps: 200,
+    types: ["config-push", "firmware-push"],
+    updatedAt: "2026-11-14T01:00:00+00:00",
+    updatedBy: "system",
+  };
+  const ceilings = [
+    { kind: "Global", name: "*", maxTps: null, codeMaxTps: null, types: ["config-push", "firmware-push"], updatedAt: "2026-11-14T01:00:00+00:00", updatedBy: "system" },
+    deviceCore,
+  ];
+
+  it("a whole number of at least one is a ceiling; anything else is not", () => {
+    expect(toCeiling("100")).toBe(100);
+    expect(toCeiling(" 7 ")).toBe(7);
+    for (const raw of ["", "0", "-5", "1.5", "1e3", "abc", "2147483648"]) expect(toCeiling(raw)).toBeNull();
+  });
+
+  it("names who moved the row, the leader's seed, or a row not written yet", () => {
+    expect(ceilingProvenance(deviceCore)).toBe("seeded from code at 2026-11-14T01:00:00+00:00");
+    expect(ceilingProvenance({ ...deviceCore, updatedBy: "ops@example.com" })).toBe("2026-11-14T01:00:00+00:00 by ops@example.com");
+    expect(ceilingProvenance({ ...deviceCore, updatedAt: "0001-01-01T00:00:00+00:00" })).toBe("the code value — the leader has not written its row yet");
+  });
+
+  it("the governor shows the system's ceiling and the types sharing it, and edits it through the ceiling verb", async () => {
+    const detail = campaign({ type: "config-push", targetSystem: "device-core" });
+    const { client: api, posted } = client({ list: [detail], detail, ceilings, verb: { status: 200, body: { ok: true, message: "ceiling: target system 'device-core' is now 100/s." } } });
+    render(<CampaignPanel client={api} />);
+
+    await open();
+    expect(await screen.findByText("200/s, shared by config-push, firmware-push (code seeds 200/s)")).toBeInTheDocument();
+    expect(screen.getByText("seeded from code at 2026-11-14T01:00:00+00:00")).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText("target-system ceiling"), "100");
+    await userEvent.click(screen.getByRole("button", { name: "set ceiling" }));
+    const dialog = screen.getByRole("alertdialog", { name: "confirm set ceiling" });
+    expect(dialog).toHaveTextContent("Change device-core's ceiling from 200/s to 100/s? It binds every campaign of config-push, firmware-push.");
+    await userEvent.click(within(dialog).getByRole("button", { name: "set ceiling" }));
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0].url).toContain("/goldpath/admin/campaign/ceilings/target-systems/device-core/throttle");
+    expect(JSON.parse(String(posted[0].body))).toEqual({ maxTps: 100 });
+    expect(await screen.findByText("ceiling: target system 'device-core' is now 100/s.")).toBeInTheDocument();
+  });
+
+  it("a value the verb would refuse is named before anything is sent", async () => {
+    const detail = campaign({ targetSystem: "device-core" });
+    const { client: api, posted } = client({ list: [detail], detail, ceilings });
+    render(<CampaignPanel client={api} />);
+
+    await open();
+    const box = await screen.findByLabelText("target-system ceiling");
+    await userEvent.type(box, "0");
+    expect(screen.getByRole("alert")).toHaveTextContent("A ceiling is a whole number of at least 1");
+    expect(screen.queryByRole("button", { name: "set ceiling" })).not.toBeInTheDocument();
+    expect(posted).toHaveLength(0);
+  });
+
+  it("a campaign whose type names no system has no ceiling section", async () => {
+    const { client: api } = client({ ceilings });
+    render(<CampaignPanel client={api} />);
+    await open();
+    await screen.findByText("Policy & provenance");
+    expect(screen.queryByText("Target-system ceiling")).not.toBeInTheDocument();
+  });
+
+  it("a server that cannot answer the ceilings says so instead of showing a number", async () => {
+    const detail = campaign({ targetSystem: "device-core" });
+    const { client: api } = client({ list: [detail], detail, ceilings: 404 });
+    render(<CampaignPanel client={api} />);
+    await open();
+    expect(await screen.findByText("not available from this server")).toBeInTheDocument();
+    expect(screen.queryByLabelText("target-system ceiling")).not.toBeInTheDocument();
   });
 });
 

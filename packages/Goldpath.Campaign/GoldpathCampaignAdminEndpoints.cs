@@ -68,6 +68,21 @@ public static class GoldpathCampaignAdminEndpoints
         group.MapPost("/{id:guid}/throttle", async (Guid id, [FromBody] GoldpathCampaignThrottle patch, HttpContext http, [FromServices] GoldpathCampaignAdminService<TContext> admin, CancellationToken ct)
             => AsHttp(await admin.ThrottleAsync(id, patch, Actor(http), ct)));
 
+        // Admin-contract R4.5 (campaign R3.2): the live ceilings. The routes sit in this group, so the all-tenants filter
+        // above and R4.1's split (a viewer reads, an operator changes) apply unchanged; `{id:guid}` never matches them.
+        group.MapGet("/ceilings", ([FromServices] GoldpathCampaignAdminService<TContext> admin, CancellationToken ct)
+            => admin.GetCeilingsAsync(ct));
+
+        group.MapPost("/ceilings/global/throttle", async ([FromBody] GoldpathCampaignCeilingPatch patch, HttpContext http, [FromServices] GoldpathCampaignAdminService<TContext> admin, CancellationToken ct)
+            => AsHttp(await admin.ThrottleCeilingAsync(GoldpathCampaignCeilingKind.Global, GoldpathCampaignCeiling.GlobalName, patch, Actor(http), ct)));
+
+        // An undeclared name answers 400 naming the declared ones, not 404: the verb's subject is a name, not an entity looked up.
+        group.MapPost("/ceilings/target-systems/{name}/throttle", async (string name, [FromBody] GoldpathCampaignCeilingPatch patch, HttpContext http, [FromServices] GoldpathCampaignAdminService<TContext> admin, CancellationToken ct)
+            => AsHttp(await admin.ThrottleCeilingAsync(GoldpathCampaignCeilingKind.TargetSystem, name, patch, Actor(http), ct)));
+
+        group.MapGet("/ceilings/audit", (int? take, [FromServices] GoldpathCampaignAdminService<TContext> admin, CancellationToken ct)
+            => admin.GetCeilingAuditAsync(take ?? 100, ct));
+
         return endpoints;
     }
 
