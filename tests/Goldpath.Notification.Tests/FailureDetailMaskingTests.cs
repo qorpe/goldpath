@@ -86,6 +86,8 @@ public sealed class FailureDetailMaskingTests : IDisposable
     [InlineData("al@example.test", "mailbox al unavailable", "mailbox al unavailable")]   // two letters would mask every "al" in a sentence
     [InlineData(Phone, "number +90 555 111 22 33 is unreachable", "number +*** is unreachable")]
     [InlineData(Phone, "code 550 5.1.1 for +905551112233", "code 550 5.1.1 for +***")]   // an SMTP status (six digits) is kept
+    [InlineData(Phone, "number +1 (555) 123-4567 is unreachable", "number +*** is unreachable")]   // a parenthesised area code is no break
+    [InlineData(Phone, "number +90 (555) 111 22 33 opted out", "number +*** opted out")]
     [InlineData(Email, "POST https://hooks.example/send failed", "POST https://hooks.example/send failed")]   // nothing to remove
     [InlineData(Email, "POST https://hooks.example/send#frag failed", "POST https://hooks.example/send?*** failed")]
     [InlineData(Email, "connect http://hooks.example:99999/x refused", "connect *** refused")]   // a URL that does not parse is withheld whole
@@ -110,6 +112,88 @@ public sealed class FailureDetailMaskingTests : IDisposable
         // Its only whitespace is its first character: that is no word boundary to cut at, so the limit is the cut.
         var (leading, _, _, _) = await FailAsync(Email, " " + new string('w', 10_000));
         Assert.Equal(" " + new string('w', 1022) + "…", leading);
+    }
+
+    /// <summary>What a strict encoder (Npgsql's) does with the text: throws on a lone surrogate, as the save would.</summary>
+    private static void AssertWellFormed(string shown)
+        => _ = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true).GetByteCount(shown);
+
+    [Fact]
+    public async Task No_cut_falls_between_a_surrogate_pair_at_the_column_or_at_the_read_limit()
+    {
+        // A non-BMP character straddling the column's cut, at every offset around it (the verifier's probe is 1,022).
+        for (var at = 1_018; at <= 1_026; at++)
+        {
+            var (detail, reason, failures, one) = await FailAsync(Email, new string('a', at) + "\U0001F600" + new string('b', 50));
+            foreach (var shown in new[] { detail, reason, failures, one })
+            {
+                AssertWellFormed(shown);
+                Assert.True(shown.Length <= 1024);
+                Assert.EndsWith("…", shown, StringComparison.Ordinal);
+            }
+        }
+
+        // The same at the read limit, where a text without whitespace is cut at the limit itself.
+        for (var at = 8_189; at <= 8_192; at++)
+        {
+            var (detail, _, _, _) = await FailAsync(Email, new string('w', at) + "\U0001F600" + new string('w', 2_000));
+            AssertWellFormed(detail);
+        }
+
+        // Kept whole when it fits exactly: a pair ending at the column is not cut.
+        var (fits, _, _, _) = await FailAsync(Email, new string('a', 1022) + "\U0001F600");
+        Assert.Equal(new string('a', 1022) + "\U0001F600", fits);
+    }
+
+    [Theory]
+    [InlineData("\U0001F600token", "push: token \U0001F600token unregistered", "push: token \U0001F600*** unregistered")]   // a token led by a non-BMP character
+    [InlineData("\U0001D49Cmer@\U0001D49Cxample.test", "550 <\U0001D49Cmer@\U0001D49Cxample.test> rejected", "550 <\U0001D49C***@\U0001D49C***> rejected")]   // an EAI address, both hints
+    [InlineData(Email, "550 <\U0001D49Cther@\U0001F600mail.test> rejected", "550 <\U0001D49C***@\U0001F600***> rejected")]   // an address the row does not hold
+    public async Task Every_kept_hint_is_a_whole_character_and_a_lone_surrogate_never_survives(string recipient, string providerText, string expected)
+    {
+        var (detail, reason, failures, one) = await FailAsync(recipient, providerText);
+        foreach (var shown in new[] { detail, reason, failures, one })
+        {
+            AssertWellFormed(shown);
+            Assert.Equal(expected, shown);
+        }
+
+        AssertWellFormed(GoldpathNotificationAdminService<NotificationTestContext>.MaskRecipient(recipient));
+    }
+
+    [Fact]
+    public async Task A_lone_surrogate_in_the_providers_text_or_leading_a_recipient_becomes_a_replacement_character()
+    {
+        // Built at run time: a lone half in an attribute's string does not survive the compiled metadata.
+        var high = char.ConvertFromUtf32(0x1F600)[0].ToString();
+        var low = char.ConvertFromUtf32(0x1F600)[1].ToString();
+        foreach (var (text, expected) in new[]
+                 {
+                     ($"refused {high} here and {low} there", "refused \uFFFD here and \uFFFD there"),   // the provider's own lone halves
+                     ($"refused {low}{high} reversed", "refused \uFFFD\uFFFD reversed"),   // a low before a high is no pair
+                     ($"refused at the end {high}", "refused at the end \uFFFD"),
+                 })
+        {
+            var (detail, reason, failures, one) = await FailAsync(Email, text);
+            foreach (var shown in new[] { detail, reason, failures, one })
+            {
+                AssertWellFormed(shown);
+                Assert.Equal(expected, shown);
+            }
+        }
+
+        // A recipient whose first character is a lone half: the hint is U+FFFD, on the recipient column and in the text.
+        var token = low + "token";
+        Assert.Equal("\uFFFD***", GoldpathNotificationAdminService<NotificationTestContext>.MaskRecipient(token));
+        var (masked, _, _, _) = await FailAsync(token, $"push: token {token} unregistered");
+        Assert.Equal("push: token \uFFFD*** unregistered", masked);
+
+        // SQLite stores UTF-8, so the row above came back with U+FFFD on both sides. A store that keeps UTF-16 as it is
+        // (SQL Server's nvarchar) hands the mask the lone half itself, in the recipient as well as the text; the mask
+        // sanitises both before matching, or the recipient would no longer match itself. Called directly, as the job does.
+        var mask = typeof(GoldpathNotificationAdminService<>).Assembly.GetType("Goldpath.GoldpathNotificationFailureText", throwOnError: true)!
+            .GetMethod("Mask", [typeof(string), typeof(string)])!;
+        Assert.Equal("push: token \uFFFD*** unregistered", (string)mask.Invoke(null, [$"push: token {token} unregistered", token])!);
     }
 
     [Fact]

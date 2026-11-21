@@ -155,7 +155,11 @@ change touched (the three `ChunkedContains` filters and their guards) is killed 
 mutates the whole changed files, so the full run stays the authoritative score and the table below is unchanged):
 72.38 % on the first pass, 80.48 % once `FailureDetailMaskingTests` pinned the masked text exactly (202 mutants
 tested, 4.8 minutes). The new `GoldpathNotificationFailureText.cs` kills 57 of its 61 tested mutants, and one more
-(`cut > 0` → `>= 0`) was killed afterwards by a planted check. The rest:
+(`cut > 0` → `>= 0`) was killed afterwards by a planted check. After the review's well-formed-UTF-16 rules (the
+cut, the one-character hints, lone surrogates): **82.53 %** (224 mutants tested, 5.8 minutes, same sandbox), and
+`GoldpathNotificationFailureText.cs` kills 77 of its 80 tested mutants (one of them by timeout). A first pass left
+five survivors on the cut helper's range guards, which neither caller can reach; the guards were removed rather
+than tested. The rest:
 - **Two are not covered:** the `RegexMatchTimeoutException` fallback that withholds the text. No input the three
   linear patterns can be given reaches their one-second timeout in a test.
 - **One is equivalent:** `text.Length > MaxReadLength` → `>=`. A text of exactly 8,192 characters is cut either way to

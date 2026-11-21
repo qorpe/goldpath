@@ -1478,17 +1478,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   - **What masks now (`Goldpath.Notification`, internal, no public API change), fail-closed:**
     - the row's recipient in any letter case, and its local part on its own (three characters or longer);
     - any other address, `%40`-encoded included;
-    - any run of seven or more digits in any script, with single separators between them;
+    - any run of seven or more digits in any script, with up to two separators between digits, so a parenthesised
+      area code (`+1 (555) 123-4567`) does not break the run;
     - a URL's query and credentials.
   - **The text is one line and bounded:**
     - control characters become spaces, so a provider's text cannot forge a log entry;
     - it is cut to `Detail`'s 1,024-character column and marked `…`. Before, a longer text failed the save on a
       database that enforces the length;
+    - it is always well-formed UTF-16: no cut falls between a surrogate pair, a kept hint is a whole character, and
+      a lone surrogate becomes U+FFFD. A strict encoder (Npgsql) refuses a lone half, and the save would fail;
     - a text that cannot be masked in time is withheld.
   - **The admin views also mask a `Detail` stored before this fix** as they read it.
   - **Changed: the warning log line** for an exhausted notification now carries the exception's type and the masked
     text instead of the exception object, so the provider's stack trace is no longer logged.
-  - **Proof:** `FailureDetailMaskingTests` (32 facts). The issue's fact is red on `main`.
+  - **Proof:** `FailureDetailMaskingTests` (38 test cases). The issue's fact is red on `main`.
 - **Approvals and FileExchange admin surfaces demand the all-tenants privilege on a multi-tenant app (admin
   contract R1 rule 5, #481).** Neither store carries a tenant column, but neither group applied the rule campaign and
   archival apply. So an operator scoped to tenant A could read every tenant's approval requests and trails and

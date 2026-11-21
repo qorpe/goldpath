@@ -10,7 +10,9 @@ namespace Goldpath;
 /// console's repair reason or the log, and it is masked fail-closed: not only the row's own recipient, in any letter
 /// case, but anything shaped like an address, a phone number or a URL's credentials, because a provider may name a
 /// recipient the row does not hold (a forwarding address, a reformatted number). Then it is flattened to one line and
-/// bounded to <see cref="MaxLength"/>, the <c>Detail</c> column's length.
+/// bounded to <see cref="MaxLength"/>, the <c>Detail</c> column's length. What it returns is always well-formed UTF-16:
+/// no cut falls between a surrogate pair, a kept hint is a whole character, and any lone surrogate left (a provider's
+/// own malformed text) becomes U+FFFD, because a database that encodes strictly (Npgsql) refuses to save anything else.
 /// </summary>
 internal static partial class GoldpathNotificationFailureText
 {
@@ -60,23 +62,27 @@ internal static partial class GoldpathNotificationFailureText
         if (text.Length > MaxReadLength)
         {
             var cut = text.LastIndexOfAny([' ', '\t', '\n', '\r'], MaxReadLength);
-            text = string.Concat(text.AsSpan(0, cut > 0 ? cut : MaxReadLength), " ", CutMarker);
+            text = string.Concat(text.AsSpan(0, cut > 0 ? cut : WholeCharacters(text, MaxReadLength)), " ", CutMarker);
         }
 
+        // One well-formed line FIRST, the recipient too: a lone half the provider (or the store) turned into U+FFFD on
+        // one side and not the other would otherwise keep the recipient from matching itself.
+        text = OneLine(text);
+        recipient = OneLine(recipient);
         var masked = Url().Replace(text, m => MaskUrl(m.Value));
         masked = Address().Replace(masked, m => MaskRecipient(m.Value.Replace("%40", "@", StringComparison.OrdinalIgnoreCase)));
-        masked = Phone().Replace(masked, m => $"{m.Value[0]}***");
+        masked = Phone().Replace(masked, m => $"{First(m.Value)}***");
         if (recipient.Length > 0)
         {
             masked = masked.Replace(recipient, MaskRecipient(recipient), StringComparison.OrdinalIgnoreCase);
             var at = recipient.IndexOf('@');
             if (at >= MinLocalPartLength)
             {
-                masked = masked.Replace(recipient[..at], $"{recipient[0]}***", StringComparison.OrdinalIgnoreCase);
+                masked = masked.Replace(recipient[..at], $"{First(recipient)}***", StringComparison.OrdinalIgnoreCase);
             }
         }
 
-        return Bounded(OneLine(masked));
+        return Bounded(masked);
     }
 
     /// <summary>
@@ -94,11 +100,26 @@ internal static partial class GoldpathNotificationFailureText
         if (at > 0 && at < recipient.Length - 1)
         {
             var domain = recipient[(at + 1)..];
-            return $"{recipient[0]}***@{domain[0]}***";
+            return $"{First(recipient)}***@{First(domain)}***";
         }
 
-        return $"{recipient[0]}***";
+        return $"{First(recipient)}***";
     }
+
+    /// <summary>The first whole character of a non-empty text: both halves of a surrogate pair, or U+FFFD for a lone one.</summary>
+    private static string First(string text)
+    {
+        Rune.DecodeFromUtf16(text, out var first, out _);   // a lone surrogate decodes as Rune.ReplacementChar
+        return first.ToString();
+    }
+
+    /// <summary>
+    /// The longest prefix of at most <paramref name="length"/> characters that does not end on a high surrogate, whether
+    /// it starts a pair the cut would split or stands alone. Both callers cut a text LONGER than
+    /// <paramref name="length"/>, and <paramref name="length"/> is positive, so <c>text[length - 1]</c> exists.
+    /// </summary>
+    private static int WholeCharacters(string text, int length)
+        => char.IsHighSurrogate(text[length - 1]) ? length - 1 : length;
 
     private static string MaskUrl(string url)
     {
@@ -120,16 +141,28 @@ internal static partial class GoldpathNotificationFailureText
     private static string OneLine(string text)
     {
         var line = new StringBuilder(text.Length);
-        foreach (var c in text)
+        for (var i = 0; i < text.Length; i++)
         {
-            line.Append(char.IsControl(c) || c is '\u2028' or '\u2029' ? ' ' : c);
+            var c = text[i];
+            if (char.IsHighSurrogate(c) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+            {
+                line.Append(c).Append(text[++i]);   // a whole pair is kept
+            }
+            else if (char.IsSurrogate(c))
+            {
+                line.Append('\uFFFD');   // a lone half is no character: a strict encoder refuses it
+            }
+            else
+            {
+                line.Append(char.IsControl(c) || c is '\u2028' or '\u2029' ? ' ' : c);
+            }
         }
 
         return line.ToString();
     }
 
     private static string Bounded(string text)
-        => text.Length <= MaxLength ? text : string.Concat(text.AsSpan(0, MaxLength - CutMarker.Length), CutMarker);
+        => text.Length <= MaxLength ? text : string.Concat(text.AsSpan(0, WholeCharacters(text, MaxLength - CutMarker.Length)), CutMarker);
 
     /// <summary>An absolute URL, up to the next whitespace or bracket.</summary>
     [GeneratedRegex(@"\b[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s<>""'()\[\]{}]+", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 1000)]
@@ -139,7 +172,10 @@ internal static partial class GoldpathNotificationFailureText
     [GeneratedRegex(@"[^\s<>""'(),;:\[\]{}@]+(?:@|%40)[^\s<>""'(),;:\[\]{}@]+", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 1000)]
     private static partial Regex Address();
 
-    /// <summary>A phone-shaped run: seven or more digits, optionally led by <c>+</c>, single separators allowed between them.</summary>
-    [GeneratedRegex(@"\+?\d(?:[ .\-/()]?\d){6,}", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 1000)]
+    /// <summary>
+    /// A phone-shaped run: seven or more digits, optionally led by <c>+</c>, with up to two separators between digits so
+    /// a parenthesised area code (<c>+1 (555) 123-4567</c>: <c> (</c> and <c>) </c>) does not break the run.
+    /// </summary>
+    [GeneratedRegex(@"\+?\d(?:[ .\-/()]{0,2}\d){6,}", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 1000)]
     private static partial Regex Phone();
 }

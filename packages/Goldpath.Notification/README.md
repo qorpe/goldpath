@@ -65,14 +65,17 @@ address, an SMS gateway's the number. So that text is masked before any of the t
   - the row's recipient in any letter case, and its local part on its own when it is three characters or longer
     (a shorter one would mask every such pair of letters in a sentence; the full address is still masked);
   - any other address (including `%40`-encoded ones);
-  - any run of seven or more digits in any script, with single separators allowed (`+90 555 111 22 33`, `0555-111-22-33`);
+  - any run of seven or more digits in any script, with up to two separators between digits (`+90 555 111 22 33`,
+    `0555-111-22-33`, `+1 (555) 123-4567`);
   - a URL's query and its credentials. Host and path are kept, and `(credentials removed)` says so.
 - **What it can cost:** a date or a long reference number in the provider's text is masked too, because hiding a
   number that was not a phone costs nothing and showing one that was costs a person's data.
 - **It is one line and bounded:** control characters become spaces, so the text cannot forge a log line. It is cut
   to 1,024 characters (`Detail`'s column) and ends with `…` when it was longer. A text over 8,192 characters is read
   only up to its last whitespace before that point, so no half address is left to escape the mask. A text that
-  cannot be masked in time is withheld entirely.
+  cannot be masked in time is withheld entirely. What is kept is always well-formed UTF-16: no cut splits a
+  surrogate pair, a hint is a whole character (`😀***` for a recipient led by one), and a lone surrogate in the
+  provider's text becomes U+FFFD, because a database that encodes strictly refuses to save it.
 - **The log line carries the masked text and the exception's type**, not the exception object, because its message
   and its inner exceptions' messages are the provider's unmasked words. The stack trace of a provider's refusal is not
   logged.
