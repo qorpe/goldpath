@@ -60,6 +60,8 @@ public sealed class FailureDetailMaskingTests : IDisposable
     [InlineData(Email, "550 <OMER@EXAMPLE.TEST>: rejected", "omer@example.test")]   // another letter case
     [InlineData(Email, "rejected recipient omer%40example.test", "omer%40example.test")]   // percent-encoded
     [InlineData(Email, "mailbox omer unavailable", "omer")]   // the local part alone
+    [InlineData(Email, "mailbox OMER unavailable", "omer")]   // the local part alone, in another case
+    [InlineData("Device-Token-AbC", "push: token device-token-abc is unregistered", "device-token-abc")]   // neither an address nor a number
     [InlineData(Email, "forwarding to someone.else@other.test failed", "someone.else@other.test")]   // an address the row does not hold
     [InlineData(Phone, "21211 invalid To number +905551112233", "905551112233")]
     [InlineData(Phone, "number +90 555 111 22 33 is unreachable", "555 111 22 33")]   // formatted
