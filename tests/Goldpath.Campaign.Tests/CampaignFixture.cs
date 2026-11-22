@@ -237,7 +237,7 @@ public sealed class CampaignFixture : IDisposable
     /// The pacer's clock. A <see cref="TickClock"/> moves only when the pacer waits out a tick,
     /// so the slice runs exactly <c>LeadershipSlice / LeaderTick</c> ticks however fast or loaded the runner is.
     /// A fact that bounds a release count by the ticks in the slice passes one: on the system clock a tick can run short
-    /// (a timer due in 19.6 ms waits 19), so "the slice holds N ticks" is the runner's speed, not arithmetic (#580).
+    /// (the timer works in whole milliseconds; 17–19 ms ticks were measured), so "the slice holds N ticks" is the runner's speed, not arithmetic (#580).
     /// </param>
     public async Task<IReadOnlyList<(string ItemKey, string Reason)>> RunPacerSliceAsync(TimeProvider clock)
     {

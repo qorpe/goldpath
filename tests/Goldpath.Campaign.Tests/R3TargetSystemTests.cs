@@ -381,8 +381,9 @@ public class R3TargetSystemTests
 
     // ---- the pacer's target-system bucket ----
     // These slices run on a TickClock, which moves only when the pacer waits out a tick: 0.4 s is exactly 20 ticks of 20 ms
-    // on any runner, so each count below is the arithmetic itself. On the system clock it was the runner's speed — a timer
-    // due in 19.6 ms waits 19, a 400 ms slice fits a 21st or 22nd tick, and a bound of "20 ticks plus a bank" flaked (#580).
+    // on any runner, so each count below is the arithmetic itself. On the system clock it was the runner's speed: the timer
+    // works in whole milliseconds and a tick can run short (17–19 ms measured), so a 400 ms slice can fit a 21st or 22nd
+    // tick, and a bound of "20 ticks plus a bank" is not arithmetic (#580).
 
     [Fact]
     public async Task TwoTypesOnOneSystem_ShareItsBucket_EvenlyWhenEqual_AndNeverJointlyExceedIt()
@@ -476,8 +477,8 @@ public class R3TargetSystemTests
         // Each campaign's own Tps (10,000/s) gives exactly 200 a 20 ms tick, so 2,800 is the last item of the seventh
         // tick: everything counted after the change went out on a tick that read the global row.
         // The slice runs on a TickClock, which moves only when the pacer waits out a tick: exactly 75 ticks, 68 of them
-        // after the change, on any runner. On the system clock the count was the runner's speed — a timer due in 19.6 ms
-        // waits 19, so a fast or unevenly loaded runner fitted 71 ticks where the arithmetic allowed 68 (#580).
+        // after the change, on any runner. On the system clock the count was the runner's speed: a tick can run short (17–19 ms
+        // measured), so a runner fitted 71 ticks where the arithmetic allowed 68 (#580).
         CampaignFixture? owner = null;
         var publisher = new ChangingPublisher(after: 2_800, () => owner!.Mutate(db =>
         {
@@ -529,9 +530,11 @@ public class R3TargetSystemTests
         });
         var campaign = await fixture.CreateAsync(Generous());
         await fixture.EnumerateAllAsync(campaign);
-        await fixture.RunPacerSliceAsync();
+        await fixture.RunPacerSliceAsync(new TickClock(DateTimeOffset.UtcNow));
 
-        Assert.InRange(fixture.Reload(campaign.Id).ReleasedThrough, 1, 9);   // the winback source holds 10; 20/s for 0.4 s is 8
+        // The winback source holds 10; 20/s is 0.4 a tick, 8 over the slice's 20 ticks on the TickClock (#580), where the
+        // code's 10,000/s would release all 10.
+        Assert.Equal(8, fixture.Reload(campaign.Id).ReleasedThrough);
     }
 
     [Fact]
