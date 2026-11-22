@@ -221,6 +221,49 @@ public abstract class EfApprovalStoreFacts : IAsyncLifetime
     }
 
     [Fact]
+    public async Task The_store_refuses_a_second_request_that_supersedes_the_same_rejection()
+    {
+        // #521: the unique SupersedesId index holds "resubmitted once" for two resubmissions at once, which both pass the
+        // engine's trail check. Proven on the store itself, and the refusal names the rework that landed first.
+        var store = Store();
+        var rejected = Guid.NewGuid();
+        var first = Row(rejected);
+        await store.AddAsync(first);
+
+        var refused = await Assert.ThrowsAnyAsync<InvalidOperationException>(() => store.AddAsync(Row(rejected)));
+        Assert.Contains($"already resubmitted as '{first.Id}'", refused.Message);
+        Assert.Equal([first.Id], (await store.GetRecentAsync(100)).Select(r => r.Id));
+
+        // Only a non-null SupersedesId is unique: requests that supersede nothing, and a rework of another rejection, add.
+        await store.AddAsync(Row(null));
+        await store.AddAsync(Row(null));
+        await store.AddAsync(Row(Guid.NewGuid()));
+        Assert.Equal(4, (await store.GetRecentAsync(100)).Count);
+    }
+
+    [Fact]
+    public async Task An_add_refused_for_another_reason_is_not_reported_as_a_resubmission()
+    {
+        // The catch reads the rework back; with none there, the database's own error stands (a duplicate key here).
+        var store = Store();
+        var row = Row(Guid.NewGuid());
+        await store.AddAsync(row);
+        await store.AddAsync(Row(Guid.NewGuid()));   // a rework of another rejection: not this add's rework
+        var sameId = new GoldpathApprovalRequest
+        {
+            Id = row.Id,
+            Ladder = row.Ladder,
+            Subject = row.Subject,
+            RequestedBy = row.RequestedBy,
+            PendingRole = row.PendingRole,
+            SupersedesId = Guid.NewGuid(),
+        };
+
+        var refused = await Assert.ThrowsAnyAsync<Exception>(() => store.AddAsync(sameId));
+        Assert.DoesNotContain("already resubmitted", refused.Message);
+    }
+
+    [Fact]
     public async Task A_write_from_a_stale_read_is_refused_and_the_write_that_won_stands()
     {
         // #480: two reads of one request, two writes. The second was decided on a state that no longer exists.
@@ -268,6 +311,21 @@ public abstract class EfApprovalStoreFacts : IAsyncLifetime
         Assert.Equal(GoldpathApprovalStatus.Rejected, stored.Status);
         Assert.Equal(["requested", "rejected"], stored.Trail.Select(t => t.Action));
     }
+
+    /// <summary>A pending request row that supersedes <paramref name="supersedes"/>, for the stores' own facts (#521).</summary>
+    public static GoldpathApprovalRequest Row(Guid? supersedes) => new()
+    {
+        Id = Guid.NewGuid(),
+        Ladder = "credit-limit",
+        Subject = "K26-521",
+        Amount = 500_000m,
+        RequestedBy = "maker",
+        RequestedAt = DateTimeOffset.Parse("2026-11-03T09:00:00Z"),
+        PendingRole = "expert",
+        PendingSince = DateTimeOffset.Parse("2026-11-03T09:00:00Z"),
+        Status = GoldpathApprovalStatus.Pending,
+        SupersedesId = supersedes,
+    };
 
     private GoldpathEfApprovalStore<ApprovalsDbContext> Store()
         => new(_provider.GetRequiredService<IServiceScopeFactory>());

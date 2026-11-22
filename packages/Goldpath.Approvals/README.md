@@ -33,7 +33,9 @@ builder.AddGoldpathApprovals(approvals => approvals
   requester may (`NotRequester` otherwise), and the step lands in the trail.
 - **Resubmit** — `ResubmitAsync(rejectedId, requestedBy)` reworks a rejected request as a
   fresh one, linked by `SupersedesId` with both trails cross-referenced — the audit reads
-  request → reject → rework as one story.
+  request → reject → rework as one story. A rejected request is resubmitted ONCE (#521): a
+  second call throws and names the rework, and on the built-in stores a unique `SupersedesId`
+  makes two calls at once create one rework between them.
 - **Delegate** — `DelegateRoleAsync(from, fromRole, to, window)`: the delegate decides the
   delegator's rung (`fromRole`, taken from the authenticated delegator's claims, never from a
   request body) and no other; bounded window, depth one (a delegate cannot re-delegate; the cycle

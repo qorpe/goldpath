@@ -37,6 +37,26 @@ public sealed class InMemoryApprovalStoreTests
     }
 
     [Fact]
+    public async Task The_store_refuses_a_second_request_that_supersedes_the_same_rejection()
+    {
+        // #521: the rule the database's unique SupersedesId index holds, so the unit suite and the database agree.
+        var store = new GoldpathInMemoryApprovalStore();
+        var rejected = Guid.NewGuid();
+        var first = EfApprovalStoreFacts.Row(rejected);
+        await store.AddAsync(first);
+
+        var refused = await Assert.ThrowsAnyAsync<InvalidOperationException>(() => store.AddAsync(EfApprovalStoreFacts.Row(rejected)));
+        Assert.Contains($"already resubmitted as '{first.Id}'", refused.Message);
+        Assert.Equal([first.Id], (await store.GetRecentAsync(100)).Select(r => r.Id));
+
+        // Only a non-null SupersedesId is unique: requests that supersede nothing, and a rework of another rejection, add.
+        await store.AddAsync(EfApprovalStoreFacts.Row(null));
+        await store.AddAsync(EfApprovalStoreFacts.Row(null));
+        await store.AddAsync(EfApprovalStoreFacts.Row(Guid.NewGuid()));
+        Assert.Equal(4, (await store.GetRecentAsync(100)).Count);
+    }
+
+    [Fact]
     public async Task A_write_from_a_stale_read_is_refused_and_the_write_that_won_stands()
     {
         var store = new GoldpathInMemoryApprovalStore();

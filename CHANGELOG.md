@@ -1066,6 +1066,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     - an archive legal hold refused only an empty case reference, and now refuses whitespace too (a null used to throw);
     - a Jobs calendar's name is refused when blank (it keys a NOT NULL `qrtz_calendars` row).
   - **Still open:** an actor whose principal name is empty is a separate path, tracked in #544.
+- **[schema]** **Approvals: a rejected request is resubmitted once (#521, threat model T-APR-06).** `ResubmitAsync` read
+  the rejected request, then added the rework, with nothing between the two. Two resubmissions of one rejection (a
+  double click, a retry after a timeout) each created a pending rework with the same `SupersedesId`, and either could
+  be granted.
+  - **Measured on PostgreSQL with every save held back 300 ms:** both calls returned a rework; two pending requests
+    carried the one `SupersedesId`.
+  - **Now:**
+    - A second call refuses with `InvalidOperationException`: `Request '<rejected>' was already resubmitted as
+      '<rework>' — a rejected request is resubmitted once; decide on the rework instead.` It creates nothing and
+      publishes nothing. The engine reads this from the rejected request's `superseded` step, so it holds one call
+      after another on any store.
+    - Two calls at once both pass that read. The built-in stores refuse the second rework's add: a **unique index on
+      `GoldpathApprovals.SupersedesId`** (nullable, so requests that supersede nothing are outside it), and the same
+      rule in the in-memory store. The refusal names the rework that landed first.
+    - A custom `IGoldpathApprovalStore` gets the one-after-another refusal; two calls at once are its own guarantee.
+  - **No public API changed:** the method, its signature and the exception type it throws are the same.
+  - **Migration:** one, with a query to run first for existing duplicate reworks (upgrade guide).
 - **[schema]** **Approvals: concurrent decisions no longer both apply (#480, threat model T-APR-06).** A decision read the
   request and its signatures, then wrote them in separate calls with nothing guarding the gap.
   - **What went wrong:**

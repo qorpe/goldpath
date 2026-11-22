@@ -81,6 +81,10 @@ public static class GoldpathApprovalModelExtensions
             // Optimistic concurrency (#480): every write checks the version the request was read at, so two decisions
             // read from the same state cannot both apply. Internal on the entity, so the public shape is unchanged.
             e.Property(x => x.Version).IsConcurrencyToken();
+            // A rejected request is resubmitted once (#521): two resubmissions at once both pass the engine's check, and
+            // this index refuses the second rework. Nullable, so every request that supersedes nothing is outside it
+            // (SQL Server gets the IS NOT NULL filter from EF; PostgreSQL, SQLite and Oracle never compare NULLs).
+            e.HasIndex(x => x.SupersedesId).IsUnique();
         });
 
         modelBuilder.Entity<GoldpathApprovalDelegationRow>(e =>
@@ -124,12 +128,41 @@ public sealed class GoldpathEfApprovalStore<TContext> : IGoldpathApprovalStore, 
     public GoldpathEfApprovalStore(IServiceScopeFactory scopes) => _scopes = scopes;
 
     /// <inheritdoc />
+    /// <remarks>A second request with the same non-null <see cref="GoldpathApprovalRequest.SupersedesId"/> is refused
+    /// with an <see cref="InvalidOperationException"/> that names the rework already stored (#521).</remarks>
     public async Task AddAsync(GoldpathApprovalRequest request, CancellationToken cancellationToken = default)
     {
         await using var scope = _scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<TContext>();
         db.Add(request);
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException e) when (request.SupersedesId is not null)
+        {
+            if (await ReworkOfAsync(request, cancellationToken) is { } rework)
+            {
+                // The unique index refused it: another resubmission of the same rejected request landed first.
+                throw new GoldpathApprovalAlreadyResubmittedException(request.SupersedesId.Value, rework, e);
+            }
+
+            throw;
+        }
+    }
+
+    /// <summary>Another request that supersedes the same rejected request as <paramref name="request"/>, read in a scope
+    /// of its own (the failed add's context still tracks the refused row).</summary>
+    private async Task<Guid?> ReworkOfAsync(GoldpathApprovalRequest request, CancellationToken cancellationToken)
+    {
+        await using var scope = _scopes.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<TContext>();
+        var supersedes = request.SupersedesId;
+        var id = request.Id;
+        return await db.Set<GoldpathApprovalRequest>().AsNoTracking()
+            .Where(x => x.SupersedesId == supersedes && x.Id != id)
+            .Select(x => (Guid?)x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     /// <inheritdoc />

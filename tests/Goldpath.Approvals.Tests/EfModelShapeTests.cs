@@ -69,6 +69,8 @@ public sealed class EfModelShapeTests : IDisposable
     // #480: one identity signs a request once, held by the database. It leads with RequestId, so it also serves the
     // per-request lookup the single-column RequestId index it replaced served.
     [InlineData(typeof(GoldpathApprovalSignatureRow), "RequestId,SignedBy", true)]
+    // #521: a rejected request is resubmitted once, held by the database.
+    [InlineData(typeof(GoldpathApprovalRequest), "SupersedesId", true)]
     public void The_declared_indexes_exist(Type entity, string properties, bool unique)
     {
         using var scope = _provider.CreateScope();

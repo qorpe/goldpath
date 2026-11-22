@@ -15,7 +15,7 @@ namespace Goldpath.Tests.Integration;
 /// its signatures, then writes; two decisions that both read before either writes used to both apply. Every save is
 /// held back <see cref="Hold"/> here, so two decisions started together always both read first — the race is
 /// forced, not hoped for. The rule: one identity signs a request once, and a request takes exactly one outcome
-/// and publishes exactly one event for it.
+/// and publishes exactly one event for it. A rejected request is resubmitted once (#521).
 /// </summary>
 public sealed class ApprovalConcurrencyTests : IAsyncLifetime
 {
@@ -147,6 +147,34 @@ public sealed class ApprovalConcurrencyTests : IAsyncLifetime
         Assert.Equal(only is GoldpathApprovalGranted ? GoldpathApprovalStatus.Granted : GoldpathApprovalStatus.Rejected, stored.Status);
         Assert.Single(stored.Trail, t => t.Action is "granted" or "rejected");
         Assert.Equal(only is GoldpathApprovalGranted ? 1 : 0, (await store.GetSignaturesAsync(request.Id)).Count);
+    }
+
+    [Fact]
+    public async Task Two_resubmissions_of_one_rejected_request_at_once_create_one_rework_and_the_other_names_it()
+    {
+        // #521: a double click, or a retry after a timeout. Both read the rejected request before either saves, so both
+        // pass the engine's trail check; the unique SupersedesId index refuses the second rework.
+        var published = new Published();
+        var (engine, store) = Build(published);
+        var rejected = await engine.RequestAsync("credit-limit", "K26-521", 500_000m, "maker");
+        Assert.Equal(GoldpathApprovalDecisionOutcome.Applied, await engine.DecideAsync(rejected.Id, "checker-a", "manager", granted: false, "collateral missing"));
+
+        var attempts = await Task.WhenAll(
+            Record.ExceptionAsync(() => engine.ResubmitAsync(rejected.Id, "maker")),
+            Record.ExceptionAsync(() => engine.ResubmitAsync(rejected.Id, "maker")));
+
+        var refused = Assert.IsAssignableFrom<InvalidOperationException>(Assert.Single(attempts, a => a is not null));
+        var reworks = (await store.GetRecentAsync(100)).Where(r => r.SupersedesId == rejected.Id).ToList();
+        var rework = Assert.Single(reworks);
+        Assert.Contains($"already resubmitted as '{rework.Id}'", refused.Message);
+        Assert.Equal(GoldpathApprovalStatus.Pending, rework.Status);
+        var trail = (await store.GetAsync(rejected.Id))!.Trail;
+        Assert.Equal(["requested", "rejected", "superseded"], trail.Select(t => t.Action));
+        Assert.Equal($"resubmitted as {rework.Id}", trail[^1].Detail);
+
+        // One rework reaches the worklist, and one event announces it.
+        Assert.Single(published.Events.OfType<GoldpathApprovalRequested>(), e => e.ApprovalId != rejected.Id);
+        Assert.Single(await store.GetPendingAsync(), r => r.SupersedesId == rejected.Id);
     }
 
     [Fact]
