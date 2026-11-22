@@ -296,6 +296,41 @@ public sealed class GoldpathEfApprovalStore<TContext> : IGoldpathApprovalStore, 
         }
     }
 
+    async Task IGoldpathApprovalAtomicStore.ResubmitAsync(GoldpathApprovalRequest rework, GoldpathApprovalRequest rejected, CancellationToken cancellationToken)
+    {
+        await using var scope = _scopes.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<TContext>();
+        db.Add(rework);
+        var readAt = Track(db, rejected);
+        try
+        {
+            // One SaveChanges is one transaction: the rework and the rejected request's superseded step land together or
+            // not at all (#521), so a failure between them cannot leave a rework its rejected request does not name.
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException e)
+        {
+            rejected.Version = readAt;
+            throw new GoldpathApprovalConflictException(rejected.Id, e);
+        }
+        catch (DbUpdateException e)
+        {
+            rejected.Version = readAt;
+            if (await ReworkOfAsync(rework, cancellationToken) is { } landed)
+            {
+                // The unique index refused it: another resubmission of the same rejected request landed first.
+                throw new GoldpathApprovalAlreadyResubmittedException(rejected.Id, landed, e);
+            }
+
+            throw;
+        }
+        catch
+        {
+            rejected.Version = readAt;
+            throw;
+        }
+    }
+
     /// <summary>Attaches a request read elsewhere as modified, checked against the version it was read at and moved on
     /// by one. Returns the version it was read at.</summary>
     private static long Track(TContext db, GoldpathApprovalRequest request)

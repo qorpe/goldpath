@@ -142,6 +142,49 @@ public sealed class ApprovalConflictTests
     }
 
     [Fact]
+    public async Task On_the_in_memory_store_a_second_resubmission_in_the_first_ones_gap_is_refused_and_writes_nothing()
+    {
+        // #521: the in-memory store writes the rework and the rejected request's step as one unit, as the database does.
+        var store = new GoldpathInMemoryApprovalStore();
+        var clock = new EfApprovalStoreFacts.RacingClock(At);
+        var published = new Published();
+        var engine = Engine(store, clock, published);
+        var rejected = await engine.RequestAsync("credit-limit", "K26-592", 500_000m, "maker");
+        Assert.Equal(GoldpathApprovalDecisionOutcome.Applied, await engine.DecideAsync(rejected.Id, "checker", "expert", false, "no"));
+        GoldpathApprovalRequest? first = null;
+        clock.OnNextRead = async () => first = await Engine(store, new FakeTimeProvider(At), published).ResubmitAsync(rejected.Id, "maker");
+
+        var refused = await Assert.ThrowsAnyAsync<InvalidOperationException>(() => engine.ResubmitAsync(rejected.Id, "maker"));
+
+        Assert.NotNull(first);
+        Assert.Contains($"already resubmitted as '{first.Id}'", refused.Message);
+        Assert.Equal([first.Id], (await store.GetRecentAsync(100)).Where(r => r.SupersedesId == rejected.Id).Select(r => r.Id));
+        Assert.Equal(["requested", "rejected", "superseded"], (await store.GetAsync(rejected.Id))!.Trail.Select(t => t.Action));
+        Assert.Single(published.Events.OfType<GoldpathApprovalRequested>(), e => e.ApprovalId != rejected.Id);
+    }
+
+    [Fact]
+    public async Task On_the_in_memory_store_a_resubmission_that_loses_to_another_step_reads_again_and_writes_both()
+    {
+        var store = new GoldpathInMemoryApprovalStore();
+        var clock = new EfApprovalStoreFacts.RacingClock(At);
+        var engine = Engine(store, clock);
+        var rejected = await engine.RequestAsync("credit-limit", "K26-593", 500_000m, "maker");
+        Assert.Equal(GoldpathApprovalDecisionOutcome.Applied, await engine.DecideAsync(rejected.Id, "checker", "expert", false, "no"));
+        clock.OnNextRead = async () =>
+        {
+            var current = (await store.GetAsync(rejected.Id))!;
+            current.Trail.Add(new GoldpathApprovalTrailEntry(At, "auditor", "noted", "read"));
+            await store.UpdateAsync(current);
+        };
+
+        var rework = await engine.ResubmitAsync(rejected.Id, "maker");
+
+        Assert.Equal([rework.Id], (await store.GetRecentAsync(100)).Where(r => r.SupersedesId == rejected.Id).Select(r => r.Id));
+        Assert.Equal(["requested", "rejected", "noted", "superseded"], (await store.GetAsync(rejected.Id))!.Trail.Select(t => t.Action));
+    }
+
+    [Fact]
     public async Task On_the_in_memory_store_a_grant_that_loses_to_a_reject_answers_NotPending_and_signs_nothing()
     {
         var store = new GoldpathInMemoryApprovalStore();

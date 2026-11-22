@@ -1081,6 +1081,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
       `GoldpathApprovals.SupersedesId`** (nullable, so requests that supersede nothing are outside it), and the same
       rule in the in-memory store. The refusal names the rework that landed first.
     - A custom `IGoldpathApprovalStore` gets the one-after-another refusal; two calls at once are its own guarantee.
+    - **On the built-in stores the rework and the rejected request's `superseded` step are one write.** A failure
+      between them (the second write timing out) used to leave the rework stored and the step not, and every retry was
+      then refused: a pending rework the rejected request never named and no `GoldpathApprovalRequested` announced.
+      Now the failure leaves neither, and the retry creates the one rework, names it and announces it — proven on
+      SQLite, PostgreSQL and Oracle with the write failed once. A custom store keeps the two writes, so a failure
+      between them is its own to prevent. The event is published after the commit, as every Approvals event is (T72).
   - **No public API changed:** the method, its signature and the exception type it throws are the same.
   - **Migration:** one, with a query to run first for existing duplicate reworks (upgrade guide).
 - **[schema]** **Approvals: concurrent decisions no longer both apply (#480, threat model T-APR-06).** A decision read the

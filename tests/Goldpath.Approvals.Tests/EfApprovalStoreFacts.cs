@@ -1,5 +1,7 @@
 using Goldpath;
+using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
@@ -53,6 +55,87 @@ public abstract class EfApprovalStoreFacts : IAsyncLifetime
         }
     }
 
+    /// <summary>
+    /// Fails the next command that updates a row, once and before it runs (#521): a timeout, a dropped connection, the
+    /// bounded retry giving up. Whatever the same save wrote before it rolls back with it; a write saved on its own
+    /// before it stays, which is the failure the two-write resubmission could not recover from.
+    /// </summary>
+    public sealed class FailNextUpdate : DbCommandInterceptor
+    {
+        public bool Armed { get; set; }
+
+        private void Fail(DbCommand command)
+        {
+            if (Armed && command.CommandText.Contains("UPDATE", StringComparison.OrdinalIgnoreCase))
+            {
+                Armed = false;
+                throw new TimeoutException("The update timed out (injected).");
+            }
+        }
+
+        public override InterceptionResult<DbDataReader> ReaderExecuting(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result)
+        {
+            Fail(command);
+            return result;
+        }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            Fail(command);
+            return ValueTask.FromResult(result);
+        }
+
+        public override InterceptionResult<int> NonQueryExecuting(DbCommand command, CommandEventData eventData, InterceptionResult<int> result)
+        {
+            Fail(command);
+            return result;
+        }
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(DbCommand command, CommandEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            Fail(command);
+            return ValueTask.FromResult(result);
+        }
+    }
+
+    /// <summary>
+    /// Runs a hook once, before the next save begins its transaction: another write lands between the engine's read
+    /// and its single write, so the write itself loses the race (#521).
+    /// </summary>
+    public sealed class BeforeNextSave : SaveChangesInterceptor
+    {
+        public Func<Task>? Hook { get; set; }
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            var hook = Hook;
+            Hook = null;
+            if (hook is not null)
+            {
+                await hook();
+            }
+
+            return result;
+        }
+    }
+
+    /// <summary>Records what the engine publishes.</summary>
+    public sealed class Published : IIntegrationEventPublisher
+    {
+        public List<IIntegrationEvent> Events { get; } = [];
+
+        public Task PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken cancellationToken = default)
+            where TEvent : class, IIntegrationEvent
+        {
+            Events.Add(integrationEvent);
+            return Task.CompletedTask;
+        }
+    }
+
+    private readonly FailNextUpdate _failNextUpdate = new();
+
+    private readonly BeforeNextSave _beforeNextSave = new();
+
     private ServiceProvider _provider = null!;
 
     /// <summary>Opens an empty database and returns the provider configuration that reaches it.</summary>
@@ -65,7 +148,11 @@ public abstract class EfApprovalStoreFacts : IAsyncLifetime
     {
         var useProvider = await OpenDatabaseAsync();
         _provider = new ServiceCollection()
-            .AddDbContext<ApprovalsDbContext>(useProvider)
+            .AddDbContext<ApprovalsDbContext>(options =>
+            {
+                useProvider(options);
+                options.AddInterceptors(_failNextUpdate, _beforeNextSave);
+            })
             .BuildServiceProvider(true);
         using var scope = _provider.CreateScope();
         await scope.ServiceProvider.GetRequiredService<ApprovalsDbContext>().Database.EnsureCreatedAsync();
@@ -77,12 +164,12 @@ public abstract class EfApprovalStoreFacts : IAsyncLifetime
         await CloseDatabaseAsync();
     }
 
-    private GoldpathApprovalEngine BuildEngine(TimeProvider clock) => new(
+    private GoldpathApprovalEngine BuildEngine(TimeProvider clock, IIntegrationEventPublisher? published = null) => new(
         new GoldpathApprovalsOptions().AddLadder("credit-limit", l => l
             .Rung("expert", 1_000_000m, TimeSpan.FromHours(8))
             .TopRung("general-manager", TimeSpan.FromHours(24))),
         new GoldpathEfApprovalStore<ApprovalsDbContext>(_provider.GetRequiredService<IServiceScopeFactory>()),
-        clock, NullLogger<GoldpathApprovalEngine>.Instance);
+        clock, NullLogger<GoldpathApprovalEngine>.Instance, published);
 
     [Fact]
     public async Task Requests_survive_the_engine_a_restarted_engine_sees_the_same_worklist()
@@ -310,6 +397,123 @@ public abstract class EfApprovalStoreFacts : IAsyncLifetime
         var stored = await Reload(request.Id);
         Assert.Equal(GoldpathApprovalStatus.Rejected, stored.Status);
         Assert.Equal(["requested", "rejected"], stored.Trail.Select(t => t.Action));
+    }
+
+    [Fact]
+    public async Task A_resubmission_whose_trail_write_fails_leaves_nothing_and_its_retry_makes_one_rework_named_and_announced()
+    {
+        // #521, verifier on #589: the rework committed, the rejected request's superseded step did not, and every retry
+        // was refused for good — a pending rework the rejected request never named and no event ever announced. On the
+        // built-in store the two are one write, so the failure leaves neither and the retry starts clean.
+        var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-11-03T09:00:00Z"));
+        var published = new Published();
+        var engine = BuildEngine(clock, published);
+        var rejected = await engine.RequestAsync("credit-limit", "K26-589", 500_000m, "maker");
+        Assert.Equal(GoldpathApprovalDecisionOutcome.Applied, await engine.DecideAsync(rejected.Id, "checker", "expert", false, "collateral missing"));
+
+        _failNextUpdate.Armed = true;
+        await Assert.ThrowsAnyAsync<Exception>(() => engine.ResubmitAsync(rejected.Id, "maker"));
+        Assert.False(_failNextUpdate.Armed);
+        Assert.DoesNotContain(await Store().GetRecentAsync(100), r => r.SupersedesId == rejected.Id);
+        Assert.Equal(["requested", "rejected"], (await Reload(rejected.Id)).Trail.Select(t => t.Action));
+
+        var rework = await engine.ResubmitAsync(rejected.Id, "maker");
+
+        Assert.Equal([rework.Id], (await Store().GetRecentAsync(100)).Where(r => r.SupersedesId == rejected.Id).Select(r => r.Id));
+        var trail = (await Reload(rejected.Id)).Trail;
+        Assert.Equal(["requested", "rejected", "superseded"], trail.Select(t => t.Action));
+        Assert.Equal($"resubmitted as {rework.Id}", trail[^1].Detail);
+        Assert.Equal([rework.Id], published.Events.OfType<GoldpathApprovalRequested>().Where(e => e.ApprovalId != rejected.Id).Select(e => e.ApprovalId));
+    }
+
+    [Fact]
+    public async Task A_second_resubmission_in_the_first_ones_gap_is_refused_names_the_rework_and_writes_nothing()
+    {
+        // #521 on the database store, made deterministic: a whole resubmission lands between this one's read and its
+        // write. The single write refuses on the unique SupersedesId or on the rejected request's version; either way
+        // the refusal names the rework that landed, and nothing of this call is stored.
+        var clock = new RacingClock(DateTimeOffset.Parse("2026-11-03T09:00:00Z"));
+        var published = new Published();
+        var engine = BuildEngine(clock, published);
+        var rejected = await engine.RequestAsync("credit-limit", "K26-590", 500_000m, "maker");
+        Assert.Equal(GoldpathApprovalDecisionOutcome.Applied, await engine.DecideAsync(rejected.Id, "checker", "expert", false, "no"));
+        GoldpathApprovalRequest? first = null;
+        clock.OnNextRead = async () => first = await BuildEngine(new FakeTimeProvider(DateTimeOffset.Parse("2026-11-03T09:00:00Z")), published).ResubmitAsync(rejected.Id, "maker");
+
+        var refused = await Assert.ThrowsAnyAsync<InvalidOperationException>(() => engine.ResubmitAsync(rejected.Id, "maker"));
+
+        Assert.NotNull(first);
+        Assert.Contains($"already resubmitted as '{first.Id}'", refused.Message);
+        Assert.Equal([first.Id], (await Store().GetRecentAsync(100)).Where(r => r.SupersedesId == rejected.Id).Select(r => r.Id));
+        var trail = (await Reload(rejected.Id)).Trail;
+        Assert.Equal(["requested", "rejected", "superseded"], trail.Select(t => t.Action));
+        Assert.Equal($"resubmitted as {first.Id}", trail[^1].Detail);
+        Assert.Single(published.Events.OfType<GoldpathApprovalRequested>(), e => e.ApprovalId != rejected.Id);
+    }
+
+    [Fact]
+    public async Task A_resubmission_that_loses_to_another_step_reads_again_and_writes_the_rework_and_its_step()
+    {
+        // The rejected request is terminal, so only another trail step can race the single write: it reads again and
+        // puts the superseded step onto the request as it is now, with the rework.
+        var clock = new RacingClock(DateTimeOffset.Parse("2026-11-03T09:00:00Z"));
+        var engine = BuildEngine(clock);
+        var rejected = await engine.RequestAsync("credit-limit", "K26-591", 500_000m, "maker");
+        Assert.Equal(GoldpathApprovalDecisionOutcome.Applied, await engine.DecideAsync(rejected.Id, "checker", "expert", false, "no"));
+        clock.OnNextRead = async () =>
+        {
+            var current = await Reload(rejected.Id);
+            current.Trail.Add(new GoldpathApprovalTrailEntry(DateTimeOffset.Parse("2026-11-03T09:00:00Z"), "auditor", "noted", "read"));
+            await Store().UpdateAsync(current);
+        };
+
+        var rework = await engine.ResubmitAsync(rejected.Id, "maker");
+
+        Assert.Equal([rework.Id], (await Store().GetRecentAsync(100)).Where(r => r.SupersedesId == rejected.Id).Select(r => r.Id));
+        Assert.Equal(["requested", "rejected", "noted", "superseded"], (await Reload(rejected.Id)).Trail.Select(t => t.Action));
+    }
+
+    [Fact]
+    public async Task A_resubmission_whose_single_write_loses_to_another_step_reads_again_and_writes_both()
+    {
+        // The write itself loses: another step lands on the rejected request after the engine's read, as the save
+        // begins. The version check refuses the pair, and the retry reads the request as it is now.
+        var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-11-03T09:00:00Z"));
+        var engine = BuildEngine(clock);
+        var rejected = await engine.RequestAsync("credit-limit", "K26-594", 500_000m, "maker");
+        Assert.Equal(GoldpathApprovalDecisionOutcome.Applied, await engine.DecideAsync(rejected.Id, "checker", "expert", false, "no"));
+        _beforeNextSave.Hook = async () =>
+        {
+            var current = await Reload(rejected.Id);
+            current.Trail.Add(new GoldpathApprovalTrailEntry(DateTimeOffset.Parse("2026-11-03T09:00:00Z"), "auditor", "noted", "read"));
+            await Store().UpdateAsync(current);
+        };
+
+        var rework = await engine.ResubmitAsync(rejected.Id, "maker");
+
+        Assert.Null(_beforeNextSave.Hook);
+        Assert.Equal([rework.Id], (await Store().GetRecentAsync(100)).Where(r => r.SupersedesId == rejected.Id).Select(r => r.Id));
+        Assert.Equal(["requested", "rejected", "noted", "superseded"], (await Reload(rejected.Id)).Trail.Select(t => t.Action));
+    }
+
+    [Fact]
+    public async Task A_rework_stored_without_its_step_refuses_a_resubmission_and_names_it()
+    {
+        // What the two-write path could leave in a database before this change: a rework whose rejected request has no
+        // superseded step. The engine's read passes; the unique index refuses the pair and names the rework, so the
+        // state is reported rather than doubled, and the rework it names is the one to decide.
+        var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-11-03T09:00:00Z"));
+        var engine = BuildEngine(clock);
+        var rejected = await engine.RequestAsync("credit-limit", "K26-595", 500_000m, "maker");
+        Assert.Equal(GoldpathApprovalDecisionOutcome.Applied, await engine.DecideAsync(rejected.Id, "checker", "expert", false, "no"));
+        var orphan = Row(rejected.Id);
+        await Store().AddAsync(orphan);
+
+        var refused = await Assert.ThrowsAnyAsync<InvalidOperationException>(() => engine.ResubmitAsync(rejected.Id, "maker"));
+
+        Assert.Contains($"already resubmitted as '{orphan.Id}'", refused.Message);
+        Assert.Equal([orphan.Id], (await Store().GetRecentAsync(100)).Where(r => r.SupersedesId == rejected.Id).Select(r => r.Id));
+        Assert.Equal(["requested", "rejected"], (await Reload(rejected.Id)).Trail.Select(t => t.Action));
     }
 
     /// <summary>A pending request row that supersedes <paramref name="supersedes"/>, for the stores' own facts (#521).</summary>

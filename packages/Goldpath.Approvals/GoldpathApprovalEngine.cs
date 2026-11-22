@@ -94,15 +94,22 @@ internal sealed class GoldpathApprovalAlreadyResubmittedException(Guid rejectedI
 }
 
 /// <summary>
-/// What the built-in stores add to <see cref="IGoldpathApprovalStore"/> (#480): a quorum signature and the request's
-/// new state written as ONE unit, checked against the version the request was read at. A store without it keeps the
-/// two separate calls, so its own guarantees decide what a concurrent decision can do.
+/// What the built-in stores add to <see cref="IGoldpathApprovalStore"/>: a write the engine needs as ONE unit, checked
+/// against the version the request was read at — a quorum signature and the request's new state (#480), and a rework
+/// and the rejected request's <c>superseded</c> step (#521). A store without it keeps the separate calls, so its own
+/// guarantees decide what a concurrent or a failed write can leave behind.
 /// </summary>
 internal interface IGoldpathApprovalAtomicStore
 {
     /// <summary>Adds the signature and persists the request together, or neither; a lost race throws
     /// <see cref="GoldpathApprovalConflictException"/>.</summary>
     Task SignAsync(GoldpathApprovalSignature signature, GoldpathApprovalRequest request, CancellationToken cancellationToken);
+
+    /// <summary>Adds <paramref name="rework"/> and persists <paramref name="rejected"/> (carrying its new
+    /// <c>superseded</c> step) together, or neither (#521). A rework of the same rejection already stored throws
+    /// <see cref="GoldpathApprovalAlreadyResubmittedException"/>; a rejected request changed since it was read throws
+    /// <see cref="GoldpathApprovalConflictException"/>.</summary>
+    Task ResubmitAsync(GoldpathApprovalRequest rework, GoldpathApprovalRequest rejected, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -285,7 +292,9 @@ public sealed class GoldpathApprovalEngine
     /// <see cref="GoldpathApprovalRequest.SupersedesId"/>, both trails cross-referenced — the
     /// audit reads request → reject → rework as one story. Anything but a rejected request
     /// throws: resubmission is rework, not a retry channel. A rejected request is resubmitted ONCE (#521): a second call
-    /// throws and names the rework, and on the built-in stores two calls at once create one rework between them.
+    /// throws and names the rework. On the built-in stores two calls at once create one rework between them, and the
+    /// rework and the rejected request's <c>superseded</c> step are written together or not at all, so a call that
+    /// failed leaves nothing behind and its retry starts clean.
     /// </summary>
     public async Task<GoldpathApprovalRequest> ResubmitAsync(Guid rejectedId, string requestedBy, CancellationToken cancellationToken = default)
     {
@@ -328,11 +337,60 @@ public sealed class GoldpathApprovalEngine
             SupersedesId = rejected.Id,
         };
         request.Trail.Add(new GoldpathApprovalTrailEntry(now, requestedBy, "resubmitted", $"supersedes {rejected.Id}; routed to {rung.Role} for {rejected.Amount}"));
-        await _store.AddAsync(request, cancellationToken);
-
-        // The rejected request is terminal, so only another trail step can race this one (#480). A lost write puts
-        // the step onto the request as it is now, never over it.
         var superseded = new GoldpathApprovalTrailEntry(now, requestedBy, SupersededStep, $"{ResubmittedAs}{request.Id}");
+        if (_store is IGoldpathApprovalAtomicStore atomic)
+        {
+            await ResubmitAtomicallyAsync(atomic, request, rejected, superseded, cancellationToken);
+        }
+        else
+        {
+            await ResubmitInTwoWritesAsync(request, rejected, superseded, cancellationToken);
+        }
+
+        await PublishAsync(new GoldpathApprovalRequested(request.Id, ladder.Name, request.Subject, request.Amount, rung.Role), cancellationToken);
+        return request;
+    }
+
+    /// <summary>
+    /// The built-in stores' resubmission (#521): the rework and the rejected request's <c>superseded</c> step in one
+    /// write, so a failure between them cannot leave a rework that the rejected request does not name and that no
+    /// retry could ever announce. A write that loses to another step on the rejected request reads it again, and a
+    /// <c>superseded</c> step found then refuses this call as the first read would have.
+    /// </summary>
+    private async Task ResubmitAtomicallyAsync(IGoldpathApprovalAtomicStore atomic, GoldpathApprovalRequest request,
+        GoldpathApprovalRequest rejected, GoldpathApprovalTrailEntry superseded, CancellationToken cancellationToken)
+    {
+        GoldpathApprovalRequest? current = rejected;
+        await OnFreshReadAsync(rejected.Id, async () =>
+        {
+            if (current is null)
+            {
+                current = await _store.GetAsync(rejected.Id, cancellationToken)
+                    ?? throw new InvalidOperationException($"Request '{rejected.Id}' disappeared while it was being superseded.");
+                if (current.Trail.FirstOrDefault(t => t.Action == SupersededStep) is { } step)
+                {
+                    throw new GoldpathApprovalAlreadyResubmittedException(current.Id, ReworkNamedBy(step));
+                }
+            }
+
+            var writing = current;
+            current = null;   // a retry re-reads
+            writing.Trail.Add(superseded);
+            await atomic.ResubmitAsync(request, writing, cancellationToken);
+            return true;
+        });
+    }
+
+    /// <summary>
+    /// A custom store's resubmission: the rework, then the rejected request's step, as two writes. The rejected request
+    /// is terminal, so only another trail step can race the second (#480), and a lost write puts the step onto the
+    /// request as it is now. A failure between the two is the store's to prevent; the built-in stores take
+    /// <see cref="ResubmitAtomicallyAsync"/>.
+    /// </summary>
+    private async Task ResubmitInTwoWritesAsync(GoldpathApprovalRequest request, GoldpathApprovalRequest rejected,
+        GoldpathApprovalTrailEntry superseded, CancellationToken cancellationToken)
+    {
+        await _store.AddAsync(request, cancellationToken);
         rejected.Trail.Add(superseded);
         GoldpathApprovalRequest? current = rejected;
         await OnFreshReadAsync(rejected.Id, async () =>
@@ -349,9 +407,6 @@ public sealed class GoldpathApprovalEngine
             await _store.UpdateAsync(writing, cancellationToken);
             return true;
         });
-
-        await PublishAsync(new GoldpathApprovalRequested(request.Id, ladder.Name, request.Subject, request.Amount, rung.Role), cancellationToken);
-        return request;
     }
 
     /// <summary>The step a resubmission puts on the rejected request's trail, and the start of its detail.</summary>
@@ -592,12 +647,7 @@ public sealed class GoldpathInMemoryApprovalStore : IGoldpathApprovalStore, IGol
     {
         lock (_gate)
         {
-            if (request.SupersedesId is { } supersedes
-                && _requests.Values.FirstOrDefault(r => r.SupersedesId == supersedes) is { } rework)
-            {
-                throw new GoldpathApprovalAlreadyResubmittedException(supersedes, rework.Id);
-            }
-
+            RefuseSecondRework(request);
             _requests.Add(request.Id, request.Snapshot());
         }
 
@@ -706,6 +756,30 @@ public sealed class GoldpathInMemoryApprovalStore : IGoldpathApprovalStore, IGol
         }
 
         return Task.CompletedTask;
+    }
+
+    Task IGoldpathApprovalAtomicStore.ResubmitAsync(GoldpathApprovalRequest rework, GoldpathApprovalRequest rejected, CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            // Both checks before either change: the pair lands together or not at all (#521).
+            RefuseSecondRework(rework);
+            RefuseStale(rejected);
+            _requests.Add(rework.Id, rework.Snapshot());
+            Write(rejected);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    // The index the database store declares unique: a non-null SupersedesId (#521).
+    private void RefuseSecondRework(GoldpathApprovalRequest request)
+    {
+        if (request.SupersedesId is { } supersedes
+            && _requests.Values.FirstOrDefault(r => r.SupersedesId == supersedes) is { } rework)
+        {
+            throw new GoldpathApprovalAlreadyResubmittedException(supersedes, rework.Id);
+        }
     }
 
     // The key the database store declares unique: (RequestId, SignedBy), compared exactly. The engine's distinct-eyes

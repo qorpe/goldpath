@@ -113,6 +113,17 @@ The rest of the run's survivors and uncovered mutants are lines this branch did 
 `MassTransitMessagingEngine.cs`, which diff mode mutates whole: two message strings, a test-hook statement, and
 `"Stryker was here!"` on a refusal text.
 
+**Approvals was re-measured again 2026-11-22**, after the verifier's finding on #589 made a resubmission ONE write
+on the built-in stores (the rework and the rejected request's `superseded` step, `IGoldpathApprovalAtomicStore.ResubmitAsync`):
+78.34 % → **78.54 %** (4.3 minutes, the local sandbox; 384 mutants tested). The first run of that change scored
+77.78 %; its survivors on the new lines were the EF store's unique-index branch (no fact reached it: a race on SQLite
+loses on the version first), killed by `A_rework_stored_without_its_step_refuses_a_resubmission_and_names_it`, and
+`current is null` → `is not null` in the retry, killed by
+`A_resubmission_whose_single_write_loses_to_another_step_reads_again_and_writes_both` (the write itself loses).
+**Left, equivalent:** `return true` → `false` in the two resubmission helpers (`OnFreshReadAsync`'s value is
+discarded), the "disappeared while it was being superseded" message (a rejected request is never deleted), and the
+EF store's catch-all `rejected.Version = readAt` (the engine re-reads after any failure), the same as `SignAsync`'s.
+
 **Approvals was re-measured 2026-11-22**, a full run of `mutation-gate.sh Goldpath.Approvals` on the #521 branch
 (a rejected request is resubmitted once: the engine's `superseded`-step refusal, the in-memory store's `SupersedesId`
 rule, and the EF store's unique index with the refusal that names the rework), on the local sandbox: 77.35 % →
@@ -261,7 +272,7 @@ at f459fe2, so its row carries it (minutes not recorded).
 | Notification | 81.23 % | 11.23 | 5.9 | never finished (OOM) |
 | DataProtection | 78.95 % | 8.95 | 1.5 | 78.95 %, 33.0 |
 | ServiceDefaults | 78.48 % (72.15) | 8.48 | 1.4 | 72.15 %, 4.3 |
-| Approvals | 78.34 % (74.84) | 8.34 | 4.0 | 74.84 %, 217.7 |
+| Approvals | 78.54 % (74.84) | 8.54 | 4.3 | 74.84 %, 217.7 |
 | Data | 80.00 % | 10.00 | 3.8 | 77.38 %, 38.0 |
 | FileExchange | 76.92 % | 6.92 | 3.6 | 76.92 %, 31.8 |
 | Archival | 79.90 % (74.49) | 9.90 | 7.9 | never finished (OOM) |
