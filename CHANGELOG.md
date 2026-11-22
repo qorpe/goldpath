@@ -962,6 +962,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **Five Campaign pacer facts count ticks, not the runner's speed (#580).** Tests only; no package change.
+  `AGlobalCeilingSwitchedOnMidSlice_StartsEmpty_NotInDebtForWhatWentOutWhileItWasOff` failed `main`'s `gates` twice,
+  with 71 items against a bound of 70. The bound assumed a 1.5 s slice holds 75 ticks of 20 ms, but on the system clock
+  a tick can run short: a timer due in 19.6 ms waits 19. Four facts in the same file bound a 400 ms slice by "20 ticks
+  plus a bank" in the same way.
+  - The five now run their slice on the suite's `TickClock`, which moves only when the pacer waits out a tick.
+    `CampaignFixture.RunPacerSliceAsync(TimeProvider)` is the new overload; the parameterless one keeps the system
+    clock for every other fact.
+  - With the tick count exact, each fact asserts the arithmetic, not a range: 68 releases after the switch, one a tick;
+    200 for a 500/s system, split 100/100 or 50/150 by weight; 8 at 20/s beside a type's own 200; 20 for a 50/s type
+    under the system's 200.
+  - A debt from while the ceiling was off (0), a bank (136), a ceiling that is never applied (5,200), a High weight of 2
+    and a doubled type ceiling each turn one of them red. The five passed 50 of 50 runs under four busy cores.
 - **Bulk executes a multi-tenant app's rows as the batch's tenant (#539).** The execute run and a replay are background
   flows, and nothing set the ambient tenant around the row handler or the chunk's save. On a multi-tenant app the write
   guard refused every row the handler added (`Adding '…' requires an ambient tenant`); the exception escaped the chunk,
