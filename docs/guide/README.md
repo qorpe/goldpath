@@ -14,7 +14,10 @@ exist per module — this guide is the map, not a copy.
    what it deliberately does not.
 6. **[Integration events](integration-events.md)** — every event the packages publish:
    fields, the moment each fires, what a consumer may rely on.
-7. **Proof stories** — why the claims hold: [No double payment under kill -9](../stories/kill9-no-double-payment.md).
+7. **[Support policy](support-policy.md)** — which versions get fixes, the security
+   response targets, the engines and databases supported today, the `[Experimental]`
+   surfaces, and how to ask for a backport; every fact linked to the document that owns it.
+8. **Proof stories** — why the claims hold: [No double payment under kill -9](../stories/kill9-no-double-payment.md).
 
 Operating depth (already written, linked from the concepts): the
 [migrations runbook](../ops/migrations-runbook.md), the

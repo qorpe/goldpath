@@ -55,7 +55,7 @@ change.
 
 | # | Gate | Today (evidence) |
 |---|---|---|
-| G18 | **Docs: getting-started → production; upgrade guides; support policy page** | [getting-started](../guide/getting-started.md) stops at a production pointer. Upgrade guides preview.1–9 exist. The support policy is spread over SECURITY.md and the versioning RFC. The `upgrade` skill is NOT BUILT (ai-sdlc §2) and stays optional |
+| G18 | **Docs: getting-started → production; upgrade guides; support policy page** | [getting-started](../guide/getting-started.md) stops at a production pointer. Upgrade guides preview.1–9 exist. **Support policy (Part 1/3, [#591](https://github.com/qorpe/goldpath/issues/591), 2026-11-23):** one page, [support-policy](../guide/support-policy.md), states the fix window (quoting versioning D3), links SECURITY.md's response targets, gives the engine/database matrix as it is today with each row's evidence, lists the `[Experimental]` surfaces (none marked yet; [#400](https://github.com/qorpe/goldpath/issues/400)) and how to ask for a backport; README, the guide index and SECURITY.md link it. `docs-freshness.sh` now also refuses a link to a missing heading, with a selftest. Still open: the production runbook (Part 2/3, [#592](https://github.com/qorpe/goldpath/issues/592)) and the consolidated upgrade guide (Part 3/3, [#347](https://github.com/qorpe/goldpath/issues/347), after #403). The `upgrade` skill is NOT BUILT (ai-sdlc §2) and stays optional |
 
 ## 7.6 Business-owned
 
@@ -72,5 +72,5 @@ change.
 | Runtime | G5–G7 | seam + 8-fact suite |
 | Proof | G8–G14 | **G8 met**, GM nightly + PR subset, mutation gate, 3/7 scenarios, 5 bench tables |
 | Security | G15–G17 | CVE gate, SBOM, provenance, CodeQL + ZAP baseline |
-| Docs | G18 | getting-started, upgrade guides |
+| Docs | G18 | getting-started, upgrade guides, the support policy page |
 | Business | G19–G20 | — |

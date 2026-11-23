@@ -5,6 +5,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **One support policy page (G18 Part 1/3, #591).** Docs and a gate; no package change.
+  - `docs/guide/support-policy.md` gathers which versions receive fixes (quoting versioning D3), the security response
+    targets (linked to SECURITY.md's table, not copied), the engines and databases supported today with each row's
+    evidence, the `[Experimental]` surfaces (none marked yet; #400 marks them) and how to ask for a backport. It decides
+    nothing. `README.md`, `docs/guide/README.md` and SECURITY.md "Supported versions" link it.
+  - `scripts/docs-freshness.sh` now fails on a link to a heading the target does not have, not only on a missing file.
+    It reads every spelling of a link (inline, same-file `#…`, reference definitions, HTML `href`), accepts a fragment
+    only where it can prove it lands (a heading or an explicit `<a id>` of a markdown file, a GitHub line anchor on any
+    other file) and refuses the rest. Its new `--selftest` plants 15 broken links and fails unless each is caught; CI
+    runs it in `gates`.
 - **The Bulk and Jobs benches run on Oracle behind a provider switch (G7 Oracle 8/12, Part 1/2 of #411, #556).**
   Tests, scripts and `bench.yml`; no package change.
   - `scripts/bench-bulk.sh` and `scripts/bench-jobs.sh` take `GOLDPATH_BENCH_PROVIDER=postgres|oracle`, defaulting to

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The freshness gate (ADR-0009, curated class): a relative markdown link to a file that
-# does not exist fails CI. This is the structural answer to the module-plan-v1.md class
-# of rot — a doc may not reference what is not there.
+# does not exist, or to a heading that file does not have, fails CI. This is the structural
+# answer to the module-plan-v1.md class of rot — a doc may not reference what is not there.
+# `--selftest` plants every spelling of a broken link and fails unless each one is caught.
 set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 # Both checks run so a contributor sees everything wrong in one pass, and EITHER failing
@@ -10,38 +11,145 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 # silently forgiven — while this file's own header claimed a broken link fails CI. Found by
 # the maintainer stop-gate on the day it was written.
 STATUS=0
-python3 - "$ROOT" <<'PY'
-import os, re, sys
+python3 - "$ROOT" "${1:-}" <<'PY'
+import os, re, sys, tempfile, unicodedata
+from urllib.parse import unquote
 root = sys.argv[1]
-link = re.compile(r"\]\(([^)#?\s]+)(?:#[^)]*)?\)")
+# A link is read in every spelling markdown has for one: inline `](target#frag)`, a
+# same-file `](#frag)`, a reference definition `[name]: target#frag` and an HTML
+# `href="target#frag"`. Until #591 only the first was read, and its fragment was thrown
+# away, so a link to a heading that was renamed or never existed passed this gate.
+inline = re.compile(r"\]\(<?([^)\s#?>]*)(?:\?[^)#\s>]*)?(#[^)\s>]*)?>?(?:\s+\"[^\"]*\")?\)")
+refdef = re.compile(r"^[ ]{0,3}\[[^\]]+\]:[ \t]*<?([^\s#?>]*)(?:\?[^\s#>]*)?(#[^\s>]*)?>?", re.M)
+href = re.compile(r"href=\"([^\"#?]*)(?:\?[^\"#]*)?(#[^\"]*)?\"")
+fence = re.compile(r"^[ ]{0,3}(`{3,}|~{3,}).*?^[ ]{0,3}\1[ \t]*$", re.S | re.M)
+heading = re.compile(r"^[ ]{0,3}#{1,6}[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$", re.M)
+explicit = re.compile(r"<a\s+[^>]*?(?:id|name)=\"([^\"]+)\"")
+
+def slug(text):
+    # GitHub's heading id: markup removed, lower-cased, every character that is not a
+    # letter, a digit, a mark, a space, `-` or `_` dropped, then each space a `-`.
+    text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)
+    text = re.sub(r"<[^>]+>", "", text).replace("`", "").strip().lower()
+    kept = [c for c in text if c in " -_" or unicodedata.category(c)[0] in "LNM"]
+    return "".join(kept).replace(" ", "-")
+
+anchor_cache = {}
+def anchors(path):
+    if path not in anchor_cache:
+        text = open(path, encoding="utf-8", errors="replace").read()
+        found, seen = set(), {}
+        for m in heading.finditer(fence.sub("", text)):
+            s = slug(m.group(1))
+            n = seen.get(s, 0)
+            seen[s] = n + 1
+            found.add(s if n == 0 else f"{s}-{n}")
+        found.update(explicit.findall(text))
+        anchor_cache[path] = found
+    return anchor_cache[path]
+
+def check(root, scopes):
+    broken = []
+    for scope in scopes:
+        full = os.path.join(root, scope)
+        files = []
+        if os.path.isfile(full):
+            files = [full]
+        else:
+            skip = {"node_modules", "bin", "obj", "dist", ".pnpm"}
+            for base, dirs, names in os.walk(full):
+                dirs[:] = [d for d in dirs if d not in skip]
+                files += [os.path.join(base, n) for n in names if n.endswith(".md")]
+        for f in files:
+            text = open(f, encoding="utf-8", errors="replace").read()
+            # A file is checked everywhere, code fences included, as it always was; a
+            # fragment only outside them, where a heading example is not a link.
+            body = fence.sub("", text)
+            for in_body, pattern in [(b, p) for b in (False, True) for p in (inline, refdef, href)]:
+                for m in pattern.finditer(body if in_body else text):
+                    target, frag = m.group(1), (m.group(2) or "")[1:]
+                    where = f"{os.path.relpath(f, root)}: -> {target}{'#' + frag if m.group(2) else ''}"
+                    if target.startswith(("http://", "https://", "mailto:", "/")):
+                        continue
+                    resolved = f if target == "" else os.path.normpath(os.path.join(os.path.dirname(f), target))
+                    if not os.path.exists(resolved):
+                        broken.append(where)
+                        continue
+                    if m.group(2) is None or not in_body:
+                        continue
+                    # Fail-closed: a fragment is accepted only where it can be proven to
+                    # land — a heading or an explicit <a id/name> of a markdown file, or
+                    # GitHub's line anchor (L12, L12-L20) on any other file. Anything else
+                    # (an empty fragment, a fragment on a directory, an unknown heading)
+                    # is broken.
+                    frag = unquote(frag)
+                    if os.path.isdir(resolved) or frag == "":
+                        broken.append(where)
+                    elif resolved.endswith(".md"):
+                        if frag not in anchors(resolved):
+                            broken.append(where)
+                    elif not re.fullmatch(r"L\d+(?:-L\d+)?", frag):
+                        broken.append(where)
+    return sorted(set(broken))
+
+if sys.argv[2:] == ["--selftest"]:
+    # Every spelling of a broken link is planted once; each must be reported, and the
+    # clean file must not be. A gate whose fixtures are not red without it proves nothing.
+    with tempfile.TemporaryDirectory() as t:
+        os.makedirs(os.path.join(t, "docs"))
+        open(os.path.join(t, "docs", "target.md"), "w").write(
+            "# Title\n\n## D3 — Support window (honest)\n\n## Dup\n\n## Dup\n\n"
+            "<a id=\"explicit\"></a>\n\n```md\n## Fenced heading\n```\n")
+        open(os.path.join(t, "docs", "code.txt"), "w").write("x\n")
+        open(os.path.join(t, "docs", "clean.md"), "w").write(
+            "# Clean\n[a](target.md) [b](target.md#title) [c](target.md#d3--support-window-honest)\n"
+            "[d](target.md#dup-1) [e](target.md#explicit) [f](#clean) [g](code.txt#L3-L5)\n"
+            "[h]: target.md#dup\n<a href=\"target.md#title\">i</a> [j](https://x/y#z)\n"
+            "```md\n[k](target.md#fenced-example)\n```\n")
+        planted = {
+            "missing file": "[x](nope.md)",
+            "unknown heading": "[x](target.md#no-such-anchor)",
+            "unknown same-file heading": "[x](#no-such-anchor)",
+            "a heading only inside a code fence": "[x](target.md#fenced-heading)",
+            "a duplicate suffix that does not exist": "[x](target.md#dup-2)",
+            "an empty fragment": "[x](target.md#)",
+            "a fragment on a directory": "[x](.#title)",
+            "a non-line fragment on a non-markdown file": "[x](code.txt#title)",
+            "a reference definition to a missing heading": "[x]: target.md#no-such-anchor",
+            "a reference definition to a missing file": "[x]: nope.md",
+            "an HTML href to a missing heading": "<a href=\"target.md#no-such-anchor\">x</a>",
+            "an HTML href to a missing file": "<a href=\"nope.md\">x</a>",
+            "a titled link to a missing heading": "[x](target.md#no-such-anchor \"title\")",
+            "an angle-bracket link to a missing heading": "[x](<target.md#no-such-anchor>)",
+            "a missing file inside a code fence": "```\n[x](nope.md)\n```",
+        }
+        failed = []
+        if check(t, ["docs"]):
+            failed.append(f"the clean fixture is reported: {check(t, ['docs'])}")
+        for name, line in planted.items():
+            path = os.path.join(t, "docs", "planted.md")
+            open(path, "w").write(f"# Planted\n\n{line}\n")
+            anchor_cache.clear()
+            if not check(t, ["docs"]):
+                failed.append(f"not caught: {name} ({line})")
+            os.remove(path)
+        if failed:
+            print("── docs freshness selftest: FAILED")
+            for f in failed:
+                print(f"  {f}")
+            sys.exit(1)
+        print(f"── docs freshness selftest: {len(planted)} planted links caught, the clean fixture passes")
+        sys.exit(0)
+
 scopes = ["README.md", "CLAUDE.md", "docs", "samples", "schemas", "evals",
           "packages", "analyzers", "rulesets", "skills", "tools", "ui"]
-broken = []
-for scope in scopes:
-    full = os.path.join(root, scope)
-    files = []
-    if os.path.isfile(full):
-        files = [full]
-    else:
-        skip = {"node_modules", "bin", "obj", "dist", ".pnpm"}
-        for base, dirs, names in os.walk(full):
-            dirs[:] = [d for d in dirs if d not in skip]
-            files += [os.path.join(base, n) for n in names if n.endswith(".md")]
-    for f in files:
-        text = open(f, encoding="utf-8", errors="replace").read()
-        for m in link.finditer(text):
-            target = m.group(1)
-            if target.startswith(("http://", "https://", "mailto:", "/")):
-                continue
-            resolved = os.path.normpath(os.path.join(os.path.dirname(f), target))
-            if not os.path.exists(resolved):
-                broken.append(f"{os.path.relpath(f, root)}: -> {target}")
+broken = check(root, scopes)
 if broken:
-    print("── docs freshness: BROKEN relative links:")
+    print("── docs freshness: BROKEN relative links or anchors:")
     for b in broken:
         print(f"  {b}")
     sys.exit(1)
-print("── docs freshness: all relative links resolve")
+print("── docs freshness: all relative links and their anchors resolve")
 
 # RETIRED NAMES. A tool we no longer use may not quietly reappear in the docs, the
 # schema or the templates: the strategy documents carried "WireMock" for four months
@@ -72,6 +180,8 @@ if offences:
 print("── retired names: none of the retired tools are mentioned")
 PY
 STATUS=$(( STATUS + $? ))
+# `--selftest` runs the link check against its planted fixtures, and nothing else.
+[ "${1:-}" = "--selftest" ] && exit $(( STATUS > 0 ? 1 : 0 ))
 
 # ── INVENTORY SYNC (#174): every public surface is NAMED where readers look for it, and
 #    every numeric claim about a surface matches reality. Same contract as the tests:
