@@ -24,7 +24,7 @@ refdef = re.compile(r"^[ ]{0,3}\[[^\]]+\]:[ \t]*<?([^\s#?>]*)(?:\?[^\s#>]*)?(#[^
 href = re.compile(r"href=\"([^\"#?]*)(?:\?[^\"#]*)?(#[^\"]*)?\"")
 fence = re.compile(r"^[ ]{0,3}(`{3,}|~{3,}).*?^[ ]{0,3}\1[ \t]*$", re.S | re.M)
 heading = re.compile(r"^[ ]{0,3}#{1,6}[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$", re.M)
-explicit = re.compile(r"<a\s+[^>]*?(?:id|name)=\"([^\"]+)\"")
+explicit = re.compile(r"<a\s+(?:[^>]*?\s)?(?:id|name)=\"([^\"]+)\"")
 
 def slug(text):
     # GitHub's heading id: markup removed, lower-cased, every character that is not a
@@ -99,7 +99,7 @@ if sys.argv[2:] == ["--selftest"]:
         os.makedirs(os.path.join(t, "docs"))
         open(os.path.join(t, "docs", "target.md"), "w").write(
             "# Title\n\n## D3 — Support window (honest)\n\n## Dup\n\n## Dup\n\n"
-            "<a id=\"explicit\"></a>\n\n```md\n## Fenced heading\n```\n")
+            "<a id=\"explicit\"></a> <a data-id=\"decoy\"></a>\n\n```md\n## Fenced heading\n```\n")
         open(os.path.join(t, "docs", "code.txt"), "w").write("x\n")
         open(os.path.join(t, "docs", "clean.md"), "w").write(
             "# Clean\n[a](target.md) [b](target.md#title) [c](target.md#d3--support-window-honest)\n"
@@ -121,6 +121,7 @@ if sys.argv[2:] == ["--selftest"]:
             "an HTML href to a missing file": "<a href=\"nope.md\">x</a>",
             "a titled link to a missing heading": "[x](target.md#no-such-anchor \"title\")",
             "an angle-bracket link to a missing heading": "[x](<target.md#no-such-anchor>)",
+            "an attribute that only ends in id": "[x](target.md#decoy)",
             "a missing file inside a code fence": "```\n[x](nope.md)\n```",
         }
         failed = []
