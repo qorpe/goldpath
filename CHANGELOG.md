@@ -971,6 +971,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   `BLOB`, and `BulkTests.A_file_larger_than_one_chunk_is_stored_and_read_back_byte_for_byte` (both lanes) stores a
   file of one full and one partial chunk and reads back the same SHA-256 and bytes. Bulk on Oracle has not shipped on a
   train, so no adopter migration changes. Bulk's Oracle bench column is still to be measured (open-threads T68).
+- **Six Campaign pacer facts count ticks, not the runner's speed (#580).** Tests only; no package change.
+  `AGlobalCeilingSwitchedOnMidSlice_StartsEmpty_NotInDebtForWhatWentOutWhileItWasOff` failed `main`'s `gates` twice,
+  with 71 items against a bound of 70. The bound assumed a 1.5 s slice holds 75 ticks of 20 ms, but on the system clock
+  a tick can run short (17–19 ms measured on 20 ms ticks). Four facts in the same file bound a 400 ms slice by "20 ticks
+  plus a bank" in the same way, and one reads a 20/s row over it.
+  - The six now run their slice on the suite's `TickClock`, which moves only when the pacer waits out a tick.
+    `CampaignFixture.RunPacerSliceAsync(TimeProvider)` is the new overload; the parameterless one keeps the system
+    clock for every other fact.
+  - With the tick count exact, each fact asserts the arithmetic, not a range: 68 releases after the switch, one a tick;
+    200 for a 500/s system, split 100/100 or 50/150 by weight; 8 at 20/s beside a type's own 200; 20 for a 50/s type
+    under the system's 200; 8 for a 20/s global row.
+  - A debt from while the ceiling was off (0), a bank (136), a ceiling that is never applied (5,200), a High weight of 2,
+    a doubled type ceiling and a global row that is not read (10) each turn one of them red. The six passed 50 of 50 runs
+    under four busy cores.
 - **Bulk executes a multi-tenant app's rows as the batch's tenant (#539).** The execute run and a replay are background
   flows, and nothing set the ambient tenant around the row handler or the chunk's save. On a multi-tenant app the write
   guard refused every row the handler added (`Adding '…' requires an ambient tenant`); the exception escaped the chunk,
@@ -1477,6 +1491,30 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   releasing that tick. It now reaches every campaign with work in flight.
 
 ### Security
+- **A notification failure no longer shows its recipient: the provider's text is masked before `Detail`, the repair
+  reason and the log see it (#532, threat T-NTF-09).**
+  - **What was wrong:** the send job stored the channel's exception text verbatim as `Detail`, which the admin
+    notifications, detail and failures views return unmasked. It also used that text as the jobs console's repair
+    reason and logged the exception as is. An SMTP reply names the rejected address and an SMS gateway's error the
+    number, so the recipient the admin surface masks reached every `goldpath-ops-read` holder and the logs. Measured
+    on `main`: `550 5.1.1 <omer@example.test>: Recipient address rejected` lands on the failures view as is.
+  - **What masks now (`Goldpath.Notification`, internal, no public API change), fail-closed:**
+    - the row's recipient in any letter case, and its local part on its own (three characters or longer);
+    - any other address, `%40`-encoded included;
+    - any run of seven or more digits in any script, with up to two separators between digits, so a parenthesised
+      area code (`+1 (555) 123-4567`) does not break the run;
+    - a URL's query and credentials.
+  - **The text is one line and bounded:**
+    - control characters become spaces, so a provider's text cannot forge a log entry;
+    - it is cut to `Detail`'s 1,024-character column and marked `…`. Before, a longer text failed the save on a
+      database that enforces the length;
+    - it is always well-formed UTF-16: no cut falls between a surrogate pair, a kept hint is a whole character, and
+      a lone surrogate becomes U+FFFD. A strict encoder (Npgsql) refuses a lone half, and the save would fail;
+    - a text that cannot be masked in time is withheld.
+  - **The admin views also mask a `Detail` stored before this fix** as they read it.
+  - **Changed: the warning log line** for an exhausted notification now carries the exception's type and the masked
+    text instead of the exception object, so the provider's stack trace is no longer logged.
+  - **Proof:** `FailureDetailMaskingTests` (38 test cases). The issue's fact is red on `main`.
 - **Approvals and FileExchange admin surfaces demand the all-tenants privilege on a multi-tenant app (admin
   contract R1 rule 5, #481).** Neither store carries a tenant column, but neither group applied the rule campaign and
   archival apply. So an operator scoped to tenant A could read every tenant's approval requests and trails and

@@ -164,8 +164,8 @@ public sealed class CampaignFixture : IDisposable
     public GoldpathCampaignEngine<CampaignTestContext> Engine
         => Services.GetRequiredService<GoldpathCampaignEngine<CampaignTestContext>>();
 
-    public GoldpathCampaignPacerJob<CampaignTestContext> Pacer()
-        => new(Engine, Options, TimeProvider.System,
+    public GoldpathCampaignPacerJob<CampaignTestContext> Pacer(TimeProvider? clock = null)
+        => new(Engine, Options, clock ?? TimeProvider.System,
             NullLogger<GoldpathCampaignPacerJob<CampaignTestContext>>.Instance);
 
     public GoldpathCampaignAdminService<CampaignTestContext> Admin()
@@ -229,11 +229,20 @@ public sealed class CampaignFixture : IDisposable
         }
     }
 
-    /// <summary>Runs one pacer leadership slice through the job class; returns reported item failures.</summary>
-    public async Task<IReadOnlyList<(string ItemKey, string Reason)>> RunPacerSliceAsync()
+    /// <summary>Runs one pacer leadership slice through the job class on the system clock; returns reported item failures.</summary>
+    public Task<IReadOnlyList<(string ItemKey, string Reason)>> RunPacerSliceAsync() => RunPacerSliceAsync(TimeProvider.System);
+
+    /// <summary>Runs one pacer leadership slice through the job class on <paramref name="clock"/>; returns reported item failures.</summary>
+    /// <param name="clock">
+    /// The pacer's clock. A <see cref="TickClock"/> moves only when the pacer waits out a tick,
+    /// so the slice runs exactly <c>LeadershipSlice / LeaderTick</c> ticks however fast or loaded the runner is.
+    /// A fact that bounds a release count by the ticks in the slice passes one: on the system clock a tick can run short
+    /// (the timer works in whole milliseconds; 17–19 ms ticks were measured), so "the slice holds N ticks" is the runner's speed, not arithmetic (#580).
+    /// </param>
+    public async Task<IReadOnlyList<(string ItemKey, string Reason)>> RunPacerSliceAsync(TimeProvider clock)
     {
         using var scope = Services.CreateScope();
-        var job = Pacer();
+        var job = Pacer(clock);
         var context = CreateContext(scope.ServiceProvider);
         var plan = await job.PlanAsync(context, CancellationToken.None);
         var chunk = MakeChunk(0, plan.ChunkPayloads[0]);
