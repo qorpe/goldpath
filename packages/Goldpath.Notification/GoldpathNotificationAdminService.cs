@@ -138,9 +138,12 @@ public sealed class GoldpathNotificationAdminService<TContext>
     public Task<IReadOnlyList<GoldpathNotificationInfo>> GetFailuresAsync(string? tenant, int take, CancellationToken ct)
         => GetNotificationsAsync([nameof(GoldpathNotificationState.Failed)], null, tenant, take, ct);
 
+    // Detail is masked on the way out too (#532): a row that failed before the send job masked it, or written by any
+    // other path, never shows its recipient here. Masking an already-masked text leaves it as it is.
     private static GoldpathNotificationInfo ToInfo(GoldpathNotification n) => new(
         n.Id, n.DedupKey, n.Template, n.TemplateHash, n.Channel,
-        MaskRecipient(n.Recipient), n.Culture, n.State.ToString(), n.Attempts, n.Detail,
+        MaskRecipient(n.Recipient), n.Culture, n.State.ToString(), n.Attempts,
+        n.Detail is null ? null : GoldpathNotificationFailureText.Mask(n.Detail, n.Recipient),
         n.RequestedAt, n.NotBefore, n.ClaimedAt, n.SentAt, n.FailedAt, n.BodyDeletedAt,
         n.Tenant, n.CorrelationId);
 
@@ -149,19 +152,5 @@ public sealed class GoldpathNotificationAdminService<TContext>
     /// (enough to triage "wrong customer?", never enough to copy an address off a screen).
     /// </summary>
     public static string MaskRecipient(string recipient)
-    {
-        if (recipient.Length == 0)
-        {
-            return "";
-        }
-
-        var at = recipient.IndexOf('@');
-        if (at > 0 && at < recipient.Length - 1)
-        {
-            var domain = recipient[(at + 1)..];
-            return $"{recipient[0]}***@{domain[0]}***";
-        }
-
-        return $"{recipient[0]}***";
-    }
+        => GoldpathNotificationFailureText.MaskRecipient(recipient);
 }

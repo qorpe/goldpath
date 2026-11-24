@@ -134,6 +134,13 @@ effect on a real Oracle is proven by `ArchivalOracleTests` instead, outside this
 - **One survivor, equivalent:** the chain state's `ToTable("GoldpathArchiveChainState")` removed. EF's default table
   name for an entity with no `DbSet` is its class name, which is the same string.
 
+**Bulk in diff mode, 2026-11-18** (#539, `GOLDPATH_MUTATE_SINCE=origin/main`, the local sandbox; the full run stays
+the authoritative score, so the table below is unchanged): 90.91 % (275 mutants). Every mutant on the lines the change
+touched is killed: `BatchTenant` (4 mutants) and the tenant scopes, the tracked-entity snapshot and `Untrack` in
+`ExecuteRangeAsync` and `ReplayRowAsync`, by `AmbientTenantTests`. The two left in the changed file are older: the
+shutdown `throw;` (no coverage) and the `GoldpathBulkMetrics.Executed` call (survived; the metrics file is outside the
+scope).
+
 **Archival, Bulk and Notification in diff mode, 2026-11-09** (#409, `GOLDPATH_MUTATE_SINCE=origin/main`, the local
 sandbox; diff mode mutates the whole changed file, and the full run stays the authoritative score, so the table below
 is unchanged): Archival 83.17 % (97 mutants), Bulk 84.75 %, Notification 81.82 %. Every mutant on the lines the
@@ -143,6 +150,21 @@ change touched (the three `ChunkedContains` filters and their guards) is killed 
   asserts that an empty filter is no filter (79.55 % → 81.82 %).
 - The ChunkedContains call itself yields no mutant. Dropping the archived-keys filter is proven on a real database
   instead: the PostgreSQL `BatchSize = 600` fact goes red on the unique index.
+
+**Notification in diff mode, 2026-11-21** (#532, `GOLDPATH_MUTATE_SINCE=origin/main`, the local sandbox; diff mode
+mutates the whole changed files, so the full run stays the authoritative score and the table below is unchanged):
+72.38 % on the first pass, 80.48 % once `FailureDetailMaskingTests` pinned the masked text exactly (202 mutants
+tested, 4.8 minutes). The new `GoldpathNotificationFailureText.cs` kills 57 of its 61 tested mutants, and one more
+(`cut > 0` → `>= 0`) was killed afterwards by a planted check. After the review's well-formed-UTF-16 rules (the
+cut, the one-character hints, lone surrogates): **82.53 %** (224 mutants tested, 5.8 minutes, same sandbox), and
+`GoldpathNotificationFailureText.cs` kills 77 of its 80 tested mutants (one of them by timeout). A first pass left
+five survivors on the cut helper's range guards, which neither caller can reach; the guards were removed rather
+than tested. The rest:
+- **Two are not covered:** the `RegexMatchTimeoutException` fallback that withholds the text. No input the three
+  linear patterns can be given reaches their one-second timeout in a test.
+- **One is equivalent:** `text.Length > MaxReadLength` → `>=`. A text of exactly 8,192 characters is cut either way to
+  the same first 1,023 characters and the marker.
+- The survivors left in `GoldpathNotificationAdminService.cs` are on lines this change did not touch.
 
 **Data was re-measured 2026-11-08**, a full run of `mutation-gate.sh Goldpath.Data` on the #408 branch
 (`GoldpathQueryableExtensions.ChunkedContains`, RFC goldpath-oracle §2.5), on the local sandbox: 77.38 % → 80.00 %

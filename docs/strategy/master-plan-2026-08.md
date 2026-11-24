@@ -126,7 +126,8 @@ how an asset acquires a surprise:
     enterprise procurement review asks about third-party licensing on day one. The RFC is
     owed before any client engagement that includes messaging.
 11. **T1 — the console driven against CorPay** — T12 closed on 2026-08-03, which fired this
-    trigger; the adopter-shaped console proof has not been run since.
+    trigger; the adopter-shaped console proof has not been run since. *(Status 2026-11-16: done —
+    T1's proof ran on the `corpay-console-smoke` job's first green night, 2026-11-10, #325.)*
 
 ## The saga / rules-engine decision (made 2026-08-09, previously an undecided park)
 
