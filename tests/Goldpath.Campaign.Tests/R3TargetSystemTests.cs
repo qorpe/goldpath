@@ -380,20 +380,25 @@ public class R3TargetSystemTests
     }
 
     // ---- the pacer's target-system bucket ----
+    // These slices run on a TickClock, which moves only when the pacer waits out a tick: 0.4 s is exactly 20 ticks of 20 ms
+    // on any runner, so each count below is the arithmetic itself. On the system clock it was the runner's speed: the timer
+    // works in whole milliseconds and a tick can run short (17–19 ms measured), so a 400 ms slice can fit a 21st or 22nd
+    // tick, and a bound of "20 ticks plus a bank" is not arithmetic (#580).
 
     [Fact]
     public async Task TwoTypesOnOneSystem_ShareItsBucket_EvenlyWhenEqual_AndNeverJointlyExceedIt()
     {
         using var fixture = new CampaignFixture(TwoTypesOnOneSystem(500));
         var (a, b) = await CreateTwoAsync(fixture, ("config-push", GoldpathCampaignPriority.Normal), ("firmware-push", GoldpathCampaignPriority.Normal));
-        await fixture.RunPacerSliceAsync();
+        await fixture.RunPacerSliceAsync(new TickClock(DateTimeOffset.UtcNow));
 
         var releasedA = fixture.Reload(a).ReleasedThrough;
         var releasedB = fixture.Reload(b).ReleasedThrough;
         var total = releasedA + releasedB;
-        // 500/s over a 0.4 s slice is 200, plus at most one tick's bank (10 at 20 ms, #292): never the 2 × 10,000 their own Tps allows.
-        Assert.InRange(total, 20, 210);
-        Assert.InRange(releasedA, total * 0.4, total * 0.6);
+        // 500/s is 10 a 20 ms tick, and the bucket holds one tick's worth (#292): 200 over the 20 ticks, never the 2 × 10,000
+        // their own Tps allows, and split evenly.
+        Assert.Equal((100, 100), (releasedA, releasedB));
+        Assert.Equal(200, total);
     }
 
     [Fact]
@@ -401,14 +406,13 @@ public class R3TargetSystemTests
     {
         using var fixture = new CampaignFixture(TwoTypesOnOneSystem(500));
         var (low, high) = await CreateTwoAsync(fixture, ("config-push", GoldpathCampaignPriority.Low), ("firmware-push", GoldpathCampaignPriority.High));
-        await fixture.RunPacerSliceAsync();
+        await fixture.RunPacerSliceAsync(new TickClock(DateTimeOffset.UtcNow));
 
         var releasedLow = fixture.Reload(low).ReleasedThrough;
         var releasedHigh = fixture.Reload(high).ReleasedThrough;
         Assert.True(releasedLow > 0, "the Low campaign must still move");
-        // R2.5's weights are 3:1 for High over Low; allow the rounding a short slice leaves.
-        Assert.True(releasedHigh >= releasedLow * 2, $"High released {releasedHigh}, Low {releasedLow} — expected about 3:1");
-        Assert.InRange(releasedLow + releasedHigh, 20, 210);
+        // R2.5's weights are 3:1 for High over Low, of the system's 200 over the 20 ticks.
+        Assert.Equal((50, 150), (releasedLow, releasedHigh));
     }
 
     [Fact]
@@ -417,11 +421,12 @@ public class R3TargetSystemTests
         using var fixture = new CampaignFixture(TwoTypesOnOneSystem(20, o =>
             o.AddCampaign<TestTarget>("bulk", c => c.MaxTargets(10_000).MaxTps(500).Targets((_, _) => Targets(4_000)))));
         var (onSystem, bulk) = await CreateTwoAsync(fixture, ("config-push", GoldpathCampaignPriority.Normal), ("bulk", GoldpathCampaignPriority.Normal));
-        await fixture.RunPacerSliceAsync();
+        await fixture.RunPacerSliceAsync(new TickClock(DateTimeOffset.UtcNow));
 
-        // The device core's 20/s binds config-push; bulk runs at its own type ceiling, 500/s, untouched by it.
-        Assert.InRange(fixture.Reload(onSystem).ReleasedThrough, 1, 9);
-        Assert.InRange(fixture.Reload(bulk).ReleasedThrough, 50, 210);
+        // The device core's 20/s binds config-push: 0.4 a tick, 8 over the 20 ticks. Bulk runs at its own type ceiling,
+        // 500/s, untouched by it: 10 a tick, 200.
+        Assert.Equal(8, fixture.Reload(onSystem).ReleasedThrough);
+        Assert.Equal(200, fixture.Reload(bulk).ReleasedThrough);
     }
 
     [Fact]
@@ -434,13 +439,13 @@ public class R3TargetSystemTests
             o.AddCampaign<TestTarget>("firmware-push", c => c.MaxTargets(10_000).TargetSystem(System).Targets((_, _) => Targets(4_000)));
         }));
         var (capped, open) = await CreateTwoAsync(fixture, ("config-push", GoldpathCampaignPriority.Normal), ("firmware-push", GoldpathCampaignPriority.Normal));
-        await fixture.RunPacerSliceAsync();
+        await fixture.RunPacerSliceAsync(new TickClock(DateTimeOffset.UtcNow));
 
         var releasedCapped = fixture.Reload(capped).ReleasedThrough;
         var releasedOpen = fixture.Reload(open).ReleasedThrough;
-        Assert.InRange(releasedCapped, 1, 21);             // its type's 50/s over 0.4 s, plus one tick's bank
-        Assert.InRange(releasedCapped + releasedOpen, 20, 210);   // and the system's 500/s over both
-        Assert.True(releasedOpen > releasedCapped * 3, $"the uncapped type should take what the capped one cannot: {releasedOpen} vs {releasedCapped}");
+        Assert.Equal(20, releasedCapped);                  // its type's 50/s: one a tick, over the 20 ticks
+        Assert.Equal(200, releasedCapped + releasedOpen);  // and the system's 500/s over both: the uncapped type takes the rest
+        Assert.Equal(180, releasedOpen);
     }
 
     [Fact]
@@ -471,6 +476,9 @@ public class R3TargetSystemTests
         // had been charged while off would start 2,800 in debt and, at one unit a tick, release nothing for a minute.
         // Each campaign's own Tps (10,000/s) gives exactly 200 a 20 ms tick, so 2,800 is the last item of the seventh
         // tick: everything counted after the change went out on a tick that read the global row.
+        // The slice runs on a TickClock, which moves only when the pacer waits out a tick: exactly 75 ticks, 68 of them
+        // after the change, on any runner. On the system clock the count was the runner's speed: a tick can run short (17–19 ms
+        // measured), so a runner fitted 71 ticks where the arithmetic allowed 68 (#580).
         CampaignFixture? owner = null;
         var publisher = new ChangingPublisher(after: 2_800, () => owner!.Mutate(db =>
         {
@@ -482,12 +490,13 @@ public class R3TargetSystemTests
             extraServices: services => services.AddSingleton<IIntegrationEventPublisher>(publisher));
         owner = fixture;
         await CreateTwoAsync(fixture, ("config-push", GoldpathCampaignPriority.Normal), ("firmware-push", GoldpathCampaignPriority.Normal));
-        await fixture.RunPacerSliceAsync();
+        await fixture.RunPacerSliceAsync(new TickClock(DateTimeOffset.UtcNow));
 
-        Assert.True(publisher.ChangedAt is not null, $"the slice released only {publisher.Count} — the change was never made");
+        Assert.Equal(2_800, publisher.ChangedAt);
         var afterChange = publisher.Count - publisher.ChangedAt!.Value;
-        // 50/s is one a tick at 20 ms, and the slice has up to 68 ticks left: some, never zero, and never more than that.
-        Assert.InRange(afterChange, 5, 70);
+        // 50/s is one a tick at 20 ms, and the slice has 68 ticks left: one on each of them. A debt from while it was off
+        // releases none; a bank (a bucket that did not start empty) releases more than one on the first of them.
+        Assert.Equal(68, afterChange);
     }
 
     [Theory]
@@ -521,9 +530,11 @@ public class R3TargetSystemTests
         });
         var campaign = await fixture.CreateAsync(Generous());
         await fixture.EnumerateAllAsync(campaign);
-        await fixture.RunPacerSliceAsync();
+        await fixture.RunPacerSliceAsync(new TickClock(DateTimeOffset.UtcNow));
 
-        Assert.InRange(fixture.Reload(campaign.Id).ReleasedThrough, 1, 9);   // the winback source holds 10; 20/s for 0.4 s is 8
+        // The winback source holds 10; 20/s is 0.4 a tick, 8 over the slice's 20 ticks on the TickClock (#580), where the
+        // code's 10,000/s would release all 10.
+        Assert.Equal(8, fixture.Reload(campaign.Id).ReleasedThrough);
     }
 
     [Fact]

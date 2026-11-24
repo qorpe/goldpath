@@ -24,6 +24,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     where the database's own order disagrees, including a tie across the twentieth place.
   - **Not yet:** the console's live governor (R4-S7), which needs the binding constraint on the admin
     surface (open-threads T69).
+- **A production runbook for adopters (G18 Part 2/3, #592).** `docs/guide/production.md` takes a generated app from the
+  AppHost to an environment: the deploy shape (`goldpath export compose` is the development tier, and Kubernetes
+  manifests are not built, open thread T73), migration bundles applied once per release before the app starts, the
+  auth floor (fail-closed under `OpenId` and `ApiKey`; `Strategy=None` sets no fallback policy and so belongs only
+  behind an authenticating boundary, with no startup warning yet, open thread T76) and where secrets come from, what ServiceDefaults emits and the one variable that exports it,
+  what state lives where for a backup and restore, and which modules are safe on several instances. Every command on
+  the page was run against an app generated on `0.1.0-preview.9`. The walk found two things the page now states: the
+  migration bundle is framework-dependent although migrations RFC D4 says CI builds it `--self-contained`, and no
+  recovery objective or restore drill exists (open threads T74 and T75). `getting-started.md` links the page where it
+  stops, and the guide's index lists it. Documentation only.
 - **The Bulk and Jobs benches run on Oracle behind a provider switch (G7 Oracle 8/12, Part 1/2 of #411, #556).**
   Tests, scripts and `bench.yml`; no package change.
   - `scripts/bench-bulk.sh` and `scripts/bench-jobs.sh` take `GOLDPATH_BENCH_PROVIDER=postgres|oracle`, defaulting to
@@ -850,6 +860,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
 ### Changed
+- **T1 is closed: the console driving CorPay has its first green night (GA gate G11 met, #325).** Ledgers only; no
+  package change. The `corpay-console-smoke` nightly job passed 4 of 4 specs on 2026-11-10 (nightly run 154,
+  [job](https://github.com/qorpe/goldpath/actions/runs/42789231201/job/129738098092)), the first night after #540 merged, and on every nightly since. open-threads moves T1 to Closed
+  threads, ga-gate-status marks G11 met, and ai-sdlc-status says so. The nightly runs themselves end cancelled
+  for another job's timeout (#562), not this one.
 - **`AddGoldpathLocking` refuses a provider it does not build (#407).** `Provider = Oracle` is refused at
   registration and names `Goldpath.Locking.Oracle` and `AddGoldpathOracleLocking()`, as `SqlServer` already
   was. A value that names no provider at all (an out-of-range cast) is refused in words; before, it was built
@@ -976,6 +991,44 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **Six Campaign pacer facts count ticks, not the runner's speed (#580).** Tests only; no package change.
+  `AGlobalCeilingSwitchedOnMidSlice_StartsEmpty_NotInDebtForWhatWentOutWhileItWasOff` failed `main`'s `gates` twice,
+  with 71 items against a bound of 70. The bound assumed a 1.5 s slice holds 75 ticks of 20 ms, but on the system clock
+  a tick can run short (17–19 ms measured on 20 ms ticks). Four facts in the same file bound a 400 ms slice by "20 ticks
+  plus a bank" in the same way, and one reads a 20/s row over it.
+  - The six now run their slice on the suite's `TickClock`, which moves only when the pacer waits out a tick.
+    `CampaignFixture.RunPacerSliceAsync(TimeProvider)` is the new overload; the parameterless one keeps the system
+    clock for every other fact.
+  - With the tick count exact, each fact asserts the arithmetic, not a range: 68 releases after the switch, one a tick;
+    200 for a 500/s system, split 100/100 or 50/150 by weight; 8 at 20/s beside a type's own 200; 20 for a 50/s type
+    under the system's 200; 8 for a 20/s global row.
+  - A debt from while the ceiling was off (0), a bank (136), a ceiling that is never applied (5,200), a High weight of 2,
+    a doubled type ceiling and a global row that is not read (10) each turn one of them red. The six passed 50 of 50 runs
+    under four busy cores.
+- **Bulk executes a multi-tenant app's rows as the batch's tenant (#539).** The execute run and a replay are background
+  flows, and nothing set the ambient tenant around the row handler or the chunk's save. On a multi-tenant app the write
+  guard refused every row the handler added (`Adding '…' requires an ambient tenant`); the exception escaped the chunk,
+  the retry found the rows claimed and unstamped, and filed every one as "interrupted mid-flight", so the repair queue
+  never showed the real error and a replay failed the same way. `GoldpathBulkEngine` now pins the batch's `Tenant` as
+  the ambient tenant around every handler and the chunk's save, and around a replay's handler and save, on a
+  multi-tenant app only (one that composes `AddGoldpathMultiTenancy`): a single-tenant app's batch label, free-form
+  there, pins nothing and its batches run exactly as before. On a multi-tenant app a stored tenant that is not a tenant
+  id fails each row by name in the repair queue (and its replay with the same reason) instead of escaping after the
+  claim. A row whose handler throws no longer has what it newly ADDED or LOADED saved with the chunk: those entities are
+  untracked. Its changes to entities tracked before it (another row's, or a shared one loaded earlier) are not undone:
+  open thread T71. `BulkTenantTests` (PostgreSQL, the real jobs runner): a two-row batch under `t1`
+  stores both rows as `t1`; a throwing row is recorded on that row with its own message and leaves nothing; a replayed
+  repair item runs as `t1`. Each was red on `main` with the issue's message. A chunk save that fails on one row's DATA
+  (a constraint) still fails the chunk: open thread T70.
+- **The `oracle` lane no longer runs the shared Oracle Free container out of sessions (#571).** Since #529 and #558,
+  `CampaignOracleTests.Thousands_release_paced_across_leader_handovers_and_a_live_throttle_lifts_the_ceiling` hung about
+  half the time in the lane and never alone. Measured on 2026-11-12: the container runs with `processes=200`, about 85 of
+  them its own; the campaign host held 90 sessions while classes that had already finished still held 15 in their idle
+  pools. Consumers then met ORA-12516 after claiming, and their items stayed `Processing` until the ten-minute stale-claim
+  sweep, past the test's four minutes (the new dump on timeout: `Processing=7`). Test infrastructure only:
+  `OracleFixture.CreateSchemaAsync` releases every idle pooled session before it creates the next class's schema, and
+  bounds each schema's pool at 48 (`OracleSessionBudgetTests`). The engine is unchanged; a consumer that fails after its
+  claim is still repaired by the stale-claim sweep, as designed.
 - **Generated apps with an AppHost failed restore on an Aspire advisory published 2026-11-10 (GHSA-f7vh-h5g3-7jrh,
   CVE-2026-120006, high: Aspire elevation of privilege, fixed in 13.6.5).** `Aspire.Hosting` and `Aspire.Hosting.AppHost`
   below 13.6.5 are affected. Under TreatWarningsAsErrors NU1903 is a restore failure, so every golden-manifest shape with an
@@ -1458,6 +1511,30 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   releasing that tick. It now reaches every campaign with work in flight.
 
 ### Security
+- **A notification failure no longer shows its recipient: the provider's text is masked before `Detail`, the repair
+  reason and the log see it (#532, threat T-NTF-09).**
+  - **What was wrong:** the send job stored the channel's exception text verbatim as `Detail`, which the admin
+    notifications, detail and failures views return unmasked. It also used that text as the jobs console's repair
+    reason and logged the exception as is. An SMTP reply names the rejected address and an SMS gateway's error the
+    number, so the recipient the admin surface masks reached every `goldpath-ops-read` holder and the logs. Measured
+    on `main`: `550 5.1.1 <omer@example.test>: Recipient address rejected` lands on the failures view as is.
+  - **What masks now (`Goldpath.Notification`, internal, no public API change), fail-closed:**
+    - the row's recipient in any letter case, and its local part on its own (three characters or longer);
+    - any other address, `%40`-encoded included;
+    - any run of seven or more digits in any script, with up to two separators between digits, so a parenthesised
+      area code (`+1 (555) 123-4567`) does not break the run;
+    - a URL's query and credentials.
+  - **The text is one line and bounded:**
+    - control characters become spaces, so a provider's text cannot forge a log entry;
+    - it is cut to `Detail`'s 1,024-character column and marked `…`. Before, a longer text failed the save on a
+      database that enforces the length;
+    - it is always well-formed UTF-16: no cut falls between a surrogate pair, a kept hint is a whole character, and
+      a lone surrogate becomes U+FFFD. A strict encoder (Npgsql) refuses a lone half, and the save would fail;
+    - a text that cannot be masked in time is withheld.
+  - **The admin views also mask a `Detail` stored before this fix** as they read it.
+  - **Changed: the warning log line** for an exhausted notification now carries the exception's type and the masked
+    text instead of the exception object, so the provider's stack trace is no longer logged.
+  - **Proof:** `FailureDetailMaskingTests` (38 test cases). The issue's fact is red on `main`.
 - **Approvals and FileExchange admin surfaces demand the all-tenants privilege on a multi-tenant app (admin
   contract R1 rule 5, #481).** Neither store carries a tenant column, but neither group applied the rule campaign and
   archival apply. So an operator scoped to tenant A could read every tenant's approval requests and trails and
