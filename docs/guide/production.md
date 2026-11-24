@@ -54,8 +54,8 @@ Deployment. The facts it needs are §2's ordering, §4's probes and §6's scale-
 ## 2. Migration bundles
 
 Outside Development the app process **never** migrates its database. The template's
-`MigrateAsync` call sits behind `app.Environment.IsDevelopment()` (analyzer GP0302 guards the
-`EnsureCreated` shortcut). Real environments apply a **bundle**: one executable per
+`MigrateAsync` call sits behind `app.Environment.IsDevelopment()` (analyzer GP0302 flags a
+runtime `Migrate` or `EnsureCreated` outside a Development guard). Real environments apply a **bundle**: one executable per
 migration-owning project, built by CI or locally.
 
 ```bash
@@ -95,7 +95,8 @@ packages, multi-head solutions and triage are in the
 
 ## 3. The auth floor and secrets
 
-**The floor is fail-closed.** With `Goldpath.Auth` composed:
+**The floor is fail-closed under the `OpenId` and `ApiKey` strategies.** With `Goldpath.Auth`
+composed and either of them selected:
 
 - Every endpoint requires an authenticated user unless it opts out. The fallback policy is
   `RequireAuthenticatedUser()`.
@@ -108,20 +109,32 @@ packages, multi-head solutions and triage are in the
 - The two health endpoints are the deliberate exceptions (`AllowAnonymous`), because probes
   must work under the floor (§4).
 
+**`Strategy=None` removes the floor for everything but the admin surfaces.** It wires no
+authentication and sets **no** fallback policy (`GoldpathAuthExtensions.AddGoldpathAuth`), so
+every business endpoint answers anonymous callers. A Production app generated with
+`--auth openid` and started with `Goldpath__Auth__Strategy=None` served `GET /api/v1/orders`
+with 200 to an anonymous call. Only the admin surfaces stay closed, because their ops
+policies still register and no principal can satisfy them. It logs no warning on start
+(open thread T76). `None` is acceptable only for a service that sits behind an
+authenticating boundary (mTLS or a gateway), the same condition the template states for
+`exposeUnsecured`. Never set it on a service that a caller can reach directly.
+
 Configuration lives under `Goldpath:Auth` (environment variables `Goldpath__Auth__…`):
 
 | Key | Meaning |
 |---|---|
-| `Strategy` | `OpenId` (default), `ApiKey` or `None` |
+| `Strategy` | `OpenId` (default), `ApiKey`, or `None`: **no authentication and no fallback policy**, so only behind an authenticating boundary (see above) |
 | `Authority`, `Audience` | the OpenID issuer and the audience this app accepts |
 | `AllowAnyAudience` | the explicit opt-out from the audience check; off by default |
 | `OpsRole`, `OpsReadRole`, `OpsAllTenantsRole` | the role names behind the three ops policies (default `goldpath-ops`, …) |
 | `ApiKeyHeader`, `ApiKeys` | the ApiKey strategy; the keys belong in the secret store |
 
-An `Authority` without an `Audience` **refuses to start**. On the walk, the published API
+Under `OpenId`, an `Authority` without an `Audience` **refuses to start**, unless
+`AllowAnyAudience=true` opts out of the audience check explicitly. On the walk, the published API
 under `ASPNETCORE_ENVIRONMENT=Production` with only `Goldpath__Auth__Authority` set aborted
 with `Goldpath:Auth:Authority is set but Goldpath:Auth:Audience is not.` With both set, it
-started: `/health/live` and `/health/ready` answered 200 and `/orders` answered 401.
+started: `/health/live` and `/health/ready` answered 200 and an anonymous `GET /api/v1/orders`
+answered 401.
 
 **Secrets never live in a file in the repository.** The generated app reads its connection
 strings by name (`ConnectionStrings:ordersdb`, `ConnectionStrings:messaging`). Under the

@@ -8,7 +8,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 - **A production runbook for adopters (G18 Part 2/3, #592).** `docs/guide/production.md` takes a generated app from the
   AppHost to an environment: the deploy shape (`goldpath export compose` is the development tier, and Kubernetes
   manifests are not built, open thread T73), migration bundles applied once per release before the app starts, the
-  fail-closed auth floor and where secrets come from, what ServiceDefaults emits and the one variable that exports it,
+  auth floor (fail-closed under `OpenId` and `ApiKey`; `Strategy=None` sets no fallback policy and so belongs only
+  behind an authenticating boundary, with no startup warning yet, open thread T76) and where secrets come from, what ServiceDefaults emits and the one variable that exports it,
   what state lives where for a backup and restore, and which modules are safe on several instances. Every command on
   the page was run against an app generated on `0.1.0-preview.9`. The walk found two things the page now states: the
   migration bundle is framework-dependent although migrations RFC D4 says CI builds it `--self-contained`, and no
