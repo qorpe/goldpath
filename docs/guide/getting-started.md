@@ -67,5 +67,5 @@ restored and the finding explains itself. Nothing lands half-wired.
 
 - The six ideas behind all of this: [Concepts](concepts.md).
 - A real app built exactly this way: [the CorPay tour](corpay-tour.md).
-- Production posture (migrations bundles, admin auth floor, dashboards): each concept
-  links its runbook.
+- Production posture (deploy shape, migration bundles, the auth floor and secrets,
+  observability, backup/restore, worker scale-out): [the production runbook](production.md).
