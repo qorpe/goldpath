@@ -55,7 +55,7 @@ change.
 
 | # | Gate | Today (evidence) |
 |---|---|---|
-| G18 | **Docs: getting-started → production; upgrade guides; support policy page** | [getting-started](../guide/getting-started.md) stops at a production pointer. Upgrade guides preview.1–9 exist. The support policy is spread over SECURITY.md and the versioning RFC. The `upgrade` skill is NOT BUILT (ai-sdlc §2) and stays optional |
+| G18 | **Docs: getting-started → production; upgrade guides; support policy page** | [getting-started](../guide/getting-started.md) links the [production runbook](../guide/production.md) (#592): deploy shape, bundles, auth floor and secrets, observability, backup/restore, worker scale-out, each command run once on a preview.9 app. Not built and named there: Kubernetes manifests (T73), a self-contained bundle (T74), a restore drill (T75). The walk by someone other than the author is still open (#347). Upgrade guides preview.1–9 exist. The support policy is spread over SECURITY.md and the versioning RFC. The `upgrade` skill is NOT BUILT (ai-sdlc §2) and stays optional |
 
 ## 7.6 Business-owned
 
