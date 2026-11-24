@@ -9,7 +9,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   - `docs/guide/support-policy.md` gathers which versions receive fixes (quoting versioning D3), the security response
     targets (linked to SECURITY.md's table, not copied), the engines and databases supported today with each row's
     evidence, the `[Experimental]` surfaces (none marked yet; #400 marks them) and how to ask for a backport. It decides
-    nothing. `README.md`, `docs/guide/README.md` and SECURITY.md "Supported versions" link it.
+    nothing. `README.md`, `docs/guide/README.md`, SECURITY.md "Supported versions" and the production runbook link it.
   - `scripts/docs-freshness.sh` now fails on a link to a heading the target does not have, not only on a missing file.
     It reads inline links (with a `"…"`, `'…'` or `(…)` title, in the angle form, after leading whitespace), same-file
     `#…`, reference definitions and HTML `href` in either quote; outside code, a `](` or `href=` it cannot parse is
