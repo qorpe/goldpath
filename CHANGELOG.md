@@ -11,10 +11,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     evidence, the `[Experimental]` surfaces (none marked yet; #400 marks them) and how to ask for a backport. It decides
     nothing. `README.md`, `docs/guide/README.md` and SECURITY.md "Supported versions" link it.
   - `scripts/docs-freshness.sh` now fails on a link to a heading the target does not have, not only on a missing file.
-    It reads every spelling of a link (inline, same-file `#…`, reference definitions, HTML `href`), accepts a fragment
-    only where it can prove it lands (a heading or an explicit `<a id>` of a markdown file, a GitHub line anchor on any
-    other file) and refuses the rest. Its new `--selftest` plants 16 broken links and fails unless each is caught; CI
-    runs it in `gates`.
+    It reads inline links (with a `"…"`, `'…'` or `(…)` title, in the angle form, after leading whitespace), same-file
+    `#…`, reference definitions and HTML `href` in either quote; outside code, a `](` or `href=` it cannot parse is
+    refused rather than skipped. A heading's id follows GitHub's rendered text (ATX and one-line setext headings, emphasis
+    delimiters removed while `snake_case` keeps its underscore, code spans literal, entities decoded, duplicates
+    suffixed); headings and ids inside a code fence (closed only by an equal or longer run, open to the end of the file
+    when unclosed) or an HTML comment are not anchors. A fragment is accepted only where it can prove it lands (such a
+    heading, an `id`/`name` attribute of a markdown file, a GitHub line anchor on any other file) and refused otherwise,
+    including a heading this model does not cover (a multi-line setext paragraph). Its new `--selftest` checks 18
+    heading ids against the ids GitHub renders and plants 34 broken links, failing unless each is caught; CI runs it in
+    `gates`.
 - **The Bulk and Jobs benches run on Oracle behind a provider switch (G7 Oracle 8/12, Part 1/2 of #411, #556).**
   Tests, scripts and `bench.yml`; no package change.
   - `scripts/bench-bulk.sh` and `scripts/bench-jobs.sh` take `GOLDPATH_BENCH_PROVIDER=postgres|oracle`, defaulting to
