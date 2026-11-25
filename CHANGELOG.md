@@ -5,6 +5,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **Approvals' first benchmark table (G13 Part 1/4, #596).** `ApprovalsBenchTests` (Trait `Category=Bench`, real
+  PostgreSQL, run alone in its own collection) measures the public engine on the EF store with 10,000 requests on a
+  two-rung ladder: `RequestAsync` 9.5 s (≈1,049/s), `DecideAsync` through a two-signer quorum with four-eyes live
+  78.7 s for 20,000 decisions (≈254/s), `WorklistAsync` p50 40.8 ms / p95 214.3 ms with 10,000 pending, and one
+  `EscalateOverdueAsync` sweep over 10,000 overdue in 11.8 s. The numbers, the profile (a 4-vCPU development
+  sandbox, not CI) and how to read them are in `packages/Goldpath.Approvals/ops/approvals-benchmarks.md`; no budget
+  is declared, so none is asserted. `scripts/bench-approvals.sh` refuses a run that printed no line for one of the
+  four proofs. The monthly `bench.yml` picks the class up unchanged.
 - **Campaign: the ceiling verbs — an operator changes a target system's or the global ceiling live, audited, from
   the API or the governor (R3-S9, #318; admin-contract R4.5).**
   - `GoldpathCampaignAdminService` gains `GetCeilingsAsync`, `ThrottleCeilingAsync` and `GetCeilingAuditAsync`, with
