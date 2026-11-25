@@ -988,6 +988,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **Security — the Approvals admin surface takes the decider's role from the principal, not the body (#478,
+  threat model T-APR-03).** `POST /goldpath/admin/approvals/requests/{id}/approve|reject` used to hand the body's `role`
+  to the engine, so any `goldpath-ops` holder could name the top rung of a ladder and grant it. The body's `role` is now
+  an assertion: it reaches the engine only when `HttpContext.User.IsInRole(role)` holds (the same check the admin floor's
+  `RequireRole` makes), and otherwise the engine is given no role, so the only way left to decide is a delegation the
+  engine holds for the caller's identity — and even then the body's `role` must name the pending rung. The engine still compares that role with the rung pending at the moment of the
+  decision, so an escalation between the two cannot be ridden. A principal without the rung's role that names it gets
+  `WrongRole` and the request stays pending; with the role it applies. Every other spelling of a role the principal
+  does not hold — a missing, empty or blank role, another case, a trailing space, a role under a claim type that is not
+  the identity's role claim type — is `WrongRole` too (`ApprovalAdminEndpointsTests`). No `PublicAPI` line and no wire
+  change. **Upgrade note:** an adopter whose rung names differ from its identity provider's role names maps them in its
+  own claims transformation; an `exposeUnsecured` surface with no principal can now decide only through a delegation
+  (the console smoke host seeds one, from a manager to `anonymous`, so its approval journeys decide the way an adopter's
+  delegate would).
+  In the engine, a blank `deciderRole` is no role: it never matches a rung, not even one a ladder declared blank
+  (`ApprovalEngineTests.A_blank_role_is_no_role_even_on_a_rung_declared_blank`).
 - **Bulk on Oracle takes a real file: `GoldpathBulkFileChunks.Data` is a `BLOB` there (#559).** The Oracle provider maps an
   unshaped `byte[]` to `RAW(2000)`, and the file store writes chunks of 256 KiB, so every upload above 2,000 bytes failed
   on its first save with ORA-01460 (the finance card's 10k-row file is about 200 KB). `AddGoldpathBulk` now shapes the

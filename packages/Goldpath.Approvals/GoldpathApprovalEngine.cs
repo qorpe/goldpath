@@ -179,6 +179,9 @@ public sealed class GoldpathApprovalEngine
     /// the same identity a second time is <see cref="GoldpathApprovalDecisionOutcome.AlreadySigned"/>, a decision on a
     /// request another one closed is <see cref="GoldpathApprovalDecisionOutcome.NotPending"/>, and a distinct signer
     /// signs on top of the winner. That holds on the built-in stores; a custom store's own guarantees decide it there.
+    /// <para>Take <c>deciderRole</c> from the authenticated decider's claims, never from a request body — the engine
+    /// cannot tell who holds a role (#478). A blank role is no role: only a delegation held for <c>decidedBy</c> lets it
+    /// decide.</para>
     /// </remarks>
     public Task<GoldpathApprovalDecisionOutcome> DecideAsync(Guid id, string decidedBy, string deciderRole, bool granted, string reason, CancellationToken cancellationToken = default)
         => OnFreshReadAsync(id, () => DecideOnceAsync(id, decidedBy, deciderRole, granted, reason, cancellationToken));
@@ -202,7 +205,9 @@ public sealed class GoldpathApprovalEngine
         }
 
         var now = _time.GetUtcNow();
-        if (!string.Equals(request.PendingRole, deciderRole, StringComparison.OrdinalIgnoreCase)
+        // A blank role is no role (#478): it never matches a rung, not even a rung a ladder declared blank, so the only way
+        // a decider naming none may decide is a delegation the engine holds for its identity.
+        if ((string.IsNullOrWhiteSpace(deciderRole) || !string.Equals(request.PendingRole, deciderRole, StringComparison.OrdinalIgnoreCase))
             && !await HasDelegationToRoleAsync(decidedBy, request.PendingRole, now, cancellationToken))
         {
             return GoldpathApprovalDecisionOutcome.WrongRole;

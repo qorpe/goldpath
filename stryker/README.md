@@ -113,6 +113,16 @@ The rest of the run's survivors and uncovered mutants are lines this branch did 
 `MassTransitMessagingEngine.cs`, which diff mode mutates whole: two message strings, a test-hook statement, and
 `"Stryker was here!"` on a refusal text.
 
+**Approvals was re-measured 2026-11-25** on the #478 branch (the admin surface takes the decider's role from the
+principal; the engine treats a blank role as no role): a full run of `mutation-gate.sh Goldpath.Approvals` on the local
+sandbox, 78.54 % → **78.43 %** (about 4 minutes; 408 mutants tested, gate green). Three runs of the final tree scored
+78.43 %, 78.68 % and 78.43 %; the spread comes from mutants outside this change. The first run left two survivors on
+the new lines: the delegate path's `body.Reason ?? ""` (killed by
+`A_delegate_without_the_role_decides_by_its_delegation_only`, which now rejects as a delegate with no reason and then with
+one) and no coverage for the held path's `?? ""` (killed by `A_refusal_is_a_400_whose_message_is_the_rule_name`,
+which now rejects with the reason field absent). **Left, equivalent:** the delegate path's `""` role literal → `"Stryker
+was here!"`. Any role that is not the pending rung's is no role there, and only the delegation decides.
+
 **Approvals was re-measured again 2026-11-22**, after the verifier's finding on #589 made a resubmission ONE write
 on the built-in stores (the rework and the rejected request's `superseded` step, `IGoldpathApprovalAtomicStore.ResubmitAsync`):
 78.34 % → **78.54 %** (4.3 minutes, the local sandbox; 384 mutants tested). The first run of that change scored
@@ -272,7 +282,7 @@ at f459fe2, so its row carries it (minutes not recorded).
 | Notification | 81.23 % | 11.23 | 5.9 | never finished (OOM) |
 | DataProtection | 78.95 % | 8.95 | 1.5 | 78.95 %, 33.0 |
 | ServiceDefaults | 78.48 % (72.15) | 8.48 | 1.4 | 72.15 %, 4.3 |
-| Approvals | 78.54 % (74.84) | 8.54 | 4.3 | 74.84 %, 217.7 |
+| Approvals | 78.43 % (74.84) | 8.43 | 4.2 | 74.84 %, 217.7 |
 | Data | 80.00 % | 10.00 | 3.8 | 77.38 %, 38.0 |
 | FileExchange | 76.92 % | 6.92 | 3.6 | 76.92 %, 31.8 |
 | Archival | 79.90 % (74.49) | 9.90 | 7.9 | never finished (OOM) |
