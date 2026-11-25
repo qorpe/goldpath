@@ -60,9 +60,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     measured, not promised).
   - **Jobs on Oracle** (`ops/jobs-benchmarks.md`, the sandbox, 2026-11-10): plan → complete 1.7–1.8 s against
     PostgreSQL's 1.5 s, and 8.3–9.2 ms of checkpoint per chunk against 7.6 ms.
-  - **Bulk on Oracle is not measurable yet.** Every upload over 2,000 bytes fails with ORA-01460, because
-    `GoldpathBulkFileChunks.Data` is `RAW(2000)` on Oracle and the store writes 256 KB chunks. #559 tracks it, and
-    open-threads T68 holds the Bulk column.
+  - **Bulk on Oracle was not measurable** when this landed: every upload over 2,000 bytes failed with ORA-01460, because
+    `GoldpathBulkFileChunks.Data` was `RAW(2000)` on Oracle and the store writes 256 KB chunks. #559 fixed the column
+    (see Fixed), and open-threads T68 holds the Bulk column until it is measured.
 - **Locking on Oracle: the optional `Goldpath.Locking.Oracle` package (G7, slice O-4, #407; RFC goldpath-oracle
   §2.9).**
   - **API (additive):** `AddGoldpathOracleLocking<TBuilder>(configure)` in the new package, and
@@ -679,6 +679,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     failed request.
   - **The smoke host** files a second approval request at startup, so this spec never races
     the approvals journey for one quorum.
+- **The 1.0 API review: Goldpath.Approvals and Goldpath.FileExchange (GA gate G4, API-5, #394).** Repository only,
+  no package change. All 635 live lines carry a verdict (376 Approvals, 259 FileExchange, at c9d23ae): 588
+  `experimental`, 24 `remove`, 23 `rename`. The renames are one record, `GoldpathQuarantinedRow` →
+  `GoldpathFileQuarantinedLine` (the File prefix its siblings carry, and not the `…Row` suffix the review reserves for EF
+  entities), with the five lines whose signatures name it. The removals are the two EF stores (`GoldpathEfApprovalStore<TContext>`,
+  `GoldpathEfFileLedger<TContext>`), which only their `AddGoldpath…<TBuilder, TContext>` registers behind the store
+  interface, and the two public metrics classes, which have no public member. The record's §4 states the lift condition
+  once (open-threads T21, T22).
 - **The 1.0 API review's record and its counter (GA gate G4, API-1, #390).** Repository only: no
   package changes.
   - `docs/rfc/goldpath-1.0-api-review.md` is DRAFT, in the eight RFC sections. It holds the scope,
@@ -999,6 +1007,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **Bulk on Oracle takes a real file: `GoldpathBulkFileChunks.Data` is a `BLOB` there (#559).** The Oracle provider maps an
+  unshaped `byte[]` to `RAW(2000)`, and the file store writes chunks of 256 KiB, so every upload above 2,000 bytes failed
+  on its first save with ORA-01460 (the finance card's 10k-row file is about 200 KB). `AddGoldpathBulk` now shapes the
+  column as `BLOB` when the model is Oracle's, recognised by the provider's own annotations as the Jobs and Archival
+  models already are. PostgreSQL (`bytea`), SQL Server (`varbinary(max)`) and SQLite are unchanged
+  (`ModelContractTests`). The Oracle store-type golden pinned `RAW(2000)`, which is how the wrong type passed: it now pins
+  `BLOB`, and `BulkTests.A_file_larger_than_one_chunk_is_stored_and_read_back_byte_for_byte` (both lanes) stores a
+  file of one full and one partial chunk and reads back the same SHA-256 and bytes. Bulk on Oracle has not shipped on a
+  train, so no adopter migration changes. Bulk's Oracle bench column is still to be measured (open-threads T68).
 - **Six Campaign pacer facts count ticks, not the runner's speed (#580).** Tests only; no package change.
   `AGlobalCeilingSwitchedOnMidSlice_StartsEmpty_NotInDebtForWhatWentOutWhileItWasOff` failed `main`'s `gates` twice,
   with 71 items against a bound of 70. The bound assumed a 1.5 s slice holds 75 ticks of 20 ms, but on the system clock
@@ -1050,6 +1067,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   fill that table (API-4) turned "an uncovered line in the one package --package names" into a fault it could not
   plant, and CI's `gates` job red. Every scratch copy now resets the fixture's table to its header, whatever the real
   table holds; the gate's checks of the real tables are unchanged.
+- **`api-review-gate.sh --selftest` resets its second fixture too, `Goldpath.FileExchange` (API-5, #394).** Its
+  "an experimental package reviewed under its own id is green" case appends a row for every live FileExchange line, so
+  API-5 filling the real table turned each into a duplicate row and the selftest red. Both fixture tables now start
+  header-only in every scratch copy; the checks of the real tables are unchanged.
 - **[schema]** **Approvals: a delegation admits its delegate to the delegator's rung only (#479, threat model T-APR-05).**
   A delegation carried no role, so an active one admitted its delegate to every rung of every ladder — the amount
   ladder did not hold for a delegate.
@@ -1117,6 +1138,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     - an archive legal hold refused only an empty case reference, and now refuses whitespace too (a null used to throw);
     - a Jobs calendar's name is refused when blank (it keys a NOT NULL `qrtz_calendars` row).
   - **Still open:** an actor whose principal name is empty is a separate path, tracked in #544.
+- **[schema]** **Approvals: a rejected request is resubmitted once (#521, threat model T-APR-06).** `ResubmitAsync` read
+  the rejected request, then added the rework, with nothing between the two. Two resubmissions of one rejection (a
+  double click, a retry after a timeout) each created a pending rework with the same `SupersedesId`, and either could
+  be granted.
+  - **Measured on PostgreSQL with every save held back 300 ms:** both calls returned a rework; two pending requests
+    carried the one `SupersedesId`.
+  - **Now:**
+    - A second call refuses with `InvalidOperationException`: `Request '<rejected>' was already resubmitted as
+      '<rework>' — a rejected request is resubmitted once; decide on the rework instead.` It creates nothing and
+      publishes nothing. The engine reads this from the rejected request's `superseded` step, so it holds one call
+      after another on any store.
+    - Two calls at once both pass that read. The built-in stores refuse the second rework's add: a **unique index on
+      `GoldpathApprovals.SupersedesId`** (nullable, so requests that supersede nothing are outside it), and the same
+      rule in the in-memory store. The refusal names the rework that landed first.
+    - A custom `IGoldpathApprovalStore` gets the one-after-another refusal; two calls at once are its own guarantee.
+    - **On the built-in stores the rework and the rejected request's `superseded` step are one write.** A failure
+      between them (the second write timing out) used to leave the rework stored and the step not, and every retry was
+      then refused: a pending rework the rejected request never named and no `GoldpathApprovalRequested` announced.
+      Now the failure leaves neither, and the retry creates the one rework, names it and announces it — proven on
+      SQLite, PostgreSQL and Oracle with the write failed once. A custom store keeps the two writes, so a failure
+      between them is its own to prevent. The event is published after the commit, as every Approvals event is (T72).
+  - **No public API changed:** the method, its signature and the exception type it throws are the same.
+  - **Migration:** one, with a query to run first for existing duplicate reworks (upgrade guide).
 - **[schema]** **Approvals: concurrent decisions no longer both apply (#480, threat model T-APR-06).** A decision read the
   request and its signatures, then wrote them in separate calls with nothing guarding the gap.
   - **What went wrong:**

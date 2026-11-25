@@ -238,6 +238,39 @@ public class BulkTests : IAsyncLifetime
         Assert.Equal(10, Query(db => db.Sink.Select(s => s.RowNumber).Distinct().Count()));   // exactly once, each
     }
 
+    /// <summary>
+    /// #559: a file larger than one chunk (256 KiB) is stored and read back byte for byte. On Oracle the chunk column was
+    /// EF's default <c>RAW(2000)</c>, so any chunk above 2,000 bytes failed with ORA-01460; the bulk suite's other files
+    /// are a few hundred bytes and never noticed.
+    /// </summary>
+    [Fact]
+    public async Task A_file_larger_than_one_chunk_is_stored_and_read_back_byte_for_byte()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        var bytes = new byte[(256 * 1024) + 70_000];   // one full chunk and one partial, both far above 2,000 bytes
+        new Random(559).NextBytes(bytes);
+        var store = _host.Services.GetRequiredService<GoldpathBulkFileStore<BulkDb>>();
+
+        GoldpathBulkFile file;
+        using (var scope = _host.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BulkDb>();
+            (file, _) = await store.SaveAsync(db, new MemoryStream(bytes), "large.bin", timeout.Token);
+        }
+
+        Assert.Equal(bytes.Length, file.Length);
+        Assert.Equal(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant(), file.Sha256);
+        Assert.Equal(2, Query(db => db.Set<GoldpathBulkFileChunk>().Count(c => c.FileId == file.Id)));
+        using (var scope = _host.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BulkDb>();
+            await using var read = store.OpenRead(db, file.Id);
+            var back = new MemoryStream();
+            await read.CopyToAsync(back, timeout.Token);
+            Assert.True(bytes.AsSpan().SequenceEqual(back.ToArray()), "the bytes read back differ from the bytes stored");
+        }
+    }
+
     [Fact]
     public async Task The_gate_refuses_a_dirty_batch_and_a_reasonless_rejection()
     {

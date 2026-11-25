@@ -8,8 +8,8 @@ namespace Goldpath.Approvals.Tests;
 /// <summary>
 /// What the engine does when its write loses a race (#480), made deterministic: <see cref="RacingStore"/> lands
 /// another write on the request between the engine's read and its write. A decision reads again and decides on what
-/// the request is now; the escalation sweep leaves a request it lost to the decision that won; resubmission puts its
-/// step on the request as it is now; and a call that loses every time stops instead of spinning.
+/// the request is now; the escalation sweep leaves a request it lost to the decision that won; a second resubmission
+/// that races the first is refused by the store (#521); and a call that loses every time stops instead of spinning.
 /// </summary>
 public sealed class ApprovalConflictTests
 {
@@ -117,8 +117,10 @@ public sealed class ApprovalConflictTests
     }
 
     [Fact]
-    public async Task Resubmission_puts_its_step_on_the_rejected_request_as_it_is_now()
+    public async Task A_second_resubmission_between_the_first_ones_add_and_its_step_is_refused_and_names_the_rework()
     {
+        // #521, made deterministic: the second resubmission reads the rejected request after the first added its rework
+        // and before it wrote its superseded step, so the trail cannot refuse it. The store's SupersedesId rule does.
         var inner = new GoldpathInMemoryApprovalStore();
         var clock = new FakeTimeProvider(At);
         var racing = new RacingStore(inner);
@@ -126,13 +128,60 @@ public sealed class ApprovalConflictTests
         var rejected = await engine.RequestAsync("credit-limit", "K26-482", 500_000m, "maker");
         Assert.Equal(GoldpathApprovalDecisionOutcome.Applied, await engine.DecideAsync(rejected.Id, "checker", "expert", false, "collateral missing"));
 
-        // A second resubmission of the same rejected request lands its step first.
-        racing.BeforeWrite = async () => await Engine(inner, clock).ResubmitAsync(rejected.Id, "maker");
+        Exception? second = null;
+        racing.BeforeWrite = async () => second = await Record.ExceptionAsync(() => Engine(inner, clock).ResubmitAsync(rejected.Id, "maker"));
 
         var resubmitted = await engine.ResubmitAsync(rejected.Id, "maker");
+
+        var refused = Assert.IsAssignableFrom<InvalidOperationException>(second);
+        Assert.Contains($"already resubmitted as '{resubmitted.Id}'", refused.Message);
+        Assert.Equal([resubmitted.Id], (await inner.GetRecentAsync(100)).Where(r => r.SupersedesId == rejected.Id).Select(r => r.Id));
         var trail = (await inner.GetAsync(rejected.Id))!.Trail;
-        Assert.Equal(["requested", "rejected", "superseded", "superseded"], trail.Select(t => t.Action));
-        Assert.Contains(trail, t => t.Detail == $"resubmitted as {resubmitted.Id}");
+        Assert.Equal(["requested", "rejected", "superseded"], trail.Select(t => t.Action));
+        Assert.Equal($"resubmitted as {resubmitted.Id}", trail[^1].Detail);
+    }
+
+    [Fact]
+    public async Task On_the_in_memory_store_a_second_resubmission_in_the_first_ones_gap_is_refused_and_writes_nothing()
+    {
+        // #521: the in-memory store writes the rework and the rejected request's step as one unit, as the database does.
+        var store = new GoldpathInMemoryApprovalStore();
+        var clock = new EfApprovalStoreFacts.RacingClock(At);
+        var published = new Published();
+        var engine = Engine(store, clock, published);
+        var rejected = await engine.RequestAsync("credit-limit", "K26-592", 500_000m, "maker");
+        Assert.Equal(GoldpathApprovalDecisionOutcome.Applied, await engine.DecideAsync(rejected.Id, "checker", "expert", false, "no"));
+        GoldpathApprovalRequest? first = null;
+        clock.OnNextRead = async () => first = await Engine(store, new FakeTimeProvider(At), published).ResubmitAsync(rejected.Id, "maker");
+
+        var refused = await Assert.ThrowsAnyAsync<InvalidOperationException>(() => engine.ResubmitAsync(rejected.Id, "maker"));
+
+        Assert.NotNull(first);
+        Assert.Contains($"already resubmitted as '{first.Id}'", refused.Message);
+        Assert.Equal([first.Id], (await store.GetRecentAsync(100)).Where(r => r.SupersedesId == rejected.Id).Select(r => r.Id));
+        Assert.Equal(["requested", "rejected", "superseded"], (await store.GetAsync(rejected.Id))!.Trail.Select(t => t.Action));
+        Assert.Single(published.Events.OfType<GoldpathApprovalRequested>(), e => e.ApprovalId != rejected.Id);
+    }
+
+    [Fact]
+    public async Task On_the_in_memory_store_a_resubmission_that_loses_to_another_step_reads_again_and_writes_both()
+    {
+        var store = new GoldpathInMemoryApprovalStore();
+        var clock = new EfApprovalStoreFacts.RacingClock(At);
+        var engine = Engine(store, clock);
+        var rejected = await engine.RequestAsync("credit-limit", "K26-593", 500_000m, "maker");
+        Assert.Equal(GoldpathApprovalDecisionOutcome.Applied, await engine.DecideAsync(rejected.Id, "checker", "expert", false, "no"));
+        clock.OnNextRead = async () =>
+        {
+            var current = (await store.GetAsync(rejected.Id))!;
+            current.Trail.Add(new GoldpathApprovalTrailEntry(At, "auditor", "noted", "read"));
+            await store.UpdateAsync(current);
+        };
+
+        var rework = await engine.ResubmitAsync(rejected.Id, "maker");
+
+        Assert.Equal([rework.Id], (await store.GetRecentAsync(100)).Where(r => r.SupersedesId == rejected.Id).Select(r => r.Id));
+        Assert.Equal(["requested", "rejected", "noted", "superseded"], (await store.GetAsync(rejected.Id))!.Trail.Select(t => t.Action));
     }
 
     [Fact]

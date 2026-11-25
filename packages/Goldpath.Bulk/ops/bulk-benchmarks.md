@@ -77,7 +77,7 @@ within the file" findings.
 - **Validation dominates, upload does not.** The 162 MiB file uploaded in under 10 s; the
   ~12,000 rows/s of validation is the per-row staging write (10M rows → 1.2 GiB of database).
 
-## Oracle column (G7 Oracle 8/12, #556): not measurable yet, blocked by #559
+## Oracle column (G7 Oracle 8/12, #556): not measured yet (open-threads T68)
 
 `GOLDPATH_BENCH_PROVIDER=oracle scripts/bench-bulk.sh` runs the same facts on Oracle: `BulkBenchOracleTests` (the 10k
 intake and the 100k execute) and `BulkIntakeBenchOracleTests` (set `GOLDPATH_BENCH_BULK_INTAKE_ROWS=1000000` for the
@@ -94,12 +94,14 @@ The cause is in the model, not in the bench:
 - So every upload over 2,000 bytes is refused. The Oracle lane's `BulkOracleTests` uploads files of a few hundred
   bytes, which is why it stays green.
 
-[#559](https://github.com/qorpe/goldpath/issues/559) tracks the fix. The 1M-row intake goes through the same store, so it
-was not run.
+[#559](https://github.com/qorpe/goldpath/issues/559) fixed it: on Oracle the column is now a `BLOB`, the golden pins that,
+and `BulkTests.A_file_larger_than_one_chunk_is_stored_and_read_back_byte_for_byte` stores and reads back a file of more
+than one chunk on both lanes. The 1M-row intake goes through the same store, so it was not run on 2026-11-10; the
+column's numbers are the next Oracle bench run's (T68).
 
 ### What "Reading the numbers" will need to say (oracle RFC §2.6)
 
 The engine writes intake rows through EF batches and `ExecuteUpdate`, with no `COPY` or `SqlBulkCopy`. On Oracle, EF
-batches those inserts with ODP.NET array binding. Once #559 lets a real file in, the comparison to make is the 10k
+batches those inserts with ODP.NET array binding. Now that #559 lets a real file in, the comparison to make is the 10k
 upload, and the 1M intake's rows/s against PostgreSQL's on the same machine. Array binding is what should keep the
 intake within the same order of magnitude. A gap of ten times or more gets its own diagnosis, as #556 asks.
