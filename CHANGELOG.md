@@ -988,6 +988,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **Security — the Notification webhook channel refuses a plaintext URL unless opted in (#533, threat model
+  T-NTF-07).** The email channel has refused plaintext SMTP without `AllowInsecureTransport` since audit A3. The webhook
+  channel posted to `Goldpath:Notification:Webhook:Url` whatever its scheme, and the JSON carries the recipient
+  unmasked, the rendered subject and body, the attachment names and the correlation id. It now posts only to an
+  absolute `https` URL. `GoldpathWebhookOptions.AllowInsecureTransport` (new, default `false`) admits `http` and
+  nothing else, with no loopback exemption, by the owner's decision. Every other spelling (a relative URL, a file path,
+  `ws:`, `wss:`, `ftp:`, `javascript:`, blank) is refused at send in words naming the key, and the URL is never
+  echoed, since a hub's secret is often in it. **Upgrade note:** an `http://` hook stops sending until it opts in (upgrade
+  guide). Public API: additions only.
 - **Bulk on Oracle takes a real file: `GoldpathBulkFileChunks.Data` is a `BLOB` there (#559).** The Oracle provider maps an
   unshaped `byte[]` to `RAW(2000)`, and the file store writes chunks of 256 KiB, so every upload above 2,000 bytes failed
   on its first save with ORA-01460 (the finance card's 10k-row file is about 200 KB). `AddGoldpathBulk` now shapes the

@@ -211,4 +211,103 @@ public class ModelAndChannelTests : IDisposable
             () => new GoldpathEmailChannel(options).SendAsync(message, CancellationToken.None));
         Assert.Contains("AllowInsecureTransport", refused.Message, StringComparison.Ordinal);
     }
+    /// <summary>
+    /// #533 (threat model T-NTF-07): the webhook channel is fail-closed on plaintext, as the email channel is. Without the
+    /// opt-in, every URL that is not an absolute https URL is refused at send — loopback included, by decision — and
+    /// nothing is posted. The refusal names the key and the opt-in, and never echoes the URL, which may carry the hub's secret.
+    /// </summary>
+    [Theory]
+    [InlineData("http://hooks.corp/x?token=s3cret")]
+    [InlineData("HTTP://hooks.corp/x?token=s3cret")]
+    [InlineData("http://127.0.0.1:8080/hook?token=s3cret")]
+    [InlineData("http://localhost/hook?token=s3cret")]
+    [InlineData("ws://hooks.corp/x?token=s3cret")]
+    [InlineData("wss://hooks.corp/x?token=s3cret")]
+    [InlineData("ftp://hooks.corp/x?token=s3cret")]
+    [InlineData("file:///tmp/hook?token=s3cret")]
+    [InlineData("/hook?token=s3cret")]
+    [InlineData("hooks.corp/x?token=s3cret")]
+    [InlineData("//hooks.corp/x?token=s3cret")]
+    [InlineData("javascript:alert('s3cret')")]
+    [InlineData("   ")]
+    public async Task A_webhook_url_that_is_not_https_is_refused_without_the_opt_in(string url)
+    {
+        var (channel, handler) = Webhook(url, allowInsecure: false);
+
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => channel.SendAsync(Message, CancellationToken.None));
+
+        Assert.Contains("Goldpath:Notification:Webhook:Url", refused.Message, StringComparison.Ordinal);
+        Assert.Contains("AllowInsecureTransport", refused.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("s3cret", refused.Message, StringComparison.Ordinal);
+        Assert.Empty(handler.Requests);
+    }
+
+    /// <summary>With the opt-in, an http hook is posted; the opt-in admits http and nothing else.</summary>
+    [Theory]
+    [InlineData("http://127.0.0.1:8080/hook", true)]
+    [InlineData("http://hooks.corp/x", true)]
+    [InlineData("ws://hooks.corp/x", false)]
+    [InlineData("ftp://hooks.corp/x", false)]
+    [InlineData("file:///tmp/hook", false)]
+    [InlineData("/hook", false)]
+    public async Task The_opt_in_admits_a_plaintext_http_hook_and_no_other_scheme(string url, bool posted)
+    {
+        var (channel, handler) = Webhook(url, allowInsecure: true);
+
+        if (posted)
+        {
+            await channel.SendAsync(Message, CancellationToken.None);
+            Assert.Equal(new Uri(url), Assert.Single(handler.Requests).RequestUri);
+        }
+        else
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() => channel.SendAsync(Message, CancellationToken.None));
+            Assert.Empty(handler.Requests);
+        }
+    }
+
+    /// <summary>An https hook needs no opt-in, and it is the default nothing changes for.</summary>
+    [Theory]
+    [InlineData("https://hooks.corp/x")]
+    [InlineData("HTTPS://hooks.corp/x")]
+    public async Task An_https_hook_is_posted_without_the_opt_in(string url)
+    {
+        var options = new GoldpathNotificationOptions();
+        Assert.False(options.WebhookOptions.AllowInsecureTransport);   // secure BY DEFAULT, like the email channel
+        var (channel, handler) = Webhook(url, allowInsecure: false);
+
+        await channel.SendAsync(Message, CancellationToken.None);
+
+        Assert.Equal(HttpMethod.Post, Assert.Single(handler.Requests).Method);
+    }
+
+    private static readonly GoldpathNotificationMessage Message = new(Guid.NewGuid(), "x@y.z", "s", "b", [], "t", null, null);
+
+    private static (GoldpathWebhookChannel Channel, RecordingHandler Handler) Webhook(string url, bool allowInsecure)
+    {
+        var options = new GoldpathNotificationOptions();
+        options.Webhook(w =>
+        {
+            w.Url = url;
+            w.AllowInsecureTransport = allowInsecure;
+        });
+        var handler = new RecordingHandler();
+        return (new GoldpathWebhookChannel(options, new OneClient(handler)), handler);
+    }
+
+    private sealed class RecordingHandler : HttpMessageHandler
+    {
+        public List<HttpRequestMessage> Requests { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Requests.Add(request);
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK));
+        }
+    }
+
+    private sealed class OneClient(HttpMessageHandler handler) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
+    }
 }
