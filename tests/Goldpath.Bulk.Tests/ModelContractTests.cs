@@ -56,6 +56,21 @@ public class ModelContractTests
     }
 
     [Fact]
+    public void A_chunk_is_a_BLOB_on_Oracle_and_the_providers_default_elsewhere()
+    {
+        // #559: on Oracle an unshaped byte[] is RAW(2000), and a chunk is up to 256 KiB. The Oracle provider is recognised by
+        // its own model annotations, set before OnModelCreating runs; one is planted here, as that provider would.
+        var oracle = new ModelBuilder(SqliteConventionSetBuilder.Build());
+        oracle.Model.SetAnnotation("Oracle:ValueGenerationStrategy", null);
+        oracle.AddGoldpathBulk();
+        var chunkOnOracle = oracle.FinalizeModel().FindEntityType(typeof(GoldpathBulkFileChunk))!.FindProperty("Data")!;
+
+        Assert.Equal("BLOB", chunkOnOracle.FindAnnotation(RelationalAnnotationNames.ColumnType)?.Value);
+        Assert.Null(Entity<GoldpathBulkFileChunk>().FindProperty("Data")!.FindAnnotation(RelationalAnnotationNames.ColumnType));
+        Assert.Null(Entity<GoldpathBulkFileChunk>().FindProperty("Data")!.GetMaxLength());   // bytea / varbinary(max): unbounded
+    }
+
+    [Fact]
     public void Bounded_lengths_serve_both_providers()
     {
         Assert.Equal(64, Entity<GoldpathBulkFile>().FindProperty("Sha256")!.GetMaxLength());
