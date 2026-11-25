@@ -53,3 +53,7 @@ because a ladder's deadlines are the SLA that ladder declared.
 | Decision drought | `rate(goldpath_approvals_granted_total[1h]) + rate(goldpath_approvals_rejected_total[1h]) == 0` while requested > 0 for 4h | Requests arriving and nothing being decided: the worklist is not being watched, and escalation will start firing in an hour anyway. |
 
 Do NOT alert on rejection RATE: a ladder that rejects is a ladder that works.
+
+## Measured performance
+Request, decide, worklist and escalation-sweep numbers on PostgreSQL, with the profile, the command and how
+to read them: [approvals-benchmarks.md](approvals-benchmarks.md) (`scripts/bench-approvals.sh`).
