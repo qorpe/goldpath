@@ -120,6 +120,8 @@ public abstract class EfFileLedgerFacts : IAsyncLifetime
         Assert.Equal(["Rail", "File", "Line"], processed.FindPrimaryKey()!.Properties.Select(p => p.Name));
         Assert.Equal(128, processed.FindProperty("Rail")!.GetMaxLength());
         Assert.Equal(256, processed.FindProperty("File")!.GetMaxLength());
+        Assert.Equal(64, processed.FindProperty("ContentHash")!.GetMaxLength());   // #482: SHA-256 hex
+        Assert.True(processed.FindProperty("ContentHash")!.IsNullable);             // rows marked before it carry none
 
         var quarantine = model.FindEntityType(typeof(GoldpathFileQuarantineRow))!;
         Assert.Equal("GoldpathFileQuarantine", quarantine.GetTableName());
@@ -129,6 +131,56 @@ public abstract class EfFileLedgerFacts : IAsyncLifetime
         Assert.Equal("GoldpathFileArchive", archive.GetTableName());
         Assert.Equal(["Rail", "File"], archive.FindPrimaryKey()!.Properties.Select(p => p.Name));
     }
+
+    /// <summary>
+    /// #482 on a real database: every processed row stores the SHA-256 hex of its line, and a restarted engine refuses a
+    /// different file under the same name in words while the same bytes still dedup.
+    /// </summary>
+    [Fact]
+    public async Task A_different_file_under_a_processed_name_is_refused_after_a_restart()
+    {
+        string[] file = ["H;2", "A-1;100.50", "A-2;200.00"];
+        await BuildEngine().ProcessAsync("registry-daily", "daily.csv", file);
+
+        using (var scope = _provider.CreateScope())
+        {
+            var rows = await scope.ServiceProvider.GetRequiredService<LedgerDbContext>().Set<GoldpathFileProcessedRow>().AsNoTracking()
+                .OrderBy(r => r.Line).ToListAsync();
+            Assert.Equal([Sha256Hex("A-1;100.50"), Sha256Hex("A-2;200.00")], rows.Select(r => r.ContentHash));
+        }
+
+        var restarted = BuildEngine();
+        var refused = await restarted.ProcessAsync("registry-daily", "daily.csv", ["H;2", "A-1;100.50", "B-2;7.00"]);
+        Assert.StartsWith("Line 3 differs", refused.FileRejectedReason, StringComparison.Ordinal);
+        Assert.Equal(0, refused.Processed);
+
+        var replay = await restarted.ProcessAsync("registry-daily", "daily.csv", file);
+        Assert.Equal((0, 2), (replay.Processed, replay.SkippedAsDuplicate));
+        Assert.Equal(["A-1", "A-2"], _applied);
+    }
+
+    /// <summary>A row with no hash (marked before the column existed) reads as processed with an unknown hash; no row reads as null.</summary>
+    [Fact]
+    public async Task A_row_without_a_hash_reads_as_processed_with_an_unknown_hash()
+    {
+        using (var scope = _provider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<LedgerDbContext>();
+            db.Add(new GoldpathFileProcessedRow { Rail = "registry-daily", File = "old.csv", Line = 2, ContentHash = null });
+            await db.SaveChangesAsync();
+        }
+
+        var ledger = new GoldpathEfFileLedger<LedgerDbContext>(_provider.GetRequiredService<IServiceScopeFactory>());
+        Assert.Equal("", await ledger.GetProcessedHashAsync("registry-daily", "old.csv", 2));
+        Assert.Null(await ledger.GetProcessedHashAsync("registry-daily", "old.csv", 3));
+
+        var result = await BuildEngine().ProcessAsync("registry-daily", "old.csv", ["H;2", "Z-1;1.00", "A-2;2.00"]);
+        Assert.Null(result.FileRejectedReason);   // unknown counts as matching: the upgrade refuses no redelivery
+        Assert.Equal((1, 1), (result.Processed, result.SkippedAsDuplicate));
+    }
+
+    private static string Sha256Hex(string line)
+        => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(line))).ToLowerInvariant();
 
     [Fact]
     public async Task Quarantine_persists_with_its_reason_and_clears_on_reprocess()

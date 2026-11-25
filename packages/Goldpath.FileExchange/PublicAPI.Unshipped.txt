@@ -1,1 +1,9 @@
 #nullable enable
+Goldpath.GoldpathEfFileLedger<TContext>.GetProcessedHashAsync(string! rail, string! file, int line, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string?>!
+Goldpath.GoldpathEfFileLedger<TContext>.MarkProcessedWithHashAsync(string! rail, string! file, int line, string! contentHash, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Goldpath.GoldpathFileProcessedRow.ContentHash.get -> string?
+Goldpath.GoldpathFileProcessedRow.ContentHash.set -> void
+Goldpath.GoldpathInMemoryFileLedger.GetProcessedHashAsync(string! rail, string! file, int line, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string?>!
+Goldpath.GoldpathInMemoryFileLedger.MarkProcessedWithHashAsync(string! rail, string! file, int line, string! contentHash, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Goldpath.IGoldpathFileLedger.GetProcessedHashAsync(string! rail, string! file, int line, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string?>!
+Goldpath.IGoldpathFileLedger.MarkProcessedWithHashAsync(string! rail, string! file, int line, string! contentHash, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!

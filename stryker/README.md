@@ -113,6 +113,17 @@ The rest of the run's survivors and uncovered mutants are lines this branch did 
 `MassTransitMessagingEngine.cs`, which diff mode mutates whole: two message strings, a test-hook statement, and
 `"Stryker was here!"` on a refusal text.
 
+**FileExchange was re-measured 2026-11-25** on the #482 branch (a processed line keeps its content's hash, and a
+different file under a processed name is refused whole): a full run of `mutation-gate.sh Goldpath.FileExchange` on the
+local sandbox, 76.92 % → **76.98 %** (gate green; 265 mutants tested; 77.10 % before the ill-formed-text branch of
+the hash joined). **Left on the new lines, all three equivalent:**
+removing `HasMaxLength(64)` on `ContentHash`, the class the #479 paragraph below names (EF caches the model across the
+run, so a model-builder mutant does not reach `The_ledger_model_shape_is_the_contract`, which asserts the 64 and goes red
+with the statement removed by hand); and `ConfigureAwait(false)` → `true` in the interface's default
+`GetProcessedHashAsync`, which no synchronization context in a library call can tell apart; and the strict encoder's
+`encoderShouldEmitUTF8Identifier: false` → `true`, since `GetBytes` never writes a preamble (only `GetPreamble` and a
+stream writer do).
+
 **Approvals was re-measured again 2026-11-22**, after the verifier's finding on #589 made a resubmission ONE write
 on the built-in stores (the rework and the rejected request's `superseded` step, `IGoldpathApprovalAtomicStore.ResubmitAsync`):
 78.34 % → **78.54 %** (4.3 minutes, the local sandbox; 384 mutants tested). The first run of that change scored
@@ -274,7 +285,7 @@ at f459fe2, so its row carries it (minutes not recorded).
 | ServiceDefaults | 78.48 % (72.15) | 8.48 | 1.4 | 72.15 %, 4.3 |
 | Approvals | 78.54 % (74.84) | 8.54 | 4.3 | 74.84 %, 217.7 |
 | Data | 80.00 % | 10.00 | 3.8 | 77.38 %, 38.0 |
-| FileExchange | 76.92 % | 6.92 | 3.6 | 76.92 %, 31.8 |
+| FileExchange | 76.98 % | 6.98 | 3.6 | 76.92 %, 31.8 |
 | Archival | 79.90 % (74.49) | 9.90 | 7.9 | never finished (OOM) |
 | Analyzers | 77.37 % (72.55) | 7.37 | 3.4 | 72.55 %, 5.4 |
 | Jobs | 79.39 % (72.52) | 9.39 | 4.2 | never finished (OOM) |

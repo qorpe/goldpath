@@ -988,6 +988,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **FileExchange — a different file under a name already processed is refused, not skipped (#482, threat model
+  T-FXI-04).** The `(rail, file, line)` key held the file's name and a line number, nothing of its content. So a
+  counterparty reusing `daily.csv` had the next day's first lines skipped as "duplicates", visible only as a `skipped`
+  count: silent loss that looked like idempotence. Every processed line is now marked with the SHA-256 (lower-case hex)
+  of its UTF-8 bytes (a line that is not well-formed text, with a lone surrogate, is hashed by its exact UTF-16 code
+  units instead, since the lenient encoder would make every such character the same U+FFFD). Before any line applies, the engine compares every line already processed under `(rail, file)`
+  with the delivered one, and a difference of any byte refuses the WHOLE file: `GoldpathFileRejected` says which line
+  differs and to deliver it under a new name, and nothing applies. Identical bytes still dedup; a fixed quarantined
+  line and appended lines still apply. The check costs no extra ledger reads: the same read tells the run which lines
+  are processed. **Schema:** `GoldpathFileProcessed` gains a nullable `ContentHash` (max 64); a row written before it
+  counts as matching, so an upgrade refuses no redelivery (upgrade guide). **API, additions only:**
+  `IGoldpathFileLedger.GetProcessedHashAsync` and `MarkProcessedWithHashAsync` are default interface members, so a
+  custom ledger still compiles and keeps today's behaviour; the in-memory and EF ledgers implement both. (The decision
+  named a hash-taking `MarkProcessedAsync` overload; PublicApiAnalyzers refuse that shape beside the shipped one with
+  an optional token, RS0026/RS0027, hence the name.) A shorter file whose lines all match is not refused, as it holds
+  nothing unprocessed: open thread T77.
 - **Bulk on Oracle takes a real file: `GoldpathBulkFileChunks.Data` is a `BLOB` there (#559).** The Oracle provider maps an
   unshaped `byte[]` to `RAW(2000)`, and the file store writes chunks of 256 KiB, so every upload above 2,000 bytes failed
   on its first save with ORA-01460 (the finance card's 10k-row file is about 200 KB). `AddGoldpathBulk` now shapes the
