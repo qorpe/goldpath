@@ -77,31 +77,51 @@ within the file" findings.
 - **Validation dominates, upload does not.** The 162 MiB file uploaded in under 10 s; the
   ~12,000 rows/s of validation is the per-row staging write (10M rows → 1.2 GiB of database).
 
-## Oracle column (G7 Oracle 8/12, #556): not measured yet (open-threads T68)
+## Oracle column (G7 Oracle 8/12, #556): 2026-11-26
 
 `GOLDPATH_BENCH_PROVIDER=oracle scripts/bench-bulk.sh` runs the same facts on Oracle: `BulkBenchOracleTests` (the 10k
 intake and the 100k execute) and `BulkIntakeBenchOracleTests` (set `GOLDPATH_BENCH_BULK_INTAKE_ROWS=1000000` for the
-1M-row intake). The image is `gvenzl/oracle-free:23.26.3-slim-faststart` (`OracleFixture.Image`), in the 19c SQL form.
+1M-row intake). Each fact ran alone, one after the other, PostgreSQL first, on the same machine.
 
-**No Oracle number exists yet.** On 2026-11-10 (the overnight sandbox, 4 CPUs, Debug build, `3a75a9c`), both card facts
-failed on their first save:
-`ORA-01460: unimplemented or unreasonable conversion requested`, at `GoldpathBulkFileStore.SaveAsync`.
+**Profile:**
+- Machine: the overnight agent's cloud sandbox, Linux x64, 4 logical CPUs / 15 GB, Docker Engine 29.9.3, with the bench
+  process and the database co-located. This is not the CI reference profile.
+- Build: **Debug**, as `scripts/bench-bulk.sh` runs it.
+- Oracle: Database Free `gvenzl/oracle-free:23.26.3-slim-faststart` (`OracleFixture.Image`), ODP.NET 23.26.301, Oracle EF
+  10.23.26301, in the 19c SQL form.
+- PostgreSQL: `postgres:17-alpine`.
+- Code: `main` at `3403c2c`, with #559's `BLOB` file chunk. No package change.
+- **Run id: none.** These are local runs, one each, with each fact selected by its own `--filter` (the same filters
+  `scripts/bench-bulk.sh` composes).
 
-The cause is in the model, not in the bench:
-- On Oracle, `GoldpathBulkFileChunks.Data` is `RAW(2000)`. The store-type golden `Oracle/composed-model.golden.txt`
-  pins it that way.
-- The file store writes 256 KB chunks.
-- So every upload over 2,000 bytes is refused. The Oracle lane's `BulkOracleTests` uploads files of a few hundred
-  bytes, which is why it stays green.
+| Proof | Budget (§6) | PostgreSQL 17 | Oracle Free 23.26.3 |
+|---|---|---|---|
+| 10k-row CSV: upload → parse → validate → report | < 5 min | **1.84 s** (upload 0.67 s) | **3.23 s** (upload 1.25 s) |
+| 1M-row device list: upload → validate → report (`BulkIntakeBenchTests`, 9,951 repeats) | — | upload 1.1 s, validate 47.8 s, **20,485 rows/s**; peak managed heap 296 MiB, working set 460 MiB, database 131 MiB | upload 1.6 s, validate 81.9 s, **11,981 rows/s**; peak managed heap 207 MiB, working set 398 MiB, schema segments 164 MiB |
+| 100k-row execute, no-op handler (chunk 500) | — (baseline) | **not measured**: see below | **not measured**: see below |
 
-[#559](https://github.com/qorpe/goldpath/issues/559) fixed it: on Oracle the column is now a `BLOB`, the golden pins that,
-and `BulkTests.A_file_larger_than_one_chunk_is_stored_and_read_back_byte_for_byte` stores and reads back a file of more
-than one chunk on both lanes. The 1M-row intake goes through the same store, so it was not run on 2026-11-10; the
-column's numbers are the next Oracle bench run's (T68).
+Both intakes reported the same: 990,049 valid, 9,951 invalid, 9,951 "duplicate of row N within the file" findings.
 
-### What "Reading the numbers" will need to say (oracle RFC §2.6)
+**The 100k execute is not measured on either provider.** On `3403c2c` it does not finish: 60,000 of 100,000 rows after
+21 minutes on PostgreSQL, at about 25 rows/s and slowing, with the test process at one full core and the database idle.
+The same fact on `5411bd9` (the commit before #587) ran in 35.4 s (2,827 rows/s) on this machine. #587 snapshots the
+change tracker for every row, which costs O(tracked entities) per row, and the bench runs every chunk in one context.
+That is [#605](https://github.com/qorpe/goldpath/issues/605). An Oracle number taken now would measure that defect, not
+the provider, so the column waits for #605 (open-threads T68).
 
-The engine writes intake rows through EF batches and `ExecuteUpdate`, with no `COPY` or `SqlBulkCopy`. On Oracle, EF
-batches those inserts with ODP.NET array binding. Now that #559 lets a real file in, the comparison to make is the 10k
-upload, and the 1M intake's rows/s against PostgreSQL's on the same machine. Array binding is what should keep the
-intake within the same order of magnitude. A gap of ten times or more gets its own diagnosis, as #556 asks.
+### Reading the numbers (oracle RFC §2.6)
+
+- **The intake stays within the same order of magnitude on Oracle.** At 1M rows, validation runs at 0.58× PostgreSQL's
+  rate (11,981 against 20,485 rows/s). The engine writes intake rows through EF batches and `ExecuteUpdate`, with no
+  `COPY` or `SqlBulkCopy` on either provider. On Oracle, EF batches the inserts with ODP.NET array binding, and that is
+  what keeps the gap under 2×. The per-row staging write still dominates, as it does on PostgreSQL. Oracle-specific
+  tuning (direct-path loads, partitioning) is out of scope (#287).
+- **The 10k card is 1.8× PostgreSQL's** (3.23 s against 1.84 s), of which upload is 1.25 s against 0.67 s; the file's
+  chunks are a `BLOB` on Oracle and `bytea` on PostgreSQL (#559). Oracle's is still about 90× inside the 5-minute
+  budget.
+- **Memory is the duplicate check's, not the provider's.** The managed peaks are the same order on both, and are set by
+  the 64-bit hash per key (see the 10M section). Oracle's lower peak is within run-to-run noise for a single run and is
+  not a claim. "Schema segments" is `USER_SEGMENTS` for the bench's schema, the nearest Oracle reading to PostgreSQL's
+  database size, and is not the same quantity.
+- **No budget is promised on Oracle** (oracle RFC §6: measured, not promised). The facts assert correctness only: the
+  same valid, invalid and duplicate counts on both providers.

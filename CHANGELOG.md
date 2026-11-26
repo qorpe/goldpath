@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **Bulk's Oracle bench column: the 10k and the 1M-row intake (G7 Oracle 8/12, #556).** Measured on one machine (the
+  overnight sandbox, 4 CPUs, Debug, `3403c2c`) beside PostgreSQL. The 10k intake takes 3.23 s on Oracle against
+  1.84 s. The 1M-row intake validates at 11,981 rows/s against 20,485, with the same 990,049 valid, 9,951 invalid and
+  9,951 duplicate findings. The numbers and their profile are in `packages/Goldpath.Bulk/ops/bulk-benchmarks.md`.
+  The 100k execute is not measured on either provider: on `main` it does not finish, because #587 made each row's
+  execution cost grow with the tracked entities ([#605](https://github.com/qorpe/goldpath/issues/605)). Open-threads
+  T68 now holds only that column. Documentation only; no package change.
 - **Approvals' first benchmark table (G13 Part 1/4, #596).** `ApprovalsBenchTests` (Trait `Category=Bench`, real
   PostgreSQL, run alone in its own collection) measures the public engine on the EF store with 10,000 requests on a
   two-rung ladder: `RequestAsync` 9.5 s (≈1,049/s), `DecideAsync` through a two-signer quorum with four-eyes live
