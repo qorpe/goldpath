@@ -196,6 +196,13 @@ public static class GoldpathBulkModel
         {
             chunk.ToTable("GoldpathBulkFileChunks");
             chunk.HasKey(c => new { c.FileId, c.Index });
+            if (IsOracle(modelBuilder))
+            {
+                // #559: a chunk is up to 256 KiB (GoldpathBulkFileStore.ChunkBytes), and the Oracle provider maps an unbounded
+                // byte[] to RAW(2000), which refuses any chunk above 2,000 bytes (ORA-01460). PostgreSQL's bytea and SQL
+                // Server's varbinary(max) already hold a chunk, so only Oracle is shaped.
+                chunk.Property(c => c.Data).HasColumnType("BLOB");
+            }
         });
 
         modelBuilder.Entity<GoldpathBulkBatch>(batch =>
@@ -233,4 +240,12 @@ public static class GoldpathBulkModel
 
         return modelBuilder;
     }
+
+    /// <summary>
+    /// The Oracle EF provider marks the model it builds with its own annotations (<c>Oracle:…</c>) before
+    /// <c>OnModelCreating</c> runs; nothing else does, so the PostgreSQL, SQL Server and SQLite models never take this path
+    /// (the test the Jobs and Archival models use too).
+    /// </summary>
+    internal static bool IsOracle(ModelBuilder modelBuilder)
+        => modelBuilder.Model.GetAnnotations().Any(a => a.Name.StartsWith("Oracle:", StringComparison.Ordinal));
 }

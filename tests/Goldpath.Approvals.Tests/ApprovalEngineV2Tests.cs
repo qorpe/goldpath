@@ -214,6 +214,126 @@ public class ApprovalEngineV2Tests
     }
 
     [Fact]
+    public async Task A_rejected_request_is_resubmitted_once_the_second_call_is_refused_and_names_the_rework()
+    {
+        // #521: a double click, or a retry after a timeout, used to create a second rework of the same rejection.
+        var (engine, _, events, store) = Build();
+        var request = await engine.RequestAsync("payment-run", "P26-21", 1_000_000m, "maker");
+        await engine.DecideAsync(request.Id, "manager-one", "manager", false, "wrong cost center");
+        var first = await engine.ResubmitAsync(request.Id, "maker");
+
+        var refused = await Assert.ThrowsAnyAsync<InvalidOperationException>(() => engine.ResubmitAsync(request.Id, "maker"));
+
+        Assert.Equal(
+            $"Request '{request.Id}' was already resubmitted as '{first.Id}' — a rejected request is resubmitted once; decide on the rework instead.",
+            refused.Message);
+        Assert.Equal([first.Id], (await store.GetRecentAsync(100)).Where(r => r.SupersedesId == request.Id).Select(r => r.Id));
+        Assert.Equal(["requested", "rejected", "superseded"], (await Reload(store, request.Id)).Trail.Select(t => t.Action));
+        Assert.Single(events.Published, e => e is GoldpathApprovalRequested r && r.ApprovalId != request.Id);
+    }
+
+    [Fact]
+    public async Task On_a_custom_store_with_no_rule_of_its_own_the_trail_still_refuses_a_second_resubmission()
+    {
+        // A store outside the module keeps its own guarantees for two calls AT ONCE; one after the other, the engine's
+        // read of the superseded step holds on any store.
+        var store = new NoRulesStore();
+        var engine = new GoldpathApprovalEngine(Options(), store, new FakeTimeProvider(DateTimeOffset.Parse("2026-11-03T09:00:00Z")),
+            NullLogger<GoldpathApprovalEngine>.Instance);
+        var request = await engine.RequestAsync("payment-run", "P26-22", 1_000_000m, "maker");
+        await engine.DecideAsync(request.Id, "manager-one", "manager", false, "wrong cost center");
+        var first = await engine.ResubmitAsync(request.Id, "maker");
+
+        var refused = await Assert.ThrowsAnyAsync<InvalidOperationException>(() => engine.ResubmitAsync(request.Id, "maker"));
+
+        Assert.Contains($"already resubmitted as '{first.Id}'", refused.Message);
+        Assert.Equal([first.Id], store.Requests.Values.Where(r => r.SupersedesId == request.Id).Select(r => r.Id));
+    }
+
+    [Fact]
+    public async Task A_superseded_step_whose_detail_names_no_rework_still_refuses_and_says_so_without_an_id()
+    {
+        // The step is the refusal, whatever its detail says: a trail edited outside the engine refuses all the same.
+        var store = new NoRulesStore();
+        var engine = new GoldpathApprovalEngine(Options(), store, new FakeTimeProvider(DateTimeOffset.Parse("2026-11-03T09:00:00Z")),
+            NullLogger<GoldpathApprovalEngine>.Instance);
+        var request = await engine.RequestAsync("payment-run", "P26-23", 1_000_000m, "maker");
+        await engine.DecideAsync(request.Id, "manager-one", "manager", false, "wrong cost center");
+        store.Requests[request.Id].Trail.Add(new GoldpathApprovalTrailEntry(DateTimeOffset.Parse("2026-11-03T09:00:00Z"), "maker", "superseded", "resubmitted as not-a-guid"));
+
+        var refused = await Assert.ThrowsAnyAsync<InvalidOperationException>(() => engine.ResubmitAsync(request.Id, "maker"));
+
+        Assert.Equal(
+            $"Request '{request.Id}' was already resubmitted — a rejected request is resubmitted once; decide on the rework instead.",
+            refused.Message);
+        Assert.DoesNotContain(store.Requests.Values, r => r.SupersedesId == request.Id);
+    }
+
+    /// <summary>A store that refuses nothing: no version check, no unique key — what a naive adopter store looks like.</summary>
+    private sealed class NoRulesStore : IGoldpathApprovalStore
+    {
+        public Dictionary<Guid, GoldpathApprovalRequest> Requests { get; } = [];
+
+        private readonly List<GoldpathApprovalSignature> _signatures = [];
+
+        private static GoldpathApprovalRequest Copy(GoldpathApprovalRequest r)
+        {
+            var copy = new GoldpathApprovalRequest
+            {
+                Id = r.Id,
+                Ladder = r.Ladder,
+                Subject = r.Subject,
+                Amount = r.Amount,
+                RequestedBy = r.RequestedBy,
+                RequestedAt = r.RequestedAt,
+                PendingRole = r.PendingRole,
+                PendingSince = r.PendingSince,
+                Status = r.Status,
+                DecidedBy = r.DecidedBy,
+                Reason = r.Reason,
+                SupersedesId = r.SupersedesId,
+            };
+            copy.Trail.AddRange(r.Trail);
+            return copy;
+        }
+
+        public Task AddAsync(GoldpathApprovalRequest request, CancellationToken cancellationToken = default)
+        {
+            Requests[request.Id] = Copy(request);
+            return Task.CompletedTask;
+        }
+
+        public Task<GoldpathApprovalRequest?> GetAsync(Guid id, CancellationToken cancellationToken = default)
+            => Task.FromResult(Requests.TryGetValue(id, out var r) ? Copy(r) : null);
+
+        public Task UpdateAsync(GoldpathApprovalRequest request, CancellationToken cancellationToken = default)
+        {
+            Requests[request.Id] = Copy(request);
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<GoldpathApprovalRequest>> GetPendingAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<GoldpathApprovalRequest>>(Requests.Values.Where(r => r.Status == GoldpathApprovalStatus.Pending).Select(r => Copy(r)).ToList());
+
+        public Task<IReadOnlyList<GoldpathApprovalRequest>> GetRecentAsync(int take, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<GoldpathApprovalRequest>>(Requests.Values.Take(take).Select(r => Copy(r)).ToList());
+
+        public Task AddDelegationAsync(GoldpathApprovalDelegation delegation, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<IReadOnlyList<GoldpathApprovalDelegation>> GetDelegationsAsync(DateTimeOffset now, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<GoldpathApprovalDelegation>>([]);
+
+        public Task AddSignatureAsync(GoldpathApprovalSignature signature, CancellationToken cancellationToken = default)
+        {
+            _signatures.Add(signature);
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<GoldpathApprovalSignature>> GetSignaturesAsync(Guid requestId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<GoldpathApprovalSignature>>(_signatures.Where(s => s.RequestId == requestId).ToList());
+    }
+
+    [Fact]
     public async Task Only_a_rejected_request_may_be_resubmitted()
     {
         var (engine, _, _, _) = Build();
