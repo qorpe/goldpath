@@ -113,6 +113,16 @@ The rest of the run's survivors and uncovered mutants are lines this branch did 
 `MassTransitMessagingEngine.cs`, which diff mode mutates whole: two message strings, a test-hook statement, and
 `"Stryker was here!"` on a refusal text.
 
+**FileExchange was re-measured 2026-11-26** on the #482 branch, after the verifier's finding on #603 moved the content
+check onto the stack (a line hashed only where a hash is needed): a full run of `mutation-gate.sh Goldpath.FileExchange`
+on the local sandbox, 76.98 % → **77.82 %** (269 mutants tested, gate green). One survivor on the new lines was real:
+`HexValue`'s `-1` → `+1` for a non-hex character, which would have let a non-hex character stand for the nibble 1. The
+not-hex fixtures of `A_stored_hash_is_compared_as_a_hash_and_an_unreadable_one_refuses` now replace a real `1` (a letter,
+and a non-ASCII digit), and the mutant planted by hand goes red in both. **Left, equivalent:** `hash[i] >> 4` → `>>>`
+(a byte promoted to a non-negative int); always renting the buffer, and `<=` → `<` on the stack limit (the bytes hashed
+are the same either way, only where they live differs); and dropping the pool `Return` (a buffer not given back, which
+changes no result). The cost itself is held by `A_replay_allocates_no_hash_string_per_line`, not by a mutant.
+
 **FileExchange was re-measured 2026-11-25** on the #482 branch (a processed line keeps its content's hash, and a
 different file under a processed name is refused whole): a full run of `mutation-gate.sh Goldpath.FileExchange` on the
 local sandbox, 76.92 % → **76.98 %** (gate green; 265 mutants tested; 77.10 % before the ill-formed-text branch of
@@ -285,7 +295,7 @@ at f459fe2, so its row carries it (minutes not recorded).
 | ServiceDefaults | 78.48 % (72.15) | 8.48 | 1.4 | 72.15 %, 4.3 |
 | Approvals | 78.54 % (74.84) | 8.54 | 4.3 | 74.84 %, 217.7 |
 | Data | 80.00 % | 10.00 | 3.8 | 77.38 %, 38.0 |
-| FileExchange | 76.98 % | 6.98 | 3.6 | 76.92 %, 31.8 |
+| FileExchange | 77.82 % | 7.82 | 3.6 | 76.92 %, 31.8 |
 | Archival | 79.90 % (74.49) | 9.90 | 7.9 | never finished (OOM) |
 | Analyzers | 77.37 % (72.55) | 7.37 | 3.4 | 72.55 %, 5.4 |
 | Jobs | 79.39 % (72.52) | 9.39 | 4.2 | never finished (OOM) |

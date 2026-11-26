@@ -232,14 +232,15 @@ public class FileRailEngineTests
 
     /// <summary>
     /// What a ledger hands back is compared as a hash, fail-closed: the same SHA-256 in upper case (a ledger or a database
-    /// that folds it) matches, and anything that is not 64 hex digits — truncated, padded, not hex — matches no line, so the
-    /// file is refused rather than skipped.
+    /// that folds it) matches, and anything that is not 64 hex digits — truncated, padded, a letter or a non-ASCII digit
+    /// that is not hex — matches no line, so the file is refused rather than skipped.
     /// </summary>
     [Theory]
     [InlineData("upper", false)]
     [InlineData("truncated", true)]
     [InlineData("padded", true)]
     [InlineData("not-hex", true)]
+    [InlineData("non-ascii-digit", true)]
     public async Task A_stored_hash_is_compared_as_a_hash_and_an_unreadable_one_refuses(string form, bool refused)
     {
         var (engine, ledger, _) = Build();
@@ -249,7 +250,9 @@ public class FileRailEngineTests
             "upper" => hex.ToUpperInvariant(),
             "truncated" => hex[..63],
             "padded" => hex + " ",
-            _ => "g" + hex[1..],
+            // In the place of a real "1", so a non-hex character can match no nibble value, the one it stands for included.
+            "not-hex" => ReplaceFirstOne(hex, 'g'),
+            _ => ReplaceFirstOne(hex, '\u0661'),   // ARABIC-INDIC DIGIT ONE: a digit, but not a hex digit
         };
         await ledger.MarkProcessedWithHashAsync("registry-daily", "daily.csv", 2, stored);
 
@@ -257,6 +260,13 @@ public class FileRailEngineTests
 
         Assert.Equal(refused, result.FileRejectedReason is not null);
         Assert.Equal(refused ? 0 : 2, result.Processed);
+    }
+
+    private static string ReplaceFirstOne(string hex, char with)
+    {
+        var at = hex.IndexOf('1', StringComparison.Ordinal);
+        Assert.True(at >= 0, "the fixture's hash has a '1' to replace");
+        return string.Concat(hex.AsSpan(0, at), with.ToString(), hex.AsSpan(at + 1));
     }
 
     /// <summary>
