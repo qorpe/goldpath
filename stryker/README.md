@@ -113,6 +113,15 @@ The rest of the run's survivors and uncovered mutants are lines this branch did 
 `MassTransitMessagingEngine.cs`, which diff mode mutates whole: two message strings, a test-hook statement, and
 `"Stryker was here!"` on a refusal text.
 
+**Approvals was re-measured 2026-11-26** on the #478 branch, after the verifier's finding on #602 bound the asserted
+role to the pending rung inside the engine on every path: a full run of `mutation-gate.sh Goldpath.Approvals` on the
+local sandbox, 78.43 % → **79.24 %** (407 mutants tested, gate green). **Left on the new lines, both equivalent:** the
+not-held path's `""` decider role → `"Stryker was here!"` in `DecideAssertedAsync` (a role that is not the pending
+rung's decides nothing; only the delegation does, as on the earlier delegate path), and the endpoint's `asserted ?? ""`
+→ `"Stryker was here!"` (a missing role and a role no rung carries are both `WrongRole`, the assertion rule's first
+clause). A first run left the internal entry's unreachable `assertedRole ?? ""` fallbacks uncovered; the parameter is
+non-nullable now, so they are gone rather than excused.
+
 **Approvals was re-measured 2026-11-25** on the #478 branch (the admin surface takes the decider's role from the
 principal; the engine treats a blank role as no role): a full run of `mutation-gate.sh Goldpath.Approvals` on the local
 sandbox, 78.54 % → **78.43 %** (about 4 minutes; 408 mutants tested, gate green). Three runs of the final tree scored
@@ -282,7 +291,7 @@ at f459fe2, so its row carries it (minutes not recorded).
 | Notification | 81.23 % | 11.23 | 5.9 | never finished (OOM) |
 | DataProtection | 78.95 % | 8.95 | 1.5 | 78.95 %, 33.0 |
 | ServiceDefaults | 78.48 % (72.15) | 8.48 | 1.4 | 72.15 %, 4.3 |
-| Approvals | 78.43 % (74.84) | 8.43 | 4.2 | 74.84 %, 217.7 |
+| Approvals | 79.24 % (74.84) | 9.24 | 4.2 | 74.84 %, 217.7 |
 | Data | 80.00 % | 10.00 | 3.8 | 77.38 %, 38.0 |
 | FileExchange | 76.92 % | 6.92 | 3.6 | 76.92 %, 31.8 |
 | Archival | 79.90 % (74.49) | 9.90 | 7.9 | never finished (OOM) |

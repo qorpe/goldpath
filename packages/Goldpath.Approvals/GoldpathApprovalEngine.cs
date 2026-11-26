@@ -193,9 +193,9 @@ public sealed class GoldpathApprovalEngine
     /// again on every fresh read after a lost write race — or the answer is <see cref="GoldpathApprovalDecisionOutcome.WrongRole"/>,
     /// whether the principal holds that role, holds another one, or decides by a delegation.
     /// </summary>
-    internal Task<GoldpathApprovalDecisionOutcome> DecideAssertedAsync(Guid id, string decidedBy, string? assertedRole, bool principalHoldsAsserted,
+    internal Task<GoldpathApprovalDecisionOutcome> DecideAssertedAsync(Guid id, string decidedBy, string assertedRole, bool principalHoldsAsserted,
         bool granted, string reason, CancellationToken cancellationToken)
-        => OnFreshReadAsync(id, () => DecideOnceAsync(id, decidedBy, principalHoldsAsserted ? assertedRole ?? "" : "", assertedRole ?? "",
+        => OnFreshReadAsync(id, () => DecideOnceAsync(id, decidedBy, principalHoldsAsserted ? assertedRole : "", assertedRole,
             granted, reason, cancellationToken));
 
     private async Task<GoldpathApprovalDecisionOutcome> DecideOnceAsync(Guid id, string decidedBy, string deciderRole, string? assertedRole, bool granted,
