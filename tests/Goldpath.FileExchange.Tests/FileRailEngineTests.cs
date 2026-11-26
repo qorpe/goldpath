@@ -213,6 +213,80 @@ public class FileRailEngineTests
     }
 
     /// <summary>
+    /// A line longer than the hash's stack buffer is hashed from a rented one, and is held to the same rule: a change in its
+    /// last character refuses the file, and the same bytes again are skipped (verifier, PR #603: the comparison moved onto
+    /// the stack, so both buffer paths are pinned).
+    /// </summary>
+    [Fact]
+    public async Task A_long_line_is_compared_by_its_whole_content()
+    {
+        var (engine, _, _) = Build();
+        var reference = "R-" + new string('\u00FC', 3000);   // 6,000+ UTF-8 bytes
+        string[] first = ["H;1", reference + ";10.00"];
+        Assert.Equal(1, (await engine.ProcessAsync("registry-daily", "long.csv", first)).Processed);
+
+        Assert.Equal(1, (await engine.ProcessAsync("registry-daily", "long.csv", first)).SkippedAsDuplicate);
+        var refused = await engine.ProcessAsync("registry-daily", "long.csv", ["H;1", reference + ";10.01"]);
+        Assert.StartsWith("Line 2 differs", refused.FileRejectedReason, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// What a ledger hands back is compared as a hash, fail-closed: the same SHA-256 in upper case (a ledger or a database
+    /// that folds it) matches, and anything that is not 64 hex digits — truncated, padded, not hex — matches no line, so the
+    /// file is refused rather than skipped.
+    /// </summary>
+    [Theory]
+    [InlineData("upper", false)]
+    [InlineData("truncated", true)]
+    [InlineData("padded", true)]
+    [InlineData("not-hex", true)]
+    public async Task A_stored_hash_is_compared_as_a_hash_and_an_unreadable_one_refuses(string form, bool refused)
+    {
+        var (engine, ledger, _) = Build();
+        var hex = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(CleanFile[1])));
+        var stored = form switch
+        {
+            "upper" => hex.ToUpperInvariant(),
+            "truncated" => hex[..63],
+            "padded" => hex + " ",
+            _ => "g" + hex[1..],
+        };
+        await ledger.MarkProcessedWithHashAsync("registry-daily", "daily.csv", 2, stored);
+
+        var result = await engine.ProcessAsync("registry-daily", "daily.csv", CleanFile);
+
+        Assert.Equal(refused, result.FileRejectedReason is not null);
+        Assert.Equal(refused ? 0 : 2, result.Processed);
+    }
+
+    /// <summary>
+    /// The cost the content check adds is bounded (verifier, PR #603): a replay of a 20,000-line file, every line skipped,
+    /// allocates under 16 bytes a line on the in-memory ledger — no hash string and no answer object per line. The
+    /// first version hashed every line into strings it kept for the run, about 500 bytes a line (473 MiB over 1M lines).
+    /// </summary>
+    [Fact]
+    public async Task A_replay_allocates_no_hash_string_per_line()
+    {
+        var (engine, _, _) = Build();
+        const int rows = 20_000;
+        var file = new string[rows + 1];
+        file[0] = $"H;{rows}";
+        for (var i = 1; i <= rows; i++)
+        {
+            file[i] = $"A-{i};{i}.00";
+        }
+
+        Assert.Equal(rows, (await engine.ProcessAsync("registry-daily", "big.csv", file)).Processed);
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        var replay = await engine.ProcessAsync("registry-daily", "big.csv", file);
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(rows, replay.SkippedAsDuplicate);
+        Assert.True(allocated < rows * 16L, $"a replay allocated {allocated} bytes, {allocated / rows} a line");
+    }
+
+    /// <summary>
     /// The same class through an ill-formed line: two lines that differ only in a lone surrogate, which a lenient UTF-8
     /// encoder turns into the same U+FFFD, and a lone surrogate against U+FFFD itself. Built in code, not as theory
     /// data, because the test runner's serialization of theory data would turn both lone surrogates into U+FFFD first.

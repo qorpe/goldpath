@@ -119,15 +119,21 @@ public sealed class GoldpathFileRailEngine
         // "duplicates" — silent loss that looks like idempotence. So the whole file is refused, naming the first line that
         // differs, and nothing of it applies. A stored hash that is unknown ("": marked before the upgrade, or by a ledger
         // that keeps none) counts as matching, so an upgrade does not refuse every redelivery. The same read tells the loop
-        // below which lines are processed, so a run reads the ledger once per line, as it always has.
-        var hashes = new string[lines.Count];
-        var stored = new string?[lines.Count];
+        // below which lines are processed, so a run reads the ledger once per line, as it always has. A line is hashed only
+        // where a hash is needed — to compare with a stored one here, or to be stored once it applies — and the comparison
+        // runs on the stack, so a line nobody processed, or one quarantined, costs no hash, and the run keeps one flag per
+        // line rather than any string (verifier, PR #603: hashing every line had made a 1M-line replay allocate 473 MiB).
+        var alreadyProcessed = new bool[lines.Count];
         for (var i = rail.HeaderLines; i < lines.Count; i++)
         {
             var lineNo = i + 1;   // 1-based, matches what operators see in the file
-            hashes[i] = HashOf(lines[i]);
-            stored[i] = await _ledger.GetProcessedHashAsync(rail.Name, file, lineNo, cancellationToken);
-            if (stored[i] is { Length: > 0 } known && !string.Equals(known, hashes[i], StringComparison.OrdinalIgnoreCase))
+            if (await _ledger.GetProcessedHashAsync(rail.Name, file, lineNo, cancellationToken) is not { } known)
+            {
+                continue;
+            }
+
+            alreadyProcessed[i] = true;
+            if (known.Length > 0 && !HashMatches(lines[i], known))
             {
                 var changed = $"Line {lineNo} differs from the line already processed under this file name: this is a different file "
                     + "delivered under a name the rail has already ingested, so nothing of it was applied. Deliver it under a new name.";
@@ -148,7 +154,7 @@ public sealed class GoldpathFileRailEngine
         for (var i = rail.HeaderLines; i < lines.Count; i++)
         {
             var lineNo = i + 1;   // 1-based, matches what operators see in the file
-            if (stored[i] is not null)
+            if (alreadyProcessed[i])
             {
                 skipped++;
                 continue;
@@ -161,7 +167,7 @@ public sealed class GoldpathFileRailEngine
                 continue;   // the batch does NOT stop — quarantine is per row
             }
 
-            await _ledger.MarkProcessedWithHashAsync(rail.Name, file, lineNo, hashes[i], cancellationToken);
+            await _ledger.MarkProcessedWithHashAsync(rail.Name, file, lineNo, HashOf(lines[i]), cancellationToken);
             await _ledger.ReleaseQuarantineAsync(rail.Name, file, lineNo, cancellationToken);
             processed++;
         }
@@ -185,18 +191,69 @@ public sealed class GoldpathFileRailEngine
     /// </summary>
     internal static string HashOf(string line)
     {
-        byte[] bytes;
+        Span<byte> hash = stackalloc byte[HashBytes];
+        HashInto(line, hash);
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Whether <paramref name="line"/> hashes to <paramref name="storedHex"/> (hex, either case) — compared on the stack, with
+    /// no string built. Anything that is not 64 hex digits matches no line: an unreadable stored hash refuses, never passes.
+    /// </summary>
+    internal static bool HashMatches(string line, string storedHex)
+    {
+        if (storedHex.Length != HashBytes * 2)
+        {
+            return false;
+        }
+
+        Span<byte> hash = stackalloc byte[HashBytes];
+        HashInto(line, hash);
+        for (var i = 0; i < HashBytes; i++)
+        {
+            if (HexValue(storedHex[2 * i]) != hash[i] >> 4 || HexValue(storedHex[(2 * i) + 1]) != (hash[i] & 0xF))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static void HashInto(string line, Span<byte> hash)
+    {
+        var max = StrictUtf8.GetMaxByteCount(line.Length);
+        byte[]? rented = null;
+        Span<byte> buffer = max <= StackLimit ? stackalloc byte[StackLimit] : (rented = System.Buffers.ArrayPool<byte>.Shared.Rent(max));
         try
         {
-            bytes = StrictUtf8.GetBytes(line);
+            var written = StrictUtf8.GetBytes(line, buffer);
+            SHA256.HashData(buffer[..written], hash);
         }
         catch (EncoderFallbackException)
         {
-            bytes = [0xFF, .. System.Runtime.InteropServices.MemoryMarshal.AsBytes(line.AsSpan())];
+            byte[] bytes = [0xFF, .. System.Runtime.InteropServices.MemoryMarshal.AsBytes(line.AsSpan())];
+            SHA256.HashData(bytes, hash);
         }
-
-        return Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        finally
+        {
+            if (rented is not null)
+            {
+                System.Buffers.ArrayPool<byte>.Shared.Return(rented);
+            }
+        }
     }
+
+    private static int HexValue(char c) => c switch
+    {
+        >= '0' and <= '9' => c - '0',
+        >= 'a' and <= 'f' => c - 'a' + 10,
+        >= 'A' and <= 'F' => c - 'A' + 10,
+        _ => -1,
+    };
+
+    private const int HashBytes = 32;
+    private const int StackLimit = 1024;
 
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
@@ -211,7 +268,11 @@ public sealed class GoldpathInMemoryFileLedger : IGoldpathFileLedger, IGoldpathF
     private readonly object _gate = new();
     private readonly TimeProvider _clock;
     // The processed rows and the content hash each was marked with ("" when marked without one).
-    private readonly Dictionary<(string Rail, string File, int Line), string> _processed = [];
+    // The stored hash is kept as the completed task the read answers with, so a replay — one read per line — allocates
+    // nothing per line (verifier, PR #603).
+    private readonly Dictionary<(string Rail, string File, int Line), Task<string?>> _processed = [];
+    private static readonly Task<string?> NoHash = Task.FromResult<string?>("");
+    private static readonly Task<string?> NotProcessed = Task.FromResult<string?>(null);
     private readonly Dictionary<(string Rail, string File, int Line), (string Reason, DateTimeOffset At)> _quarantine = [];
     private readonly Dictionary<(string Rail, string File), DateTimeOffset> _archived = [];
 
@@ -237,7 +298,7 @@ public sealed class GoldpathInMemoryFileLedger : IGoldpathFileLedger, IGoldpathF
     {
         lock (_gate)
         {
-            _processed.TryAdd((rail, file, line), "");
+            _processed.TryAdd((rail, file, line), NoHash);
         }
 
         return Task.CompletedTask;
@@ -248,7 +309,7 @@ public sealed class GoldpathInMemoryFileLedger : IGoldpathFileLedger, IGoldpathF
     {
         lock (_gate)
         {
-            return Task.FromResult(_processed.TryGetValue((rail, file, line), out var hash) ? hash : null);
+            return _processed.TryGetValue((rail, file, line), out var hash) ? hash : NotProcessed;
         }
     }
 
@@ -258,7 +319,7 @@ public sealed class GoldpathInMemoryFileLedger : IGoldpathFileLedger, IGoldpathF
         lock (_gate)
         {
             // A row is marked once, as in the database ledger (its key refuses a second insert): the first hash stands.
-            _processed.TryAdd((rail, file, line), contentHash);
+            _processed.TryAdd((rail, file, line), Task.FromResult<string?>(contentHash));
         }
 
         return Task.CompletedTask;

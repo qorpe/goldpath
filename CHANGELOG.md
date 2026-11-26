@@ -1003,7 +1003,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   custom ledger still compiles and keeps today's behaviour; the in-memory and EF ledgers implement both. (The decision
   named a hash-taking `MarkProcessedAsync` overload; PublicApiAnalyzers refuse that shape beside the shipped one with
   an optional token, RS0026/RS0027, hence the name.) A shorter file whose lines all match is not refused, as it holds
-  nothing unprocessed: open thread T77.
+  nothing unprocessed: open thread T77. **Cost:** a line is hashed only where a hash is needed — compared, on the stack,
+  with a stored one, or stored once it applies — so a replay hashes each processed line (the comparison itself) and
+  allocates nothing per line on the in-memory ledger (`A_replay_allocates_no_hash_string_per_line`; a 1M-line replay,
+  4-core sandbox, Release, 2026-11-26: 0 MiB, ~1.9 s, against `main`'s 0 MiB and ~0.2 s, the hashing being the price of
+  comparing content). A first run allocates a stored hash per applied line (472 MiB over 1M lines, against 252 MiB).
 - **Bulk on Oracle takes a real file: `GoldpathBulkFileChunks.Data` is a `BLOB` there (#559).** The Oracle provider maps an
   unshaped `byte[]` to `RAW(2000)`, and the file store writes chunks of 256 KiB, so every upload above 2,000 bytes failed
   on its first save with ORA-01460 (the finance card's 10k-row file is about 200 KB). `AddGoldpathBulk` now shapes the
