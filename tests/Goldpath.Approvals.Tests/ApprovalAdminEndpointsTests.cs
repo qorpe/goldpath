@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace Goldpath.Approvals.Tests;
@@ -25,11 +26,15 @@ public sealed class ApprovalAdminEndpointsTests : IAsyncDisposable
     private readonly HttpClient _client;
     private readonly GoldpathApprovalEngine _engine;
 
+    // A clock the escalation fact can move; it still advances on every read, so the host's own ordering holds.
+    private readonly FakeTimeProvider _clock = new(DateTimeOffset.UtcNow) { AutoAdvanceAmount = TimeSpan.FromMilliseconds(1) };
+
     public ApprovalAdminEndpointsTests()
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
         builder.Services.AddLogging();
+        builder.Services.AddSingleton<TimeProvider>(_clock);
         builder.AddGoldpathApprovals(approvals => approvals
             .AddLadder("credit-limit", l => l
                 .Rung("expert", 1_000_000m, TimeSpan.FromHours(8))
@@ -248,6 +253,55 @@ public sealed class ApprovalAdminEndpointsTests : IAsyncDisposable
         Assert.Equal(HttpStatusCode.OK, reasoned.StatusCode);
         var rejected = await _client.GetFromJsonAsync<JsonElement>($"/goldpath/admin/approvals/requests/{other.Id}");
         Assert.Equal("collateral missing", rejected.GetProperty("request").GetProperty("reason").GetString());
+    }
+
+    /// <summary>
+    /// The assertion binds on EVERY path, the held-role one included (verifier, PR #602): a principal holding another rung's
+    /// role, with a delegation for the pending rung, names the role it holds — WrongRole, with nothing on the trail, on
+    /// both verbs, although the delegation would admit it to the pending rung. Naming the pending rung, it decides by the
+    /// delegation, and the decision is recorded under the rung it named.
+    /// </summary>
+    [Theory]
+    [InlineData("approve")]
+    [InlineData("reject")]
+    public async Task A_held_role_of_another_rung_does_not_decide_the_rung_a_delegation_covers(string verb)
+    {
+        await _engine.DelegateRoleAsync("expert-user", "expert", "stand-in", TimeSpan.FromHours(1));
+        var request = await _engine.RequestAsync("credit-limit", $"K-{Guid.NewGuid():N}", 500_000m, "maker");   // the expert rung
+
+        var refused = await PostAsync($"/goldpath/admin/approvals/requests/{request.Id}/{verb}",
+            new { role = "general-manager", reason = "held" }, user: "stand-in", roles: "general-manager");
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+        Assert.Equal("WrongRole", (await refused.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("message").GetString());
+        var pending = await _client.GetFromJsonAsync<JsonElement>($"/goldpath/admin/approvals/requests/{request.Id}");
+        Assert.Equal("Pending", pending.GetProperty("request").GetProperty("status").GetString());
+        Assert.Equal(1, pending.GetProperty("trail").GetArrayLength());
+
+        var applied = await PostAsync($"/goldpath/admin/approvals/requests/{request.Id}/{verb}",
+            new { role = "expert", reason = "standing in" }, user: "stand-in", roles: "general-manager");
+        Assert.Equal(HttpStatusCode.OK, applied.StatusCode);
+    }
+
+    /// <summary>
+    /// The rung the caller looked at is not the rung it decides: once the request escalates, an assertion naming the rung it
+    /// escalated FROM is WrongRole — though the principal holds that role and a delegation covers the new rung — because the
+    /// engine judges the assertion on the read it decides on. Naming the new rung, the delegation decides it.
+    /// </summary>
+    [Fact]
+    public async Task An_assertion_of_the_rung_a_request_escalated_from_is_refused()
+    {
+        await _engine.DelegateRoleAsync("gm-user", "general-manager", "checker", TimeSpan.FromDays(2));
+        var request = await _engine.RequestAsync("credit-limit", $"K-{Guid.NewGuid():N}", 500_000m, "maker");   // the expert rung
+        _clock.Advance(TimeSpan.FromHours(9));
+        Assert.Equal(1, await _engine.EscalateOverdueAsync());
+
+        var stale = await PostAsync($"/goldpath/admin/approvals/requests/{request.Id}/approve",
+            new { role = "expert", reason = "looked earlier" }, user: "checker", roles: "expert");
+        Assert.Equal("WrongRole", (await stale.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("message").GetString());
+
+        var applied = await PostAsync($"/goldpath/admin/approvals/requests/{request.Id}/approve",
+            new { role = "general-manager", reason = "the rung it is on" }, user: "checker", roles: "expert");
+        Assert.Equal(HttpStatusCode.OK, applied.StatusCode);
     }
 
     private async Task<HttpResponseMessage> PostAsync(string path, object body, string? user = null, string roles = "")

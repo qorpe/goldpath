@@ -42,17 +42,17 @@ public static class GoldpathApprovalsAdminEndpoints
             => await admin.GetRequestAsync(id, ct) is { } detail ? Results.Ok(detail) : Results.NotFound());
 
         group.MapPost("/requests/{id:guid}/approve", (Guid id, GoldpathApprovalDecisionRequest body, HttpContext http,
-            [FromServices] GoldpathApprovalEngine engine, [FromServices] IGoldpathApprovalStore store, CancellationToken ct)
-            => DecideAsync(engine, store, id, http, body, granted: true, ct));
+            [FromServices] GoldpathApprovalEngine engine, CancellationToken ct)
+            => DecideAsync(engine, id, http, body, granted: true, ct));
 
         group.MapPost("/requests/{id:guid}/reject", (Guid id, GoldpathApprovalDecisionRequest body, HttpContext http,
-            [FromServices] GoldpathApprovalEngine engine, [FromServices] IGoldpathApprovalStore store, CancellationToken ct)
-            => DecideAsync(engine, store, id, http, body, granted: false, ct));
+            [FromServices] GoldpathApprovalEngine engine, CancellationToken ct)
+            => DecideAsync(engine, id, http, body, granted: false, ct));
 
         return endpoints;
     }
 
-    private static async Task<IResult> DecideAsync(GoldpathApprovalEngine engine, IGoldpathApprovalStore store, Guid id, HttpContext http,
+    private static async Task<IResult> DecideAsync(GoldpathApprovalEngine engine, Guid id, HttpContext http,
         GoldpathApprovalDecisionRequest body, bool granted, CancellationToken ct)
     {
         // The principal IS the decider — four-eyes needs a real identity to compare with
@@ -61,27 +61,13 @@ public static class GoldpathApprovalsAdminEndpoints
         var decidedBy = http.User.Identity?.Name ?? "anonymous";
 
         // The role is the PRINCIPAL's, never the caller's word (#478, threat model T-APR-03). The body's role is an
-        // assertion, and it must be true twice over: the principal holds it (IsInRole, as the admin floor's RequireRole),
-        // and it is the pending rung's. A held role goes to the engine, which compares it with the rung pending at the
-        // decision itself, so an escalation in between cannot be ridden. A role the principal does not hold never reaches
-        // the engine: the one way left to decide is a delegation the engine holds for this identity, and then the
-        // assertion must still name the pending rung, or the answer is WrongRole like any other wrong role.
+        // assertion, and it must be true twice over: it names the rung pending at the decision itself, and the principal
+        // holds it (IsInRole, as the admin floor's RequireRole) — or a delegation the engine holds for this identity covers
+        // that rung. The engine judges the first on the same read it decides on, on every path, so neither a held other
+        // role, nor a delegation, nor an escalation since the caller looked lets an assertion decide a rung it does not name.
         var asserted = body.Role;
-        GoldpathApprovalDecisionOutcome outcome;
-        if (!string.IsNullOrEmpty(asserted) && http.User.IsInRole(asserted))
-        {
-            outcome = await engine.DecideAsync(id, decidedBy, asserted, granted, body.Reason ?? "", ct);
-        }
-        else if (await store.GetAsync(id, ct) is { Status: GoldpathApprovalStatus.Pending } current
-            && !string.Equals(current.PendingRole, asserted, StringComparison.OrdinalIgnoreCase))
-        {
-            // Compared as the engine compares roles. An unknown or decided request falls through, so the engine names it.
-            outcome = GoldpathApprovalDecisionOutcome.WrongRole;
-        }
-        else
-        {
-            outcome = await engine.DecideAsync(id, decidedBy, "", granted, body.Reason ?? "", ct);
-        }
+        var holds = !string.IsNullOrWhiteSpace(asserted) && http.User.IsInRole(asserted);
+        var outcome = await engine.DecideAssertedAsync(id, decidedBy, asserted ?? "", holds, granted, body.Reason ?? "", ct);
 
         // The frozen verb envelope: Ok carries the applied outcome, a refusal carries the
         // RULE's name as the message — failures speak, never a silent 200 (contract §7.1).

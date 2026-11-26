@@ -184,9 +184,22 @@ public sealed class GoldpathApprovalEngine
     /// decide.</para>
     /// </remarks>
     public Task<GoldpathApprovalDecisionOutcome> DecideAsync(Guid id, string decidedBy, string deciderRole, bool granted, string reason, CancellationToken cancellationToken = default)
-        => OnFreshReadAsync(id, () => DecideOnceAsync(id, decidedBy, deciderRole, granted, reason, cancellationToken));
+        => OnFreshReadAsync(id, () => DecideOnceAsync(id, decidedBy, deciderRole, assertedRole: null, granted, reason, cancellationToken));
 
-    private async Task<GoldpathApprovalDecisionOutcome> DecideOnceAsync(Guid id, string decidedBy, string deciderRole, bool granted, string reason, CancellationToken cancellationToken)
+    /// <summary>
+    /// The admin surface's decision (#478): <paramref name="assertedRole"/> is the caller's word and
+    /// <paramref name="principalHoldsAsserted"/> whether the authenticated principal holds it. One rule on every path:
+    /// the assertion must name the rung pending AT THIS DECISION — judged on the same read the decision is made on, and
+    /// again on every fresh read after a lost write race — or the answer is <see cref="GoldpathApprovalDecisionOutcome.WrongRole"/>,
+    /// whether the principal holds that role, holds another one, or decides by a delegation.
+    /// </summary>
+    internal Task<GoldpathApprovalDecisionOutcome> DecideAssertedAsync(Guid id, string decidedBy, string? assertedRole, bool principalHoldsAsserted,
+        bool granted, string reason, CancellationToken cancellationToken)
+        => OnFreshReadAsync(id, () => DecideOnceAsync(id, decidedBy, principalHoldsAsserted ? assertedRole ?? "" : "", assertedRole ?? "",
+            granted, reason, cancellationToken));
+
+    private async Task<GoldpathApprovalDecisionOutcome> DecideOnceAsync(Guid id, string decidedBy, string deciderRole, string? assertedRole, bool granted,
+        string reason, CancellationToken cancellationToken)
     {
         var request = await _store.GetAsync(id, cancellationToken);
         if (request is null)
@@ -202,6 +215,14 @@ public sealed class GoldpathApprovalEngine
         if (string.Equals(request.RequestedBy, decidedBy, StringComparison.OrdinalIgnoreCase))
         {
             return GoldpathApprovalDecisionOutcome.FourEyesViolation;
+        }
+
+        // An asserted role binds the decision to the rung it names (#478). It is compared with THIS read's pending rung, so
+        // neither a held other role nor a delegation, nor an escalation since the caller looked, lets it decide another rung.
+        if (assertedRole is not null
+            && (string.IsNullOrWhiteSpace(assertedRole) || !string.Equals(request.PendingRole, assertedRole, StringComparison.OrdinalIgnoreCase)))
+        {
+            return GoldpathApprovalDecisionOutcome.WrongRole;
         }
 
         var now = _time.GetUtcNow();

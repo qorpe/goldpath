@@ -993,8 +993,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   to the engine, so any `goldpath-ops` holder could name the top rung of a ladder and grant it. The body's `role` is now
   an assertion: it reaches the engine only when `HttpContext.User.IsInRole(role)` holds (the same check the admin floor's
   `RequireRole` makes), and otherwise the engine is given no role, so the only way left to decide is a delegation the
-  engine holds for the caller's identity — and even then the body's `role` must name the pending rung. The engine still compares that role with the rung pending at the moment of the
-  decision, so an escalation between the two cannot be ridden. A principal without the rung's role that names it gets
+  engine holds for the caller's identity. On every path the body's `role` must name the pending rung, and the engine
+  judges that on the same read it decides on (verifier, PR #602): a principal holding another rung's role cannot ride a
+  delegation by naming the role it holds, and an assertion of the rung a request escalated from is refused. A principal without the rung's role that names it gets
   `WrongRole` and the request stays pending; with the role it applies. Every other spelling of a role the principal
   does not hold — a missing, empty or blank role, another case, a trailing space, a role under a claim type that is not
   the identity's role claim type — is `WrongRole` too (`ApprovalAdminEndpointsTests`). No `PublicAPI` line and no wire

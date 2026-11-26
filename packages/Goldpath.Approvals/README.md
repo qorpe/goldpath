@@ -59,8 +59,8 @@ single-node hosts, a database-backed store composes through the seam.
   it: the worklist with the quorum said as a number, the trail, and decide verbs that run
   the ENGINE unchanged — a refusal answers the rule's name. The role a decider names counts
   only when the signed-in principal holds it (`User.IsInRole`); without it, only a delegation
-  the engine holds for that identity decides, and the named role must still be the pending
-  rung's (#478). Map an identity provider's role names onto rung names in a claims transformation.
+  the engine holds for that identity decides; on every path the named role must be the rung
+  pending at the decision (#478). Map an identity provider's role names onto rung names in a claims transformation.
 - **Metrics** — the `Goldpath.Approvals` meter counts every lifecycle step per ladder;
   the Grafana board ships in `ops/grafana-approvals-dashboard.json`.
 
