@@ -46,6 +46,12 @@ public class CampaignR2Tests : IAsyncLifetime
 
         public static ConcurrentDictionary<int, bool> NeverAnswered { get; } = new();
 
+        /// <summary>The deadline of an acceptance nobody answers: short, so its ACK_TIMEOUT walks the ladder in the test's time.</summary>
+        public static readonly TimeSpan SilentAckDeadline = TimeSpan.FromSeconds(4);
+
+        /// <summary>The deadline of an acceptance the test answers: far beyond any sweep's latency, well inside the fact's 3-minute budget.</summary>
+        public static readonly TimeSpan AnsweredAckDeadline = TimeSpan.FromSeconds(60);
+
         /// <summary>The target system answering at once: set by the test, called before Accepted is returned.</summary>
         public static Func<string, CancellationToken, Task<HttpStatusCode>>? AnswerNow { get; set; }
 
@@ -70,7 +76,11 @@ public class CampaignR2Tests : IAsyncLifetime
                     cancellationToken));
             }
 
-            return GoldpathCampaignActionResult.Accepted(correlation, TimeSpan.FromSeconds(4));
+            // A scripted silence must walk the ladder, so its deadline is short. An acceptance the test answers gets a
+            // deadline its answer cannot miss: with 4 s for all, a slow first sweep of the poller (an Oracle lane on a
+            // hosted runner, #555) let the ack sweep re-execute answered items as ACK_TIMEOUT, which reads as a
+            // double execution but is the ladder working as designed.
+            return GoldpathCampaignActionResult.Accepted(correlation, NeverAnswered.ContainsKey(target.Id) ? SilentAckDeadline : AnsweredAckDeadline);
         }
     }
 
@@ -243,7 +253,13 @@ public class CampaignR2Tests : IAsyncLifetime
         // parking lot or the ack sweep — and each slice's re-count ran against the real store.
         Assert.Equal(0, done.AwaitingAckCount);
         Assert.Equal(40, AckHandler.Executions.Count);
-        Assert.All(AckHandler.Executions.Where(e => e.Key is not (7 or 21)), e => Assert.Equal(1, e.Value));
+        // Exactly once for every item off the ladder. On failure, every item's attempts and correlation, so a double
+        // execution names its path: attempts=1 is an ACK_TIMEOUT retry (timing), attempts=0 would be a second release.
+        Assert.True(AckHandler.Executions.Where(e => e.Key is not (7 or 21)).All(e => e.Value == 1),
+            "executed more than once: " + string.Join(",", AckHandler.Executions.Where(e => e.Key is not (7 or 21) && e.Value > 1).Select(e => e.Key).Order())
+            + "\n" + Dump(campaignId) + "\nevery item:\n" + string.Join("\n", Query(db => db.Set<GoldpathCampaignItem>().AsNoTracking()
+                .Where(i => i.CampaignId == campaignId).OrderBy(i => i.Seq).ToList())
+                .Select(i => $"  #{i.Seq} {i.State} attempts={i.Attempts} code={i.ErrorCode} corr={i.CorrelationId} released={i.ReleasedAt:O} claimed={i.ClaimedAt:O}")));
         Assert.Equal(2, AckHandler.Executions[7]);    // ACK_TIMEOUT → rung one → second attempt succeeded
         Assert.Equal(2, AckHandler.Executions[21]);
         var items = Query(db => db.Set<GoldpathCampaignItem>().AsNoTracking().Where(i => i.CampaignId == campaignId).ToList());
