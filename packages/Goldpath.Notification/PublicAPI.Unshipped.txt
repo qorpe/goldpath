@@ -1,1 +1,3 @@
 #nullable enable
+Goldpath.GoldpathWebhookOptions.AllowInsecureTransport.get -> bool
+Goldpath.GoldpathWebhookOptions.AllowInsecureTransport.set -> void

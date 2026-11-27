@@ -36,7 +36,14 @@ builder.AddGoldpathJobs<WebApplicationBuilder, OrdersDbContext>(jobs =>
 
 // DbContext: modelBuilder.AddGoldpathNotification();  modelBuilder.AddGoldpathJobs();
 // Config:    Goldpath:Notification:Email { Host, Port, UseSsl, User, Password, From }
+//            Goldpath:Notification:Webhook { Url, AllowInsecureTransport }
 ```
+
+Both shipped channels are **secure by default**. Email refuses plaintext SMTP (`UseSsl=false`) unless
+`AllowInsecureTransport=true`. The webhook channel posts only to an absolute `https` URL: an `http`
+URL, loopback included, needs `Goldpath:Notification:Webhook:AllowInsecureTransport=true`, and any
+other scheme is refused either way (#533). The post carries the recipient unmasked and the rendered
+message. The refusal never echoes the URL, since a hub's secret often lives in it.
 
 ## Request (the app never sends directly — GP1601)
 

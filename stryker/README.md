@@ -113,6 +113,11 @@ The rest of the run's survivors and uncovered mutants are lines this branch did 
 `MassTransitMessagingEngine.cs`, which diff mode mutates whole: two message strings, a test-hook statement, and
 `"Stryker was here!"` on a refusal text.
 
+**Notification was re-measured 2026-11-25** on the #533 branch (the webhook channel posts only to an absolute `https`
+URL unless `AllowInsecureTransport` admits `http`): a full run of `mutation-gate.sh Goldpath.Notification` on the local
+sandbox, **84.62 %** (gate green; 364 mutants tested). No mutant on the new lines survived. The last recorded score,
+81.23 %, predates the facts added since; this run does not say which of them moved it.
+
 **Approvals was re-measured again 2026-11-22**, after the verifier's finding on #589 made a resubmission ONE write
 on the built-in stores (the rework and the rejected request's `superseded` step, `IGoldpathApprovalAtomicStore.ResubmitAsync`):
 78.34 % → **78.54 %** (4.3 minutes, the local sandbox; 384 mutants tested). The first run of that change scored
@@ -269,7 +274,7 @@ at f459fe2, so its row carries it (minutes not recorded).
 | Messaging | 82.70 % (86.09) | 12.70 | 99.8 | 80.72 %, 69.4 |
 | AuditTrail | 81.97 % | 11.97 | 5.1 | 81.97 %, 5.7 |
 | MultiTenancy | 81.40 % (72.09) | 11.40 | 6.1 | 75.58 %, 38.5 |
-| Notification | 81.23 % | 11.23 | 5.9 | never finished (OOM) |
+| Notification | 84.62 % | 14.62 | 5.9 | never finished (OOM) |
 | DataProtection | 78.95 % | 8.95 | 1.5 | 78.95 %, 33.0 |
 | ServiceDefaults | 78.48 % (72.15) | 8.48 | 1.4 | 72.15 %, 4.3 |
 | Approvals | 78.54 % (74.84) | 8.54 | 4.3 | 74.84 %, 217.7 |
