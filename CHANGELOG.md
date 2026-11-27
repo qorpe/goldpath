@@ -20,6 +20,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   sandbox, not CI) and how to read them are in `packages/Goldpath.Approvals/ops/approvals-benchmarks.md`; no budget
   is declared, so none is asserted. `scripts/bench-approvals.sh` refuses a run that printed no line for one of the
   four proofs. The monthly `bench.yml` picks the class up unchanged.
+- **One support policy page (G18 Part 1/3, #591).** Docs and a gate; no package change.
+  - `docs/guide/support-policy.md` gathers which versions receive fixes (quoting versioning D3), the security response
+    targets (linked to SECURITY.md's table, not copied), the engines and databases supported today with each row's
+    evidence, the `[Experimental]` surfaces (none marked yet; #400 marks them) and how to ask for a backport. It decides
+    nothing. `README.md`, `docs/guide/README.md`, SECURITY.md "Supported versions" and the production runbook link it.
+  - `scripts/docs-freshness.sh` now fails on a link to a heading the target does not have, not only on a missing file.
+    It reads inline links (with a `"…"`, `'…'` or `(…)` title, in the angle form, after leading whitespace), same-file
+    `#…`, reference definitions and HTML `href` in either quote; outside code, a `](` or `href=` it cannot parse is
+    refused rather than skipped. A heading's id follows GitHub's rendered text (ATX and one-line setext headings, emphasis
+    delimiters removed while `snake_case` keeps its underscore, code spans literal, entities decoded, duplicates
+    suffixed); headings and ids inside a code fence (closed only by an equal or longer run, open to the end of the file
+    when unclosed) or an HTML comment are not anchors. A fragment is accepted only where it can prove it lands (such a
+    heading, an `id`/`name` attribute of a markdown file, a GitHub line anchor on any other file) and refused otherwise,
+    including a heading this model does not cover (a multi-line setext paragraph). Its new `--selftest` checks 18
+    heading ids against the ids GitHub renders and plants 34 broken links, failing unless each is caught; CI runs it in
+    `gates`.
 - **A production runbook for adopters (G18 Part 2/3, #592).** `docs/guide/production.md` takes a generated app from the
   AppHost to an environment: the deploy shape (`goldpath export compose` is the development tier, and Kubernetes
   manifests are not built, open thread T73), migration bundles applied once per release before the app starts, the
@@ -995,17 +1011,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **Security — the Notification webhook channel refuses a plaintext URL unless opted in (#533, threat model
+  T-NTF-07).** The email channel has refused plaintext SMTP without `AllowInsecureTransport` since audit A3. The webhook
+  channel posted to `Goldpath:Notification:Webhook:Url` whatever its scheme, and the JSON carries the recipient
+  unmasked, the rendered subject and body, the attachment names and the correlation id. It now posts only to an
+  absolute `https` URL. `GoldpathWebhookOptions.AllowInsecureTransport` (new, default `false`) admits `http` and
+  nothing else, with no loopback exemption, by the owner's decision. Every other spelling (a relative URL, a file path,
+  `ws:`, `wss:`, `ftp:`, `javascript:`, blank) is refused at send in words naming the key, and the URL is never
+  echoed, since a hub's secret is often in it. **Upgrade note:** an `http://` hook stops sending until it opts in (upgrade
+  guide). Public API: additions only.
 - **Bulk's execute is linear again: a row no longer pays for what the context already tracks (#605).** Since #587 every
   row snapshotted the change tracker before its handler ran, which ran `DetectChanges` over every tracked entity. The
   100k-row bench, which executes every chunk in one scope, went from 35.4 s to not finishing in 21 minutes. The engine
   now records what a row's handler starts tracking as EF raises `ChangeTracker.Tracked`, O(1) per entity. A failed
   row's work is still left out of the chunk's save: what it added, attached or loaded, plus what a detection inside the
-  row found joined to those entities by a foreign key (a child, an existing row moved under it, a many-to-many join, a
-  new principal). An earlier, successful row's entity that the failing row's detection happens to find first is kept.
+  row found joined to those entities by a navigation or a foreign key (a child, a grandchild, an existing row moved under
+  it, a many-to-many join, a new principal). An earlier, successful row's entity that the failing row's detection happens to find first is kept.
   `RowTrackingTests` counts full detections per chunk, so the guard is deterministic: on `main` a 200-row chunk made
   more detections than a 2-row one, both when every row succeeds and when every row fails. The 100k execute is back to
-  29.8 s (≈3,360 rows/s) on PostgreSQL on the same sandbox (`ops/bulk-benchmarks.md`). No public API change. What a failed row did through entries
-  tracked before it is still not undone (open thread T71).
+  29.8 s (≈3,360 rows/s) on PostgreSQL on the same sandbox (`ops/bulk-benchmarks.md`). No public API change. What a
+  failed row did through entries tracked before it is still not undone (open thread T71).
 - **Bulk on Oracle takes a real file: `GoldpathBulkFileChunks.Data` is a `BLOB` there (#559).** The Oracle provider maps an
   unshaped `byte[]` to `RAW(2000)`, and the file store writes chunks of 256 KiB, so every upload above 2,000 bytes failed
   on its first save with ORA-01460 (the finance card's 10k-row file is about 200 KB). `AddGoldpathBulk` now shapes the
