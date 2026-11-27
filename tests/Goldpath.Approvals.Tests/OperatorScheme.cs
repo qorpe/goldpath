@@ -23,6 +23,7 @@ internal static class OperatorScheme
 {
     private const string SchemeName = "operator";
     private const string AllTenantsHeader = "X-Test-All-Tenants";
+    private const string RolesHeader = "X-Test-Roles";
 
     public static void Compose(IServiceCollection services, bool multiTenant)
     {
@@ -38,12 +39,18 @@ internal static class OperatorScheme
         }
     }
 
-    public static HttpClient Client(WebApplication app, bool allTenants)
+    /// <summary>A client for the operator; <paramref name="roles"/> are further roles the operator holds (a rung's, #478).</summary>
+    public static HttpClient Client(WebApplication app, bool allTenants, params string[] roles)
     {
         var client = app.GetTestClient();
         if (allTenants)
         {
             client.DefaultRequestHeaders.Add(AllTenantsHeader, "true");
+        }
+
+        if (roles.Length > 0)
+        {
+            client.DefaultRequestHeaders.Add(RolesHeader, string.Join(',', roles));
         }
 
         return client;
@@ -64,6 +71,9 @@ internal static class OperatorScheme
             {
                 claims.Add(new Claim(ClaimTypes.Role, GoldpathPolicies.OpsAllTenants));
             }
+
+            claims.AddRange(Request.Headers[RolesHeader].ToString().Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(role => new Claim(ClaimTypes.Role, role)));
 
             var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, SchemeName));
             return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(principal, SchemeName)));
