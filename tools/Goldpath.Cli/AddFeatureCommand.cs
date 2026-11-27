@@ -131,7 +131,9 @@ public static class AddFeatureCommand
         }
 
         var files = AppFiles.Locate(appRoot);
-        return (manifest, files, FeatureRecipes.Build(feature, AppFacts.Read(files)));
+        var facts = AppFacts.Read(files);
+        facts.RequireWritableProvider("add feature");
+        return (manifest, files, FeatureRecipes.Build(feature, facts));
     }
 
     private static void Apply(RecipePlan plan, AppFiles files, string manifest)

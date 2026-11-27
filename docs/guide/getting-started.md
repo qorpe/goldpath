@@ -30,7 +30,8 @@ it rewires nothing; gradual adoption starts there).
 Prefer questions over flags? Bare `goldpath new` runs the WIZARD: say which modules the
 app needs and the infrastructure is derived with its reasons ("no broker needed —
 removed"); it prints the equivalent command and generates through the same flow.
-Shape choices: `--db postgresql|sqlserver`, `--broker rabbitmq|none`,
+Shape choices: `--db postgresql|sqlserver|oracle` (`oracle` takes `--broker none` only, until
+the messaging engine has an Oracle outbox store), `--broker rabbitmq|none`,
 `--auth openid|apikey|none`, `--layout vertical-slice|clean-architecture`, and thirteen
 `--features` (run `dotnet new goldpath-solution -h`). Grow the solution with
 `goldpath new service <Name>` (a service head with its OWN database and manifest) and

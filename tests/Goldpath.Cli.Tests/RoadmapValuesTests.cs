@@ -33,20 +33,27 @@ public class RoadmapValuesTests
             .Select(l => l["# expect-warning: ".Length..].Trim())
             .Order(StringComparer.Ordinal);
 
-        var found = RoadmapValues.Find(ShippedSchema(), ArtefactYaml.Parse(text))
+        var manifest = ArtefactYaml.Parse(text);
+        var found = RoadmapValues.Find(ShippedSchema(), manifest)
             .Select(f => $"{f.Path}: {f.Value}")
+            .Concat(UnprovenCombinations.Find(manifest).Select(f => $"{f.Id} {f.Path}: {f.Value}"))
             .Order(StringComparer.Ordinal);
 
         Assert.Equal(expected, found);
     }
 
-    /// <summary>The four values G3 names, and `oracle` until #287 retires its annotation, each have a corpus row.</summary>
+    /// <summary>
+    /// The four values G3 names each have a corpus row, and so does the one unproven combination
+    /// (Oracle with the default broker, GPC0001). `providers.db: oracle` left this list when the
+    /// template wired it (#412): its annotation is gone, and the corpus test above now proves that
+    /// m9 warns about the combination and NOT about the value.
+    /// </summary>
     [Theory]
     [InlineData("providers.broker: kafka")]
     [InlineData("providers.broker: inmemory")]
     [InlineData("observability.exporters[1]: prometheus")]
     [InlineData("features.auditTrail.store: eventstream")]
-    [InlineData("providers.db: oracle")]
+    [InlineData("GPC0001 providers.db+providers.broker: oracle+rabbitmq")]
     public void Each_roadmap_only_value_has_a_corpus_row(string expected)
     {
         var rows = Directory.EnumerateFiles(Path.Combine(RepoRoot(), "schemas", "manifest", "v1", "corpus", "valid"))
