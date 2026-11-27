@@ -244,6 +244,8 @@ alone. The nightly GmOffline shape proves it: [air-gapped install](../ops/air-ga
 
 ## Where next
 
-- [Support policy and versioning](../rfc/goldpath-versioning.md): what a version promises.
+- [Support policy](support-policy.md): which versions get fixes, the security response targets and the
+  engines and databases supported today.
+- [Versioning](../rfc/goldpath-versioning.md): what a version promises.
 - [Upgrade guides](../upgrades/): one per train.
 - [Release checklist](../ops/release-checklist.md): how a train is cut, if you mirror it.
