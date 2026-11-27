@@ -995,6 +995,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **Bulk's execute is linear again: a row no longer pays for what the context already tracks (#605).** Since #587 every
+  row snapshotted the change tracker before its handler ran, which ran `DetectChanges` over every tracked entity. The
+  100k-row bench, which executes every chunk in one scope, went from 35.4 s to not finishing in 21 minutes. The engine
+  now records what a row's handler starts tracking as EF raises `ChangeTracker.Tracked`, O(1) per entity. A failed
+  row's work is still left out of the chunk's save: what it added, attached or loaded, plus what a detection inside the
+  row found joined to those entities by a foreign key (a child, an existing row moved under it, a many-to-many join, a
+  new principal). An earlier, successful row's entity that the failing row's detection happens to find first is kept.
+  `RowTrackingTests` counts full detections per chunk, so the guard is deterministic: on `main` a 200-row chunk made
+  more detections than a 2-row one, both when every row succeeds and when every row fails. The 100k execute is back to
+  29.8 s (≈3,360 rows/s) on PostgreSQL on the same sandbox (`ops/bulk-benchmarks.md`). No public API change. What a failed row did through entries
+  tracked before it is still not undone (open thread T71).
 - **Bulk on Oracle takes a real file: `GoldpathBulkFileChunks.Data` is a `BLOB` there (#559).** The Oracle provider maps an
   unshaped `byte[]` to `RAW(2000)`, and the file store writes chunks of 256 KiB, so every upload above 2,000 bytes failed
   on its first save with ORA-01460 (the finance card's 10k-row file is about 200 KB). `AddGoldpathBulk` now shapes the

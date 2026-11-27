@@ -159,6 +159,27 @@ effect on a real Oracle is proven by `ArchivalOracleTests` instead, outside this
 - **One survivor, equivalent:** the chain state's `ToTable("GoldpathArchiveChainState")` removed. EF's default table
   name for an entity with no `DbSet` is its class name, which is the same string.
 
+**Bulk in diff mode, 2026-11-27** (#605, `GOLDPATH_MUTATE_SINCE=origin/main`, the overnight sandbox; the full run stays
+the authoritative score, so the table below is unchanged): 88.30 % on the changed files, gate green. In the new
+`BulkRowTracking.cs`, 42 mutants are killed, 3 time out and 11 survive, plus 1 with no coverage. Every survivor was
+read, and none hides a behaviour the tests leave open:
+- **Five on the event subscriptions.** Dropping the `DetectingAllChanges` subscription survives: in a full scan, EF
+  also raises `DetectingEntityChanges` for every entry, so the window is open either way. Doubling a subscription in
+  `Dispose` survives too, because unsubscribing `Tracked` alone stops the recording (`A_disposed_recorder_records_nothing_more`).
+- **`pending.Count >= 0`.** The loop ends on `grew == false` anyway.
+- **`Current`'s shared-type branch always false.** Here a join entry is still tracked when it is read, so
+  `db.Entry` finds it. The branch is for one EF has already cascade-detached.
+- **`Any` → `All` twice in `Points`.** These model types have at most one populated navigation.
+- **The `null` navigation arm** has no coverage, and the **principal-type check** is equivalent here, because two
+  entities' Guid keys never collide.
+- **`Math.Max` → `Math.Min`** on the window counter. The events in these runs are never nested deeper than one.
+
+Every load-bearing piece goes red when removed. The PR's "Reproduce" table lists them: the per-row snapshot (the guard),
+the direct/discovered split, the window's close, both link directions, the key-value comparison, the second fixpoint
+pass, the per-row clear and the reference match. The three survivors in `GoldpathBulkEngine.cs` are on lines the
+re-indentation touched and the change did not alter: the tenant-refusal `failed++`, the shutdown `throw;` and the
+`GoldpathBulkMetrics.Executed` call.
+
 **Bulk in diff mode, 2026-11-18** (#539, `GOLDPATH_MUTATE_SINCE=origin/main`, the local sandbox; the full run stays
 the authoritative score, so the table below is unchanged): 90.91 % (275 mutants). Every mutant on the lines the change
 touched is killed: `BatchTenant` (4 mutants) and the tenant scopes, the tracked-entity snapshot and `Untrack` in
