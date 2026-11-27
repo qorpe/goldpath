@@ -73,6 +73,61 @@ public class NewSolutionOracleTests
         Assert.Equal(["new", "goldpath-solution", "-n", "Shop", "--db", db], runner.Calls[0].Arguments);
     }
 
+    /// <summary>
+    /// <c>dotnet new</c> expands any token starting with <c>@</c> into a response file's contents,
+    /// wherever it stands, and the guard does not read files: so every such token is refused
+    /// before anything runs, whatever the database. That is fail-closed rather than "refuse an rsp
+    /// that says oracle", so a file the guard never opens cannot carry the combination past it.
+    /// </summary>
+    public static TheoryData<string[]> ResponseFileShapes() => new()
+    {
+        new[] { "@a.rsp" },
+        new[] { "--db", "oracle", "--broker", "none", "@a.rsp" },
+        new[] { "--db", "postgresql", "@a.rsp" },
+        new[] { "--description", "@notes.rsp" },
+        new[] { "@" },
+        new[] { "@/tmp/" + new string('x', 5000) + ".rsp" },
+    };
+
+    [Theory]
+    [MemberData(nameof(ResponseFileShapes))]
+    public void A_response_file_is_refused_and_nothing_runs(string[] flags)
+    {
+        var runner = new FakeProcessRunner();
+        var error = new StringWriter();
+
+        var exit = CliRunner.Run(["new", "solution", "-n", "Shop", .. flags], runner, TextWriter.Null, error);
+
+        Assert.Equal(2, exit);
+        Assert.Empty(runner.Calls);
+        Assert.Contains("does not read a response file", error.ToString(), StringComparison.Ordinal);
+        Assert.Contains("--db and --broker on the command line", error.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(new string('x', 65), error.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_response_file_that_says_oracle_is_refused_even_though_it_exists()
+    {
+        // The verifier's probe P1: a real file holding "--db oracle" (dotnet new would expand it
+        // into an Oracle app on the default rabbitmq broker). Refused, never opened, nothing runs.
+        var directory = Directory.CreateTempSubdirectory("goldpath-rsp-");
+        try
+        {
+            var rsp = Path.Combine(directory.FullName, "a.rsp");
+            File.WriteAllText(rsp, "--db\noracle\n");
+            var runner = new FakeProcessRunner();
+
+            var exit = CliRunner.Run(["new", "solution", "-n", "Shop", "@" + rsp], runner, TextWriter.Null, TextWriter.Null);
+
+            Assert.Equal(2, exit);
+            Assert.Empty(runner.Calls);
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
+
     [Fact]
     public void A_name_that_reads_oracle_is_not_a_database_choice()
     {

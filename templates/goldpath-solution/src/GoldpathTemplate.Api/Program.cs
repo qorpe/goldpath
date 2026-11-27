@@ -390,6 +390,9 @@ if (app.Environment.IsDevelopment() && !isDocGen)
     // on SYS.DBMS_LOCK, which Oracle does not grant to PUBLIC), and it is session-owned: it dies
     // with this connection, crash included. The first replica creates the gate table; a replica
     // racing it gets ORA-00955 (the name is taken), which is the table existing, not a failure.
+    // GOLDPATH_DEV_MIGRATE_GATE stays in the Development schema afterwards, empty: that is expected,
+    // it is the gate's own table and no migration owns it. Production applies the bundle and never
+    // creates it.
     await using (var gate = new Oracle.ManagedDataAccess.Client.OracleConnection(db.Database.GetConnectionString()))
     {
         await gate.OpenAsync();

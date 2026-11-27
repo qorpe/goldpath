@@ -17,8 +17,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   which needs no `DBMS_LOCK` grant. `GmOracle` (`--db oracle --broker none --auth none --features bulk --features
   archival`) joins the PR subset. The postgresql and sqlserver outputs are byte-identical to before.
 - **`goldpath new solution --db oracle` refuses without `--broker none` (#412; owner decision 2026-11-25).** It exits
-  2, generates nothing and names `--broker none` and open-threads T16, in every spelling `dotnet new` takes
-  (`--db oracle`, `--db=oracle`, `--db:oracle` and the `-db` alias); a broker that does not read as `none` is refused too.
+  2, generates nothing and names `--broker none` and open-threads T16, in every command-line spelling `dotnet new`
+  takes (`--db oracle`, `--db=oracle`, `--db:oracle` and the `-db` alias); a broker that does not read as `none` is
+  refused too. A response file (`@file`, which `dotnet new` would expand unseen) is refused for every `new solution`,
+  whatever the database: the pairing is checked only on arguments the CLI can read. `GmOracleCleanLocking`
+  (`--db oracle --broker none --auth none --layout clean-architecture --features locking`) runs nightly, so the
+  clean-architecture and Oracle-locking branches of the template have a shape that goes red.
 - **`goldpath check` reports `db: oracle` with a broker as `GPC0001` (#412; Oracle RFC §3).** A warning after
   validate, like the roadmap-value warning: an absent broker is the schema's default `rabbitmq`, and only `none` is
   clean. Corpus `m9` now expects it and `m10` (`oracle` + `none`) expects nothing.

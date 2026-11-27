@@ -33,6 +33,13 @@ shapes:
   - name: GmOracle
     args: "--db oracle --broker none --auth none --features bulk --features archival"
     pr: true
+  # The two Oracle branches GmOracle does not render (verifier on #608): the clean layout, where
+  # Infrastructure carries the Oracle provider refs and OrdersDbContextFactory's UseOracle(), and
+  # locking on Oracle (Goldpath.Locking.Oracle in both csproj files, AddGoldpathOracleLocking,
+  # manifest provider: oracle, the drift row). Nightly: GmOracle already makes the provider a
+  # PR-time condition, and this shape keeps the branches it does not reach from rotting silently.
+  - name: GmOracleCleanLocking
+    args: "--db oracle --broker none --auth none --layout clean-architecture --features locking"
   # The clean layout on the DEFAULT providers (postgres + broker + auth) with a
   # module that maps an authed admin surface: the Application project consumes
   # through the seam (ADR-0013), and Infrastructure lifts EF Design's vulnerable

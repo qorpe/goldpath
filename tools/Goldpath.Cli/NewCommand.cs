@@ -122,10 +122,19 @@ public static class NewCommand
     /// broker is <c>rabbitmq</c>, so a bare <c>--db oracle</c> would land on exactly that
     /// unproven combination. Owner decision 2026-11-25 (#412): refuse and generate nothing,
     /// rather than switch the broker default by database. Fail-closed: the broker must READ as
-    /// <c>none</c> in a spelling this method recognises; any other spelling is refused too.
+    /// <c>none</c> in a spelling this method recognises; any other spelling is refused too. And
+    /// the arguments must all be ON the command line: <c>dotnet new</c> expands a token starting
+    /// with <c>@</c> into a response file's contents, wherever it stands, which this method does
+    /// not read, so any such token is refused before the database is even looked at.
     /// </summary>
     private static void RefuseOracleWithBroker(IReadOnlyList<string> rest)
     {
+        if (rest.FirstOrDefault(token => token.StartsWith('@')) is { } responseFile)
+        {
+            throw new CliUsageException(
+                $"goldpath new solution does not read a response file ('{(responseFile.Length > 64 ? responseFile[..64] + "…" : responseFile)}'): the database/broker pairing is checked before anything is generated, so pass --db and --broker on the command line. Nothing was generated.");
+        }
+
         var db = TemplateOptionValues(rest, "--db", "-db");
         if (!db.Any(value => string.Equals(value, "oracle", StringComparison.OrdinalIgnoreCase)))
         {
