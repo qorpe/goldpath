@@ -84,7 +84,11 @@ public abstract class NotificationFacts : IAsyncLifetime
                 e.UseSsl = false;
                 e.AllowInsecureTransport = true;
             });
-            notification.Webhook(w => w.Url = "http://127.0.0.1:9/refuses");   // port 9: the poisoned hook
+            notification.Webhook(w =>
+            {
+                w.Url = "http://127.0.0.1:9/refuses";   // port 9: the poisoned hook
+                w.AllowInsecureTransport = true;        // a loopback test hook speaks plaintext: an explicit opt-in (#533)
+            });
             notification.AddTemplate("policy-renewal", t => t
                 .Channel("email", c => c
                     .Subject("tr", "Poliçeniz {{PolicyNo}} yenilenmek üzere")

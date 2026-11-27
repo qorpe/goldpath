@@ -236,7 +236,11 @@ static async Task RunConsoleHostAsync(
     {
         notification.MaxAttempts = 1;
         notification.RetryDelay = TimeSpan.FromMilliseconds(100);
-        notification.Webhook(w => w.Url = $"{url.TrimEnd('/')}/smoke/hook");
+        notification.Webhook(w =>
+        {
+            w.Url = $"{url.TrimEnd('/')}/smoke/hook";
+            w.AllowInsecureTransport = true;   // the smoke host's own hook is plaintext loopback: an explicit opt-in (#533)
+        });
         notification.Email(e =>
         {
             e.Host = "127.0.0.1";

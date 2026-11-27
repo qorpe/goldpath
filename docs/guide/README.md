@@ -17,7 +17,10 @@ exist per module — this guide is the map, not a copy.
 7. **[Production](production.md)** — what a generated app needs before it serves real
    traffic: deploy shape, migration bundles, the auth floor and secrets, observability,
    backup/restore, worker scale-out. It names what is not built yet.
-8. **Proof stories** — why the claims hold: [No double payment under kill -9](../stories/kill9-no-double-payment.md).
+8. **[Support policy](support-policy.md)** — which versions get fixes, the security
+   response targets, the engines and databases supported today, the `[Experimental]`
+   surfaces, and how to ask for a backport; every fact linked to the document that owns it.
+9. **Proof stories** — why the claims hold: [No double payment under kill -9](../stories/kill9-no-double-payment.md).
 
 Operating depth (already written, linked from the concepts): the
 [migrations runbook](../ops/migrations-runbook.md), the
