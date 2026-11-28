@@ -1030,6 +1030,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **docs-freshness no longer reads a footnote as a link, or cuts a destination at its first `)` (#595).** Gate only; no
+  package change. A GitHub footnote definition (`[^1]: The footnote text`, up to three leading spaces) matched the
+  reference-definition pattern #591 added, so its first word was checked as a link target: the first footnote anyone
+  wrote in `docs/` would have failed `gates` naming a "link" `The`. It is now prose, and a link inside its text
+  (`[^1]: see [the guide](missing.md)`) is still checked as an inline link; a bare `[^]:`, which is no footnote, is still
+  read as a definition. A bare destination with balanced parentheses (`p(1).md`, `#a(b)`, `?q=(1)#frag`) is read whole,
+  one level deep, where it was reported as a missing `p(1`, or read without its fragment, which let
+  `target.md?q=(1)#no-such-anchor` pass. A deeper or unbalanced nesting matches no link, so the gate refuses it as a
+  link it cannot read. The selftest's clean fixture gains footnote references and definitions and the parenthesised
+  spellings; eight new planted links are each caught (42 in all), and every new fixture is red with `main`'s patterns.
+  A third member of the class, a `[name]: target` line continuing a paragraph, still fails red with a misleading
+  message (open thread T79).
 - **Security — the Notification webhook channel refuses a plaintext URL unless opted in (#533, threat model
   T-NTF-07).** The email channel has refused plaintext SMTP without `AllowInsecureTransport` since audit A3. The webhook
   channel posted to `Goldpath:Notification:Webhook:Url` whatever its scheme, and the JSON carries the recipient
