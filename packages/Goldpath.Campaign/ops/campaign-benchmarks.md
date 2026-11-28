@@ -194,6 +194,55 @@ system's, in one query a tick. `TickQueryCountTests` pins 8.
   - Whether S-FLEET-02a's "zero windows above 1000" means wall-clock seconds, and so a smoother pacer, or seconds of
     ticks, is the owner's question in open-threads T67.
 
+## Oracle column (G7 Oracle 8/12 Part 2/2, #557): 2026-11-12
+
+`GOLDPATH_BENCH_PROVIDER=oracle scripts/bench-campaign.sh all` runs `CampaignBenchOracleTests` and
+`CampaignPacerEnumerationBenchOracleTests`: the same four facts, each on a fresh schema of the Oracle collection's pinned
+container. `enum` runs the enumeration leg alone. `broker`, `smoke` and `fleet02` are refused on Oracle in words, because
+they need a broker-on shape that Oracle does not have before G5 (#415, owner decision 2026-10-23). PostgreSQL ran the same
+facts on the same machine the same night, one after the other, so the two columns are comparable. The columns above are
+not.
+
+**Reference profile:** the overnight agent's cloud sandbox, Linux x64, 4 logical CPUs / 15 GB, Docker Engine 29.9, the
+bench process and the database co-located. **Debug build**, as `scripts/bench-campaign.sh` runs. Oracle Database Free
+`gvenzl/oracle-free:23.26.3-slim-faststart` (`OracleFixture.Image`), ODP.NET 23.26.301 and Oracle EF 10.23.26301, in the
+19c SQL form; PostgreSQL `postgres:17-alpine`. **Code:** `agent/557-campaign-oracle-benches` at `a326f1c` (no package
+change). **Run id: none.** These are one local run each. The Oracle `all` run takes about six minutes end to end,
+container start included.
+
+| Proof | Budget (§6) | PostgreSQL 17 | Oracle Free 23.26.3 |
+|---|---|---|---|
+| Enumeration: 1M targets materialized (the engine loop) | minutes, not hours | **53.7 s = 18,636 rows/s** | **117.4 s = 8,516 rows/s** |
+| Pacer: configured 200 TPS over 15 s | ±5% steady-state | **166.7 released/s** (2,500 items) | **166.7 released/s** (2,500 items) |
+| LIVE throttle: 200 → 50 TPS mid-run, the next 15 s | within one tick | **50.8 released/s** | **50.0 released/s** |
+| Outcome sink: 100k outcomes, batches of 200 | set-based writes | **9.1 s = 10,997 outcomes/s** | **7.9 s = 12,627 outcomes/s** |
+| **S-FLEET-02's enumeration leg** (#288): 1M targets through the pacer, package defaults | — | **56.0 s = 17,868 rows/s**, 1 slice; items 81 MiB + indexes 65 MiB (152 B/item); leader peak 156 / 348 MiB | **122.3 s = 8,177 rows/s**, 3 slices; items 72 MiB + indexes 167 MiB (251 B/item); leader peak 179 / 402 MiB |
+
+No budget is promised on Oracle (oracle RFC §6: measured, not promised). The Oracle facts assert correctness and print
+their numbers: every target enumerated, every outcome counted, and the throttled phase slower than the first. Only
+PostgreSQL's facts assert the precision band.
+
+### Reading the numbers
+
+- **Enumeration on Oracle runs at about half PostgreSQL's rate on one machine**, through the engine loop (8,516 against
+  18,636 rows/s) and through the pacer (8,177 against 17,868). That is not an order of magnitude. At that rate a 30M
+  snapshot through the pacer would take about an hour on this profile, against 37 minutes for 35M on PostgreSQL (#288
+  above). S-FLEET-02's enumeration leg on Oracle is therefore measured at 1M, the size #288 used. A 30M or 35M run on
+  Oracle is not taken here, for time: this sandbox runs one unit at a time overnight.
+- **The governor holds on Oracle as it does on PostgreSQL.** Both measured 166.7 released/s at 200 TPS: 2,500 items in
+  15 s, the same cold-start-limited window the PostgreSQL rows above explain. The live throttle took effect within the
+  next slice on both (50.0 and 50.8 released/s).
+- **The PostgreSQL pacer fact misses its own ±10% band on this profile.** 166.7 is below its 180 floor; the CI profile
+  above measured 140. That fact's PostgreSQL code is unchanged by #557, which only moved it onto `SuiteStore`. The
+  undershoot is the CPU-bound side the CI row explains: four CPUs shared with the database. The governor never
+  over-releases.
+- **The outcome sink is as fast on Oracle as on PostgreSQL** (12,627 against 10,997 outcomes/s). These are set-based
+  flushes of 200 outcomes each, so its cost is per statement, not per row.
+- **Oracle's item table carries larger indexes**: 167 MiB against 65 MiB at 1M, which is 251 against 152 bytes an item in
+  total. The Oracle figure is allocated extents from `USER_SEGMENTS` (the table, its LOB segments, its index segments),
+  which over-counts free space inside an extent. PostgreSQL's is `pg_table_size` + `pg_indexes_size`. The heaps are
+  close (72 against 81 MiB).
+
 ## S-FLEET-04 — pause stops every worker within three seconds (2026-10-23)
 
 `ScenarioFleet04Tests` (#286; not a bench — it runs with the integration suite and asserts the
@@ -348,3 +397,33 @@ same night on the same sandbox, was red on rate as its baseline is: 654.6/s mean
 0 of 120 seconds in band and 0 above the ceiling. Exactly-once held over 79,250 items, and the run reached 179 peak
 concurrent handler calls against a knob of 32. `main`@`259bd53`, before the extraction, gave 649.2/s, p50 647, p95 771,
 max 851, 0 in band and 0 above, with exactly-once over 78,770 items.
+
+## Admin-contract R4.3 — `GET /{id}/outcomes` on a 1M-item campaign (2026-11-11)
+
+The first admin read that scans more than one page (admin-contract R4.3, #296): two grouped counts
+over one campaign's items, `GROUP BY State` and, over the failed items, `GROUP BY ErrorCode`.
+`CampaignBenchTests.Outcomes_on_a_one_million_item_campaign` via `scripts/bench-campaign.sh`
+seeds 1,000,000 items set-based (60% `Succeeded`, 30% `Failed` under 25 codes plus no code, 10%
+`Pending`), runs `ANALYZE`, makes one warm-up call, then times five calls of
+`GoldpathCampaignAdminService.GetOutcomesAsync`.
+
+**Profile:** the overnight agent's cloud sandbox, Linux x64, 4 logical CPUs (Intel Xeon @ 2.10 GHz)
+/ 15 GB, Docker Engine 29.9.2, PostgreSQL 17 (`postgres:17-alpine`) in Testcontainers, co-located.
+Release build. **Commit:** `abbd4c9` (2026-11-11, 21:00 UTC). **Run:** local, `dotnet test tests/Goldpath.IntegrationTests -c
+Release --filter "FullyQualifiedName~CampaignBenchTests.Outcomes_on_a_one_million_item_campaign"`,
+twice.
+
+| Run | Median of 5 | Slowest of 5 |
+|---|---|---|
+| 1 | **104 ms** | 129 ms |
+| 2 | **118 ms** | 124 ms |
+
+- **Against the governor's poll:** R4.3 says that if the call takes longer than the poll interval
+  (5 s), the console polls it less often than the detail. At about 110 ms it does not, so the
+  console may poll both on the same interval.
+- **What it scales with:** the campaign's item count, not the page size. The `(CampaignId, State, …)`
+  indexes serve the campaign predicate; no index was added for it (R3's one-migration rule). The
+  scan grows with the campaign, and no 30M figure is claimed here: it is measured on the S-FLEET-02
+  rig before anyone promises one.
+- **Not measured here:** Oracle, SQL Server, and the CI reference profile.
+

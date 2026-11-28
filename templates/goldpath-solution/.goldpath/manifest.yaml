@@ -50,6 +50,11 @@ features:
     provider: sqlserver
     connectionName: ordersdb
 #endif
+#if (UseLocking && UseOracle)
+  distributedLocking:
+    provider: oracle
+    connectionName: ordersdb
+#endif
 #if (UseArchival)
   archival: true
 #endif

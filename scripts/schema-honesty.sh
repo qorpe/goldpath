@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # An audit (2026-08-09) found the manifest schema accepting five values with no code
 # behind them (db: oracle, broker: kafka|inmemory, exporters: prometheus, auditTrail.store:
-# eventstream). A schema is a PROMISE an adopter reads before they build; accepting a value
+# eventstream). db: oracle left the list when the template wired it (#412, GmOracle); four remain. A schema is a PROMISE an adopter reads before they build; accepting a value
 # that cannot run is the most expensive kind of documentation error.
 #
 # The rule: every such value carries a $comment saying SCHEMA-ONLY / RESERVED and naming
@@ -25,7 +25,6 @@ def declared(comment):
 schema = json.load(open("schemas/manifest/v1/goldpath-manifest.schema.json"))
 defs = schema["$defs"]
 expected = {
-    ("providersFull", "db", "oracle"),
     ("providersFull", "broker", "kafka"),
     ("providersFull", "broker", "inmemory"),
 }

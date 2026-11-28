@@ -45,7 +45,8 @@ public sealed class FakeApp : IDisposable
     /// (clean-architecture, its own project with no packages anchor).
     /// </param>
     /// <param name="smokeTest">Whether the app carries the template's smoke test, generated WITHOUT multitenancy.</param>
-    public FakeApp(bool sqlServer = false, bool cachingWired = false, string kind = "solution", bool jobsWired = false, bool messagingWired = false, bool authWired = false, bool apiKey = false, bool auditTrailWired = false, bool softDeleteWired = false, bool multiTenancyWired = false, bool dataProtectionWired = false, bool lockingWired = false, string? sampleCommand = null, bool smokeTest = false)
+    /// <param name="oracle">The template's <c>--db oracle</c> shape: the Api references <c>Oracle.EntityFrameworkCore</c>.</param>
+    public FakeApp(bool sqlServer = false, bool cachingWired = false, string kind = "solution", bool jobsWired = false, bool messagingWired = false, bool authWired = false, bool apiKey = false, bool auditTrailWired = false, bool softDeleteWired = false, bool multiTenancyWired = false, bool dataProtectionWired = false, bool lockingWired = false, string? sampleCommand = null, bool smokeTest = false, bool oracle = false)
     {
         Root = Path.Combine(Path.GetTempPath(), $"goldpath-cli-test-{Guid.NewGuid():N}");
         Directory.CreateDirectory(Path.Combine(Root, ".goldpath"));
@@ -61,12 +62,12 @@ public sealed class FakeApp : IDisposable
             description: test fixture
             owner: team-shop
             providers:
-              db: {(sqlServer ? "sqlserver" : "postgresql")}
+              db: {(oracle ? "oracle" : sqlServer ? "sqlserver" : "postgresql")}
               broker: none
               auth: none
             """);
 
-        var provider = sqlServer ? "Microsoft.EntityFrameworkCore.SqlServer" : "Npgsql.EntityFrameworkCore.PostgreSQL";
+        var provider = oracle ? "Oracle.EntityFrameworkCore" : sqlServer ? "Microsoft.EntityFrameworkCore.SqlServer" : "Npgsql.EntityFrameworkCore.PostgreSQL";
         File.WriteAllText(ApiProject, $"""
             <Project Sdk="Microsoft.NET.Sdk.Web">
               <ItemGroup>

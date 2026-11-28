@@ -5,6 +5,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **`--db oracle` in the solution template, the GmOracle shape at PR time, and `oracle` off SCHEMA-ONLY (G7 Oracle
+  9/12, #412).** `goldpath-solution` offers `oracle` (Oracle Database 19c+, FUTC-licensed driver). Under it the
+  database-owning project (Api in vertical-slice, Infrastructure in clean-architecture) references
+  `Oracle.EntityFrameworkCore` 10.23.26301 and `Oracle.ManagedDataAccess.Core` 23.26.301; registration and the
+  design-time factory call `UseOracle`; the jobs store is `GoldpathJobStoreProvider.Oracle`; `locking` wires
+  `Goldpath.Locking.Oracle` (`AddGoldpathOracleLocking`, manifest `provider: oracle`, a drift row); and the AppHost
+  runs `Aspire.Hosting.Oracle` 13.6.5 on the pinned `gvenzl/oracle-free:23.26.3-slim-faststart` image, with the app
+  database on the image's `FREEPDB1`. The Development migration gate has an Oracle form: a table lock held in a
+  transaction on a second connection (DDL commits on Oracle, so a lock on the migrating connection would not hold),
+  which needs no `DBMS_LOCK` grant. `GmOracle` (`--db oracle --broker none --auth none --features bulk --features
+  archival`) joins the PR subset. The postgresql and sqlserver outputs are byte-identical to before.
+- **`goldpath new solution --db oracle` refuses without `--broker none` (#412; owner decision 2026-11-25).** It exits
+  2, generates nothing and names `--broker none` and open-threads T16, in every command-line spelling `dotnet new`
+  takes (`--db oracle`, `--db=oracle`, `--db:oracle` and the `-db` alias); a broker that does not read as `none` is
+  refused too. A response file (`@file`, which `dotnet new` would expand unseen) is refused for every `new solution`,
+  whatever the database: the pairing is checked only on arguments the CLI can read. `GmOracleCleanLocking`
+  (`--db oracle --broker none --auth none --layout clean-architecture --features locking`) runs nightly, so the
+  clean-architecture and Oracle-locking branches of the template have a shape that goes red.
+- **`goldpath check` reports `db: oracle` with a broker as `GPC0001` (#412; Oracle RFC §3).** A warning after
+  validate, like the roadmap-value warning: an absent broker is the schema's default `rabbitmq`, and only `none` is
+  clean. Corpus `m9` now expects it and `m10` (`oracle` + `none`) expects nothing.
+- **The manifest schema accepts `features.distributedLocking.provider: oracle`** (additive), the provider the
+  template's Oracle shape writes.
 - **Bulk's Oracle bench column: the 10k and the 1M-row intake (G7 Oracle 8/12, #556).** Measured on one machine (the
   overnight sandbox, 4 CPUs, Debug, `3403c2c`) beside PostgreSQL. The 10k intake takes 3.23 s on Oracle against
   1.84 s. The 1M-row intake validates at 11,981 rows/s against 20,485, with the same 990,049 valid, 9,951 invalid and
@@ -20,6 +43,45 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   sandbox, not CI) and how to read them are in `packages/Goldpath.Approvals/ops/approvals-benchmarks.md`; no budget
   is declared, so none is asserted. `scripts/bench-approvals.sh` refuses a run that printed no line for one of the
   four proofs. The monthly `bench.yml` picks the class up unchanged.
+- **Campaign admin: failures by code with a cursor, and the outcomes aggregate (admin-contract R4.2 + R4.3,
+  #296, slices R4-S3 and R4-S4).** Additive; an R3 client keeps working.
+  - **R4.2:** `GET /goldpath/admin/campaign/{id}/failures?afterSeq=` walks every failed item by keyset on
+    its `Seq` (exclusive; absent or `0` is the first page, as before), and each row carries `errorCode`.
+    `take` keeps its `[1, 500]` clamp.
+  - **R4.3:** `GET /goldpath/admin/campaign/{id}/outcomes` answers `byState` (items per state, empty
+    states omitted), `failedByCode` (at most 20, count descending, code ordinal, no code last among equal
+    counts; the query breaks ties under the provider's bytewise collation, so equal counts straddling
+    the twentieth place are chosen ordinally too) and `failedCodesTruncated`. `404` for an unknown id. It counts and derives nothing.
+  - **API (additive):** `GoldpathCampaignFailedItem.ErrorCode` (init-only), the
+    `GetFailedItemsAsync(id, afterSeq, take, ct)` overload (the shipped one calls it with `afterSeq: 0`),
+    `GetOutcomesAsync`, and the records `GoldpathCampaignOutcomes` and `GoldpathCampaignCodeCount`.
+  - **Measured:** about 110 ms median for `/outcomes` on a 1M-item campaign on PostgreSQL 17
+    (`ops/campaign-benchmarks.md`).
+  - **Proof:** the 1,203-row walk in three pages; the counts and the 25-code truncation; the order on
+    PostgreSQL with an ICU `en-US` collation and on Oracle in a linguistic session (`NLS_SORT = GENERIC_M`),
+    where the database's own order disagrees, including a tie across the twentieth place.
+  - **Not yet:** the console's live governor (R4-S7), which needs the binding constraint on the admin
+    surface (open-threads T69).
+- **The Campaign benches and S-FLEET-02's enumeration leg run on Oracle behind the provider switch (G7 Oracle 8/12,
+  Part 2/2 of #411, #557).** Tests, a script and `bench.yml`; no package change.
+  - `scripts/bench-campaign.sh` takes `GOLDPATH_BENCH_PROVIDER=postgres|oracle`, defaulting to PostgreSQL, whose
+    behaviour and output are unchanged.
+    - With Oracle, `all` runs `CampaignBenchOracleTests` and `CampaignPacerEnumerationBenchOracleTests`, and `enum`
+      runs the enumeration leg alone, on the Oracle collection's pinned container. Both are written once on
+      `SuiteStore`, as #556's are.
+    - `broker`, `smoke` and `fleet02` are refused on Oracle with the reason: they need a broker-on shape, which Oracle
+      does not have before G5 (#415). The script exits 2.
+    - An Oracle run is refused unless every `BENCH-CAMPAIGN` line it printed ends in `provider=oracle`. With the
+      Oracle class wired to PostgreSQL, the script exits 1 and says nothing was measured on Oracle.
+  - Each Oracle twin carries `Category=Bench` and `Category=Oracle`. Listing both per-PR lanes' filters finds no
+    Campaign bench, and the monthly `Category=Bench&Category!=Oracle` set is the four PostgreSQL facts it was.
+  - `bench.yml`'s `provider=oracle` dispatch runs the Campaign benches after Bulk and Jobs, one after another.
+  - On Oracle the facts assert correctness and print their numbers; the pacer's precision band binds PostgreSQL only
+    (oracle RFC §6: measured, not promised).
+  - **Campaign on Oracle** (`ops/campaign-benchmarks.md`, the sandbox, 2026-11-12, PostgreSQL the same night): 1M
+    enumerated at 8,516 rows/s (engine loop) and 8,177 rows/s through the pacer, against PostgreSQL's 18,636 and
+    17,868. The pacer holds 166.7/s at 200 TPS on both, the live throttle bites within a slice (50.0 against 50.8),
+    and the 100k sink flushes at 12,627 against 10,997 outcomes/s.
 - **Campaign: the ceiling verbs — an operator changes a target system's or the global ceiling live, audited, from
   the API or the governor (R3-S9, #318; admin-contract R4.5).**
   - `GoldpathCampaignAdminService` gains `GetCeilingsAsync`, `ThrottleCeilingAsync` and `GetCeilingAuditAsync`, with
@@ -907,6 +969,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
 ### Changed
+- **The verbs that infer an app's provider refuse an Oracle app in words (#412).** `goldpath add feature`,
+  `goldpath add worker` and `goldpath new service` read anything that was not PostgreSQL as SQL Server (or the
+  reverse), so on an app generated with `--db oracle` they would have written another provider's code into it. They
+  now accept only PostgreSQL, SQL Server or no provider and refuse any other, touching no file, until ORA-10
+  ([#413](https://github.com/qorpe/goldpath/issues/413)) teaches them Oracle.
+- **`providers.db: oracle` is no longer SCHEMA-ONLY.** Its `$comment` says it is wired with `broker: none`;
+  `schema-honesty.sh` no longer expects the annotation, and `goldpath check` no longer warns about the value alone.
 - **T1 is closed: the console driving CorPay has its first green night (GA gate G11 met, #325).** Ledgers only; no
   package change. The `corpay-console-smoke` nightly job passed 4 of 4 specs on 2026-11-10 (nightly run 154,
   [job](https://github.com/qorpe/goldpath/actions/runs/42789231201/job/129738098092)), the first night after #540 merged, and on every nightly since. open-threads moves T1 to Closed
@@ -1038,6 +1107,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **docs-freshness no longer reads a footnote as a link, or cuts a destination at its first `)` (#595).** Gate only; no
+  package change. A GitHub footnote definition (`[^1]: The footnote text`, up to three leading spaces) matched the
+  reference-definition pattern #591 added, so its first word was checked as a link target: the first footnote anyone
+  wrote in `docs/` would have failed `gates` naming a "link" `The`. It is now prose, and a link inside its text
+  (`[^1]: see [the guide](missing.md)`) is still checked as an inline link; a bare `[^]:`, which is no footnote, is still
+  read as a definition. A bare destination with balanced parentheses (`p(1).md`, `#a(b)`, `?q=(1)#frag`) is read whole,
+  one level deep, where it was reported as a missing `p(1`, or read without its fragment, which let
+  `target.md?q=(1)#no-such-anchor` pass. A deeper or unbalanced nesting matches no link, so the gate refuses it as a
+  link it cannot read. The selftest's clean fixture gains footnote references and definitions and the parenthesised
+  spellings; eight new planted links are each caught (42 in all), and every new fixture is red with `main`'s patterns.
+  A third member of the class, a `[name]: target` line continuing a paragraph, still fails red with a misleading
+  message (open thread T79).
 - **Security — the Notification webhook channel refuses a plaintext URL unless opted in (#533, threat model
   T-NTF-07).** The email channel has refused plaintext SMTP without `AllowInsecureTransport` since audit A3. The webhook
   channel posted to `Goldpath:Notification:Webhook:Url` whatever its scheme, and the JSON carries the recipient

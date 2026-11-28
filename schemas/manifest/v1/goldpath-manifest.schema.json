@@ -326,7 +326,7 @@
             "oracle"
           ],
           "default": "postgresql",
-          "$comment": "postgresql and sqlserver are WIRED (template + GM matrix). `oracle` is SCHEMA-ONLY — accepted here so a manifest can declare intent, but no EF provider ships (open thread T16: the first committed Oracle-mandating adopter). Declaring it does not make it run."
+          "$comment": "postgresql and sqlserver are WIRED (template + GM matrix). oracle is WIRED with broker: none (template --db oracle, GmOracle); an Oracle app with a broker waits for the messaging engine's Oracle outbox store (open thread T16), and `goldpath check` reports that combination as GPC0001."
         },
         "cache": {
           "enum": [
@@ -542,7 +542,8 @@
                   "enum": [
                     "redis",
                     "postgres",
-                    "sqlserver"
+                    "sqlserver",
+                    "oracle"
                   ],
                   "default": "redis"
                 },

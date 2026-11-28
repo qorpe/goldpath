@@ -42,6 +42,12 @@ wiring:
     in: [sqlserver]
     package: Goldpath.Locking.SqlServer
     call: AddGoldpathSqlServerLocking
+#if (UseOracle)
+  - feature: features.distributedLocking.provider
+    in: [oracle]
+    package: Goldpath.Locking.Oracle
+    call: AddGoldpathOracleLocking
+#endif
   # Archival runs ON the jobs module (archival RFC D3): two rows guard both halves, so a
   # manifest that claims archival without the jobs runtime (or vice versa) is a finding.
   - feature: features.archival

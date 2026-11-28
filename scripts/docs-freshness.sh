@@ -18,18 +18,27 @@ from urllib.parse import unquote
 root = sys.argv[1]
 # A link is read in every spelling markdown has for one: inline `](target#frag)` with an
 # optional `"…"`, `'…'` or `(…)` title, the angle form `](<target#frag>)`, a same-file
-# `](#frag)`, a reference definition `[name]: target#frag` and an HTML `href` in either
-# quote. Until #591 only the first was read, and its fragment was thrown away, so a link
-# to a heading that was renamed or never existed passed this gate. FAIL-CLOSED: outside
+# `](#frag)`, a reference definition `[name]: target#frag` (never a footnote's `[^name]:`)
+# and an HTML `href` in either quote. Until #591 only the first was read, and its fragment
+# was thrown away, so a link to a heading that was renamed or never existed passed this
+# gate. FAIL-CLOSED: outside
 # code, every `](` must parse as an inline link and every `href=` as a quoted one; a
 # spelling this gate cannot read is refused rather than skipped, so a spelling nobody has
 # named yet is a red build, not a silent pass.
 TITLE = r"(?:[ \t]+(?:\"[^\"\n]*\"|'[^'\n]*'|\([^)\n]*\)))?"
+# A bare destination may hold parentheses when they balance (`p(1).md`, `#a(b)`), as
+# CommonMark allows; one level is read. A deeper nesting, or an unbalanced one, matches no
+# inline link, so the `](` sweep below refuses it: never a link to a target cut at `)`.
+PAREN = r"\([^()\s]*\)"
 inline = re.compile(
     r"\]\([ \t]*(?:<(?P<at>[^>#?\n]*)(?:\?[^>#\n]*)?(?P<af>#[^>\n]*)?>"
-    r"|(?P<t>[^)\s#?<>]*)(?:\?[^)#\s]*)?(?P<f>#[^)\s]*)?)" + TITLE + r"[ \t]*\)")
+    r"|(?P<t>(?:[^()\s#?<>]|" + PAREN + r")*)(?:\?(?:[^()#\s]|" + PAREN + r")*)?"
+    r"(?P<f>#(?:[^()\s]|" + PAREN + r")*)?)" + TITLE + r"[ \t]*\)")
+# `[^label]: …` is a GitHub footnote definition, not a reference definition: its text is
+# prose, and only the links inside it (read as inline links) are links. A bare `[^]:` is no
+# footnote (its label is empty), so it is still read as a definition.
 refdef = re.compile(
-    r"^[ ]{0,3}\[[^\]\n]+\]:[ \t]*(?:<(?P<at>[^>#?\n]*)(?:\?[^>#\n]*)?(?P<af>#[^>\n]*)?>"
+    r"^[ ]{0,3}\[(?!\^[^\]\n])[^\]\n]+\]:[ \t]*(?:<(?P<at>[^>#?\n]*)(?:\?[^>#\n]*)?(?P<af>#[^>\n]*)?>"
     r"|(?P<t>[^\s#?<>]*)(?:\?[^\s#]*)?(?P<f>#\S*)?)", re.M)
 href = re.compile(r"\bhref=(?P<q>[\"'])(?P<t>[^\"'#?]*)(?:\?[^\"'#]*)?(?P<f>#[^\"']*)?(?P=q)", re.I)
 fence_open = re.compile(r"^[ ]{0,3}(`{3,}|~{3,})(.*)$")
@@ -209,6 +218,7 @@ if sys.argv[2:] == ["--selftest"]:
             "<h2 id=\"html-id\">Shown</h2>": "html-id",
             "<a name='single-quoted'></a>": "single-quoted",
             "<a id=\"explicit\"></a> <a data-id=\"decoy\"></a>": "explicit",
+            "<a id=\"paren(id)\"></a>": "paren(id)",
         }
         open(os.path.join(t, "docs", "target.md"), "w").write(
             "---\ntitle: front matter\n---\n" + "\n\n".join(ids) + "\n\n"
@@ -220,11 +230,17 @@ if sys.argv[2:] == ["--selftest"]:
             "~~~\n## After unclosed\n")
         open(os.path.join(t, "docs", "code.txt"), "w").write("x\n")
         open(os.path.join(t, "docs", "x.md"), "w").write("# X\n")
+        open(os.path.join(t, "docs", "paren(1).md"), "w").write("# Paren\n")
         open(os.path.join(t, "docs", "clean.md"), "w").write(
             "# Clean\n" + " ".join(f"[{n}](target.md#{i})" for n, i in enumerate(ids.values())) + "\n"
             "[a](target.md#after-a-longer-closer) [a2](target.md) [f](#clean) [g](code.txt#L3-L5) [j](https://x/y#z) [s]( target.md#title )\n"
             "[t](target.md#title \"t\") [u](target.md#title 't') [v](target.md#title (t)) [w](<target.md#title>)\n"
             "[h]: target.md#dup\n<a href=\"target.md#title\">i</a> <a href='target.md#title'>i</a>\n"
+            "[p](paren(1).md) [p2](paren(1).md#paren) [p3](target.md?q=(1)#title)\n"
+            "A footnote[^1] and another[^2].\n\n"
+            "[^1]: The footnote text, see the note.\n"
+            "   [^2]: x.md is described here, and [the guide](x.md#x) is linked.\n"
+            "[^long-label]: <nope.md> is prose in a footnote, not a destination.\n"
             "`[not](a link#x)` and `href=nothing`\n"
             "```md\n[k](target.md#fenced-example)\n```\n")
         planted = {
@@ -262,6 +278,14 @@ if sys.argv[2:] == ["--selftest"]:
             "a link this gate cannot read": "[x](target.md#title \"unterminated)",
             "an attribute that only ends in id": "[x](target.md#decoy)",
             "a missing file inside a code fence": "```\n[x](nope.md)\n```",
+            "a link inside a footnote to a missing file": "[^1]: see [the guide](missing.md)",
+            "a link inside an indented footnote to a missing heading": "   [^n]: see [the guide](target.md#no-such-anchor)",
+            "balanced parentheses to a missing file": "[x](nope(1).md)",
+            "balanced parentheses in a fragment to a missing heading": "[x](target.md#a(b))",
+            "parentheses nested deeper than this gate reads": "[x](paren((1)).md)",
+            "unbalanced parentheses in a destination": "[x](paren(1.md)",
+            "a query with parentheses before a missing heading": "[x](target.md?q=(1)#no-such-anchor)",
+            "a reference definition whose label is a bare caret": "[^]: nope.md",
         }
         failed = []
         if check(t, ["docs"]):

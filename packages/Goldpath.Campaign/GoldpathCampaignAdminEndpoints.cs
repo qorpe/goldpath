@@ -46,8 +46,13 @@ public static class GoldpathCampaignAdminEndpoints
 
         // Contract freeze (H8 D1): execution failures answer to ONE noun across modules —
         // `failures` (bulk's `/errors` is the VALIDATION report, a different concept).
-        group.MapGet("/{id:guid}/failures", (Guid id, int? take, [FromServices] GoldpathCampaignAdminService<TContext> admin, CancellationToken ct)
-            => admin.GetFailedItemsAsync(id, take ?? 100, ct));
+        // R4.2: `afterSeq` walks the whole set by keyset (absent or 0 = the first page, as before).
+        group.MapGet("/{id:guid}/failures", (Guid id, long? afterSeq, int? take, [FromServices] GoldpathCampaignAdminService<TContext> admin, CancellationToken ct)
+            => admin.GetFailedItemsAsync(id, afterSeq ?? 0, take ?? 100, ct));
+
+        // R4.3: the one aggregate route — counts by state and by error code; it derives nothing.
+        group.MapGet("/{id:guid}/outcomes", async (Guid id, [FromServices] GoldpathCampaignAdminService<TContext> admin, CancellationToken ct)
+            => await admin.GetOutcomesAsync(id, ct) is { } outcomes ? Results.Ok(outcomes) : Results.NotFound());
 
         group.MapGet("/{id:guid}/audit", (Guid id, int? take, [FromServices] GoldpathCampaignAdminService<TContext> admin, CancellationToken ct)
             => admin.GetAuditAsync(id, take ?? 100, ct));
