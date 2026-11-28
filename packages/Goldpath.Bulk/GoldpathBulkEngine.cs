@@ -465,6 +465,11 @@ public sealed class GoldpathBulkEngine<TContext>
         // The batch's tenant is the ambient tenant for every handler AND for the save that writes what the handlers
         // added (#539): a multi-tenant app's write guard reads it there, and a handler does not wrap itself.
         var pin = BatchTenant.Resolve(services, batch.Tenant);
+
+        // What the CURRENT row's handler starts tracking is recorded as EF raises it, O(1) per entity, so a row never pays
+        // for what the context already tracks (#605): a snapshot of the tracker per row ran DetectChanges over every
+        // tracked entity once per row, quadratic when one context spans chunks.
+        using var rowTracking = new BulkRowTracking(db.ChangeTracker);
         using (BatchTenant.Use(pin.Tenant))
         {
             foreach (var row in fresh)
@@ -481,7 +486,7 @@ public sealed class GoldpathBulkEngine<TContext>
                 }
 
                 var context = new GoldpathBulkRowContext(batchId, row.RowNumber, batch.Tenant, replay: false, services);
-                var tracked = TrackedEntities(db);
+                rowTracking.BeginRow();
                 try
                 {
                     await definition.ExecuteRow(row.Payload, context, cancellationToken);
@@ -496,7 +501,22 @@ public sealed class GoldpathBulkEngine<TContext>
                 {
                     // What the failing row's handler newly started tracking (added or loaded) is not saved with the
                     // chunk. Its changes to entities tracked BEFORE it are not undone (open thread T71).
-                    Untrack(db, tracked);
+                    if (!rowTracking.UntrackRow(db))
+                    {
+                        // Its work cannot be told apart from an earlier row's (#609): nothing the chunk's handlers did so
+                        // far is saved, and every row executed so far goes to the repair queue, named, instead.
+                        BulkRowTracking.RevertChunk(db, entry => entry.Entity is GoldpathBulkRow or GoldpathBulkBatch);
+                        foreach (var done in fresh.TakeWhile(r => !ReferenceEquals(r, row)).Where(r => r.ExecutedAt is not null))
+                        {
+                            done.ExecutedAt = null;
+                            done.FailedAt = _time.GetUtcNow();
+                            executed--;
+                            failed++;
+                            chunk.ReportItemFailure(ItemKey(batchId, done.RowNumber), string.Create(CultureInfo.InvariantCulture,
+                                $"executed, but its changes were not saved: row {row.RowNumber} failed with work that could not be told apart from this row's — confirm the downstream state, then replay"));
+                        }
+                    }
+
                     row.FailedAt = _time.GetUtcNow();
                     failed++;
                     chunk.ReportItemFailure(ItemKey(batchId, row.RowNumber), e.Message);
@@ -565,19 +585,6 @@ public sealed class GoldpathBulkEngine<TContext>
                 .SetProperty(b => b.ExecutedRows, b => b.ExecutedRows + 1)
                 .SetProperty(b => b.FailedRows, b => b.FailedRows - 1), cancellationToken);
         await TryCompleteAsync(db, batchId, cancellationToken);
-    }
-
-    /// <summary>The entities the context tracks now, by reference: what a row's handler adds is what is not in here.</summary>
-    private static HashSet<object> TrackedEntities(TContext db)
-        => db.ChangeTracker.Entries().Select(e => e.Entity).ToHashSet(ReferenceEqualityComparer.Instance);
-
-    /// <summary>Stops tracking every entity that was not in <paramref name="before"/>, so the chunk's save skips it.</summary>
-    private static void Untrack(TContext db, HashSet<object> before)
-    {
-        foreach (var entry in db.ChangeTracker.Entries().Where(e => !before.Contains(e.Entity)).ToList())
-        {
-            entry.State = EntityState.Detached;
-        }
     }
 
     /// <summary>Deletes raw file bytes whose retention elapsed (terminal batches only, D6).</summary>

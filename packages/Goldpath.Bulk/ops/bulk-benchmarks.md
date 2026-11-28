@@ -109,6 +109,13 @@ change tracker for every row, which costs O(tracked entities) per row, and the b
 That is [#605](https://github.com/qorpe/goldpath/issues/605). An Oracle number taken now would measure that defect, not
 the provider, so the column waits for #605 (open-threads T68).
 
+**#605 fixed (2026-11-27): the 100k execute on PostgreSQL is 29.8 s ≈ 3,360 rows/s** again, on the same machine and
+profile as above (Debug, co-located, `postgres:17-alpine`), `scripts/bench-bulk.sh card` on branch
+`agent/605-bulk-tracked-per-row` over `main@fe67a79`. The 10k intake in the same run took 0.48 s. Run id: none (one
+local run). That is the same order as before #587 on this machine (35.4 s on `5411bd9`). The engine now records what a
+row tracks as EF raises it, instead of snapshotting the tracker per row. The Oracle column is still open-threads T68's:
+it is measured once this is on `main`.
+
 ### Reading the numbers (oracle RFC §2.6)
 
 - **The intake stays within the same order of magnitude on Oracle.** At 1M rows, validation runs at 0.58× PostgreSQL's

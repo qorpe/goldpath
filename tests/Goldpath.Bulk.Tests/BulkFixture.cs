@@ -46,7 +46,78 @@ public sealed class BulkTestContext(DbContextOptions<BulkTestContext> options) :
     {
         modelBuilder.AddGoldpathBulk();
         modelBuilder.AddGoldpathJobs();   // adopt/takeover reads the run table
+        modelBuilder.Entity<TrackedLedger>().HasMany(l => l.Entries).WithOne(e => e.Ledger).HasForeignKey(e => e.TrackedLedgerId);
+        modelBuilder.Entity<TrackedInstruction>().HasMany(i => i.Lines).WithOne().HasForeignKey(l => l.TrackedInstructionId);
+        modelBuilder.Entity<TrackedInstruction>().HasMany(i => i.Tags).WithMany().UsingEntity<Dictionary<string, object>>(
+            "TrackedInstructionTag",
+            tag => tag.HasOne<TrackedTag>().WithMany().HasForeignKey("TagId").OnDelete(DeleteBehavior.ClientNoAction),
+            instruction => instruction.HasOne<TrackedInstruction>().WithMany().HasForeignKey("InstructionId")
+                .OnDelete(DeleteBehavior.ClientNoAction));
+        modelBuilder.Entity<TrackedTag>();
+        modelBuilder.Entity<TrackedReceipt>().HasOne<TrackedInstruction>().WithMany().HasForeignKey(r => r.InstructionId);
+        modelBuilder.Entity<TrackedLine>().HasMany(l => l.Notes).WithOne().HasForeignKey(n => n.TrackedLineId);
     }
+}
+
+/// <summary>#605: an entity a test loads BEFORE the execute run, with a collection a row's handler hangs entries on.</summary>
+public sealed class TrackedLedger
+{
+    public Guid Id { get; set; }
+    public List<TrackedEntry> Entries { get; } = [];
+    public List<TrackedReceipt> Receipts { get; } = [];
+}
+
+/// <summary>
+/// #605: hung on a <see cref="TrackedLedger"/>, and naming a <see cref="TrackedInstruction"/> by foreign key ONLY: no
+/// navigation joins the two, so only the key's value says whose it is.
+/// </summary>
+public sealed class TrackedReceipt
+{
+    public Guid Id { get; set; }
+    public Guid TrackedLedgerId { get; set; }
+    public Guid? InstructionId { get; set; }
+}
+
+/// <summary>#605: an entry hung on a <see cref="TrackedLedger"/>'s navigation, never added on its own.</summary>
+public sealed class TrackedEntry
+{
+    public Guid Id { get; set; }
+    public Guid TrackedLedgerId { get; set; }
+    public TrackedLedger? Ledger { get; set; }
+    public string Row { get; set; } = "";
+}
+
+/// <summary>#605: what a row's handler adds; its lines and tags are hung on it after the add.</summary>
+public sealed class TrackedInstruction
+{
+    public Guid Id { get; set; }
+    public string Row { get; set; } = "";
+    public List<TrackedLine> Lines { get; } = [];
+    public List<TrackedTag> Tags { get; } = [];
+}
+
+/// <summary>#605: an OPTIONAL child of a <see cref="TrackedInstruction"/>: EF's cascade does not drop it with its parent.</summary>
+public sealed class TrackedLine
+{
+    public Guid Id { get; set; }
+    public Guid? TrackedInstructionId { get; set; }
+    public List<TrackedNote> Notes { get; } = [];
+}
+
+/// <summary>#605: an optional child of a <see cref="TrackedLine"/>: a grandchild of the row's instruction.</summary>
+public sealed class TrackedNote
+{
+    public Guid Id { get; set; }
+    public Guid? TrackedLineId { get; set; }
+}
+
+/// <summary>
+/// #605: loaded before the run; a row links its instruction to it many-to-many. The join entity has no navigation and
+/// no cascade (<see cref="DeleteBehavior.ClientNoAction"/>), so only the engine can leave a failed row's join out.
+/// </summary>
+public sealed class TrackedTag
+{
+    public Guid Id { get; set; }
 }
 
 public sealed class BulkFixture : IDisposable

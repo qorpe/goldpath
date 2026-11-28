@@ -1148,6 +1148,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   `ws:`, `wss:`, `ftp:`, `javascript:`, blank) is refused at send in words naming the key, and the URL is never
   echoed, since a hub's secret is often in it. **Upgrade note:** an `http://` hook stops sending until it opts in (upgrade
   guide). Public API: additions only.
+- **Bulk's execute is linear again: a row no longer pays for what the context already tracks (#605).** Since #587 every
+  row snapshotted the change tracker before its handler ran, which ran `DetectChanges` over every tracked entity. The
+  100k-row bench, which executes every chunk in one scope, went from 35.4 s to not finishing in 21 minutes. The engine
+  now records what a row's handler starts tracking as EF raises `ChangeTracker.Tracked`, O(1) per entity. A failed
+  row's work is still left out of the chunk's save: what it added, attached or loaded, plus what a detection inside the
+  row found joined by a navigation or a foreign key to an entity the row CREATED (a child, a grandchild, an existing row
+  moved under it, a many-to-many join, a new principal). A new entity hung on what the failing row only loaded or
+  attached (a child, a grandchild) is left out too, when nothing outside the row links to it. When something outside the
+  row does — an earlier, successful row's entity that names or hangs on what the failing row loaded looks exactly like
+  the failing row's own insert — the engine does not guess (#609, owner decision B): the chunk's save is refused. Every
+  change the chunk's handlers made so far is undone, and every row of the chunk executed so far is stamped failed and
+  reported to the repair queue as "executed, but its changes were not saved … confirm the downstream state, then
+  replay"; the rows after it run as usual. A failed row never has an insert committed by this path, and an executed
+  row's write is never silently dropped.
+  `RowTrackingTests` counts full detections per chunk, so the guard is deterministic: on `main` a 200-row chunk made
+  more detections than a 2-row one, both when every row succeeds and when every row fails. The 100k execute is back to
+  29.8 s (≈3,360 rows/s) on PostgreSQL on the same sandbox (`ops/bulk-benchmarks.md`). No public API change. What a
+  failed row did through entries tracked before it is still not undone (open thread T71).
 - **Security — the Approvals admin surface takes the decider's role from the principal, not the body (#478,
   threat model T-APR-03).** `POST /goldpath/admin/approvals/requests/{id}/approve|reject` used to hand the body's `role`
   to the engine, so any `goldpath-ops` holder could name the top rung of a ladder and grant it. The body's `role` is now
