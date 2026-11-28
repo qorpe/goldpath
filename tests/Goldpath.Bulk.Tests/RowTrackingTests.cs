@@ -342,33 +342,50 @@ public sealed class RowTrackingTests : IDisposable
         Assert.Equal("E1", Assert.Single(tagged).Row);
         Assert.Equal(1, tagged[0].Tags);
     }
+
     /// <summary>
-    /// #609: an entity the failing row did not CREATE is never the anchor that makes another entity the failing row's.
-    /// E1 succeeds by hanging a receipt that names an existing instruction by foreign key on a ledger tracked before the
-    /// run, and nothing detects it. E2 brings that instruction into the tracker (by a query, by <c>Attach</c>, or by
-    /// <c>Update</c>), detects, and fails: E1's receipt must still be saved, since E1 is executed.
+    /// #609, owner decision (B): when what a failing row's detection finds is linked to an entity that row only brought
+    /// into the tracker AND to something outside the row, an earlier row's write and the failing row's insert look the
+    /// same, so the engine does not guess: the chunk's save is refused. E1 succeeds: it renames an instruction tracked
+    /// before the run and hangs, undetected, a receipt naming another instruction on a ledger tracked before the run. E2
+    /// brings that instruction in (by a query, by <c>Attach</c>, or by <c>Update</c>), detects, and fails. Nothing E1 or
+    /// E2 did is saved — neither E1's receipt, its rename nor its delete — E1 is filed for repair, never silently
+    /// dropped, and E3, after the refusal, is executed and saved.
     /// </summary>
     [Theory]
     [InlineData("load")]
     [InlineData("attach")]
     [InlineData("update")]
-    public async Task An_earlier_rows_entity_naming_one_the_failing_row_only_brought_into_the_tracker_is_still_saved(string how)
+    public async Task An_ambiguous_failing_row_refuses_the_chunks_save_and_files_the_executed_rows_for_repair(string how)
     {
         var ledgerId = Guid.NewGuid();
         var instructionId = Guid.NewGuid();
+        var renamedId = Guid.NewGuid();
+        var tagId = Guid.NewGuid();
         _fixture.Mutate(db =>
         {
             db.Add(new TrackedLedger { Id = ledgerId });
             db.Add(new TrackedInstruction { Id = instructionId, Row = "seed" });
+            db.Add(new TrackedInstruction { Id = renamedId, Row = "seed" });
+            db.Add(new TrackedTag { Id = tagId });
         });
-        await ApprovedAsync(("E1", "TR1", "10", null), ("E2", "TR2", "20", "FAIL"));
+        var batch = await ApprovedAsync(("E1", "TR1", "10", null), ("E2", "TR2", "20", "FAIL"), ("E3", "TR3", "30", "LAST"));
         TrackedLedger? ledger = null;
+        TrackedInstruction? renamed = null;
         _fixture.Handler.Probe = (row, context) =>
         {
             var db = context.Services.GetRequiredService<BulkTestContext>();
             if (row.Note is null)
             {
+                renamed!.Row = "E1";                                                          // E1: a change to an entry tracked before it
+                db.Remove(db.Set<TrackedTag>().Single(t => t.Id == tagId));                   // E1: a delete
                 ledger!.Receipts.Add(new TrackedReceipt { InstructionId = instructionId });   // E1: undetected so far
+                return;
+            }
+
+            if (row.Note == "LAST")
+            {
+                db.Add(new TrackedInstruction { Id = Guid.NewGuid(), Row = row.EndToEndId });
                 return;
             }
 
@@ -381,10 +398,78 @@ public sealed class RowTrackingTests : IDisposable
             db.ChangeTracker.DetectChanges();   // E2's detection is the first to find E1's receipt; then E2 fails
         };
 
-        await ExecuteInOneScopeAsync(db => ledger = db.Set<TrackedLedger>().Single(l => l.Id == ledgerId));
+        await ExecuteInOneScopeAsync(db =>
+        {
+            ledger = db.Set<TrackedLedger>().Single(l => l.Id == ledgerId);
+            renamed = db.Set<TrackedInstruction>().Single(i => i.Id == renamedId);
+        });
 
-        var receipt = Assert.Single(_fixture.Query(db => db.Set<TrackedReceipt>().ToList()));
-        Assert.Equal(instructionId, receipt.InstructionId);
-        Assert.Equal(ledgerId, receipt.TrackedLedgerId);
+        Assert.Empty(_fixture.Query(db => db.Set<TrackedReceipt>().ToList()));
+        Assert.Equal("seed", renamed!.Row);   // the refused change is undone in the context too, not only left unsaved
+        Assert.Single(_fixture.Query(db => db.Set<TrackedTag>().Where(t => t.Id == tagId).ToList()));
+        Assert.Equal(["E3", "seed", "seed"], _fixture.Query(db => db.Set<TrackedInstruction>().Select(i => i.Row).OrderBy(r => r).ToList()));
+        var rows = _fixture.Query(db => db.Set<GoldpathBulkRow>().Where(r => r.BatchId == batch.Id).OrderBy(r => r.RowNumber)
+            .Select(r => new { Executed = r.ExecutedAt != null, Failed = r.FailedAt != null }).ToList());
+        Assert.Equal([(false, true), (false, true), (true, false)], rows.Select(r => (r.Executed, r.Failed)));
+        var counters = _fixture.Query(db => db.Set<GoldpathBulkBatch>().Single(b => b.Id == batch.Id));
+        Assert.Equal((1, 2), (counters.ExecutedRows, counters.FailedRows));
+    }
+
+    /// <summary>
+    /// #609, the verifier's V1: a failing row that loads or attaches an instruction and hangs a NEW line on it has that
+    /// line left out, as the per-row snapshot did. Nothing outside the row links to the line, so it cannot be an earlier
+    /// row's, and the chunk is not refused: E1, executed, is saved.
+    /// </summary>
+    [Theory]
+    [InlineData("load")]
+    [InlineData("attach")]
+    public async Task A_failing_rows_new_child_on_an_entity_it_only_brought_into_the_tracker_is_not_saved(string how)
+    {
+        var instructionId = Guid.NewGuid();
+        _fixture.Mutate(db => db.Add(new TrackedInstruction { Id = instructionId, Row = "seed" }));
+        await ApprovedAsync(("E1", "TR1", "10", null), ("E2", "TR2", "20", "FAIL"));
+        _fixture.Handler.Probe = (row, context) =>
+        {
+            var db = context.Services.GetRequiredService<BulkTestContext>();
+            if (row.Note is null)
+            {
+                db.Add(new TrackedInstruction { Id = Guid.NewGuid(), Row = row.EndToEndId });
+                return;
+            }
+
+            var instruction = how == "load"
+                ? db.Set<TrackedInstruction>().Single(i => i.Id == instructionId)
+                : db.Attach(new TrackedInstruction { Id = instructionId, Row = "seed" }).Entity;
+            instruction.Lines.Add(new TrackedLine());
+            db.ChangeTracker.DetectChanges();
+        };
+
+        await ExecuteInOneScopeAsync();
+
+        Assert.Empty(_fixture.Query(db => db.Set<TrackedLine>().ToList()));
+        Assert.Equal(["E1", "seed"], _fixture.Query(db => db.Set<TrackedInstruction>().Select(i => i.Row).OrderBy(r => r).ToList()));
+    }
+
+    /// <summary>
+    /// #609: the same new child, hung one level further down — on a line the failing row loaded with its instruction —
+    /// is left out too: the walk from what the row brought in reaches it through what it already claimed.
+    /// </summary>
+    [Fact]
+    public async Task A_failing_rows_new_grandchild_under_entities_it_only_loaded_is_not_saved()
+    {
+        var instructionId = Guid.NewGuid();
+        _fixture.Mutate(db => db.Add(new TrackedInstruction { Id = instructionId, Row = "seed", Lines = { new TrackedLine() } }));
+        await ApprovedAsync(("E1", "TR1", "10", "FAIL"));
+        _fixture.Handler.Probe = (row, context) =>
+        {
+            var db = context.Services.GetRequiredService<BulkTestContext>();
+            var instruction = db.Set<TrackedInstruction>().Include(i => i.Lines).Single(i => i.Id == instructionId);
+            instruction.Lines[0].Notes.Add(new TrackedNote());
+            db.ChangeTracker.DetectChanges();
+        };
+
+        await ExecuteInOneScopeAsync();
+
+        Assert.Empty(_fixture.Query(db => db.Set<TrackedNote>().ToList()));
     }
 }

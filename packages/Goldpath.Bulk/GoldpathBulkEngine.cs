@@ -501,7 +501,22 @@ public sealed class GoldpathBulkEngine<TContext>
                 {
                     // What the failing row's handler newly started tracking (added or loaded) is not saved with the
                     // chunk. Its changes to entities tracked BEFORE it are not undone (open thread T71).
-                    rowTracking.UntrackRow(db);
+                    if (!rowTracking.UntrackRow(db))
+                    {
+                        // Its work cannot be told apart from an earlier row's (#609): nothing the chunk's handlers did so
+                        // far is saved, and every row executed so far goes to the repair queue, named, instead.
+                        BulkRowTracking.RevertChunk(db, entry => entry.Entity is GoldpathBulkRow or GoldpathBulkBatch);
+                        foreach (var done in fresh.TakeWhile(r => !ReferenceEquals(r, row)).Where(r => r.ExecutedAt is not null))
+                        {
+                            done.ExecutedAt = null;
+                            done.FailedAt = _time.GetUtcNow();
+                            executed--;
+                            failed++;
+                            chunk.ReportItemFailure(ItemKey(batchId, done.RowNumber), string.Create(CultureInfo.InvariantCulture,
+                                $"executed, but its changes were not saved: row {row.RowNumber} failed with work that could not be told apart from this row's — confirm the downstream state, then replay"));
+                        }
+                    }
+
                     row.FailedAt = _time.GetUtcNow();
                     failed++;
                     chunk.ReportItemFailure(ItemKey(batchId, row.RowNumber), e.Message);

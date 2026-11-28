@@ -1026,9 +1026,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   now records what a row's handler starts tracking as EF raises `ChangeTracker.Tracked`, O(1) per entity. A failed
   row's work is still left out of the chunk's save: what it added, attached or loaded, plus what a detection inside the
   row found joined by a navigation or a foreign key to an entity the row CREATED (a child, a grandchild, an existing row
-  moved under it, a many-to-many join, a new principal). An entity the row only loaded, attached or marked for update
-  never makes another entity the row's (#609), so an earlier, successful row's entity that the failing row's detection
-  happens to find first is kept, even when it names what the failing row loaded.
+  moved under it, a many-to-many join, a new principal). A new entity hung on what the failing row only loaded or
+  attached (a child, a grandchild) is left out too, when nothing outside the row links to it. When something outside the
+  row does — an earlier, successful row's entity that names or hangs on what the failing row loaded looks exactly like
+  the failing row's own insert — the engine does not guess (#609, owner decision B): the chunk's save is refused. Every
+  change the chunk's handlers made so far is undone, and every row of the chunk executed so far is stamped failed and
+  reported to the repair queue as "executed, but its changes were not saved … confirm the downstream state, then
+  replay"; the rows after it run as usual. A failed row never has an insert committed by this path, and an executed
+  row's write is never silently dropped.
   `RowTrackingTests` counts full detections per chunk, so the guard is deterministic: on `main` a 200-row chunk made
   more detections than a 2-row one, both when every row succeeds and when every row fails. The 100k execute is back to
   29.8 s (≈3,360 rows/s) on PostgreSQL on the same sandbox (`ops/bulk-benchmarks.md`). No public API change. What a

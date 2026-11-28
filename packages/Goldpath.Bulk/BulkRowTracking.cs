@@ -23,15 +23,18 @@ namespace Goldpath;
 /// <para>
 /// Only an entity the row CREATED may claim another (<c>anchors</c>): one EF began tracking as <see cref="EntityState.Added"/>
 /// and not from a query. An entity the row loaded, attached or marked for update is not the row's work, so it is still
-/// left out itself but never claims a discovered entity: an earlier, successful row's entity may name it by a foreign key
-/// or a navigation, and claiming that would drop an executed row's write (#609). The rule is fail-closed in the direction
-/// that matters: whatever is not known to be the failing row's creation cannot make anything else the failing row's, so
-/// a discovered entity in doubt is saved, never silently dropped. The cost is the other direction: a new child the row
-/// hung on an entity it loaded or attached is saved, the same limit as open thread T71.
+/// left out itself, and an earlier, successful row's entity may name it by a foreign key or hang on it, so it claims a
+/// discovered entity only when nothing outside the row links to that entity: then the entity was not reachable before
+/// the row, it is the row's (a child the row hung on what it loaded), and it is left out, as the per-row snapshot did
+/// (#609). When something outside the row also links to it, the attribution is AMBIGUOUS — an earlier row's write and
+/// this row's insert look the same — and the engine does not guess: <see cref="UntrackRow"/> answers
+/// <see langword="false"/> and the chunk's save is refused (<see cref="RevertChunk"/>), so a failed row never has an
+/// insert committed and an executed row's write is never silently dropped. Finding what is outside enumerates the
+/// tracker, and only a failing row that brought an entity in and has a discovered entity linked to it pays for it.
 /// </para>
 /// <para>
-/// What the row did through entries tracked BEFORE it, including a new entity hung on such an entry's navigation, is
-/// not undone (open thread T71).
+/// What the row did through entries tracked BEFORE it, including a new entity hung on such an entry's navigation that
+/// is linked to nothing the row tracked, is not undone (open thread T71).
 /// </para>
 /// </remarks>
 internal sealed class BulkRowTracking : IDisposable
@@ -62,15 +65,24 @@ internal sealed class BulkRowTracking : IDisposable
         _detecting = 0;
     }
 
-    /// <summary>Stops tracking what the current row owns, so the chunk's save skips it.</summary>
-    public void UntrackRow(DbContext db)
+    /// <summary>
+    /// Stops tracking what the current row owns, so the chunk's save skips it. Answers <see langword="false"/>, and
+    /// untracks nothing, when what the row owns cannot be told apart from work tracked outside it (#609): the caller
+    /// must then refuse the chunk's save.
+    /// </summary>
+    public bool UntrackRow(DbContext db)
     {
         // No detection while the row's entities are read: a detection here would track more, mid-walk.
         var autoDetect = _tracker.AutoDetectChangesEnabled;
         _tracker.AutoDetectChangesEnabled = false;
         try
         {
-            foreach (var recorded in Owned())
+            if (Owned() is not { } owned)
+            {
+                return false;
+            }
+
+            foreach (var recorded in owned)
             {
                 var entry = Current(db, recorded);
                 if (entry.State != EntityState.Detached)
@@ -78,10 +90,37 @@ internal sealed class BulkRowTracking : IDisposable
                     entry.State = EntityState.Detached;
                 }
             }
+
+            return true;
         }
         finally
         {
             _tracker.AutoDetectChangesEnabled = autoDetect;
+        }
+    }
+
+    /// <summary>
+    /// Refuses the chunk's save (#609): every change pending on the context except the engine's own bookkeeping is
+    /// undone: an added entity is untracked, and a modified or deleted one is made unchanged, which EF does by restoring
+    /// its original values. Every change pending here is the chunk's handlers' work, because the claim's save committed
+    /// everything before the first handler ran. The caller then stamps the chunk's executed rows failed, so they reach
+    /// the repair queue. <see cref="ChangeTracker.Entries()"/> detects first, so a new entity hung on a navigation is
+    /// found and untracked too.
+    /// </summary>
+    public static void RevertChunk(DbContext db, Func<EntityEntry, bool> bookkeeping)
+    {
+        foreach (var entry in db.ChangeTracker.Entries().Where(e => !bookkeeping(e)).ToList())
+        {
+            switch (entry.State)
+            {
+                case EntityState.Added:
+                    entry.State = EntityState.Detached;
+                    break;
+                case EntityState.Modified:
+                case EntityState.Deleted:
+                    entry.State = EntityState.Unchanged;
+                    break;
+            }
         }
     }
 
@@ -97,11 +136,12 @@ internal sealed class BulkRowTracking : IDisposable
 
     /// <summary>
     /// The row's direct entities, then every discovered one linked to an anchor, to a fixpoint. The anchors are what
-    /// the row created, then every discovered entity they claim; a direct entity the row only loaded or attached is
-    /// owned but never an anchor (#609). The discovered list is what this row's own detections found, so the walk is
-    /// bounded by the row's work.
+    /// the row created, then every discovered entity they claim. Then a discovered entity linked to any owned entity —
+    /// one the row only loaded or attached included — is the row's when nothing outside the row links to it, again to a
+    /// fixpoint. <see langword="null"/> when something outside does: the attribution is ambiguous (#609). The discovered
+    /// list is what this row's own detections found, so the walk is bounded by the row's work.
     /// </summary>
-    private List<EntityEntry> Owned()
+    private List<EntityEntry>? Owned()
     {
         var owned = new Dictionary<object, EntityEntry>(ReferenceEqualityComparer.Instance);
         var anchors = new List<EntityEntry>();
@@ -114,23 +154,45 @@ internal sealed class BulkRowTracking : IDisposable
         }
 
         var pending = _discovered.Where(e => !owned.ContainsKey(e.Entity)).DistinctBy(e => e.Entity, ReferenceEqualityComparer.Instance).ToList();
+        Claim(pending, anchors, owned);
+
+        // What is left and linked only through an entity the row did not create: the row's, unless it is also reachable
+        // from outside the row, where an earlier row may have put it.
+        var suspects = Claim(pending, [.. owned.Values], owned);
+        if (suspects.Count == 0)
+        {
+            return [.. owned.Values];
+        }
+
+        var outside = _tracker.Entries().Where(e => !owned.ContainsKey(e.Entity)).ToList();
+        return suspects.Any(s => Linked(s, outside)) ? null : [.. owned.Values];
+    }
+
+    /// <summary>
+    /// Moves every entry of <paramref name="pending"/> linked to one of <paramref name="sources"/> into
+    /// <paramref name="owned"/>, to a fixpoint: each one claimed becomes a source too. Returns what it claimed.
+    /// </summary>
+    private static List<EntityEntry> Claim(List<EntityEntry> pending, List<EntityEntry> sources, Dictionary<object, EntityEntry> owned)
+    {
+        var claimed = new List<EntityEntry>();
         var grew = true;
         while (grew && pending.Count > 0)
         {
             grew = false;
             for (var i = pending.Count - 1; i >= 0; i--)
             {
-                if (Linked(pending[i], anchors))
+                if (Linked(pending[i], sources))
                 {
                     owned.Add(pending[i].Entity, pending[i]);
-                    anchors.Add(pending[i]);
+                    sources.Add(pending[i]);
+                    claimed.Add(pending[i]);
                     pending.RemoveAt(i);
                     grew = true;
                 }
             }
         }
 
-        return [.. owned.Values];
+        return claimed;
     }
 
     /// <summary>
