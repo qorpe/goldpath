@@ -62,6 +62,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     where the database's own order disagrees, including a tie across the twentieth place.
   - **Not yet:** the console's live governor (R4-S7), which needs the binding constraint on the admin
     surface (open-threads T69).
+- **The Campaign benches and S-FLEET-02's enumeration leg run on Oracle behind the provider switch (G7 Oracle 8/12,
+  Part 2/2 of #411, #557).** Tests, a script and `bench.yml`; no package change.
+  - `scripts/bench-campaign.sh` takes `GOLDPATH_BENCH_PROVIDER=postgres|oracle`, defaulting to PostgreSQL, whose
+    behaviour and output are unchanged.
+    - With Oracle, `all` runs `CampaignBenchOracleTests` and `CampaignPacerEnumerationBenchOracleTests`, and `enum`
+      runs the enumeration leg alone, on the Oracle collection's pinned container. Both are written once on
+      `SuiteStore`, as #556's are.
+    - `broker`, `smoke` and `fleet02` are refused on Oracle with the reason: they need a broker-on shape, which Oracle
+      does not have before G5 (#415). The script exits 2.
+    - An Oracle run is refused unless every `BENCH-CAMPAIGN` line it printed ends in `provider=oracle`. With the
+      Oracle class wired to PostgreSQL, the script exits 1 and says nothing was measured on Oracle.
+  - Each Oracle twin carries `Category=Bench` and `Category=Oracle`. Listing both per-PR lanes' filters finds no
+    Campaign bench, and the monthly `Category=Bench&Category!=Oracle` set is the four PostgreSQL facts it was.
+  - `bench.yml`'s `provider=oracle` dispatch runs the Campaign benches after Bulk and Jobs, one after another.
+  - On Oracle the facts assert correctness and print their numbers; the pacer's precision band binds PostgreSQL only
+    (oracle RFC §6: measured, not promised).
+  - **Campaign on Oracle** (`ops/campaign-benchmarks.md`, the sandbox, 2026-11-12, PostgreSQL the same night): 1M
+    enumerated at 8,516 rows/s (engine loop) and 8,177 rows/s through the pacer, against PostgreSQL's 18,636 and
+    17,868. The pacer holds 166.7/s at 200 TPS on both, the live throttle bites within a slice (50.0 against 50.8),
+    and the 100k sink flushes at 12,627 against 10,997 outcomes/s.
 - **One support policy page (G18 Part 1/3, #591).** Docs and a gate; no package change.
   - `docs/guide/support-policy.md` gathers which versions receive fixes (quoting versioning D3), the security response
     targets (linked to SECURITY.md's table, not copied), the engines and databases supported today with each row's
