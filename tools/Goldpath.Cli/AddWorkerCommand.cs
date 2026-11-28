@@ -36,6 +36,7 @@ public static class AddWorkerCommand
 
         var files = AppFiles.Locate(appRoot);
         var facts = AppFacts.Read(files);
+        facts.RequireWritableProvider("add worker");
         if (trigger == "queue" && !facts.MessagingWired)
         {
             throw new CliFailureException(

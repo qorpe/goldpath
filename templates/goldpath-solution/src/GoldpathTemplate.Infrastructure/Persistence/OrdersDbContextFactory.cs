@@ -19,6 +19,9 @@ public sealed class OrdersDbContextFactory : IDesignTimeDbContextFactory<OrdersD
 #if (UseSqlServer)
         options.UseSqlServer();
 #endif
+#if (UseOracle)
+        options.UseOracle();
+#endif
         return new OrdersDbContext(options.Options);
     }
 }

@@ -35,6 +35,7 @@ public class RouteContractTests
             "GET /goldpath/admin/campaign/{id:guid}",
             "GET /goldpath/admin/campaign/{id:guid}/audit",
             "GET /goldpath/admin/campaign/{id:guid}/failures",
+            "GET /goldpath/admin/campaign/{id:guid}/outcomes",
             "POST /goldpath/admin/campaign/",
             "POST /goldpath/admin/campaign/{id:guid}/abort",
             "POST /goldpath/admin/campaign/{id:guid}/pause",

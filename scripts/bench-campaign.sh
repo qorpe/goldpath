@@ -22,6 +22,12 @@
 #
 # Broker-bench knobs (environment): GOLDPATH_BENCH_CAMPAIGN_SECONDS (900), _TPS (1000),
 # _CONSUMERS (32), _LATENCY_MS (20).
+#
+# Provider (#557, G7 Oracle 8/12 Part 2): GOLDPATH_BENCH_PROVIDER=postgres (the default: every mode, as before)
+# or oracle, which runs `all` (CampaignBenchOracleTests + the enumeration leg) and `enum` on the Oracle collection's
+# pinned container. broker, smoke and fleet02 are refused on Oracle: they need a broker-on shape, which Oracle does
+# not have before G5 (#415, owner decision 2026-10-23). An Oracle run is refused unless every BENCH-CAMPAIGN line
+# it printed says `provider=oracle`.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 if [ -d "$HOME/.dotnet/sdk" ]; then
@@ -29,6 +35,35 @@ if [ -d "$HOME/.dotnet/sdk" ]; then
   export PATH="$HOME/.dotnet:$PATH"
 fi
 cd "$ROOT"
+PROVIDER="${GOLDPATH_BENCH_PROVIDER:-postgres}"
+case "$PROVIDER" in
+  postgres) ;;
+  oracle)
+    case "${1:-all}" in
+      all)  FILTER="FullyQualifiedName~Integration.CampaignBenchOracleTests.|FullyQualifiedName~Integration.CampaignPacerEnumerationBenchOracleTests." ;;
+      enum) FILTER="FullyQualifiedName~Integration.CampaignPacerEnumerationBenchOracleTests." ;;
+      broker|smoke|fleet02)
+        echo "bench-campaign: '${1}' cannot run on Oracle: it needs a broker-on shape, which Oracle does not have before G5 (#415)" >&2
+        exit 2 ;;
+      *) echo "usage: $0 [all|broker|smoke|enum|fleet02]" >&2; exit 2 ;;
+    esac
+    OUT=$(mktemp)
+    trap 'rm -f "$OUT"' EXIT
+    set +e
+    dotnet test tests/Goldpath.IntegrationTests --nologo --filter "$FILTER" --logger "console;verbosity=detailed" > "$OUT" 2>&1
+    STATUS=$?
+    set -e
+    grep -aE "BENCH-CAMPAIGN|^(Passed|Failed)!|^\s+(Passed|Failed) Goldpath|Assert\.|Error Message" "$OUT" || true
+    if [ "$STATUS" -ne 0 ]; then
+      exit "$STATUS"
+    fi
+    if ! grep -aqE "BENCH-CAMPAIGN" "$OUT" || grep -aE "BENCH-CAMPAIGN" "$OUT" | grep -avq "provider=oracle"; then
+      echo "bench-campaign: GOLDPATH_BENCH_PROVIDER=oracle, but the run printed no Oracle bench line; nothing was measured on Oracle" >&2
+      exit 1
+    fi
+    exit 0 ;;
+  *) echo "GOLDPATH_BENCH_PROVIDER must be postgres or oracle, not '$PROVIDER'" >&2; exit 2 ;;
+esac
 case "${1:-all}" in
   all)    FILTER="FullyQualifiedName~CampaignBenchTests|FullyQualifiedName~CampaignBrokerBenchTests|FullyQualifiedName~CampaignPacerEnumerationBenchTests" ;;
   broker) FILTER="FullyQualifiedName~CampaignBrokerBenchTests" ;;

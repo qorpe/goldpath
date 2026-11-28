@@ -25,6 +25,21 @@ shapes:
   - name: GmFourClean
     args: "--db sqlserver --broker none --auth none --layout clean-architecture"
     pr: true
+  # Oracle (G7, ORA-9, #412; Oracle RFC §7). broker-less by RFC §2.9: the messaging engine's
+  # outbox has no proven Oracle store (open-threads T16), so the broker-on shape waits for it.
+  # Bulk and Archival are broker-free and carry module tables, so this shape migrates and
+  # smokes EF-backed module tables on Oracle, not only the bare Data module. PR time because
+  # the provider is a template condition, and a change that breaks it must be red at PR time.
+  - name: GmOracle
+    args: "--db oracle --broker none --auth none --features bulk --features archival"
+    pr: true
+  # The two Oracle branches GmOracle does not render (verifier on #608): the clean layout, where
+  # Infrastructure carries the Oracle provider refs and OrdersDbContextFactory's UseOracle(), and
+  # locking on Oracle (Goldpath.Locking.Oracle in both csproj files, AddGoldpathOracleLocking,
+  # manifest provider: oracle, the drift row). Nightly: GmOracle already makes the provider a
+  # PR-time condition, and this shape keeps the branches it does not reach from rotting silently.
+  - name: GmOracleCleanLocking
+    args: "--db oracle --broker none --auth none --layout clean-architecture --features locking"
   # The clean layout on the DEFAULT providers (postgres + broker + auth) with a
   # module that maps an authed admin surface: the Application project consumes
   # through the seam (ADR-0013), and Infrastructure lifts EF Design's vulnerable

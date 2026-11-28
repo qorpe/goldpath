@@ -68,12 +68,18 @@ builder.AddGoldpathLocking(o =>
 //#if (UseLocking && UseSqlServer)
 builder.AddGoldpathSqlServerLocking(o => o.ConnectionName = "ordersdb");
 //#endif
+//#if (UseLocking && UseOracle)
+builder.AddGoldpathOracleLocking(o => o.ConnectionName = "ordersdb");   // DBMS_LOCK: the runtime user needs EXECUTE ON SYS.DBMS_LOCK (Goldpath.Locking.Oracle README)
+//#endif
 //#if (UseArchival || UseBulk || UseNotification || UseCampaign || UseApprovals || UseFileExchange)
 builder.AddGoldpathJobs<WebApplicationBuilder, OrdersDbContext>(jobs =>
 {
     jobs.ConnectionName = "ordersdb";              // runs + schedules live in the app database
 //#if (UseSqlServer)
     jobs.Provider = GoldpathJobStoreProvider.SqlServer;
+//#endif
+//#if (UseOracle)
+    jobs.Provider = GoldpathJobStoreProvider.Oracle;
 //#endif
 //#if (UseArchival)
     jobs.AddGoldpathArchivalJobs<OrdersDbContext>();    // archive nightly, purge chained after it, verify weekly
@@ -186,6 +192,16 @@ builder.AddGoldpathData<WebApplicationBuilder, OrdersDbContext>(options =>
     else
     {
         options.UseSqlServer();
+    }
+#endif
+#if (UseOracle)
+    if (ordersDbConnection is not null)
+    {
+        options.UseOracle(ordersDbConnection);
+    }
+    else
+    {
+        options.UseOracle();
     }
 #endif
 });
@@ -365,6 +381,37 @@ if (app.Environment.IsDevelopment() && !isDocGen)
             release.CommandText = "EXEC sp_releaseapplock @Resource = 'goldpath-dev-migrate', @LockOwner = 'Session'";
             await release.ExecuteNonQueryAsync();
         }
+    }
+#endif
+#if (UseOracle)
+    // On Oracle every DDL statement commits, so a lock held by the MIGRATING connection would be
+    // released by its first CREATE TABLE. The gate is a table lock held in a transaction on a
+    // SECOND connection instead. It needs no grant beyond CREATE TABLE (DBMS_LOCK needs EXECUTE
+    // on SYS.DBMS_LOCK, which Oracle does not grant to PUBLIC), and it is session-owned: it dies
+    // with this connection, crash included. The first replica creates the gate table; a replica
+    // racing it gets ORA-00955 (the name is taken), which is the table existing, not a failure.
+    // GOLDPATH_DEV_MIGRATE_GATE stays in the Development schema afterwards, empty: that is expected,
+    // it is the gate's own table and no migration owns it. Production applies the bundle and never
+    // creates it.
+    await using (var gate = new Oracle.ManagedDataAccess.Client.OracleConnection(db.Database.GetConnectionString()))
+    {
+        await gate.OpenAsync();
+        await using (var create = gate.CreateCommand())
+        {
+            create.CommandText = "BEGIN EXECUTE IMMEDIATE 'CREATE TABLE GOLDPATH_DEV_MIGRATE_GATE (ID NUMBER(1))'; EXCEPTION WHEN OTHERS THEN IF SQLCODE != -955 THEN RAISE; END IF; END;";
+            await create.ExecuteNonQueryAsync();
+        }
+
+        using var held = gate.BeginTransaction();
+        await using (var acquire = gate.CreateCommand())
+        {
+            acquire.Transaction = held;
+            acquire.CommandText = "LOCK TABLE GOLDPATH_DEV_MIGRATE_GATE IN EXCLUSIVE MODE WAIT 300";
+            await acquire.ExecuteNonQueryAsync();
+        }
+
+        await db.Database.MigrateAsync();
+        held.Rollback();   // ends the transaction, and with it the lock
     }
 #endif
 }

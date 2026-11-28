@@ -112,7 +112,7 @@ public sealed class AppFacts
     /// <summary>The DbContext class name (audit registration is generic over it).</summary>
     public required string DbContextName { get; init; }
 
-    /// <summary>EF provider detected from the Api csproj: postgres | sqlserver | none.</summary>
+    /// <summary>EF provider detected from the Api csproj: postgres | sqlserver | oracle | none.</summary>
     public required string DatabaseProvider { get; init; }
 
     /// <summary>The app's database connection name (locking reuses the app database).</summary>
@@ -170,6 +170,29 @@ public sealed class AppFacts
     /// </summary>
     public bool SampleCommandInOwnProject { get; init; }
 
+    /// <summary>
+    /// Refuses a verb that writes provider code into an app whose provider it cannot write yet.
+    /// Only PostgreSQL and SQL Server code exists in the recipes, <c>add worker</c> and
+    /// <c>new service</c>; an Oracle app (the template's <c>--db oracle</c>, ORA-9, #412) gets
+    /// a refusal in words instead of SQL Server or PostgreSQL code. ORA-10 (#413) teaches the
+    /// verbs Oracle and removes this guard.
+    /// </summary>
+    /// <param name="verb">The verb as an adopter typed it, for the message.</param>
+    public void RequireWritableProvider(string verb)
+    {
+        // An allow-list, not a deny-list: a provider the reader learns to detect later is
+        // refused here until its verbs are written, instead of falling into a SQL Server or
+        // PostgreSQL branch that happens to be the `else`.
+        if (DatabaseProvider is "postgres" or "sqlserver" or "none")
+        {
+            return;
+        }
+
+        var name = DatabaseProvider == "oracle" ? "Oracle (Oracle.EntityFrameworkCore)" : DatabaseProvider;
+        throw new CliFailureException(
+            $"goldpath {verb} cannot change this app yet: its database is {name}, and the verb writes only PostgreSQL or SQL Server code. Oracle support for this verb arrives with ORA-10 (qorpe/goldpath#413); until then, make the change by hand.");
+    }
+
     /// <summary>Reads the context facts from the located files.</summary>
     public static AppFacts Read(AppFiles files)
     {
@@ -186,6 +209,7 @@ public sealed class AppFacts
 
         var provider = apiProject.Contains("Npgsql.EntityFrameworkCore.PostgreSQL", StringComparison.Ordinal) ? "postgres"
             : apiProject.Contains("Microsoft.EntityFrameworkCore.SqlServer", StringComparison.Ordinal) ? "sqlserver"
+            : apiProject.Contains("Oracle.EntityFrameworkCore", StringComparison.Ordinal) ? "oracle"
             : "none";
 
         var connection = Regex.Match(program, "GetConnectionString\\(\"([^\"]+)\"\\)");

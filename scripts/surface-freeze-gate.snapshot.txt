@@ -78,6 +78,7 @@ schema-enum /$defs/features/properties/dataProtection/oneOf/1/properties/redacto
 schema-enum /$defs/features/properties/dataProtection/oneOf/1/properties/redactor "hmac"
 schema-enum /$defs/features/properties/distributedCaching/oneOf/1/properties/levels/items "l1"
 schema-enum /$defs/features/properties/distributedCaching/oneOf/1/properties/levels/items "l2"
+schema-enum /$defs/features/properties/distributedLocking/oneOf/1/properties/provider "oracle"
 schema-enum /$defs/features/properties/distributedLocking/oneOf/1/properties/provider "postgres"
 schema-enum /$defs/features/properties/distributedLocking/oneOf/1/properties/provider "redis"
 schema-enum /$defs/features/properties/distributedLocking/oneOf/1/properties/provider "sqlserver"
@@ -246,6 +247,7 @@ template-choice goldpath-solution auth none
 template-choice goldpath-solution auth openid
 template-choice goldpath-solution broker none
 template-choice goldpath-solution broker rabbitmq
+template-choice goldpath-solution db oracle
 template-choice goldpath-solution db postgresql
 template-choice goldpath-solution db sqlserver
 template-choice goldpath-solution features approvals
