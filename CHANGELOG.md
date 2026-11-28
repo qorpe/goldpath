@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **Bulk's Oracle bench column: the 10k and the 1M-row intake (G7 Oracle 8/12, #556).** Measured on one machine (the
+  overnight sandbox, 4 CPUs, Debug, `3403c2c`) beside PostgreSQL. The 10k intake takes 3.23 s on Oracle against
+  1.84 s. The 1M-row intake validates at 11,981 rows/s against 20,485, with the same 990,049 valid, 9,951 invalid and
+  9,951 duplicate findings. The numbers and their profile are in `packages/Goldpath.Bulk/ops/bulk-benchmarks.md`.
+  The 100k execute is not measured on either provider: on `main` it does not finish, because #587 made each row's
+  execution cost grow with the tracked entities ([#605](https://github.com/qorpe/goldpath/issues/605)). Open-threads
+  T68 now holds only that column. Documentation only; no package change.
 - **Approvals' first benchmark table (G13 Part 1/4, #596).** `ApprovalsBenchTests` (Trait `Category=Bench`, real
   PostgreSQL, run alone in its own collection) measures the public engine on the EF store with 10,000 requests on a
   two-rung ladder: `RequestAsync` 9.5 s (≈1,049/s), `DecideAsync` through a two-signer quorum with four-eyes live
@@ -40,6 +47,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     system never above its ceiling in any second of ticks, a lowered ceiling binding from one tick after the commit,
     the actor in the audit); `AdminReadRoleSurfaceTests` (a viewer reads `/ceilings`, every verb refused);
     `CampaignPanel.test.tsx`, `adminClient.test.ts`, and the console smoke's governor journey and axe scan.
+- **One support policy page (G18 Part 1/3, #591).** Docs and a gate; no package change.
+  - `docs/guide/support-policy.md` gathers which versions receive fixes (quoting versioning D3), the security response
+    targets (linked to SECURITY.md's table, not copied), the engines and databases supported today with each row's
+    evidence, the `[Experimental]` surfaces (none marked yet; #400 marks them) and how to ask for a backport. It decides
+    nothing. `README.md`, `docs/guide/README.md`, SECURITY.md "Supported versions" and the production runbook link it.
+  - `scripts/docs-freshness.sh` now fails on a link to a heading the target does not have, not only on a missing file.
+    It reads inline links (with a `"…"`, `'…'` or `(…)` title, in the angle form, after leading whitespace), same-file
+    `#…`, reference definitions and HTML `href` in either quote; outside code, a `](` or `href=` it cannot parse is
+    refused rather than skipped. A heading's id follows GitHub's rendered text (ATX and one-line setext headings, emphasis
+    delimiters removed while `snake_case` keeps its underscore, code spans literal, entities decoded, duplicates
+    suffixed); headings and ids inside a code fence (closed only by an equal or longer run, open to the end of the file
+    when unclosed) or an HTML comment are not anchors. A fragment is accepted only where it can prove it lands (such a
+    heading, an `id`/`name` attribute of a markdown file, a GitHub line anchor on any other file) and refused otherwise,
+    including a heading this model does not cover (a multi-line setext paragraph). Its new `--selftest` checks 18
+    heading ids against the ids GitHub renders and plants 34 broken links, failing unless each is caught; CI runs it in
+    `gates`.
 - **A production runbook for adopters (G18 Part 2/3, #592).** `docs/guide/production.md` takes a generated app from the
   AppHost to an environment: the deploy shape (`goldpath export compose` is the development tier, and Kubernetes
   manifests are not built, open thread T73), migration bundles applied once per release before the app starts, the
@@ -68,9 +91,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     measured, not promised).
   - **Jobs on Oracle** (`ops/jobs-benchmarks.md`, the sandbox, 2026-11-10): plan → complete 1.7–1.8 s against
     PostgreSQL's 1.5 s, and 8.3–9.2 ms of checkpoint per chunk against 7.6 ms.
-  - **Bulk on Oracle is not measurable yet.** Every upload over 2,000 bytes fails with ORA-01460, because
-    `GoldpathBulkFileChunks.Data` is `RAW(2000)` on Oracle and the store writes 256 KB chunks. #559 tracks it, and
-    open-threads T68 holds the Bulk column.
+  - **Bulk on Oracle was not measurable** when this landed: every upload over 2,000 bytes failed with ORA-01460, because
+    `GoldpathBulkFileChunks.Data` was `RAW(2000)` on Oracle and the store writes 256 KB chunks. #559 fixed the column
+    (see Fixed), and open-threads T68 holds the Bulk column until it is measured.
 - **Locking on Oracle: the optional `Goldpath.Locking.Oracle` package (G7, slice O-4, #407; RFC goldpath-oracle
   §2.9).**
   - **API (additive):** `AddGoldpathOracleLocking<TBuilder>(configure)` in the new package, and
@@ -687,6 +710,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     failed request.
   - **The smoke host** files a second approval request at startup, so this spec never races
     the approvals journey for one quorum.
+- **The 1.0 API review: Goldpath.Approvals and Goldpath.FileExchange (GA gate G4, API-5, #394).** Repository only,
+  no package change. All 635 live lines carry a verdict (376 Approvals, 259 FileExchange, at c9d23ae): 588
+  `experimental`, 24 `remove`, 23 `rename`. The renames are one record, `GoldpathQuarantinedRow` →
+  `GoldpathFileQuarantinedLine` (the File prefix its siblings carry, and not the `…Row` suffix the review reserves for EF
+  entities), with the five lines whose signatures name it. The removals are the two EF stores (`GoldpathEfApprovalStore<TContext>`,
+  `GoldpathEfFileLedger<TContext>`), which only their `AddGoldpath…<TBuilder, TContext>` registers behind the store
+  interface, and the two public metrics classes, which have no public member. The record's §4 states the lift condition
+  once (open-threads T21, T22).
 - **The 1.0 API review's record and its counter (GA gate G4, API-1, #390).** Repository only: no
   package changes.
   - `docs/rfc/goldpath-1.0-api-review.md` is DRAFT, in the eight RFC sections. It holds the scope,
@@ -1007,6 +1038,41 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   are closed here with that reason.
 
 ### Fixed
+- **Security — the Notification webhook channel refuses a plaintext URL unless opted in (#533, threat model
+  T-NTF-07).** The email channel has refused plaintext SMTP without `AllowInsecureTransport` since audit A3. The webhook
+  channel posted to `Goldpath:Notification:Webhook:Url` whatever its scheme, and the JSON carries the recipient
+  unmasked, the rendered subject and body, the attachment names and the correlation id. It now posts only to an
+  absolute `https` URL. `GoldpathWebhookOptions.AllowInsecureTransport` (new, default `false`) admits `http` and
+  nothing else, with no loopback exemption, by the owner's decision. Every other spelling (a relative URL, a file path,
+  `ws:`, `wss:`, `ftp:`, `javascript:`, blank) is refused at send in words naming the key, and the URL is never
+  echoed, since a hub's secret is often in it. **Upgrade note:** an `http://` hook stops sending until it opts in (upgrade
+  guide). Public API: additions only.
+- **Security — the Approvals admin surface takes the decider's role from the principal, not the body (#478,
+  threat model T-APR-03).** `POST /goldpath/admin/approvals/requests/{id}/approve|reject` used to hand the body's `role`
+  to the engine, so any `goldpath-ops` holder could name the top rung of a ladder and grant it. The body's `role` is now
+  an assertion: it reaches the engine only when `HttpContext.User.IsInRole(role)` holds (the same check the admin floor's
+  `RequireRole` makes), and otherwise the engine is given no role, so the only way left to decide is a delegation the
+  engine holds for the caller's identity. On every path the body's `role` must name the pending rung, and the engine
+  judges that on the same read it decides on (verifier, PR #602): a principal holding another rung's role cannot ride a
+  delegation by naming the role it holds, and an assertion of the rung a request escalated from is refused. A principal without the rung's role that names it gets
+  `WrongRole` and the request stays pending; with the role it applies. Every other spelling of a role the principal
+  does not hold — a missing, empty or blank role, another case, a trailing space, a role under a claim type that is not
+  the identity's role claim type — is `WrongRole` too (`ApprovalAdminEndpointsTests`). No `PublicAPI` line and no wire
+  change. **Upgrade note:** an adopter whose rung names differ from its identity provider's role names maps them in its
+  own claims transformation; an `exposeUnsecured` surface with no principal can now decide only through a delegation
+  (the console smoke host seeds one, from a manager to `anonymous`, so its approval journeys decide the way an adopter's
+  delegate would).
+  In the engine, a blank `deciderRole` is no role: it never matches a rung, not even one a ladder declared blank
+  (`ApprovalEngineTests.A_blank_role_is_no_role_even_on_a_rung_declared_blank`).
+- **Bulk on Oracle takes a real file: `GoldpathBulkFileChunks.Data` is a `BLOB` there (#559).** The Oracle provider maps an
+  unshaped `byte[]` to `RAW(2000)`, and the file store writes chunks of 256 KiB, so every upload above 2,000 bytes failed
+  on its first save with ORA-01460 (the finance card's 10k-row file is about 200 KB). `AddGoldpathBulk` now shapes the
+  column as `BLOB` when the model is Oracle's, recognised by the provider's own annotations as the Jobs and Archival
+  models already are. PostgreSQL (`bytea`), SQL Server (`varbinary(max)`) and SQLite are unchanged
+  (`ModelContractTests`). The Oracle store-type golden pinned `RAW(2000)`, which is how the wrong type passed: it now pins
+  `BLOB`, and `BulkTests.A_file_larger_than_one_chunk_is_stored_and_read_back_byte_for_byte` (both lanes) stores a
+  file of one full and one partial chunk and reads back the same SHA-256 and bytes. Bulk on Oracle has not shipped on a
+  train, so no adopter migration changes. Bulk's Oracle bench column is still to be measured (open-threads T68).
 - **Six Campaign pacer facts count ticks, not the runner's speed (#580).** Tests only; no package change.
   `AGlobalCeilingSwitchedOnMidSlice_StartsEmpty_NotInDebtForWhatWentOutWhileItWasOff` failed `main`'s `gates` twice,
   with 71 items against a bound of 70. The bound assumed a 1.5 s slice holds 75 ticks of 20 ms, but on the system clock
@@ -1058,6 +1124,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   fill that table (API-4) turned "an uncovered line in the one package --package names" into a fault it could not
   plant, and CI's `gates` job red. Every scratch copy now resets the fixture's table to its header, whatever the real
   table holds; the gate's checks of the real tables are unchanged.
+- **`api-review-gate.sh --selftest` resets its second fixture too, `Goldpath.FileExchange` (API-5, #394).** Its
+  "an experimental package reviewed under its own id is green" case appends a row for every live FileExchange line, so
+  API-5 filling the real table turned each into a duplicate row and the selftest red. Both fixture tables now start
+  header-only in every scratch copy; the checks of the real tables are unchanged.
 - **[schema]** **Approvals: a delegation admits its delegate to the delegator's rung only (#479, threat model T-APR-05).**
   A delegation carried no role, so an active one admitted its delegate to every rung of every ladder — the amount
   ladder did not hold for a delegate.
@@ -1125,6 +1195,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     - an archive legal hold refused only an empty case reference, and now refuses whitespace too (a null used to throw);
     - a Jobs calendar's name is refused when blank (it keys a NOT NULL `qrtz_calendars` row).
   - **Still open:** an actor whose principal name is empty is a separate path, tracked in #544.
+- **[schema]** **Approvals: a rejected request is resubmitted once (#521, threat model T-APR-06).** `ResubmitAsync` read
+  the rejected request, then added the rework, with nothing between the two. Two resubmissions of one rejection (a
+  double click, a retry after a timeout) each created a pending rework with the same `SupersedesId`, and either could
+  be granted.
+  - **Measured on PostgreSQL with every save held back 300 ms:** both calls returned a rework; two pending requests
+    carried the one `SupersedesId`.
+  - **Now:**
+    - A second call refuses with `InvalidOperationException`: `Request '<rejected>' was already resubmitted as
+      '<rework>' — a rejected request is resubmitted once; decide on the rework instead.` It creates nothing and
+      publishes nothing. The engine reads this from the rejected request's `superseded` step, so it holds one call
+      after another on any store.
+    - Two calls at once both pass that read. The built-in stores refuse the second rework's add: a **unique index on
+      `GoldpathApprovals.SupersedesId`** (nullable, so requests that supersede nothing are outside it), and the same
+      rule in the in-memory store. The refusal names the rework that landed first.
+    - A custom `IGoldpathApprovalStore` gets the one-after-another refusal; two calls at once are its own guarantee.
+    - **On the built-in stores the rework and the rejected request's `superseded` step are one write.** A failure
+      between them (the second write timing out) used to leave the rework stored and the step not, and every retry was
+      then refused: a pending rework the rejected request never named and no `GoldpathApprovalRequested` announced.
+      Now the failure leaves neither, and the retry creates the one rework, names it and announces it — proven on
+      SQLite, PostgreSQL and Oracle with the write failed once. A custom store keeps the two writes, so a failure
+      between them is its own to prevent. The event is published after the commit, as every Approvals event is (T72).
+  - **No public API changed:** the method, its signature and the exception type it throws are the same.
+  - **Migration:** one, with a query to run first for existing duplicate reworks (upgrade guide).
 - **[schema]** **Approvals: concurrent decisions no longer both apply (#480, threat model T-APR-06).** A decision read the
   request and its signatures, then wrote them in separate calls with nothing guarding the gap.
   - **What went wrong:**

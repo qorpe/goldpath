@@ -247,7 +247,11 @@ static async Task RunConsoleHostAsync(
     {
         notification.MaxAttempts = 1;
         notification.RetryDelay = TimeSpan.FromMilliseconds(100);
-        notification.Webhook(w => w.Url = $"{url.TrimEnd('/')}/smoke/hook");
+        notification.Webhook(w =>
+        {
+            w.Url = $"{url.TrimEnd('/')}/smoke/hook";
+            w.AllowInsecureTransport = true;   // the smoke host's own hook is plaintext loopback: an explicit opt-in (#533)
+        });
         notification.Email(e =>
         {
             e.Host = "127.0.0.1";
@@ -412,6 +416,15 @@ static async Task RunConsoleHostAsync(
         // A second request of its own for S-OPS-02 (ui/console/e2e/refusals.spec.ts), so its
         // double approve never races the journey above for the same request's quorum.
         await approvals.RequestAsync("credit-limit", "Limit raise for S-OPS-02", 2_500_000m, "analyst@example.com", CancellationToken.None);
+
+        // The console decides as the principal it signs in with, and the role it names counts only when that principal
+        // holds it (#478). This host signs nobody in, so its decider is "anonymous", which holds no role. It decides
+        // the manager rung the way any decider without the role may: through a delegation the ENGINE holds for that
+        // identity, granted by a manager for the life of the host. A forged principal here would be copied.
+        if (!secured)
+        {
+            await approvals.DelegateRoleAsync("manager@example.com", "manager", "anonymous", TimeSpan.FromDays(1), CancellationToken.None);
+        }
     }
 
     // One real file through the rail: two rows apply, one quarantines with its reason —

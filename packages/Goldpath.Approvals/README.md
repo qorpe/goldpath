@@ -33,7 +33,10 @@ builder.AddGoldpathApprovals(approvals => approvals
   requester may (`NotRequester` otherwise), and the step lands in the trail.
 - **Resubmit** — `ResubmitAsync(rejectedId, requestedBy)` reworks a rejected request as a
   fresh one, linked by `SupersedesId` with both trails cross-referenced — the audit reads
-  request → reject → rework as one story.
+  request → reject → rework as one story. A rejected request is resubmitted ONCE (#521): a
+  second call throws and names the rework, and on the built-in stores a unique `SupersedesId`
+  makes two calls at once create one rework between them, and the rework and the rejected
+  request's `superseded` step are one write, so a call that failed leaves nothing behind.
 - **Delegate** — `DelegateRoleAsync(from, fromRole, to, window)`: the delegate decides the
   delegator's rung (`fromRole`, taken from the authenticated delegator's claims, never from a
   request body) and no other; bounded window, depth one (a delegate cannot re-delegate; the cycle
@@ -54,7 +57,10 @@ single-node hosts, a database-backed store composes through the seam.
 - **Console** — `MapGoldpathApprovalsAdmin()` mounts the admin surface
   (`/goldpath/admin/approvals`, contract §7.1) and the operations console federates on
   it: the worklist with the quorum said as a number, the trail, and decide verbs that run
-  the ENGINE unchanged — a refusal answers the rule's name.
+  the ENGINE unchanged — a refusal answers the rule's name. The role a decider names counts
+  only when the signed-in principal holds it (`User.IsInRole`); without it, only a delegation
+  the engine holds for that identity decides; on every path the named role must be the rung
+  pending at the decision (#478). Map an identity provider's role names onto rung names in a claims transformation.
 - **Metrics** — the `Goldpath.Approvals` meter counts every lifecycle step per ladder;
   the Grafana board ships in `ops/grafana-approvals-dashboard.json`.
 
