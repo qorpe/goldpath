@@ -1033,6 +1033,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   more detections than a 2-row one, both when every row succeeds and when every row fails. The 100k execute is back to
   29.8 s (≈3,360 rows/s) on PostgreSQL on the same sandbox (`ops/bulk-benchmarks.md`). No public API change. What a
   failed row did through entries tracked before it is still not undone (open thread T71).
+- **Security — the Approvals admin surface takes the decider's role from the principal, not the body (#478,
+  threat model T-APR-03).** `POST /goldpath/admin/approvals/requests/{id}/approve|reject` used to hand the body's `role`
+  to the engine, so any `goldpath-ops` holder could name the top rung of a ladder and grant it. The body's `role` is now
+  an assertion: it reaches the engine only when `HttpContext.User.IsInRole(role)` holds (the same check the admin floor's
+  `RequireRole` makes), and otherwise the engine is given no role, so the only way left to decide is a delegation the
+  engine holds for the caller's identity. On every path the body's `role` must name the pending rung, and the engine
+  judges that on the same read it decides on (verifier, PR #602): a principal holding another rung's role cannot ride a
+  delegation by naming the role it holds, and an assertion of the rung a request escalated from is refused. A principal without the rung's role that names it gets
+  `WrongRole` and the request stays pending; with the role it applies. Every other spelling of a role the principal
+  does not hold — a missing, empty or blank role, another case, a trailing space, a role under a claim type that is not
+  the identity's role claim type — is `WrongRole` too (`ApprovalAdminEndpointsTests`). No `PublicAPI` line and no wire
+  change. **Upgrade note:** an adopter whose rung names differ from its identity provider's role names maps them in its
+  own claims transformation; an `exposeUnsecured` surface with no principal can now decide only through a delegation
+  (the console smoke host seeds one, from a manager to `anonymous`, so its approval journeys decide the way an adopter's
+  delegate would).
+  In the engine, a blank `deciderRole` is no role: it never matches a rung, not even one a ladder declared blank
+  (`ApprovalEngineTests.A_blank_role_is_no_role_even_on_a_rung_declared_blank`).
 - **Bulk on Oracle takes a real file: `GoldpathBulkFileChunks.Data` is a `BLOB` there (#559).** The Oracle provider maps an
   unshaped `byte[]` to `RAW(2000)`, and the file store writes chunks of 256 KiB, so every upload above 2,000 bytes failed
   on its first save with ORA-01460 (the finance card's 10k-row file is about 200 KB). `AddGoldpathBulk` now shapes the
