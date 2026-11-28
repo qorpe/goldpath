@@ -169,6 +169,7 @@ GoldpathErasureRecords.SubjectKey: NVARCHAR2(256) not null
 GoldpathFileArchive.ArchivedAt: TIMESTAMP(7) WITH TIME ZONE not null
 GoldpathFileArchive.File: NVARCHAR2(256) not null
 GoldpathFileArchive.Rail: NVARCHAR2(128) not null
+GoldpathFileProcessed.ContentHash: NVARCHAR2(64) null
 GoldpathFileProcessed.File: NVARCHAR2(256) not null
 GoldpathFileProcessed.Line: NUMBER(10) not null
 GoldpathFileProcessed.Rail: NVARCHAR2(128) not null

@@ -1092,6 +1092,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   spellings; eight new planted links are each caught (42 in all), and every new fixture is red with `main`'s patterns.
   A third member of the class, a `[name]: target` line continuing a paragraph, still fails red with a misleading
   message (open thread T79).
+- **FileExchange — a different file under a name already processed is refused, not skipped (#482, threat model
+  T-FXI-04).** The `(rail, file, line)` key held the file's name and a line number, nothing of its content. So a
+  counterparty reusing `daily.csv` had the next day's first lines skipped as "duplicates", visible only as a `skipped`
+  count: silent loss that looked like idempotence. Every processed line is now marked with the SHA-256 (lower-case hex)
+  of its UTF-8 bytes (a line that is not well-formed text, with a lone surrogate, is hashed by its exact UTF-16 code
+  units instead, since the lenient encoder would make every such character the same U+FFFD). Before any line applies, the engine compares every line already processed under `(rail, file)`
+  with the delivered one, and a difference of any byte refuses the WHOLE file: `GoldpathFileRejected` says which line
+  differs and to deliver it under a new name, and nothing applies. Identical bytes still dedup; a fixed quarantined
+  line and appended lines still apply. The check costs no extra ledger reads: the same read tells the run which lines
+  are processed. **Schema:** `GoldpathFileProcessed` gains a nullable `ContentHash` (max 64); a row written before it
+  counts as matching, so an upgrade refuses no redelivery (upgrade guide). **API, additions only:**
+  `IGoldpathFileLedger.GetProcessedHashAsync` and `MarkProcessedWithHashAsync` are default interface members, so a
+  custom ledger still compiles and keeps today's behaviour; the in-memory and EF ledgers implement both. (The decision
+  named a hash-taking `MarkProcessedAsync` overload; PublicApiAnalyzers refuse that shape beside the shipped one with
+  an optional token, RS0026/RS0027, hence the name.) A shorter file whose lines all match is not refused, as it holds
+  nothing unprocessed: open thread T77. **Cost:** a line is hashed only where a hash is needed — compared, on the stack,
+  with a stored one, or stored once it applies — so a replay hashes each processed line (the comparison itself) and
+  allocates nothing per line on the in-memory ledger (`A_replay_allocates_no_hash_string_per_line`; a 1M-line replay,
+  4-core sandbox, Release, 2026-11-26: 0 MiB, ~1.9 s, against `main`'s 0 MiB and ~0.2 s, the hashing being the price of
+  comparing content). A first run allocates a stored hash per applied line (472 MiB over 1M lines, against 252 MiB).
 - **Security — the Notification webhook channel refuses a plaintext URL unless opted in (#533, threat model
   T-NTF-07).** The email channel has refused plaintext SMTP without `AllowInsecureTransport` since audit A3. The webhook
   channel posted to `Goldpath:Notification:Webhook:Url` whatever its scheme, and the JSON carries the recipient

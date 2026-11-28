@@ -14,6 +14,12 @@ public sealed class GoldpathFileProcessedRow
 
     /// <summary>1-based line number.</summary>
     public int Line { get; set; }
+
+    /// <summary>
+    /// SHA-256 hex (64 characters) of the line's content when it was processed (#482); null on a row marked before the
+    /// column existed, which the engine counts as matching.
+    /// </summary>
+    public string? ContentHash { get; set; }
 }
 
 /// <summary>A quarantined row with its reason.</summary>
@@ -60,6 +66,7 @@ public static class GoldpathFileExchangeModelExtensions
             e.HasKey(x => new { x.Rail, x.File, x.Line });
             e.Property(x => x.Rail).HasMaxLength(128);
             e.Property(x => x.File).HasMaxLength(256);
+            e.Property(x => x.ContentHash).HasMaxLength(64);   // nullable: rows marked before #482 carry none
         });
         modelBuilder.Entity<GoldpathFileQuarantineRow>(e =>
         {
@@ -119,6 +126,27 @@ public sealed class GoldpathEfFileLedger<TContext> : IGoldpathFileLedger, IGoldp
         await using var scope = _scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<TContext>();
         db.Add(new GoldpathFileProcessedRow { Rail = rail, File = file, Line = line });
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<string?> GetProcessedHashAsync(string rail, string file, int line, CancellationToken cancellationToken = default)
+    {
+        await using var scope = _scopes.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<TContext>();
+        var row = await db.Set<GoldpathFileProcessedRow>().AsNoTracking()
+            .Where(x => x.Rail == rail && x.File == file && x.Line == line)
+            .Select(x => new { x.ContentHash })
+            .FirstOrDefaultAsync(cancellationToken);
+        return row is null ? null : row.ContentHash ?? "";
+    }
+
+    /// <inheritdoc />
+    public async Task MarkProcessedWithHashAsync(string rail, string file, int line, string contentHash, CancellationToken cancellationToken = default)
+    {
+        await using var scope = _scopes.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<TContext>();
+        db.Add(new GoldpathFileProcessedRow { Rail = rail, File = file, Line = line, ContentHash = contentHash });
         await db.SaveChangesAsync(cancellationToken);
     }
 

@@ -20,7 +20,9 @@ builder.AddGoldpathFileExchange(files => files
 - **File contract** — `ValidateFile` rejects the WHOLE file (truncation, trailer
   mismatch); a rejected file ingests nothing and publishes `GoldpathFileRejected`.
 - **Idempotent ingestion** — the `(rail, file, line)` key: a re-delivered or replayed
-  file applies zero duplicates.
+  file applies zero duplicates. Each processed line is marked with the SHA-256 of its
+  content, so a DIFFERENT file delivered under a name already processed is refused whole
+  (`GoldpathFileRejected`, naming the first line that differs) rather than skipped (#482).
 - **Quarantine** — a bad row (parse throw, row-contract failure, handler throw)
   quarantines with its reason; the batch CONTINUES. `GoldpathRowsQuarantined` fires once
   per run.
