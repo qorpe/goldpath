@@ -43,6 +43,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   sandbox, not CI) and how to read them are in `packages/Goldpath.Approvals/ops/approvals-benchmarks.md`; no budget
   is declared, so none is asserted. `scripts/bench-approvals.sh` refuses a run that printed no line for one of the
   four proofs. The monthly `bench.yml` picks the class up unchanged.
+- **Campaign admin: failures by code with a cursor, and the outcomes aggregate (admin-contract R4.2 + R4.3,
+  #296, slices R4-S3 and R4-S4).** Additive; an R3 client keeps working.
+  - **R4.2:** `GET /goldpath/admin/campaign/{id}/failures?afterSeq=` walks every failed item by keyset on
+    its `Seq` (exclusive; absent or `0` is the first page, as before), and each row carries `errorCode`.
+    `take` keeps its `[1, 500]` clamp.
+  - **R4.3:** `GET /goldpath/admin/campaign/{id}/outcomes` answers `byState` (items per state, empty
+    states omitted), `failedByCode` (at most 20, count descending, code ordinal, no code last among equal
+    counts; the query breaks ties under the provider's bytewise collation, so equal counts straddling
+    the twentieth place are chosen ordinally too) and `failedCodesTruncated`. `404` for an unknown id. It counts and derives nothing.
+  - **API (additive):** `GoldpathCampaignFailedItem.ErrorCode` (init-only), the
+    `GetFailedItemsAsync(id, afterSeq, take, ct)` overload (the shipped one calls it with `afterSeq: 0`),
+    `GetOutcomesAsync`, and the records `GoldpathCampaignOutcomes` and `GoldpathCampaignCodeCount`.
+  - **Measured:** about 110 ms median for `/outcomes` on a 1M-item campaign on PostgreSQL 17
+    (`ops/campaign-benchmarks.md`).
+  - **Proof:** the 1,203-row walk in three pages; the counts and the 25-code truncation; the order on
+    PostgreSQL with an ICU `en-US` collation and on Oracle in a linguistic session (`NLS_SORT = GENERIC_M`),
+    where the database's own order disagrees, including a tie across the twentieth place.
+  - **Not yet:** the console's live governor (R4-S7), which needs the binding constraint on the admin
+    surface (open-threads T69).
 - **One support policy page (G18 Part 1/3, #591).** Docs and a gate; no package change.
   - `docs/guide/support-policy.md` gathers which versions receive fixes (quoting versioning D3), the security response
     targets (linked to SECURITY.md's table, not copied), the engines and databases supported today with each row's

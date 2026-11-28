@@ -64,7 +64,14 @@ and a `runbook_url` to the item below that answers it:
 
 ## 5. Failed items / poisoned targets
 
-- `GET /{id}/failures` — Seq + the handler's error text. The same items sit in the
+- `GET /{id}/outcomes` first — how the failures split by error code (the 20 most frequent;
+  `failedCodesTruncated` says when there are more). Four thousand failures of which three
+  thousand five hundred are `ACK_TIMEOUT` is a target system that stopped answering, not four
+  thousand bad targets. It is two grouped counts over the campaign's items: about 100 ms on a
+  1M-item campaign (`campaign-benchmarks.md`), so do not script it in a tight loop.
+- `GET /{id}/failures?afterSeq=` — Seq, the handler's error text and its `errorCode`, 500 at
+  most per page. Walk the whole set by passing the last `seq` of a full page as `afterSeq`; a
+  short page is the end. The same items sit in the
   JOBS repair queue (filed by the completing slice, or immediately when a claim went
   stale): replay from THERE (`replay-items`) — one repair discipline for the whole asset.
 - "interrupted mid-flight" errors are the claim-repair story: the consumer died between
