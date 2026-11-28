@@ -20,6 +20,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   sandbox, not CI) and how to read them are in `packages/Goldpath.Approvals/ops/approvals-benchmarks.md`; no budget
   is declared, so none is asserted. `scripts/bench-approvals.sh` refuses a run that printed no line for one of the
   four proofs. The monthly `bench.yml` picks the class up unchanged.
+- **One support policy page (G18 Part 1/3, #591).** Docs and a gate; no package change.
+  - `docs/guide/support-policy.md` gathers which versions receive fixes (quoting versioning D3), the security response
+    targets (linked to SECURITY.md's table, not copied), the engines and databases supported today with each row's
+    evidence, the `[Experimental]` surfaces (none marked yet; #400 marks them) and how to ask for a backport. It decides
+    nothing. `README.md`, `docs/guide/README.md`, SECURITY.md "Supported versions" and the production runbook link it.
+  - `scripts/docs-freshness.sh` now fails on a link to a heading the target does not have, not only on a missing file.
+    It reads inline links (with a `"…"`, `'…'` or `(…)` title, in the angle form, after leading whitespace), same-file
+    `#…`, reference definitions and HTML `href` in either quote; outside code, a `](` or `href=` it cannot parse is
+    refused rather than skipped. A heading's id follows GitHub's rendered text (ATX and one-line setext headings, emphasis
+    delimiters removed while `snake_case` keeps its underscore, code spans literal, entities decoded, duplicates
+    suffixed); headings and ids inside a code fence (closed only by an equal or longer run, open to the end of the file
+    when unclosed) or an HTML comment are not anchors. A fragment is accepted only where it can prove it lands (such a
+    heading, an `id`/`name` attribute of a markdown file, a GitHub line anchor on any other file) and refused otherwise,
+    including a heading this model does not cover (a multi-line setext paragraph). Its new `--selftest` checks 18
+    heading ids against the ids GitHub renders and plants 34 broken links, failing unless each is caught; CI runs it in
+    `gates`.
 - **A production runbook for adopters (G18 Part 2/3, #592).** `docs/guide/production.md` takes a generated app from the
   AppHost to an environment: the deploy shape (`goldpath export compose` is the development tier, and Kubernetes
   manifests are not built, open thread T73), migration bundles applied once per release before the app starts, the
@@ -1015,6 +1031,32 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   allocates nothing per line on the in-memory ledger (`A_replay_allocates_no_hash_string_per_line`; a 1M-line replay,
   4-core sandbox, Release, 2026-11-26: 0 MiB, ~1.9 s, against `main`'s 0 MiB and ~0.2 s, the hashing being the price of
   comparing content). A first run allocates a stored hash per applied line (472 MiB over 1M lines, against 252 MiB).
+- **Security — the Notification webhook channel refuses a plaintext URL unless opted in (#533, threat model
+  T-NTF-07).** The email channel has refused plaintext SMTP without `AllowInsecureTransport` since audit A3. The webhook
+  channel posted to `Goldpath:Notification:Webhook:Url` whatever its scheme, and the JSON carries the recipient
+  unmasked, the rendered subject and body, the attachment names and the correlation id. It now posts only to an
+  absolute `https` URL. `GoldpathWebhookOptions.AllowInsecureTransport` (new, default `false`) admits `http` and
+  nothing else, with no loopback exemption, by the owner's decision. Every other spelling (a relative URL, a file path,
+  `ws:`, `wss:`, `ftp:`, `javascript:`, blank) is refused at send in words naming the key, and the URL is never
+  echoed, since a hub's secret is often in it. **Upgrade note:** an `http://` hook stops sending until it opts in (upgrade
+  guide). Public API: additions only.
+- **Security — the Approvals admin surface takes the decider's role from the principal, not the body (#478,
+  threat model T-APR-03).** `POST /goldpath/admin/approvals/requests/{id}/approve|reject` used to hand the body's `role`
+  to the engine, so any `goldpath-ops` holder could name the top rung of a ladder and grant it. The body's `role` is now
+  an assertion: it reaches the engine only when `HttpContext.User.IsInRole(role)` holds (the same check the admin floor's
+  `RequireRole` makes), and otherwise the engine is given no role, so the only way left to decide is a delegation the
+  engine holds for the caller's identity. On every path the body's `role` must name the pending rung, and the engine
+  judges that on the same read it decides on (verifier, PR #602): a principal holding another rung's role cannot ride a
+  delegation by naming the role it holds, and an assertion of the rung a request escalated from is refused. A principal without the rung's role that names it gets
+  `WrongRole` and the request stays pending; with the role it applies. Every other spelling of a role the principal
+  does not hold — a missing, empty or blank role, another case, a trailing space, a role under a claim type that is not
+  the identity's role claim type — is `WrongRole` too (`ApprovalAdminEndpointsTests`). No `PublicAPI` line and no wire
+  change. **Upgrade note:** an adopter whose rung names differ from its identity provider's role names maps them in its
+  own claims transformation; an `exposeUnsecured` surface with no principal can now decide only through a delegation
+  (the console smoke host seeds one, from a manager to `anonymous`, so its approval journeys decide the way an adopter's
+  delegate would).
+  In the engine, a blank `deciderRole` is no role: it never matches a rung, not even one a ladder declared blank
+  (`ApprovalEngineTests.A_blank_role_is_no_role_even_on_a_rung_declared_blank`).
 - **Bulk on Oracle takes a real file: `GoldpathBulkFileChunks.Data` is a `BLOB` there (#559).** The Oracle provider maps an
   unshaped `byte[]` to `RAW(2000)`, and the file store writes chunks of 256 KiB, so every upload above 2,000 bytes failed
   on its first save with ORA-01460 (the finance card's 10k-row file is about 200 KB). `AddGoldpathBulk` now shapes the

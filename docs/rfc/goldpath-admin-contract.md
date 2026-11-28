@@ -94,7 +94,10 @@ apply to it only where R5 says so.
 
 Decisions run the engine unchanged: the caller's principal is the decider, so four-eyes,
 distinct-eyes, the rung's role and the mandatory rejection reason all hold on this surface
-exactly as anywhere else. The store is not tenant-scoped (the approvals model predates R1's
+exactly as anywhere else. The body's `role` is an assertion, not a grant (#478): it counts only
+when the principal holds it (`User.IsInRole`), so a caller without the rung's role who names it is
+refused `WrongRole`; without the role, only a delegation the engine holds for the caller decides. On
+every path the body's `role` must name the rung pending at the decision, or it is `WrongRole`. The store is not tenant-scoped (the approvals model predates R1's
 scoping and carries no tenant column), so no `?tenant=` parameter exists to lie with. **R1 rule 5
 applies** (#481): on a multi-tenant app the WHOLE surface, both reads and both decisions, demands
 `GoldpathPolicies.OpsAllTenants`, and a tenant-scoped operator gets `403`. Single-tenant apps are
