@@ -1,5 +1,7 @@
-# GA gate G3: valid, and `goldpath check` warns that no code runs it (RoadmapValuesTests).
-# expect-warning: providers.db: oracle
+# GA gate G3: valid, and `goldpath check` warns that the COMBINATION is unproven (#412): oracle is
+# wired with broker: none, and this manifest takes the default broker, rabbitmq (GPC0001, T16).
+# The value itself no longer warns (RoadmapValuesTests).
+# expect-warning: GPC0001 providers.db+providers.broker: oracle+rabbitmq
 schemaVersion: 1
 kind: solution
 name: OrderPlatform

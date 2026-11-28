@@ -45,7 +45,7 @@ provenance rule, and it has no column here.
 | Variant | Today | Suggested home |
 |---|---|---|
 | db sqlserver | GM only | 🟡 Telco |
-| db oracle | **NOT BUILT** — [goldpath-oracle](../rfc/goldpath-oracle.md) is ACCEPTED (2026-10-23, #305; GA gate G7, T16): a PR-time `GmOracle` shape and module suites on an Oracle container | none chosen; the RFC proves it by GM and package suites, and a sample home is a later decision |
+| db oracle | **GM (PR)** — `GmOracle` (`--db oracle --broker none --auth none --features bulk --features archival`, [#412](https://github.com/qorpe/goldpath/issues/412)), **GM (nightly)** — `GmOracleCleanLocking` (the clean layout and locking on Oracle), and the module suites on an Oracle container ([goldpath-oracle](../rfc/goldpath-oracle.md), GA gate G7). Broker-less only: Oracle with a broker waits for T16 | none chosen; the RFC proves it by GM and package suites, and a sample home is a later decision |
 | auth apikey | GM only | 🟡 Telco partner/gateway surface |
 | tenancy subdomain | package tests | 🟡 Telco MVNO |
 | locking redis / sqlserver | package tests | 🟡 Telco |

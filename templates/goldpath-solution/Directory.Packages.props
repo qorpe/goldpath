@@ -22,6 +22,14 @@
     <PackageVersion Include="Aspire.Hosting.SqlServer" Version="13.6.5" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.9" />
     <!--#endif -->
+    <!--#if (UseOracle) -->
+    <!-- Oracle (G7, ORA-9, #412). Both Oracle ids are Oracle Free Use Terms and Conditions (FUTC);
+         ODP.NET is pinned directly because the Development migration gate and (with locking)
+         Goldpath.Locking.Oracle use it, at the same version the EF provider brings. -->
+    <PackageVersion Include="Aspire.Hosting.Oracle" Version="13.6.5" />
+    <PackageVersion Include="Oracle.EntityFrameworkCore" Version="10.23.26301" />
+    <PackageVersion Include="Oracle.ManagedDataAccess.Core" Version="23.26.301" />
+    <!--#endif -->
     <!--#if (UseBroker) -->
     <PackageVersion Include="Aspire.Hosting.RabbitMQ" Version="13.6.5" />
     <PackageVersion Include="MassTransit" Version="8.5.12" />
@@ -42,6 +50,9 @@
     <PackageVersion Include="Goldpath.FileExchange" Version="0.1.0-preview.9" />
     <PackageVersion Include="Goldpath.Locking" Version="0.1.0-preview.9" />
     <PackageVersion Include="Goldpath.Locking.SqlServer" Version="0.1.0-preview.9" />
+    <!--#if (UseOracle) -->
+    <PackageVersion Include="Goldpath.Locking.Oracle" Version="0.1.0-preview.9" />
+    <!--#endif -->
     <PackageVersion Include="Goldpath.Archival" Version="0.1.0-preview.9" />
     <PackageVersion Include="Goldpath.Bulk" Version="0.1.0-preview.9" />
     <PackageVersion Include="Goldpath.Console" Version="0.1.0-preview.9" />

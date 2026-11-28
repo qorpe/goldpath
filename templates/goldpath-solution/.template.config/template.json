@@ -28,6 +28,10 @@
         {
           "choice": "sqlserver",
           "description": "SQL Server"
+        },
+        {
+          "choice": "oracle",
+          "description": "Oracle Database 19c+ (FUTC-licensed driver)"
         }
       ],
       "defaultValue": "postgresql",
@@ -200,6 +204,10 @@
     "UseSqlServer": {
       "type": "computed",
       "value": "(db == \"sqlserver\")"
+    },
+    "UseOracle": {
+      "type": "computed",
+      "value": "(db == \"oracle\")"
     },
     "UseBroker": {
       "type": "computed",

@@ -82,7 +82,8 @@ apply to it only where R5 says so.
 | Method | Route | Returns |
 |---|---|---|
 | GET | `/?state=&take=` · `/{id}` | campaign list / detail |
-| GET | `/{id}/failures?take=` | failed items (item replay stays with jobs `replay-items`) |
+| GET | `/{id}/failures?afterSeq=&take=` | failed items with their `errorCode`, walked by keyset (R4.2; item replay stays with jobs `replay-items`) |
+| GET | `/{id}/outcomes` | items counted by state, failures counted by error code (R4.3; `404` for an unknown id) |
 | GET | `/{id}/audit?take=` | per-campaign audit |
 | POST | `/` (create) · `/{id}/pause` · `/resume` · `/abort` · `/throttle` | `GoldpathAdminResult` |
 

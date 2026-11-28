@@ -42,7 +42,8 @@
 > real too (2026-08-05): `goldpath new service` (own db, own `kind: service` manifest)
 > and `goldpath new gateway` (YARP over service discovery) — the nightly GmSixGateway
 > row proves generate → verbs → build → ROUTED smoke end to end. GM-2/5/6 as WRITTEN
-> remain roadmap: oracle/kafka are schema-only and ldap/saml are not in the auth enum
+> remain roadmap: kafka is schema-only, oracle is wired only broker-less (GmOracle, #412 —
+> GM-2's oracle WITH a broker waits for T16), and ldap/saml are not in the auth enum
 > (their triggers are ledgered). Treat unchecked cells as roadmap, never as coverage. The bulk-only
 > adopter question ("we will use ONLY bulk — what do we run?") has its own row since
 > 2026-08-05: GmBulkOnly proves bulk + jobs + console on NOTHING but the app database
@@ -58,7 +59,7 @@ heading was inverted. The third column is the only column that is a fact.
 |---|---|---|
 | deploymentModel | monolith→4 · modular-monolith→1,3,5 · microservice→2,6 | monolith, modular-monolith (most shapes) · microservice (GmSixGateway) |
 | codeOrg | clean→2,4 · vertical-slice→1,3,5,6 | both (GmFourClean, GmOneClean · every other shape) |
-| db | postgres→1,5,6 · sqlserver→3,4 · oracle→2 | postgres, sqlserver. **oracle is SCHEMA-ONLY** — in the enum, no EF provider, no Quartz store, no keyset translation (T16) |
+| db | postgres→1,5,6 · sqlserver→3,4 · oracle→2 | postgres, sqlserver, oracle (GmOracle, `--broker none`). **oracle with a broker is unproven** — the messaging engine's outbox has no Oracle store, so `goldpath new solution --db oracle` refuses without `--broker none` and `goldpath check` reports the combination as GPC0001 (T16) |
 | cache | redis→1,2,3,5,6 · inmemory→4 | both (GmEverything composes redis through the caching recipe; inmemory is the default) |
 | broker | rabbitmq→1,3 · kafka→2,5 · none→4 · inmemory→6 | rabbitmq, none. **kafka is SCHEMA-ONLY** — in the enum, no rider |
 | auth | openid→1,3,5 · ldap→2 · apikey→4 · saml→6 | openid, apikey (GmApiKey, 2026-09-05), none. **ldap and saml are NOT IN THE SCHEMA AT ALL** — the auth enum is `openid \| apikey \| none`; these two rows describe personas, not gaps in coverage (issue #11) |
@@ -86,6 +87,9 @@ heading was inverted. The third column is the only column that is a fact.
   `scheduler-hangfire` was REMOVED from the schema entirely (2026-07-06, jobs RFC D1):
   Hangfire is LGPL-3.0 — the license gate rejects it, so it is an impossibility, not a gap
 - db-per-tenant isolation (multiTenancy's heavyweight mode — a GM-3 variant in the module RFC)
+- oracle WITH a broker (GM-2's provider pair): the broker-on Oracle shape (GmOracleCampaign,
+  Oracle RFC §7) waits for the post-G5 messaging engine to publish an Oracle outbox store
+  (open-threads T16); until then the CLI refuses it and `goldpath check` reports it (GPC0001)
 - Ring C modules other than `modules: [yarpGateway]` (the catalog vision; every module RFC
   MUST state which GM it will enter — RFC template §7 "golden manifest impact")
 
@@ -112,6 +116,8 @@ a shape there and a row here may not drift apart, nor may the Runs column and th
 | GmOneOpenFlow | `--auth none` | open shape drives the full order flow | nightly |
 | GmFourSimple | `--db sqlserver --broker none --auth none` | the SqlServer/no-broker quadrant | nightly |
 | GmFourClean | `--layout clean-architecture …` | four-project split, migrations in Infrastructure | PR + nightly |
+| GmOracle | `--db oracle --broker none --auth none --features bulk --features archival` | Oracle end to end (G7, Oracle RFC §7): the EF provider, the Quartz store on Oracle, the Development migration gate's Oracle form, and two broker-free modules' EF tables migrated and smoked on a real Oracle container | PR + nightly |
+| GmOracleCleanLocking | `--db oracle --broker none --auth none --layout clean-architecture --features locking` | the two Oracle template branches GmOracle does not render: the clean layout (Infrastructure carries the Oracle provider and `OrdersDbContextFactory` calls `UseOracle()`, the Api's gate compiling against ODP.NET only transitively) and distributed locking on Oracle (`Goldpath.Locking.Oracle`, `AddGoldpathOracleLocking`, manifest `provider: oracle` and its drift row), migrated and smoked on a real Oracle container (#412, verifier on #608) | nightly |
 | GmOneClean | `--layout clean-architecture --features fileexchange` (defaults: postgres, broker, auth) | the clean layout on the default providers: the seam-consuming handler lives in Application, the authed FileExchange admin surface, and the NU1903 lift on postgres (found by the preview.8 release, 2026-09-05) | nightly |
 | GmCleanFeatures | `--broker none --layout clean-architecture --features audittrail --features idempotency --features dataprotection --features locking` | the clean layout carrying the features whose CODE THE LAYOUT MOVES. Neither clean shape above reaches them: GmFourClean takes no features, and GmOneClean keeps the default broker, which supplies `Mediant.Behaviors` to Application by accident through `Goldpath.Messaging` — hence broker-less here. Added 2026-09-09 after qorpe/coexist generated this shape as its first adopter and it did not build, twice: the entity partials and the command attribute land in Domain and Application, but only the Api csproj carried the feature-conditional package references. `--features audittrail` joined at the preview.9 release: this lane builds against the SOURCE (its local feed shadows nuget.org), so it never had to wait for the train that publishes the `IAuditLogged` move | PR + nightly |
 | GmSixGateway | `--auth none` + `new service` + `new gateway` | multi-head by the adopter's own verbs; routed probe | PR + nightly |
@@ -137,21 +143,21 @@ a shape there and a row here may not drift apart, nor may the Runs column and th
 
 ADR-0008 asks for the matrix "on every template or core package change"; until 2026-10-20 it
 ran only nightly, which is how preview.8 shipped GP2102 and how pull requests kept merging
-for days while the nightly was red. `ci.yml` now runs the eleven **PR** shapes above, in
+for days while the nightly was red. `ci.yml` now runs the fourteen **PR** shapes above, in
 parallel, on every pull request whose files touch what a generated app is built from —
 `templates/`, `tools/Goldpath.Cli/`, `analyzers/`, `packages/` (the lane packs the SOURCE
 into a feed that shadows nuget.org, so a package change reaches every generated app),
 `ui/console/` (its bundle ships inside `Goldpath.Console`), `schemas/manifest/` (spec-lint
 validates against it), the root `Directory.*.props`, `global.json`, `nuget.config`, and the
 lane itself. The check `golden manifests (PR subset)` always reports, so it can be required.
-Wall-clock is one shape's (about three minutes on a hosted runner), not eleven.
+Wall-clock is one shape's (about three minutes on a hosted runner; GmOracle's Oracle container adds its own start-up), not fourteen.
 
 The subset is chosen by COVERAGE: every template flag value and every CLI verb that writes
 into a generated app runs in at least one PR shape.
 
 | What must be exercised | Values | PR shape(s) |
 |---|---|---|
-| solution `--db` | postgresql · sqlserver | GmEverything · GmFourClean |
+| solution `--db` | postgresql · sqlserver · oracle | GmEverything · GmFourClean · GmOracle |
 | solution `--broker` | rabbitmq · none | GmEverything · GmCleanFeatures, GmFourClean, GmGrown |
 | solution `--auth` | openid · apikey · none | GmCleanFeatures, GmGrownRest, GmWorkerInSolution · GmApiKey · GmEverything |
 | solution `--layout` | vertical-slice · clean-architecture | GmEverything · GmCleanFeatures (with the features the layout moves), GmFourClean (on sqlserver) |

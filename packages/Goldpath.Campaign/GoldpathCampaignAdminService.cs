@@ -93,7 +93,35 @@ public sealed record GoldpathCampaignInfo(
 public sealed record GoldpathCampaignThrottleResult(bool Ok, string Message, long PolicyVersion, bool Stale);
 
 /// <summary>One failed item (the drill-down; REPLAY delegates to the jobs console).</summary>
-public sealed record GoldpathCampaignFailedItem(long Seq, string? Error, DateTimeOffset? CompletedAt);
+public sealed record GoldpathCampaignFailedItem(long Seq, string? Error, DateTimeOffset? CompletedAt)
+{
+    /// <summary>
+    /// The item's short, stable error code (admin-contract R4.2): the code a handler gave
+    /// <c>Failed(code, …)</c>, <c>HANDLER_EXCEPTION</c> for a throw, <c>ACK_TIMEOUT</c> for an
+    /// acknowledgement nobody sent, or a callback's own code; null for an item that failed under R1.
+    /// </summary>
+    public string? ErrorCode { get; init; }
+}
+
+/// <summary>
+/// One campaign's items counted by outcome (admin-contract R4.3). The route counts rows and
+/// derives nothing: no ratio, no ETA, no "health" — the console computes those.
+/// </summary>
+/// <param name="ByState">Items by <see cref="GoldpathCampaignItemState"/> name; a state with no items is omitted.</param>
+/// <param name="FailedByCode">
+/// The <see cref="GoldpathCampaignItemState.Failed"/> items by error code: count descending, then
+/// code ordinal, with <c>null</c> (no code) last among equal counts; at most 20 entries.
+/// </param>
+/// <param name="FailedCodesTruncated">True when more distinct codes exist than <paramref name="FailedByCode"/> holds.</param>
+public sealed record GoldpathCampaignOutcomes(
+    IReadOnlyDictionary<string, long> ByState,
+    IReadOnlyList<GoldpathCampaignCodeCount> FailedByCode,
+    bool FailedCodesTruncated);
+
+/// <summary>Failed items under one error code (admin-contract R4.3); <paramref name="Code"/> is null for items that carry none.</summary>
+/// <param name="Code">The error code, or null for failed items with no code.</param>
+/// <param name="Count">How many failed items carry it.</param>
+public sealed record GoldpathCampaignCodeCount(string? Code, long Count);
 
 /// <summary>The LIVE policy patch (D6): null fields keep their current value.</summary>
 public sealed record GoldpathCampaignThrottle(
@@ -246,17 +274,98 @@ public sealed class GoldpathCampaignAdminService<TContext>
     }
 
     /// <summary>The failed-item drill-down (replay rides the JOBS console — same repair discipline).</summary>
-    public async Task<IReadOnlyList<GoldpathCampaignFailedItem>> GetFailedItemsAsync(Guid id, int take, CancellationToken ct)
+    public Task<IReadOnlyList<GoldpathCampaignFailedItem>> GetFailedItemsAsync(Guid id, int take, CancellationToken ct)
+        => GetFailedItemsAsync(id, afterSeq: 0, take, ct);
+
+    /// <summary>
+    /// The failed-item drill-down walked by keyset (admin-contract R4.2): failed items in
+    /// <c>Seq</c> order after <paramref name="afterSeq"/> (exclusive; 0 starts at the beginning).
+    /// A full page means "ask again after its last <c>Seq</c>"; a short page is the end. Keyset,
+    /// not offset, because the set grows while it is read.
+    /// </summary>
+    public async Task<IReadOnlyList<GoldpathCampaignFailedItem>> GetFailedItemsAsync(Guid id, long afterSeq, int take, CancellationToken ct)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TContext>();
         return await db.Set<GoldpathCampaignItem>().AsNoTracking()
-            .Where(i => i.CampaignId == id && i.State == GoldpathCampaignItemState.Failed)
+            .Where(i => i.CampaignId == id && i.State == GoldpathCampaignItemState.Failed && i.Seq > afterSeq)
             .OrderBy(i => i.Seq)
             .Take(AdminPaging.Clamp(take))
-            .Select(i => new GoldpathCampaignFailedItem(i.Seq, i.Error, i.CompletedAt))
+            .Select(i => new GoldpathCampaignFailedItem(i.Seq, i.Error, i.CompletedAt) { ErrorCode = i.ErrorCode })
             .ToListAsync(ct);
     }
+
+    /// <summary>The most error codes <see cref="GetOutcomesAsync"/> lists (admin-contract R4.3).</summary>
+    internal const int MaxFailedCodes = 20;
+
+    /// <summary>
+    /// One campaign's items counted by state, and its failures counted by error code
+    /// (admin-contract R4.3); null when no campaign has <paramref name="id"/>. Two grouped counts
+    /// over one campaign's items — the first admin read that scans more than one page, so a caller
+    /// polls it at the governor's interval, not in a loop. The two counts are two statements, not one
+    /// snapshot: while the campaign runs, the codes may sum to a few more or fewer failures than
+    /// <see cref="GoldpathCampaignOutcomes.ByState"/> reports.
+    /// </summary>
+    public async Task<GoldpathCampaignOutcomes?> GetOutcomesAsync(Guid id, CancellationToken ct)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TContext>();
+        if (!await db.Set<GoldpathCampaign>().AsNoTracking().AnyAsync(c => c.Id == id, ct))
+        {
+            return null;
+        }
+
+        var items = db.Set<GoldpathCampaignItem>().AsNoTracking().Where(i => i.CampaignId == id);
+        var states = await items.GroupBy(i => i.State)
+            .Select(g => new { State = g.Key, Count = g.LongCount() })
+            .ToListAsync(ct);
+
+        // The order is fixed HERE, not left to the database's collation. The database ranks by count and
+        // breaks ties by the code under a BINARY collation (the provider's bytewise one: PostgreSQL "C",
+        // Oracle BINARY, SQLite's default), so the 21 rows it returns are the contract's first 21 rather
+        // than whichever equal counts a linguistic collation (ICU en-US, an Oracle session's NLS_SORT)
+        // happens to put first — a tie straddling the twentieth place included. It brings one code more
+        // than the page holds (the truncation flag); the final order — count descending, code ordinal,
+        // no code last among equal counts — is applied below. Where the database puts NULL among equal
+        // counts cannot change the answer: there is one NULL group, and the extra row it may take is the
+        // one the page drops.
+        var failed = items.Where(i => i.State == GoldpathCampaignItemState.Failed)
+            .GroupBy(i => i.ErrorCode)
+            .Select(g => new { Code = g.Key, Count = g.LongCount() })
+            .OrderByDescending(g => g.Count);
+        var collation = BinaryCollation(db.Database.ProviderName);
+        var codes = await (collation is null
+                ? failed.ThenBy(g => g.Code)
+                : failed.ThenBy(g => EF.Functions.Collate(g.Code, collation)))
+            .Take(MaxFailedCodes + 1)
+            .ToListAsync(ct);
+
+        var byState = states
+            .OrderBy(s => s.State)
+            .ToDictionary(s => s.State.ToString(), s => s.Count, StringComparer.Ordinal);
+        var failedByCode = codes
+            .OrderByDescending(c => c.Count)
+            .ThenBy(c => c.Code is null ? 1 : 0)
+            .ThenBy(c => c.Code, StringComparer.Ordinal)
+            .Take(MaxFailedCodes)
+            .Select(c => new GoldpathCampaignCodeCount(c.Code, c.Count))
+            .ToList();
+        return new GoldpathCampaignOutcomes(byState, failedByCode, codes.Count > MaxFailedCodes);
+    }
+
+    /// <summary>
+    /// The bytewise collation the outcomes' tie-break is ordered under, so that which equal counts reach
+    /// the twentieth place is the same on every provider (admin-contract R4.3). Null where the provider's
+    /// default is already bytewise (SQLite) and for a provider Campaign has no proof on (SQL Server among
+    /// them), where the database's own collation still breaks that one tie (open-threads T69).
+    /// </summary>
+    internal static string? BinaryCollation(string? providerName) => providerName switch
+    {
+        null => null,
+        _ when providerName.Contains("Npgsql", StringComparison.Ordinal) => "C",
+        _ when providerName.Contains("Oracle", StringComparison.Ordinal) => "BINARY",
+        _ => null,
+    };
 
     /// <summary>The audit trail of one campaign (who did what, newest first).</summary>
     public async Task<IReadOnlyList<GoldpathCampaignAudit>> GetAuditAsync(Guid id, int take, CancellationToken ct)
