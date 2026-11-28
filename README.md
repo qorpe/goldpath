@@ -112,4 +112,7 @@ safe to take blind; `0.(x+1)` minors may break but never silently: every break s
 with a step-by-step upgrade guide (`docs/upgrades/`), and the `PublicAPI.*.txt` ledger
 diff is the mechanical proof of what changed. Support: latest release only pre-1.0;
 from 1.0, previous major gets security fixes for 6 months. The full written contract:
-[docs/rfc/goldpath-versioning.md](docs/rfc/goldpath-versioning.md).
+[docs/rfc/goldpath-versioning.md](docs/rfc/goldpath-versioning.md). What is supported today —
+the fix window, the security response targets, the engine and database matrix and the
+`[Experimental]` surfaces, each linked to its source — is one page:
+[the support policy](docs/guide/support-policy.md).

@@ -95,8 +95,20 @@ public sealed class GoldpathWebhookChannel : IGoldpathNotificationChannel
                 "The webhook channel needs Goldpath:Notification:Webhook Url — configuration, not code.");
         }
 
+        // Fail-closed (#533, T-NTF-07), as the email channel is on plaintext: the JSON below carries the recipient unmasked
+        // and the rendered message, so it travels over TLS unless plaintext is a visible decision. The rule is an allow-list
+        // of the parsed URI's scheme — https, and http only with the opt-in — so every other spelling (a relative URL, a
+        // file path, ws:, ftp:, javascript:) is refused too. The URL is never echoed: a hub's secret is often in it (A11).
+        if (!Uri.TryCreate(_options.Url, UriKind.Absolute, out var url)
+            || !(url.Scheme == Uri.UriSchemeHttps || (url.Scheme == Uri.UriSchemeHttp && _options.AllowInsecureTransport)))
+        {
+            throw new InvalidOperationException(
+                "Goldpath:Notification:Webhook:Url is not an absolute https URL — a plaintext http hook must be opted into explicitly "
+                + "with Goldpath:Notification:Webhook:AllowInsecureTransport=true, and no other scheme is accepted.");
+        }
+
         var client = _httpClientFactory.CreateClient("goldpath-notification-webhook");
-        var response = await client.PostAsJsonAsync(_options.Url, new
+        var response = await client.PostAsJsonAsync(url, new
         {
             id = message.NotificationId,
             recipient = message.Recipient,

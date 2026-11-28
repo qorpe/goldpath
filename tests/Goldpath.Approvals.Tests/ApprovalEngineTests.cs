@@ -139,6 +139,28 @@ public class ApprovalEngineTests
             await engine.DecideAsync(expertRung.Id, "stand-in", "no-role", true, "the delegated rung"));
     }
 
+    /// <summary>
+    /// #478: a blank role is no role. A decider naming none — empty or white space — is refused <c>WrongRole</c> even
+    /// on a rung a ladder declared blank, where a plain comparison would have matched; so the admin surface's "the
+    /// principal holds no such role" can never be read as a role by a misconfigured ladder.
+    /// </summary>
+    [Theory]
+    [InlineData("", "")]
+    [InlineData("   ", "   ")]
+    [InlineData("", "expert")]
+    public async Task A_blank_role_is_no_role_even_on_a_rung_declared_blank(string deciderRole, string rungRole)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-08-18T09:00:00Z"));
+        var options = new GoldpathApprovalsOptions().AddLadder("blank", ladder => ladder.TopRung(rungRole, TimeSpan.FromHours(24)));
+        var store = new GoldpathInMemoryApprovalStore();
+        var engine = new GoldpathApprovalEngine(options, store, clock, NullLogger<GoldpathApprovalEngine>.Instance, new RecordingPublisher());
+        var request = await engine.RequestAsync("blank", "B-1", 1m, "maker");
+
+        Assert.Equal(GoldpathApprovalDecisionOutcome.WrongRole, await engine.DecideAsync(request.Id, "checker", deciderRole, granted: true, "x"));
+        Assert.Equal(GoldpathApprovalDecisionOutcome.WrongRole, await engine.DecideAsync(request.Id, "checker", deciderRole, granted: false, "x"));
+        Assert.Equal(GoldpathApprovalStatus.Pending, (await Reload(store, request.Id)).Status);
+    }
+
     [Fact]
     public async Task A_delegation_admits_its_role_however_the_role_is_cased_and_on_every_ladder_with_that_rung()
     {
