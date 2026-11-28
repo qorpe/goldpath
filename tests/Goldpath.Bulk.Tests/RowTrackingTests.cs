@@ -342,4 +342,49 @@ public sealed class RowTrackingTests : IDisposable
         Assert.Equal("E1", Assert.Single(tagged).Row);
         Assert.Equal(1, tagged[0].Tags);
     }
+    /// <summary>
+    /// #609: an entity the failing row did not CREATE is never the anchor that makes another entity the failing row's.
+    /// E1 succeeds by hanging a receipt that names an existing instruction by foreign key on a ledger tracked before the
+    /// run, and nothing detects it. E2 brings that instruction into the tracker (by a query, by <c>Attach</c>, or by
+    /// <c>Update</c>), detects, and fails: E1's receipt must still be saved, since E1 is executed.
+    /// </summary>
+    [Theory]
+    [InlineData("load")]
+    [InlineData("attach")]
+    [InlineData("update")]
+    public async Task An_earlier_rows_entity_naming_one_the_failing_row_only_brought_into_the_tracker_is_still_saved(string how)
+    {
+        var ledgerId = Guid.NewGuid();
+        var instructionId = Guid.NewGuid();
+        _fixture.Mutate(db =>
+        {
+            db.Add(new TrackedLedger { Id = ledgerId });
+            db.Add(new TrackedInstruction { Id = instructionId, Row = "seed" });
+        });
+        await ApprovedAsync(("E1", "TR1", "10", null), ("E2", "TR2", "20", "FAIL"));
+        TrackedLedger? ledger = null;
+        _fixture.Handler.Probe = (row, context) =>
+        {
+            var db = context.Services.GetRequiredService<BulkTestContext>();
+            if (row.Note is null)
+            {
+                ledger!.Receipts.Add(new TrackedReceipt { InstructionId = instructionId });   // E1: undetected so far
+                return;
+            }
+
+            _ = how switch
+            {
+                "load" => db.Set<TrackedInstruction>().Single(i => i.Id == instructionId),
+                "attach" => db.Attach(new TrackedInstruction { Id = instructionId, Row = "seed" }).Entity,
+                _ => db.Update(new TrackedInstruction { Id = instructionId, Row = "seed" }).Entity,
+            };
+            db.ChangeTracker.DetectChanges();   // E2's detection is the first to find E1's receipt; then E2 fails
+        };
+
+        await ExecuteInOneScopeAsync(db => ledger = db.Set<TrackedLedger>().Single(l => l.Id == ledgerId));
+
+        var receipt = Assert.Single(_fixture.Query(db => db.Set<TrackedReceipt>().ToList()));
+        Assert.Equal(instructionId, receipt.InstructionId);
+        Assert.Equal(ledgerId, receipt.TrackedLedgerId);
+    }
 }

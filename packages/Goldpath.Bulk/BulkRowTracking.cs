@@ -21,6 +21,15 @@ namespace Goldpath;
 /// principal, a many-to-many join entity). Anything else stays tracked and is saved.
 /// </para>
 /// <para>
+/// Only an entity the row CREATED may claim another (<c>anchors</c>): one EF began tracking as <see cref="EntityState.Added"/>
+/// and not from a query. An entity the row loaded, attached or marked for update is not the row's work, so it is still
+/// left out itself but never claims a discovered entity: an earlier, successful row's entity may name it by a foreign key
+/// or a navigation, and claiming that would drop an executed row's write (#609). The rule is fail-closed in the direction
+/// that matters: whatever is not known to be the failing row's creation cannot make anything else the failing row's, so
+/// a discovered entity in doubt is saved, never silently dropped. The cost is the other direction: a new child the row
+/// hung on an entity it loaded or attached is saved, the same limit as open thread T71.
+/// </para>
+/// <para>
 /// What the row did through entries tracked BEFORE it, including a new entity hung on such an entry's navigation, is
 /// not undone (open thread T71).
 /// </para>
@@ -29,6 +38,7 @@ internal sealed class BulkRowTracking : IDisposable
 {
     private readonly ChangeTracker _tracker;
     private readonly List<EntityEntry> _direct = [];
+    private readonly HashSet<object> _created = new(ReferenceEqualityComparer.Instance);
     private readonly List<EntityEntry> _discovered = [];
     private int _detecting;
 
@@ -47,6 +57,7 @@ internal sealed class BulkRowTracking : IDisposable
     public void BeginRow()
     {
         _direct.Clear();
+        _created.Clear();
         _discovered.Clear();
         _detecting = 0;
     }
@@ -85,15 +96,21 @@ internal sealed class BulkRowTracking : IDisposable
     }
 
     /// <summary>
-    /// The row's direct entities, then every discovered one linked to an owned entity, to a fixpoint. The discovered
-    /// list is what this row's own detections found, so the walk is bounded by the row's work.
+    /// The row's direct entities, then every discovered one linked to an anchor, to a fixpoint. The anchors are what
+    /// the row created, then every discovered entity they claim; a direct entity the row only loaded or attached is
+    /// owned but never an anchor (#609). The discovered list is what this row's own detections found, so the walk is
+    /// bounded by the row's work.
     /// </summary>
     private List<EntityEntry> Owned()
     {
         var owned = new Dictionary<object, EntityEntry>(ReferenceEqualityComparer.Instance);
+        var anchors = new List<EntityEntry>();
         foreach (var entry in _direct)
         {
-            owned.TryAdd(entry.Entity, entry);
+            if (owned.TryAdd(entry.Entity, entry) && _created.Contains(entry.Entity))
+            {
+                anchors.Add(entry);
+            }
         }
 
         var pending = _discovered.Where(e => !owned.ContainsKey(e.Entity)).DistinctBy(e => e.Entity, ReferenceEqualityComparer.Instance).ToList();
@@ -103,9 +120,10 @@ internal sealed class BulkRowTracking : IDisposable
             grew = false;
             for (var i = pending.Count - 1; i >= 0; i--)
             {
-                if (Linked(pending[i], owned.Values))
+                if (Linked(pending[i], anchors))
                 {
                     owned.Add(pending[i].Entity, pending[i]);
+                    anchors.Add(pending[i]);
                     pending.RemoveAt(i);
                     grew = true;
                 }
@@ -164,7 +182,19 @@ internal sealed class BulkRowTracking : IDisposable
     }
 
     private void OnTracked(object? sender, EntityTrackedEventArgs e)
-        => (_detecting > 0 ? _discovered : _direct).Add(e.Entry);
+    {
+        if (_detecting > 0)
+        {
+            _discovered.Add(e.Entry);
+            return;
+        }
+
+        _direct.Add(e.Entry);
+        if (!e.FromQuery && e.Entry.State == EntityState.Added)
+        {
+            _created.Add(e.Entry.Entity);   // the row's own creation: only this may claim a discovered entity
+        }
+    }
 
     private void OnDetecting(object? sender, EventArgs e) => _detecting++;
 

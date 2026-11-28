@@ -1025,8 +1025,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   100k-row bench, which executes every chunk in one scope, went from 35.4 s to not finishing in 21 minutes. The engine
   now records what a row's handler starts tracking as EF raises `ChangeTracker.Tracked`, O(1) per entity. A failed
   row's work is still left out of the chunk's save: what it added, attached or loaded, plus what a detection inside the
-  row found joined to those entities by a navigation or a foreign key (a child, a grandchild, an existing row moved under
-  it, a many-to-many join, a new principal). An earlier, successful row's entity that the failing row's detection happens to find first is kept.
+  row found joined by a navigation or a foreign key to an entity the row CREATED (a child, a grandchild, an existing row
+  moved under it, a many-to-many join, a new principal). An entity the row only loaded, attached or marked for update
+  never makes another entity the row's (#609), so an earlier, successful row's entity that the failing row's detection
+  happens to find first is kept, even when it names what the failing row loaded.
   `RowTrackingTests` counts full detections per chunk, so the guard is deterministic: on `main` a 200-row chunk made
   more detections than a 2-row one, both when every row succeeds and when every row fails. The 100k execute is back to
   29.8 s (≈3,360 rows/s) on PostgreSQL on the same sandbox (`ops/bulk-benchmarks.md`). No public API change. What a
