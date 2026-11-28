@@ -47,6 +47,10 @@ defined in [docs/rfc/goldpath-ga-readiness.md](docs/rfc/goldpath-ga-readiness.md
 An adopter who cannot move trains quickly should say so in an issue: a backport is a
 decision we can make, but not one we can guess.
 
+The whole support picture — this window, the response targets above, the engines and
+databases supported today and the `[Experimental]` surfaces — is gathered, with a link to each
+fact's owner, in the [support policy](docs/guide/support-policy.md).
+
 ## What ships with each release, so you can verify it yourself
 
 - **An SBOM** (CycloneDX, `goldpath-sbom.cdx.json`, attached to the GitHub release) — the

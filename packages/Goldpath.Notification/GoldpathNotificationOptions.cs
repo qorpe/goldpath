@@ -248,8 +248,16 @@ public sealed class GoldpathEmailOptions
 /// <summary>Options for the shipped webhook channel (config-bound under Goldpath:Notification:Webhook).</summary>
 public sealed class GoldpathWebhookOptions
 {
-    /// <summary>The URL messages POST to (Teams/Slack/in-house hub).</summary>
+    /// <summary>The URL messages POST to (Teams/Slack/in-house hub). It must be an absolute <c>https</c> URL; see <see cref="AllowInsecureTransport"/>.</summary>
     public string Url { get; set; } = "";
+
+    /// <summary>
+    /// EXPLICIT opt-in for a plaintext <c>http</c> URL (#533, threat model T-NTF-07), mirroring the email
+    /// channel's <see cref="GoldpathEmailOptions.AllowInsecureTransport"/>: the posted JSON carries the recipient unmasked
+    /// and the rendered message, so without this the channel refuses any URL that is not <c>https</c>, loopback included.
+    /// Any scheme other than <c>http</c> and <c>https</c> is refused either way.
+    /// </summary>
+    public bool AllowInsecureTransport { get; set; }
 }
 
 /// <summary>

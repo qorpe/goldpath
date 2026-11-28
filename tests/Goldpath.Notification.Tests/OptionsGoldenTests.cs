@@ -21,6 +21,7 @@ public class OptionsGoldenTests
         Assert.Equal("", options.EmailOptions.Password);
         Assert.Equal("", options.EmailOptions.From);
         Assert.Equal("", options.WebhookOptions.Url);
+        Assert.False(options.WebhookOptions.AllowInsecureTransport);   // #533: plaintext hooks are an explicit opt-in
         Assert.Empty(options.Templates);
     }
 

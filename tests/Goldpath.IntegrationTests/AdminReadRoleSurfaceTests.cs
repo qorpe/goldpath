@@ -80,7 +80,11 @@ public sealed class AdminReadRoleSurfaceTests : IAsyncLifetime
                 .RetainFor(years: 10)));
         builder.AddGoldpathNotification<WebApplicationBuilder, ClusterDb>(notification =>
         {
-            notification.Webhook(w => w.Url = "http://127.0.0.1:9/hook");
+            notification.Webhook(w =>
+            {
+                w.Url = "http://127.0.0.1:9/hook";
+                w.AllowInsecureTransport = true;   // a loopback test hook speaks plaintext: an explicit opt-in (#533)
+            });
             notification.AddTemplate("welcome", t => t.Channel("webhook", c => c.Body("", "Welcome.")));
         });
         builder.AddGoldpathJobsManagement<WebApplicationBuilder, ClusterDb>(jobs => jobs.ConnectionName = "jobsdb");
