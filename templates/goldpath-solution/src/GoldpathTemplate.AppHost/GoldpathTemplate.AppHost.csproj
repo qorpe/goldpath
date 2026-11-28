@@ -17,6 +17,9 @@
     <!--#if (UseSqlServer) -->
     <PackageReference Include="Aspire.Hosting.SqlServer" />
     <!--#endif -->
+    <!--#if (UseOracle) -->
+    <PackageReference Include="Aspire.Hosting.Oracle" />
+    <!--#endif -->
     <!--#if (UseCaching) -->
     <PackageReference Include="Aspire.Hosting.Redis" />
     <!--#endif -->

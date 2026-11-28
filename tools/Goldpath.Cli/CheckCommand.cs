@@ -5,8 +5,8 @@ namespace Goldpath.Cli;
 /// <summary>
 /// <c>goldpath check</c> — the one verb a team runs before pushing: specdrift validate, specdrift
 /// drift, db status (migrations RFC D5), then <c>dotnet build</c>. Stops at the first red step (each later step assumes the
-/// earlier one). A valid manifest that selects a roadmap-only value is warned about after validate,
-/// without failing (GA gate G3).
+/// earlier one). A valid manifest that selects a roadmap-only value, or a combination no shape
+/// proves (<see cref="UnprovenCombinations"/>), is warned about after validate, without failing (GA gate G3).
 /// </summary>
 public static class CheckCommand
 {
@@ -60,11 +60,17 @@ public static class CheckCommand
         }
 
         var schema = JsonNode.Parse(SpecdriftGate.ManifestSchemaText())!;
-        foreach (var finding in RoadmapValues.Find(schema, ArtefactYaml.Parse(File.ReadAllText(manifest))))
+        var parsed = ArtefactYaml.Parse(File.ReadAllText(manifest));
+        foreach (var finding in RoadmapValues.Find(schema, parsed))
         {
             output.WriteLine(
                 $"── goldpath check: WARNING {finding.Path}: '{finding.Value}' is accepted by the schema and no code runs it. " +
                 $"The schema says: {finding.Annotation}");
+        }
+
+        foreach (var finding in UnprovenCombinations.Find(parsed))
+        {
+            output.WriteLine($"── goldpath check: WARNING {finding.Id} {finding.Path}: '{finding.Value}' — {finding.Message}");
         }
     }
 }

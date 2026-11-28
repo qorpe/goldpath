@@ -5,6 +5,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
 
 ## [Unreleased]
 ### Added
+- **`--db oracle` in the solution template, the GmOracle shape at PR time, and `oracle` off SCHEMA-ONLY (G7 Oracle
+  9/12, #412).** `goldpath-solution` offers `oracle` (Oracle Database 19c+, FUTC-licensed driver). Under it the
+  database-owning project (Api in vertical-slice, Infrastructure in clean-architecture) references
+  `Oracle.EntityFrameworkCore` 10.23.26301 and `Oracle.ManagedDataAccess.Core` 23.26.301; registration and the
+  design-time factory call `UseOracle`; the jobs store is `GoldpathJobStoreProvider.Oracle`; `locking` wires
+  `Goldpath.Locking.Oracle` (`AddGoldpathOracleLocking`, manifest `provider: oracle`, a drift row); and the AppHost
+  runs `Aspire.Hosting.Oracle` 13.6.5 on the pinned `gvenzl/oracle-free:23.26.3-slim-faststart` image, with the app
+  database on the image's `FREEPDB1`. The Development migration gate has an Oracle form: a table lock held in a
+  transaction on a second connection (DDL commits on Oracle, so a lock on the migrating connection would not hold),
+  which needs no `DBMS_LOCK` grant. `GmOracle` (`--db oracle --broker none --auth none --features bulk --features
+  archival`) joins the PR subset. The postgresql and sqlserver outputs are byte-identical to before.
+- **`goldpath new solution --db oracle` refuses without `--broker none` (#412; owner decision 2026-11-25).** It exits
+  2, generates nothing and names `--broker none` and open-threads T16, in every command-line spelling `dotnet new`
+  takes (`--db oracle`, `--db=oracle`, `--db:oracle` and the `-db` alias); a broker that does not read as `none` is
+  refused too. A response file (`@file`, which `dotnet new` would expand unseen) is refused for every `new solution`,
+  whatever the database: the pairing is checked only on arguments the CLI can read. `GmOracleCleanLocking`
+  (`--db oracle --broker none --auth none --layout clean-architecture --features locking`) runs nightly, so the
+  clean-architecture and Oracle-locking branches of the template have a shape that goes red.
+- **`goldpath check` reports `db: oracle` with a broker as `GPC0001` (#412; Oracle RFC §3).** A warning after
+  validate, like the roadmap-value warning: an absent broker is the schema's default `rabbitmq`, and only `none` is
+  clean. Corpus `m9` now expects it and `m10` (`oracle` + `none`) expects nothing.
+- **The manifest schema accepts `features.distributedLocking.provider: oracle`** (additive), the provider the
+  template's Oracle shape writes.
 - **Bulk's Oracle bench column: the 10k and the 1M-row intake (G7 Oracle 8/12, #556).** Measured on one machine (the
   overnight sandbox, 4 CPUs, Debug, `3403c2c`) beside PostgreSQL. The 10k intake takes 3.23 s on Oracle against
   1.84 s. The 1M-row intake validates at 11,981 rows/s against 20,485, with the same 990,049 valid, 9,951 invalid and
@@ -880,6 +903,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
   empty matrix that passes. `stryker/README.md` and the release checklist name it.
 
 ### Changed
+- **The verbs that infer an app's provider refuse an Oracle app in words (#412).** `goldpath add feature`,
+  `goldpath add worker` and `goldpath new service` read anything that was not PostgreSQL as SQL Server (or the
+  reverse), so on an app generated with `--db oracle` they would have written another provider's code into it. They
+  now accept only PostgreSQL, SQL Server or no provider and refuse any other, touching no file, until ORA-10
+  ([#413](https://github.com/qorpe/goldpath/issues/413)) teaches them Oracle.
+- **`providers.db: oracle` is no longer SCHEMA-ONLY.** Its `$comment` says it is wired with `broker: none`;
+  `schema-honesty.sh` no longer expects the annotation, and `goldpath check` no longer warns about the value alone.
 - **T1 is closed: the console driving CorPay has its first green night (GA gate G11 met, #325).** Ledgers only; no
   package change. The `corpay-console-smoke` nightly job passed 4 of 4 specs on 2026-11-10 (nightly run 154,
   [job](https://github.com/qorpe/goldpath/actions/runs/42789231201/job/129738098092)), the first night after #540 merged, and on every nightly since. open-threads moves T1 to Closed

@@ -6,6 +6,17 @@ var database = builder.AddPostgres("dbserver").AddDatabase("ordersdb");
 #if (UseSqlServer)
 var database = builder.AddSqlServer("dbserver").AddDatabase("ordersdb");
 #endif
+#if (UseOracle)
+// The image is PINNED (Oracle RFC §4: never `23`, `slim` or `latest`), and it is the image every
+// Oracle proof in Goldpath runs on. It reads its password from ORACLE_PASSWORD; Aspire sets
+// ORACLE_PWD for Oracle's own image, so the same parameter is handed to both names. The app
+// database is the image's pluggable database, FREEPDB1, which exists from the first boot.
+var dbServer = builder.AddOracle("dbserver")
+    .WithImageRegistry("docker.io")
+    .WithImage("gvenzl/oracle-free", "23.26.3-slim-faststart");
+dbServer.WithEnvironment(context => context.EnvironmentVariables["ORACLE_PASSWORD"] = dbServer.Resource.PasswordParameter);
+var database = dbServer.AddDatabase("ordersdb", "FREEPDB1");
+#endif
 #if (UseBroker)
 var messaging = builder.AddRabbitMQ("messaging");
 #endif

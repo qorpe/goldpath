@@ -37,6 +37,11 @@ public static class NewCommand
             _ => throw new CliUsageException($"unknown kind '{kind}' — goldpath new solution|worker|service|gateway"),
         };
 
+        if (kind is "solution")
+        {
+            RefuseOracleWithBroker(rest);
+        }
+
         var exitCode = runner.Run("dotnet", ["new", template, .. rest], Directory.GetCurrentDirectory());
         if (exitCode != 0)
         {
@@ -109,6 +114,70 @@ public static class NewCommand
             throw new CliUsageException(
                 $"goldpath new {kind} does not take '{token}' — a head follows the SOLUTION's shape (database, broker, auth); the only flag is --path <dir>.");
         }
+    }
+
+    /// <summary>
+    /// <c>--db oracle</c> ships broker-less first (Oracle RFC §2.9, §3): the messaging engine's
+    /// outbox has no proven Oracle store, which open-threads T16 tracks. The template's DEFAULT
+    /// broker is <c>rabbitmq</c>, so a bare <c>--db oracle</c> would land on exactly that
+    /// unproven combination. Owner decision 2026-11-25 (#412): refuse and generate nothing,
+    /// rather than switch the broker default by database. Fail-closed: the broker must READ as
+    /// <c>none</c> in a spelling this method recognises; any other spelling is refused too. And
+    /// the arguments must all be ON the command line: <c>dotnet new</c> expands a token starting
+    /// with <c>@</c> into a response file's contents, wherever it stands, which this method does
+    /// not read, so any such token is refused before the database is even looked at.
+    /// </summary>
+    private static void RefuseOracleWithBroker(IReadOnlyList<string> rest)
+    {
+        if (rest.FirstOrDefault(token => token.StartsWith('@')) is { } responseFile)
+        {
+            throw new CliUsageException(
+                $"goldpath new solution does not read a response file ('{(responseFile.Length > 64 ? responseFile[..64] + "…" : responseFile)}'): the database/broker pairing is checked before anything is generated, so pass --db and --broker on the command line. Nothing was generated.");
+        }
+
+        var db = TemplateOptionValues(rest, "--db", "-db");
+        if (!db.Any(value => string.Equals(value, "oracle", StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        var broker = TemplateOptionValues(rest, "--broker", "-b");
+        if (broker.Count > 0 && broker.All(value => string.Equals(value, "none", StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        throw new CliUsageException(
+            "goldpath new solution --db oracle needs --broker none: an Oracle app ships without a broker until the messaging engine has a proven Oracle outbox store (open-threads T16). Nothing was generated. Re-run with --broker none.");
+    }
+
+    /// <summary>
+    /// Every value a template option was given, in the spellings <c>dotnet new</c> accepts:
+    /// <c>--db oracle</c>, <c>--db=oracle</c> and <c>--db:oracle</c>, and the same for the alias
+    /// the template engine prints in <c>dotnet new goldpath-solution -h</c> (<c>-db</c>, <c>-b</c>).
+    /// </summary>
+    private static List<string> TemplateOptionValues(IReadOnlyList<string> rest, params string[] names)
+    {
+        var values = new List<string>();
+        for (var i = 0; i < rest.Count; i++)
+        {
+            foreach (var name in names)
+            {
+                var token = rest[i];
+                if (string.Equals(token, name, StringComparison.Ordinal))
+                {
+                    values.Add(i + 1 < rest.Count ? rest[i + 1].Trim() : "");
+                }
+                else if (token.Length > name.Length + 1
+                    && token.StartsWith(name, StringComparison.Ordinal)
+                    && token[name.Length] is '=' or ':')
+                {
+                    values.Add(token[(name.Length + 1)..].Trim().Trim('"', '\''));
+                }
+            }
+        }
+
+        return values;
     }
 
     /// <summary>The value following the first matching flag, or null.</summary>

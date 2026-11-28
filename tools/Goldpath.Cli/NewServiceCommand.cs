@@ -21,6 +21,7 @@ public static class NewServiceCommand
         var files = AppFiles.Locate(appRoot);
         RequireSolution(files);
         var facts = AppFacts.Read(files);
+        facts.RequireWritableProvider("new service");
         if (facts.DatabaseProvider is "none")
         {
             throw new CliFailureException("a service head owns a database, and this app's provider could not be inferred — the api csproj references neither Npgsql.EntityFrameworkCore.PostgreSQL nor Microsoft.EntityFrameworkCore.SqlServer.");

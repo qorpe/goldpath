@@ -40,6 +40,9 @@
     <!--#if (UseLocking && UseSqlServer) -->
     <PackageReference Include="Goldpath.Locking.SqlServer" />
     <!--#endif -->
+    <!--#if (UseLocking && UseOracle) -->
+    <PackageReference Include="Goldpath.Locking.Oracle" />
+    <!--#endif -->
     <!--#if (UseArchival) -->
     <PackageReference Include="Goldpath.Archival" />
     <!--#endif -->
@@ -70,6 +73,10 @@
     <!--#endif -->
     <!--#if (UseSqlServer) -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <!--#endif -->
+    <!--#if (UseOracle) -->
+    <PackageReference Include="Oracle.EntityFrameworkCore" />
+    <PackageReference Include="Oracle.ManagedDataAccess.Core" />
     <!--#endif -->
   </ItemGroup>
 
