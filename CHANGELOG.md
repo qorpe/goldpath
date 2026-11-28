@@ -82,6 +82,33 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) · Versioning: 
     enumerated at 8,516 rows/s (engine loop) and 8,177 rows/s through the pacer, against PostgreSQL's 18,636 and
     17,868. The pacer holds 166.7/s at 200 TPS on both, the live throttle bites within a slice (50.0 against 50.8),
     and the 100k sink flushes at 12,627 against 10,997 outcomes/s.
+- **Campaign: the ceiling verbs — an operator changes a target system's or the global ceiling live, audited, from
+  the API or the governor (R3-S9, #318; admin-contract R4.5).**
+  - `GoldpathCampaignAdminService` gains `GetCeilingsAsync`, `ThrottleCeilingAsync` and `GetCeilingAuditAsync`, with
+    the records `GoldpathCampaignCeilingInfo` and `GoldpathCampaignCeilingPatch` (campaign RFC R3.2's API block,
+    additions only).
+  - Four routes under the campaign mount: `GET /ceilings`, `POST /ceilings/global/throttle`,
+    `POST /ceilings/target-systems/{name}/throttle` and `GET /ceilings/audit`. A viewer reads them; changing one
+    needs `goldpath-ops` (R4.1). `RouteContractTests` freezes the four.
+  - A change is a guarded update of the row (re-read on a lost race, so the audit's old → new is the change made), or
+    an insert carrying the code seed when the leader has not seeded the row yet. It is audited with
+    `CampaignId = Guid.Empty`, action `ceiling`, the actor and old → new (stamped with the row's own `UpdatedAt`), and
+    binds the pacer's next tick. Every change records the current code value as the row's seed, so setting that
+    value hands the row back to code (the next release is followed even when code changed while the operator held the
+    row), and any other value stays moved — including one equal to an older code value, which the leader's next slice
+    used to replace.
+  - Refused with teaching text: clearing a target system (set a high number instead), an undeclared name (the
+    declared ones are named; `400`, not `404`), a value below 1, and a patch naming both or neither field.
+    `AddTargetSystem` refuses a name containing `/` or made only of dots (`.`, `..`), which the ceiling route cannot
+    carry.
+  - The console governor shows the target-system ceiling that binds a campaign — live value, code value, the types
+    sharing it, who moved it — and edits it.
+  - Runbook item 15: changing a target-system ceiling during an incident.
+  - **Proof:** `R3TargetSystemTests` (SQLite: the verbs, the refusals, the seed rule both ways, the two races, the
+    routes over HTTP); `CampaignCeilingVerbTests` (S-FLEET-03 extended, RabbitMQ 4 + PostgreSQL 17: two types on one
+    system never above its ceiling in any second of ticks, a lowered ceiling binding from one tick after the commit,
+    the actor in the audit); `AdminReadRoleSurfaceTests` (a viewer reads `/ceilings`, every verb refused);
+    `CampaignPanel.test.tsx`, `adminClient.test.ts`, and the console smoke's governor journey and axe scan.
 - **One support policy page (G18 Part 1/3, #591).** Docs and a gate; no package change.
   - `docs/guide/support-policy.md` gathers which versions receive fixes (quoting versioning D3), the security response
     targets (linked to SECURITY.md's table, not copied), the engines and databases supported today with each row's

@@ -162,8 +162,14 @@ builder.AddGoldpathCampaign<WebApplicationBuilder, OrdersDbContext>(campaign =>
   system, plus the global row (`Name = "*"`; `MaxTps` null = off). A changed code value is followed only
   while nobody moved the row (`MaxTps == SeedMaxTps`). Otherwise the operator's value stays, and a warning
   names both values. A row edited between ticks bites on the next tick, because one query a tick reads them.
-- **Not yet:** the audited admin verbs and routes, and the governor's editor, are R3-S9 (#318). Until then a
-  row is changed in the database by an operator who has the rights to do so.
+- **The verbs (R3-S9, #318; admin-contract R4.5).** `GET /ceilings` lists the global row and every declared
+  system, each with its live value, its code value, the types it binds and who moved it last.
+  `POST /ceilings/target-systems/{name}/throttle {"maxTps": n}` and `POST /ceilings/global/throttle`
+  (`{"maxTps": n}` or `{"clearMaxTps": true}`) change one; the next tick binds it. Every change is audited
+  (`CampaignId = Guid.Empty`, action `ceiling`, the actor, old → new) and listed at `GET /ceilings/audit`.
+  A target system is never cleared, and an undeclared name is refused naming the declared ones. In code, the
+  same verbs are `GoldpathCampaignAdminService.GetCeilingsAsync`, `ThrottleCeilingAsync` and
+  `GetCeilingAuditAsync`. The governor shows the ceiling that binds a campaign and edits it. Runbook item 15.
 - **Seen in:** the detail's `targetSystem`, the gauge `goldpath_campaign_target_system_max_tps{target_system}`,
   `goldpath_campaign_global_tps` (now read from the row), and `target_system` as a value of
   `goldpath_campaign_binding_constraint`.

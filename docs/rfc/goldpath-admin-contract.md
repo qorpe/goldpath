@@ -86,6 +86,8 @@ apply to it only where R5 says so.
 | GET | `/{id}/outcomes` | items counted by state, failures counted by error code (R4.3; `404` for an unknown id) |
 | GET | `/{id}/audit?take=` | per-campaign audit |
 | POST | `/` (create) · `/{id}/pause` · `/resume` · `/abort` · `/throttle` | `GoldpathAdminResult` |
+| GET | `/ceilings` · `/ceilings/audit?take=` | the live ceilings (`GoldpathCampaignCeilingInfo[]`) / their changes, newest first (R4.5, #318) |
+| POST | `/ceilings/global/throttle` · `/ceilings/target-systems/{name}/throttle` | `GoldpathAdminResult`; an undeclared name or a cleared target system is a `400` (R4.5, #318) |
 
 ### approvals — `/goldpath/admin/approvals` (T21 console federation, 2026-08-28)
 | Method | Route | Returns |

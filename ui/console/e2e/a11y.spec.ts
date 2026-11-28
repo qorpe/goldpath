@@ -69,6 +69,26 @@ test.describe("the console is operable without a mouse or a perfect screen", () 
     await expect(page.getByTestId("campaign-detail").getByRole("status")).toBeVisible();
   });
 
+  // R3.2: the governor of a campaign bound by a target-system ceiling, with the ceiling's section and its form on screen.
+  test("the campaign governor with a target-system ceiling has no serious accessibility violation", async ({ page, request }) => {
+    const created = await request.post(`${service}/goldpath/admin/campaign/`, {
+      data: { type: "config-push", name: "a11y-ceiling", policy: { tps: 1, maxInFlight: 5 } },
+    });
+    expect(created.ok()).toBeTruthy();
+    await page.goto(`/?base=${encodeURIComponent(service)}`);
+    await page.getByRole("button", { name: "Campaigns", exact: true }).click();
+    await page.getByRole("button", { name: "a11y-ceiling" }).click();
+    await expect(page.getByLabel("target-system ceiling")).toBeVisible();
+
+    expect(await violations(page)).toEqual([]);
+
+    await page.getByRole("button", { name: "abort" }).click();
+    const aborting = page.getByRole("alertdialog", { name: "confirm abort" });
+    await aborting.getByLabel("reason (required)").fill("a11y scan finished");
+    await aborting.getByRole("button", { name: "abort" }).click();
+    await expect(page.getByTestId("campaign-detail").getByRole("status")).toBeVisible();
+  });
+
   // Each SECTION of the scheduling surface is its own screen behind a tab; scanning only
   // whichever one happens to be active would leave three unchecked.
   for (const tab of ["Overview", "Jobs", "Calendars", "History"]) {
