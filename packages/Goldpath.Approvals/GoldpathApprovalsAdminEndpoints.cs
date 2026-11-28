@@ -5,7 +5,10 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Goldpath;
 
-/// <summary>The decision body: the role the decider acts under, and the reason (mandatory on reject — the engine enforces it).</summary>
+/// <summary>
+/// The decision body: the role the decider acts under, and the reason (mandatory on reject — the engine enforces it). The
+/// role is an ASSERTION, not a grant: it counts only when the authenticated principal holds it (#478).
+/// </summary>
 public sealed record GoldpathApprovalDecisionRequest(string Role, string? Reason);
 
 /// <summary>
@@ -56,7 +59,16 @@ public static class GoldpathApprovalsAdminEndpoints
         // the requester ("anonymous" on an unsecured surface is then one identity like
         // any other, and four-eyes still holds).
         var decidedBy = http.User.Identity?.Name ?? "anonymous";
-        var outcome = await engine.DecideAsync(id, decidedBy, body.Role, granted, body.Reason ?? "", ct);
+
+        // The role is the PRINCIPAL's, never the caller's word (#478, threat model T-APR-03). The body's role is an
+        // assertion, and it must be true twice over: it names the rung pending at the decision itself, and the principal
+        // holds it (IsInRole, as the admin floor's RequireRole) — or a delegation the engine holds for this identity covers
+        // that rung. The engine judges the first on the same read it decides on, on every path, so neither a held other
+        // role, nor a delegation, nor an escalation since the caller looked lets an assertion decide a rung it does not name.
+        var asserted = body.Role;
+        var holds = !string.IsNullOrWhiteSpace(asserted) && http.User.IsInRole(asserted);
+        var outcome = await engine.DecideAssertedAsync(id, decidedBy, asserted ?? "", holds, granted, body.Reason ?? "", ct);
+
         // The frozen verb envelope: Ok carries the applied outcome, a refusal carries the
         // RULE's name as the message — failures speak, never a silent 200 (contract §7.1).
         var result = new GoldpathAdminResult(

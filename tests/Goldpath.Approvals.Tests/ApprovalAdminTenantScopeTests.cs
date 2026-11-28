@@ -67,7 +67,7 @@ public sealed class ApprovalAdminTenantScopeTests
     {
         await using var host = await Host.StartAsync(multiTenant: true);
         var request = await host.Engine.RequestAsync("credit-limit", "K-2", 500_000m, "maker");
-        var client = host.Client(allTenants: true);
+        var client = host.Client(allTenants: true, "expert");   // the expert rung's role is the principal's (#478)
 
         Assert.Equal(1, (await client.GetFromJsonAsync<JsonElement>($"{Prefix}/requests")).GetArrayLength());
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync($"{Prefix}/requests/{request.Id}")).StatusCode);
@@ -86,7 +86,7 @@ public sealed class ApprovalAdminTenantScopeTests
     {
         await using var host = await Host.StartAsync(multiTenant: false);
         var request = await host.Engine.RequestAsync("credit-limit", "K-4", 500_000m, "maker");
-        var client = host.Client(allTenants: false);
+        var client = host.Client(allTenants: false, "expert");   // the expert rung's role is the principal's (#478)
 
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync($"{Prefix}/requests")).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync($"{Prefix}/requests/{request.Id}")).StatusCode);
@@ -123,7 +123,7 @@ public sealed class ApprovalAdminTenantScopeTests
             return new Host(app);
         }
 
-        public HttpClient Client(bool allTenants) => OperatorScheme.Client(app, allTenants);
+        public HttpClient Client(bool allTenants, params string[] roles) => OperatorScheme.Client(app, allTenants, roles);
 
         public ValueTask DisposeAsync() => app.DisposeAsync();
     }
